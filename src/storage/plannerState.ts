@@ -1,0 +1,114 @@
+import { progressMilestoneIds } from '../data/progress'
+import type {
+  ProgressMilestoneId,
+  SatisfactionByVillage,
+  StageId,
+} from '../types'
+
+export const STORAGE_KEYS = {
+  progress: 'mjc-progress',
+  satisfactionByVillage: 'mjc-satisfaction-by-village',
+  suppliedToday: 'mjc-supplied-today',
+  legacyStage: 'mjc-stage',
+  legacySatisfaction: 'mjc-satisfaction',
+} as const
+
+export interface StorageLike {
+  getItem(key: string): string | null
+  setItem(key: string, value: string): void
+  removeItem?(key: string): void
+}
+
+const progressIds = new Set<ProgressMilestoneId>(progressMilestoneIds)
+
+export function isProgressMilestoneId(value: string): value is ProgressMilestoneId {
+  return progressIds.has(value as ProgressMilestoneId)
+}
+
+export function legacyStageToProgress(stage: StageId): ProgressMilestoneId {
+  switch (stage) {
+    case 1:
+      return 'opening'
+    case 2:
+      return 'seasoner-unlocked'
+    case 3:
+      return 'juice-jar-unlocked'
+    case 4:
+      return 'juicer-unlocked'
+    case 5:
+      return 'juice-blender-unlocked'
+  }
+}
+
+function parseLegacyStage(raw: string | null): StageId | null {
+  const value = Number(raw)
+  return value === 1 || value === 2 || value === 3 || value === 4 || value === 5
+    ? value
+    : null
+}
+
+function normalizeSatisfaction(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(0, Math.floor(value))
+    : 0
+}
+
+export function readCurrentProgress(storage: StorageLike): ProgressMilestoneId {
+  const storedProgress = storage.getItem(STORAGE_KEYS.progress)
+  if (storedProgress && isProgressMilestoneId(storedProgress)) {
+    return storedProgress
+  }
+
+  const legacyStage = parseLegacyStage(storage.getItem(STORAGE_KEYS.legacyStage))
+  const migrated = legacyStage
+    ? legacyStageToProgress(legacyStage)
+    : 'seasoner-unlocked'
+
+  storage.setItem(STORAGE_KEYS.progress, migrated)
+  return migrated
+}
+
+export function writeCurrentProgress(
+  storage: StorageLike,
+  progress: ProgressMilestoneId,
+): void {
+  storage.setItem(STORAGE_KEYS.progress, progress)
+}
+
+export function readSatisfactionByVillage(
+  storage: StorageLike,
+): SatisfactionByVillage {
+  const stored = storage.getItem(STORAGE_KEYS.satisfactionByVillage)
+
+  if (stored !== null) {
+    try {
+      const parsed = JSON.parse(stored) as Partial<SatisfactionByVillage>
+      return {
+        'east-harbor': normalizeSatisfaction(parsed['east-harbor']),
+        'tranquil-fountain': normalizeSatisfaction(parsed['tranquil-fountain']),
+      }
+    } catch {
+      // Fall through to the legacy value.
+    }
+  }
+
+  const legacyRaw = storage.getItem(STORAGE_KEYS.legacySatisfaction)
+  const legacyValue = legacyRaw === null ? 0 : Number(legacyRaw)
+  const migrated: SatisfactionByVillage = {
+    'east-harbor': normalizeSatisfaction(legacyValue),
+    'tranquil-fountain': 0,
+  }
+
+  storage.setItem(STORAGE_KEYS.satisfactionByVillage, JSON.stringify(migrated))
+  return migrated
+}
+
+export function writeSatisfactionByVillage(
+  storage: StorageLike,
+  satisfactionByVillage: SatisfactionByVillage,
+): void {
+  storage.setItem(
+    STORAGE_KEYS.satisfactionByVillage,
+    JSON.stringify(satisfactionByVillage),
+  )
+}
