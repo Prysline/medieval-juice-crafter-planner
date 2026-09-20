@@ -488,6 +488,7 @@ function CustomerRow({
   onToggleSupplied: () => void
 }) {
   const bestMatch = matches[0]
+  const preferencesKnown = customer.preferences !== null
 
   const rowClassName = [
     'table-row',
@@ -534,7 +535,13 @@ function CustomerRow({
         </div>
 
         <div className="best-match-cell">
-          {bestMatch ? bestMatch.name : <span className="muted">無完全匹配</span>}
+          {!preferencesKnown ? (
+            <span className="muted">喜好未知</span>
+          ) : bestMatch ? (
+            bestMatch.name
+          ) : (
+            <span className="muted">無完全匹配</span>
+          )}
         </div>
 
         <div className="price-cell align-end">
@@ -579,9 +586,11 @@ function CustomerRow({
         <div className="match-list">
           <div className="section-title">
             <strong>完全滿足配方</strong>
-            <span>{matches.length} 種</span>
+            <span>{preferencesKnown ? `${matches.length} 種` : '待確認'}</span>
           </div>
-          {matches.length > 0 ? (
+          {!preferencesKnown ? (
+            <p className="muted">喜好尚未確認，無法判斷完全匹配配方。</p>
+          ) : matches.length > 0 ? (
             <ol>
               {matches.map((recipe) => (
                 <li key={recipe.id}>
