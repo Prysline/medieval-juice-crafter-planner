@@ -51,6 +51,26 @@ describe('customer recipe matching', () => {
     expect(lemonSugarMint?.name).toBe('甜味（檸檬 → 糖 → 薄荷）')
   })
 
+  it('keeps stage-four pear and carrot seasoning order as recipe identity', () => {
+    const pearMintSugar = recipes.find((recipe) => recipe.id === 'pear-mint-sugar')
+    const pearSugarMint = recipes.find((recipe) => recipe.id === 'pear-sugar-mint')
+    const carrotSugarMint = recipes.find((recipe) => recipe.id === 'carrot-sugar-mint')
+    const carrotMintSugar = recipes.find((recipe) => recipe.id === 'carrot-mint-sugar')
+
+    expect(pearMintSugar?.salePrice).toBe(44)
+    expect(pearSugarMint?.salePrice).toBe(44)
+    expect(pearMintSugar?.effects).toContainEqual({ name: '補充精力', value: 3 })
+    expect(pearSugarMint?.effects).toContainEqual({ name: '舒緩腸胃', value: 3 })
+    expect(carrotSugarMint?.salePrice).toBe(40)
+    expect(carrotSugarMint?.effects).toContainEqual({ name: '舒緩腸胃', value: 3 })
+    expect(carrotMintSugar?.effects).toContainEqual({ name: '補充精力', value: 3 })
+  })
+
+  it('keeps stage-four recipes hidden before stage four', () => {
+    expect(recipes.filter((recipe) => recipe.stage <= 3).some((recipe) => recipe.id === 'pear-sugar')).toBe(false)
+    expect(recipes.filter((recipe) => recipe.stage <= 4).some((recipe) => recipe.id === 'pear-sugar')).toBe(true)
+  })
+
   it('keeps the normal recipe database capped at three ingredients for now', () => {
     expect(Math.max(...recipes.map((recipe) => recipe.ingredients.length))).toBe(3)
   })
