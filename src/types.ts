@@ -7,6 +7,11 @@ export interface Preference {
   value: string
 }
 
+export interface EffectValue {
+  name: string
+  value: number
+}
+
 export interface ScheduleObservation {
   type: 'leave_home' | 'outside_village_by' | 'return_village'
   approxTime: string
@@ -31,7 +36,7 @@ export interface Recipe {
   salePrice: number
   /** Order is significant when the game produces different results by seasoning sequence. */
   ingredients: string[]
-  effects: string[]
+  effects: EffectValue[]
   equipment: string[]
 }
 
@@ -40,7 +45,7 @@ export interface Ingredient {
   name: string
   stage: StageId
   buyPrice: number
-  effects: string[]
+  effects: EffectValue[]
   seller: string
 }
 
