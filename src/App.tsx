@@ -10,6 +10,9 @@ import {
 import type { Customer, Recipe, StageId } from './types'
 
 type Tab = 'customers' | 'recipes'
+type SortDirection = 'asc' | 'desc'
+type CustomerSortKey = 'name' | 'bestPrice' | 'satisfaction' | 'matchCount'
+type RecipeSortKey = 'name' | 'salePrice' | 'stage' | 'customerCount'
 
 const scheduleLabels = {
   leave_home: '出家門',
@@ -34,11 +37,17 @@ function App() {
   )
   const [query, setQuery] = useState('')
   const [tab, setTab] = useState<Tab>('customers')
+  const [customerSortKey, setCustomerSortKey] = useState<CustomerSortKey>('name')
+  const [customerSortDirection, setCustomerSortDirection] =
+    useState<SortDirection>('asc')
+  const [recipeSortKey, setRecipeSortKey] = useState<RecipeSortKey>('salePrice')
+  const [recipeSortDirection, setRecipeSortDirection] =
+    useState<SortDirection>('desc')
 
   const normalizedQuery = query.trim().toLocaleLowerCase('zh-Hant')
 
   const customerRows = useMemo(() => {
-    return customers
+    const rows = customers
       .map((customer) => ({
         customer,
         matches: matchingRecipesForCustomer(recipes, customer, stage),
@@ -55,12 +64,44 @@ function App() {
           .toLocaleLowerCase('zh-Hant')
         return haystack.includes(normalizedQuery)
       })
-  }, [normalizedQuery, stage])
+
+    const direction = customerSortDirection === 'asc' ? 1 : -1
+    return rows.sort((a, b) => {
+      if (customerSortKey === 'bestPrice') {
+        return ((a.matches[0]?.salePrice ?? -1) - (b.matches[0]?.salePrice ?? -1)) * direction
+      }
+      if (customerSortKey === 'satisfaction') {
+        return (
+          (a.customer.satisfactionRequired - b.customer.satisfactionRequired) * direction ||
+          a.customer.name.localeCompare(b.customer.name, 'zh-Hant')
+        )
+      }
+      if (customerSortKey === 'matchCount') {
+        return (
+          (a.matches.length - b.matches.length) * direction ||
+          a.customer.name.localeCompare(b.customer.name, 'zh-Hant')
+        )
+      }
+
+      return a.customer.name.localeCompare(b.customer.name, 'zh-Hant') * direction
+    })
+  }, [
+    normalizedQuery,
+    stage,
+    customerSortDirection,
+    customerSortKey,
+  ])
 
   const recipeRows = useMemo(() => {
-    return recipes
+    const rows = recipes
       .filter((recipe) => recipe.stage <= stage)
-      .filter((recipe) => {
+      .map((recipe) => ({
+        recipe,
+        customerCount: customers
+          .filter((customer) => customerIsUnlocked(customer, satisfaction))
+          .filter((customer) => recipeMatchesCustomer(recipe, customer)).length,
+      }))
+      .filter(({ recipe }) => {
         if (!normalizedQuery) return true
         return [
           recipe.name,
@@ -72,8 +113,37 @@ function App() {
           .toLocaleLowerCase('zh-Hant')
           .includes(normalizedQuery)
       })
-      .sort((a, b) => b.salePrice - a.salePrice || a.name.localeCompare(b.name, 'zh-Hant'))
-  }, [normalizedQuery, stage])
+
+    const direction = recipeSortDirection === 'asc' ? 1 : -1
+    return rows.sort((a, b) => {
+      if (recipeSortKey === 'salePrice') {
+        return (
+          (a.recipe.salePrice - b.recipe.salePrice) * direction ||
+          a.recipe.name.localeCompare(b.recipe.name, 'zh-Hant')
+        )
+      }
+      if (recipeSortKey === 'stage') {
+        return (
+          (a.recipe.stage - b.recipe.stage) * direction ||
+          a.recipe.name.localeCompare(b.recipe.name, 'zh-Hant')
+        )
+      }
+      if (recipeSortKey === 'customerCount') {
+        return (
+          (a.customerCount - b.customerCount) * direction ||
+          a.recipe.name.localeCompare(b.recipe.name, 'zh-Hant')
+        )
+      }
+
+      return a.recipe.name.localeCompare(b.recipe.name, 'zh-Hant') * direction
+    })
+  }, [
+    normalizedQuery,
+    stage,
+    satisfaction,
+    recipeSortDirection,
+    recipeSortKey,
+  ])
 
   function updateStage(value: StageId) {
     setStage(value)
@@ -155,28 +225,113 @@ function App() {
       </nav>
 
       {tab === 'customers' ? (
-        <section className="result-list" aria-label="顧客">
-          {customerRows.map(({ customer, matches }) => (
-            <CustomerRow
-              key={customer.id}
-              customer={customer}
-              matches={matches}
-              unlocked={customerIsUnlocked(customer, satisfaction)}
-            />
-          ))}
-        </section>
+        <>
+          <SortBar
+            label="顧客排序"
+            value={customerSortKey}
+            direction={customerSortDirection}
+            options={[
+              ['name', '姓名'],
+              ['bestPrice', '最高完全匹配售價'],
+              ['satisfaction', '滿意度門檻'],
+              ['matchCount', '完全匹配配方數'],
+            ]}
+            onChange={(value) => setCustomerSortKey(value as CustomerSortKey)}
+            onDirectionChange={setCustomerSortDirection}
+          />
+
+          <section className="table-list customer-table" aria-label="顧客">
+            <div className="table-head customer-columns" aria-hidden="true">
+              <span>顧客</span>
+              <span>喜好</span>
+              <span>最佳完全匹配</span>
+              <span className="align-end">售價</span>
+            </div>
+
+            {customerRows.map(({ customer, matches }) => (
+              <CustomerRow
+                key={customer.id}
+                customer={customer}
+                matches={matches}
+                unlocked={customerIsUnlocked(customer, satisfaction)}
+              />
+            ))}
+          </section>
+        </>
       ) : (
-        <section className="result-list" aria-label="配方">
-          {recipeRows.map((recipe) => (
-            <RecipeRow key={recipe.id} recipe={recipe} satisfaction={satisfaction} />
-          ))}
-        </section>
+        <>
+          <SortBar
+            label="配方排序"
+            value={recipeSortKey}
+            direction={recipeSortDirection}
+            options={[
+              ['salePrice', '售價'],
+              ['name', '配方名稱'],
+              ['stage', '解鎖階段'],
+              ['customerCount', '可完全滿足顧客數'],
+            ]}
+            onChange={(value) => setRecipeSortKey(value as RecipeSortKey)}
+            onDirectionChange={setRecipeSortDirection}
+          />
+
+          <section className="table-list recipe-table" aria-label="配方">
+            <div className="table-head recipe-columns" aria-hidden="true">
+              <span>配方</span>
+              <span>原料</span>
+              <span>成品特性</span>
+              <span className="align-end">售價</span>
+            </div>
+
+            {recipeRows.map(({ recipe }) => (
+              <RecipeRow key={recipe.id} recipe={recipe} satisfaction={satisfaction} />
+            ))}
+          </section>
+        </>
       )}
 
       <footer>
         目前資料範圍：東港村、階段一～二。未確認規則不自動推導。
       </footer>
     </main>
+  )
+}
+
+function SortBar({
+  label,
+  value,
+  direction,
+  options,
+  onChange,
+  onDirectionChange,
+}: {
+  label: string
+  value: string
+  direction: SortDirection
+  options: Array<[string, string]>
+  onChange: (value: string) => void
+  onDirectionChange: (value: SortDirection) => void
+}) {
+  return (
+    <div className="sort-bar">
+      <label>
+        <span>{label}</span>
+        <select value={value} onChange={(event) => onChange(event.target.value)}>
+          {options.map(([optionValue, optionLabel]) => (
+            <option key={optionValue} value={optionValue}>
+              {optionLabel}
+            </option>
+          ))}
+        </select>
+      </label>
+      <button
+        type="button"
+        className="direction-button"
+        onClick={() => onDirectionChange(direction === 'asc' ? 'desc' : 'asc')}
+        aria-label={direction === 'asc' ? '目前升冪，切換成降冪' : '目前降冪，切換成升冪'}
+      >
+        {direction === 'asc' ? '升冪 ↑' : '降冪 ↓'}
+      </button>
+    </div>
   )
 }
 
@@ -192,36 +347,36 @@ function CustomerRow({
   const bestMatch = matches[0]
 
   return (
-    <details className="list-row">
-      <summary>
-        <div className="summary-main">
-          <div className="summary-title-line">
-            <strong>{customer.name}</strong>
-            <span>{customer.occupation}</span>
-            {customer.satisfactionRequired > 0 && (
-              <span className={unlocked ? 'status unlocked' : 'status locked'}>
-                {unlocked ? '已達門檻' : `滿意度 ${customer.satisfactionRequired}`}
-              </span>
-            )}
-          </div>
-          <p className="summary-meta">
-            {customer.preferences.map((preference) => preference.value).join('・')}
-          </p>
+    <details className="table-row">
+      <summary className="customer-columns">
+        <div className="primary-cell">
+          <strong>{customer.name}</strong>
+          <span className="cell-secondary">{customer.occupation}</span>
         </div>
 
-        <div className="summary-result">
-          {bestMatch ? (
-            <>
-              <span>{bestMatch.name}</span>
-              <strong>{bestMatch.salePrice}</strong>
-            </>
-          ) : (
-            <span className="muted">目前無完全匹配</span>
-          )}
+        <div className="preferences-cell">
+          {customer.preferences.map((preference) => preference.value).join('・')}
+        </div>
+
+        <div className="best-match-cell">
+          {bestMatch ? bestMatch.name : <span className="muted">無完全匹配</span>}
+        </div>
+
+        <div className="price-cell align-end">
+          {bestMatch ? bestMatch.salePrice : '—'}
         </div>
       </summary>
 
       <div className="row-details">
+        {customer.satisfactionRequired > 0 && (
+          <div className="detail-line">
+            <span className="detail-label">顧客滿意度門檻</span>
+            <span className={unlocked ? 'status unlocked' : 'status locked'}>
+              {unlocked ? `${customer.satisfactionRequired}（已達）` : customer.satisfactionRequired}
+            </span>
+          </div>
+        )}
+
         <TagGroup
           title="喜好"
           tags={customer.preferences.map((preference) => preference.value)}
@@ -237,7 +392,7 @@ function CustomerRow({
               {matches.map((recipe) => (
                 <li key={recipe.id}>
                   <span>{recipe.name}</span>
-                  <strong>{recipe.salePrice}</strong>
+                  <strong>售價 {recipe.salePrice}</strong>
                 </li>
               ))}
             </ol>
@@ -272,19 +427,18 @@ function RecipeRow({
     .filter((customer) => recipeMatchesCustomer(recipe, customer))
 
   return (
-    <details className="list-row">
-      <summary>
-        <div className="summary-main">
-          <div className="summary-title-line">
-            <strong>{recipe.name}</strong>
-            <span>階段 {recipe.stage}</span>
-          </div>
-          <p className="summary-meta">{recipe.ingredients.join('・')}</p>
+    <details className="table-row">
+      <summary className="recipe-columns">
+        <div className="primary-cell">
+          <strong>{recipe.name}</strong>
+          <span className="cell-secondary">階段 {recipe.stage}</span>
         </div>
 
-        <div className="summary-result recipe-price">
-          <strong>{recipe.salePrice}</strong>
-        </div>
+        <div>{recipe.ingredients.join('・')}</div>
+
+        <div className="effects-cell">{recipe.effects.join('・')}</div>
+
+        <div className="price-cell align-end">{recipe.salePrice}</div>
       </summary>
 
       <div className="row-details">
