@@ -164,6 +164,8 @@ export function RecipeTools({
     recipe: SavedRecipe,
     patch: Pick<Partial<SavedRecipe>, 'name' | 'note'>,
   ) {
+    if (patch.name !== undefined && !patch.name.trim()) return
+
     const nextRecipe: SavedRecipe = {
       ...recipe,
       ...patch,
