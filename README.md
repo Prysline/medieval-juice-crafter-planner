@@ -17,6 +17,7 @@
 - 配方同時顯示批次原料成本與單杯原料成本；目前每批固定產出 2 杯。
 - 「配方工具」可用目前正式支援的 V1 製作鏈即時模擬有序原料序列；observed 配方優先，否則顯示 computed / ambiguity。
 - 個人配方只保存自訂名稱、有序 ingredient IDs、備註與建立時間；effects、cost、equipment、matching 每次由目前 domain 重新計算。
+- 全日 batch optimizer domain 已支援最低成本／最少浪費兩種 lexicographic objective、每批 2 杯、unresolved 顧客與購物清單；UI 尚未接入。
 - 預測若在 effect cutoff 出現未確認同分 tie，會明確標示 ambiguous，且不參與完全匹配推薦。
 - 舊版 `mjc-stage` / `mjc-satisfaction` localStorage 會保守遷移到新版進度資料。
 
@@ -59,6 +60,10 @@ src/
     recipeCost.ts      # 批次／單杯原料成本
     recipeEvaluator.ts # 單一有序序列 validation / observed overlay / computed evaluation
     recipeGenerator.ts # 只枚舉 V1 合法候選，再交由 evaluator 評估
+    optimizerModel.ts  # optimizer request、customer→recipe eligible matrix 與 gating
+    optimizerSolver.ts # 可替換的 async solver adapter contract
+    optimizerHighsSolver.ts # HiGHS WASM lexicographic MIP adapter
+    optimizer.ts       # batch plan / shopping list / unresolved result normalization
   storage/
     plannerState.ts    # localStorage 讀寫、正式顧客與 legacy migration
     savedRecipes.ts    # 個人配方 schema validation / CRUD
@@ -81,6 +86,17 @@ slotCount = min(5, 不重複原料種類數 + 1)
 同名特性先累加，再取最高 slot；cutoff 同分但剩餘 slot 不足時保留全部候選、不自行決定 tie-break。computed 配方的售價維持未知。
 
 未確認的遊戲機制不會直接寫成正式配方或最佳化公式。
+
+## Batch optimizer domain
+
+optimizer request 會帶入主線進度、分村滿意度、今日已供應顧客與 candidate policy。domain 自己透過既有 availability / matching gate 過濾顧客與配方，不把正確性只交給 UI。
+
+V1 solver 使用 `@bubblyworld/highs-ts@1.3.0`（HiGHS WASM），並隔離在 solver adapter 後。objective 不使用隱藏權重：
+
+- `minimum-cost`：原料成本 → 批數／剩餘杯 → 配方種類數。
+- `minimum-waste`：批數／剩餘杯 → 原料成本 → 配方種類數。
+
+目前 solver domain 為 async；Slice C UI 應以 lazy import 載入 optimizer，避免主頁初始 bundle 直接包含 WASM。實測 bundle probe 的 HiGHS WASM 約 3.65 MB（gzip 約 1.10 MB），因此不應 eager-load。
 
 ## 開發
 
