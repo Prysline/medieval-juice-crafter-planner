@@ -22,5 +22,5 @@ export interface BatchOptimizerSolver {
   solve(
     model: BatchOptimizationModel,
     objective: OptimizationObjective,
-  ): BatchSolverSolution
+  ): Promise<BatchSolverSolution>
 }
