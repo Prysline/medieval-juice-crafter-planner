@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { evaluateRecipeSequence } from '../domain/recipeEvaluator'
 import type { SavedRecipe } from '../types'
 import {
   readSavedRecipes,
@@ -82,6 +83,29 @@ describe('saved recipe storage', () => {
       'sugar',
       'mint',
     ])
+  })
+
+  it('re-evaluates ambiguity from the sequence instead of storing derived data', () => {
+    const storage = new MemoryStorage()
+    const ambiguous: SavedRecipe = {
+      id: 'ambiguous',
+      name: '紅蘿蔔肉桂',
+      ingredientIds: ['carrot', 'cinnamon'],
+      createdAt: '2026-09-21T00:00:00.000Z',
+    }
+
+    writeSavedRecipes(storage, [ambiguous])
+    const [restored] = readSavedRecipes(storage)
+    const evaluation = evaluateRecipeSequence(
+      restored.ingredientIds,
+      'tranquil-fountain-unlocked',
+    )
+
+    expect(evaluation.valid).toBe(true)
+    if (!evaluation.valid) return
+
+    expect(evaluation.candidate.source).toBe('computed')
+    expect(evaluation.candidate.effectAmbiguity).toBeDefined()
   })
 
   it('removes a saved recipe without touching other entries', () => {
