@@ -14,15 +14,29 @@ import {
   type SortDirection,
 } from './domain/customerList'
 import {
+  customerRecipeRecommendations,
+  type CustomerRecipeRecommendations,
+} from './domain/customerRecommendation'
+import {
+  countFormalCustomersByVillage,
+  isFormalCustomer,
+} from './domain/customerState'
+import {
   matchingRecipeCandidatesForCustomer,
   recipeCandidateMatchesCustomer,
 } from './domain/matching'
 import { generateRecipeCandidates } from './domain/recipeGenerator'
 import {
+  calculateRecipeIngredientCost,
+  type RecipeIngredientCost,
+} from './domain/recipeCost'
+import {
   readCurrentProgress,
+  readFormalCustomerIds,
   readSatisfactionByVillage,
   STORAGE_KEYS,
   writeCurrentProgress,
+  writeFormalCustomerIds,
   writeSatisfactionByVillage,
 } from './storage/plannerState'
 import type {
@@ -84,6 +98,9 @@ function App() {
   const [suppliedCustomerIds, setSuppliedCustomerIds] = useState<string[]>(() =>
     readStoredStringArray(STORAGE_KEYS.suppliedToday),
   )
+  const [formalCustomerIds, setFormalCustomerIds] = useState<string[]>(() =>
+    readFormalCustomerIds(window.localStorage),
+  )
   const [showSuppliedToday, setShowSuppliedToday] = useState(true)
 
   const normalizedQuery = query.trim().toLocaleLowerCase('zh-Hant')
@@ -101,6 +118,16 @@ function App() {
         recipeCandidates.map((candidate, index) => [candidate.id, index]),
       ),
     [recipeCandidates],
+  )
+  const eastHarborFormalCount = countFormalCustomersByVillage(
+    customers,
+    formalCustomerIds,
+    'east-harbor',
+  )
+  const tranquilFountainFormalCount = countFormalCustomersByVillage(
+    customers,
+    formalCustomerIds,
+    'tranquil-fountain',
   )
 
   const customerRows = useMemo(() => {
@@ -144,7 +171,13 @@ function App() {
       customerSortKey,
       customerSortDirection,
       recipeOrder,
-    )
+    ).map((row) => ({
+      ...row,
+      recommendations: customerRecipeRecommendations(
+        recipeCandidates,
+        row.customer,
+      ),
+    }))
   }, [
     normalizedQuery,
     currentProgress,
@@ -256,6 +289,17 @@ function App() {
     window.localStorage.removeItem(STORAGE_KEYS.suppliedToday)
   }
 
+  function toggleFormalCustomer(customerId: string) {
+    setFormalCustomerIds((current) => {
+      const next = current.includes(customerId)
+        ? current.filter((id) => id !== customerId)
+        : [...current, customerId]
+
+      writeFormalCustomerIds(window.localStorage, next)
+      return next
+    })
+  }
+
   return (
     <main className="app-shell">
       <header className="hero">
@@ -310,6 +354,23 @@ function App() {
               }
             />
           </label>
+        )}
+
+        <div className="progress-stat">
+          <span>東港村正式顧客</span>
+          <strong>{eastHarborFormalCount} 人</strong>
+          <small>
+            階段三 {Math.min(eastHarborFormalCount, 14)}/14 · 階段四{' '}
+            {Math.min(eastHarborFormalCount, 17)}/17
+          </small>
+        </div>
+
+        {tranquilFountainAvailable && (
+          <div className="progress-stat">
+            <span>靜謐噴泉正式顧客</span>
+            <strong>{tranquilFountainFormalCount} 人</strong>
+            <small>目前沒有已確認的正式顧客數主線門檻</small>
+          </div>
         )}
       </section>
 
@@ -414,16 +475,21 @@ function App() {
             <span className="align-end">今日已供應</span>
           </div>
 
-          {customerRows.map(({ customer, matches, unlocked }) => (
-            <CustomerRow
-              key={customer.id}
-              customer={customer}
-              matches={matches}
-              unlocked={unlocked}
-              suppliedToday={suppliedCustomerIds.includes(customer.id)}
-              onToggleSupplied={() => toggleSuppliedToday(customer.id)}
-            />
-          ))}
+          {customerRows.map(
+            ({ customer, matches, unlocked, recommendations }) => (
+              <CustomerRow
+                key={customer.id}
+                customer={customer}
+                matches={matches}
+                recommendations={recommendations}
+                unlocked={unlocked}
+                formal={isFormalCustomer(customer.id, formalCustomerIds)}
+                suppliedToday={suppliedCustomerIds.includes(customer.id)}
+                onToggleFormal={() => toggleFormalCustomer(customer.id)}
+                onToggleSupplied={() => toggleSuppliedToday(customer.id)}
+              />
+            ),
+          )}
           </section>
         </>
       ) : (
@@ -437,6 +503,7 @@ function App() {
             />
             <span>原料</span>
             <span>成品特性</span>
+            <span>原料成本</span>
             <SortableHeader
               label="售價"
               active={recipeSortKey === 'salePrice'}
@@ -497,14 +564,20 @@ function SortableHeader({
 function CustomerRow({
   customer,
   matches,
+  recommendations,
   unlocked,
+  formal,
   suppliedToday,
+  onToggleFormal,
   onToggleSupplied,
 }: {
   customer: Customer
   matches: RecipeCandidate[]
+  recommendations: CustomerRecipeRecommendations
   unlocked: boolean
+  formal: boolean
   suppliedToday: boolean
+  onToggleFormal: () => void
   onToggleSupplied: () => void
 }) {
   const bestMatch = matches[0]
@@ -524,6 +597,7 @@ function CustomerRow({
         <div className="primary-cell">
           <strong>{customer.name}</strong>
           <span className="cell-secondary">{customer.occupation}</span>
+          <FormalToggle formal={formal} onToggle={onToggleFormal} />
           <span className="mobile-customer-meta">
             {villageNames[customer.villageId]} · {customer.satisfactionRequired > 0
               ? `解鎖 ${customer.satisfactionRequired}`
@@ -558,7 +632,12 @@ function CustomerRow({
           {!preferencesKnown ? (
             <span className="muted">喜好未知</span>
           ) : bestMatch ? (
-            bestMatch.name
+            <>
+              <span>{bestMatch.name}</span>
+              <RecommendationCompact
+                recommendation={recommendations.allowComputed}
+              />
+            </>
           ) : (
             <span className="muted">無完全匹配</span>
           )}
@@ -595,6 +674,11 @@ function CustomerRow({
           </div>
         )}
 
+        <div className="detail-line">
+          <span className="detail-label">顧客狀態</span>
+          <span>{formal ? '正式顧客' : '潛在顧客'}</span>
+        </div>
+
         {customer.preferences ? (
           <TagGroup
             title="喜好"
@@ -606,6 +690,11 @@ function CustomerRow({
             <span>未知（？）</span>
           </div>
         )}
+
+        <RecommendationDetails
+          formal={formal}
+          recommendations={recommendations}
+        />
 
         <div className="match-list">
           <div className="section-title">
@@ -644,6 +733,29 @@ function CustomerRow({
   )
 }
 
+function FormalToggle({
+  formal,
+  onToggle,
+}: {
+  formal: boolean
+  onToggle: () => void
+}) {
+  return (
+    <label
+      className={`formal-check ${formal ? 'formal' : 'potential'}`}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <input
+        type="checkbox"
+        checked={formal}
+        onChange={onToggle}
+        onClick={(event) => event.stopPropagation()}
+      />
+      <span>{formal ? '正式' : '潛在'}</span>
+    </label>
+  )
+}
+
 function SupplyToggle({
   supplied,
   onToggle,
@@ -669,6 +781,110 @@ function SupplyToggle({
   )
 }
 
+function RecommendationCompact({
+  recommendation,
+}: {
+  recommendation: CustomerRecipeRecommendations['allowComputed']
+}) {
+  if (!recommendation) return null
+
+  const sources = new Set(
+    recommendation.candidates.map(({ candidate }) => candidate.source),
+  )
+  const sourceLabel =
+    sources.size > 1
+      ? '實測／預測'
+      : sources.has('computed')
+        ? '預測'
+        : '實測'
+  const recipeLabel =
+    recommendation.candidates.length === 1
+      ? recommendation.candidates[0].candidate.name
+      : `${recommendation.candidates.length} 種同價最低`
+
+  return (
+    <span className="recommendation-compact">
+      最低成本：{recipeLabel} · {recommendation.batchIngredientCost}/批 ·{' '}
+      {sourceLabel}
+    </span>
+  )
+}
+
+function RecommendationDetails({
+  formal,
+  recommendations,
+}: {
+  formal: boolean
+  recommendations: CustomerRecipeRecommendations
+}) {
+  const title = formal ? '最低成本完全匹配' : '最低成本試喝建議'
+
+  return (
+    <div className="recommendation-box">
+      <div className="section-title">
+        <strong>{title}</strong>
+      </div>
+      <RecommendationLine
+        label="已實測最低成本"
+        recommendation={recommendations.observedOnly}
+      />
+      <RecommendationLine
+        label="含預測最低成本"
+        recommendation={recommendations.allowComputed}
+      />
+    </div>
+  )
+}
+
+function RecommendationLine({
+  label,
+  recommendation,
+}: {
+  label: string
+  recommendation: CustomerRecipeRecommendations['observedOnly']
+}) {
+  if (!recommendation) {
+    return (
+      <div className="recommendation-line">
+        <span>{label}</span>
+        <span className="muted">目前沒有可靠 full match</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="recommendation-line">
+      <span>{label}</span>
+      <div>
+        <strong>
+          {recommendation.candidates
+            .map(({ candidate }) => candidate.name)
+            .join('、')}
+        </strong>
+        <small>
+          {recommendation.batchIngredientCost} / 批 ·{' '}
+          {formatCost(recommendation.unitIngredientCost)} / 杯
+        </small>
+      </div>
+    </div>
+  )
+}
+
+function formatCost(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1)
+}
+
+function formatRecipeCost(cost: RecipeIngredientCost): string {
+  if (
+    cost.batchIngredientCost === null ||
+    cost.unitIngredientCost === null
+  ) {
+    return '未知'
+  }
+
+  return `${cost.batchIngredientCost}/批 · ${formatCost(cost.unitIngredientCost)}/杯`
+}
+
 function RecipeRow({
   recipe,
   currentProgress,
@@ -678,6 +894,7 @@ function RecipeRow({
   currentProgress: ProgressMilestoneId
   satisfactionByVillage: SatisfactionByVillage
 }) {
+  const cost = calculateRecipeIngredientCost(recipe)
   const matchingCustomers = customers
     .filter((customer) =>
       customerIsUnlocked(customer, currentProgress, satisfactionByVillage),
@@ -706,6 +923,8 @@ function RecipeRow({
           )}
         </div>
 
+        <div className="cost-cell">{formatRecipeCost(cost)}</div>
+
         <div className="price-cell align-end">
           {recipe.salePrice === null ? '未知' : recipe.salePrice}
         </div>
@@ -728,6 +947,10 @@ function RecipeRow({
           />
         )}
         <TagGroup title="所需設備" tags={recipe.equipment} />
+        <div className="detail-line">
+          <span className="detail-label">原料成本</span>
+          <span>{formatRecipeCost(cost)}</span>
+        </div>
 
         <div className="match-list">
           <div className="section-title">
