@@ -33,9 +33,6 @@ export interface Recipe {
   ingredients: string[]
   effects: string[]
   equipment: string[]
-  /** In-game names may be randomized even when the ordered recipe is identical. */
-  gameNameExamples?: string[]
-  gameNameRandom?: boolean
 }
 
 export interface Ingredient {
