@@ -30,11 +30,11 @@ export interface Customer {
 
 export interface Recipe {
   id: string
-  /** Stable planner label. For order-sensitive recipes this is the ingredient sequence. */
+  /** 網站使用的穩定名稱；順序敏感配方會把原料順序寫進名稱。 */
   name: string
   stage: StageId
   salePrice: number
-  /** Order is significant when the game produces different results by seasoning sequence. */
+  /** 原料順序具有語意；不同調味順序可能產生不同特性。 */
   ingredients: string[]
   effects: EffectValue[]
   equipment: string[]
