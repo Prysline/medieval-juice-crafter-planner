@@ -58,8 +58,11 @@ src/
     recipeGenerator.ts # ≤3 原料候選生成、effect 累加、slot 與 cutoff ambiguity
   storage/
     plannerState.ts    # localStorage 讀寫、正式顧客與 legacy migration
+  types.ts             # 共用 domain / data 型別
   App.tsx              # 目前 MVP UI
   styles.css
+  main.tsx             # React 入口
+  **/*.test.ts         # domain / storage regression tests
 ```
 
 PR 2B generator 第一版只處理「1 種果汁基底 + 0～2 種不重複調味材料」。果汁調和器的兩種果汁混合規則尚未確認，因此不在此 generator 自動組合兩個果汁基底。
