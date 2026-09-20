@@ -74,6 +74,7 @@ function App() {
   const [suppliedCustomerIds, setSuppliedCustomerIds] = useState<string[]>(() =>
     readStoredStringArray('mjc-supplied-today'),
   )
+  const [showSuppliedToday, setShowSuppliedToday] = useState(true)
 
   const normalizedQuery = query.trim().toLocaleLowerCase('zh-Hant')
 
@@ -85,6 +86,7 @@ function App() {
         matches: matchingRecipesForCustomer(recipes, customer, stage),
       }))
       .filter(({ unlocked }) => customerVisibility === 'all' || unlocked)
+      .filter(({ customer }) => showSuppliedToday || !suppliedCustomerIds.includes(customer.id))
       .filter(({ customer, matches }) => {
         if (!normalizedQuery) return true
         const haystack = [
@@ -142,6 +144,8 @@ function App() {
     stage,
     satisfaction,
     customerVisibility,
+    showSuppliedToday,
+    suppliedCustomerIds,
     customerSortDirection,
     customerSortKey,
   ])
@@ -312,6 +316,14 @@ function App() {
               onClick={() => setCustomerVisibility('all')}
             >
               全部顧客
+            </button>
+            <button
+              type="button"
+              className={showSuppliedToday ? 'active' : ''}
+              aria-pressed={showSuppliedToday}
+              onClick={() => setShowSuppliedToday((current) => !current)}
+            >
+              {showSuppliedToday ? '隱藏已供應' : '顯示已供應'}
             </button>
             <button
               type="button"
