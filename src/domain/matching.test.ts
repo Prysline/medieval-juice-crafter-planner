@@ -44,10 +44,27 @@ describe('customer recipe matching', () => {
 
     expect(orangeSugarMint?.salePrice).toBe(42)
     expect(orangeMintSugar?.salePrice).toBe(42)
-    expect(orangeSugarMint?.effects).toContain('舒緩腸胃')
-    expect(orangeSugarMint?.effects).not.toContain('補充精力')
-    expect(orangeMintSugar?.effects).toContain('補充精力')
+    expect(orangeSugarMint?.effects.some((effect) => effect.name === '舒緩腸胃')).toBe(true)
+    expect(orangeSugarMint?.effects.some((effect) => effect.name === '補充精力')).toBe(false)
+    expect(orangeMintSugar?.effects.some((effect) => effect.name === '補充精力')).toBe(true)
     expect(lemonSugarMint?.name).toBe('甜味（檸檬 → 糖 → 薄荷）')
+  })
+
+  it('records repeated seasoning effect totals from observed recipes', () => {
+    const fourIngredient = recipes.find(
+      (recipe) => recipe.id === 'orange-sugar-mint-sugar',
+    )
+    const sixIngredient = recipes.find(
+      (recipe) => recipe.id === 'orange-sugar-mint-sugar-mint-mint',
+    )
+
+    expect(fourIngredient?.effects).toEqual([
+      { name: '甜味', value: 10 },
+      { name: '補充精力', value: 6 },
+      { name: '清新口氣', value: 4 },
+      { name: '增強免疫', value: 4 },
+    ])
+    expect(sixIngredient?.effects).toContainEqual({ name: '芳香', value: 7 })
   })
 
   it('does not expose stage-two recipes at stage one', () => {
