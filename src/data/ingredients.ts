@@ -4,7 +4,7 @@ export const ingredients: Ingredient[] = [
   {
     id: 'lemon',
     name: '檸檬',
-    stage: 1,
+    unlockedAt: 'opening',
     buyPrice: 9,
     seller: '檸檬商人',
     effects: [
@@ -17,7 +17,7 @@ export const ingredients: Ingredient[] = [
   {
     id: 'orange',
     name: '橙子',
-    stage: 1,
+    unlockedAt: 'opening',
     buyPrice: 11,
     seller: '蔬果商',
     effects: [
@@ -31,7 +31,7 @@ export const ingredients: Ingredient[] = [
   {
     id: 'mint',
     name: '薄荷',
-    stage: 2,
+    unlockedAt: 'seasoner-unlocked',
     buyPrice: 14,
     seller: '薄荷商人',
     effects: [
@@ -45,7 +45,7 @@ export const ingredients: Ingredient[] = [
   {
     id: 'sugar',
     name: '糖',
-    stage: 2,
+    unlockedAt: 'seasoner-unlocked',
     buyPrice: 7,
     seller: '售糖商人',
     effects: [
@@ -56,7 +56,7 @@ export const ingredients: Ingredient[] = [
   {
     id: 'carrot',
     name: '紅蘿蔔',
-    stage: 4,
+    unlockedAt: 'juicer-unlocked',
     buyPrice: 10,
     seller: '蔬果商',
     effects: [
@@ -69,13 +69,41 @@ export const ingredients: Ingredient[] = [
   {
     id: 'pear',
     name: '梨',
-    stage: 4,
+    unlockedAt: 'juicer-unlocked',
     buyPrice: 13,
     seller: '蔬果商',
     effects: [
       { name: '促進消化', value: 4 },
       { name: '保護心臟', value: 3 },
       { name: '輔助瘦身', value: 1 },
+    ],
+  },
+  {
+    id: 'cinnamon',
+    name: '肉桂',
+    unlockedAt: 'tranquil-fountain-unlocked',
+    buyPrice: 16,
+    seller: '香料商人',
+    effects: [
+      { name: '調節血糖', value: 4 },
+      { name: '輔助瘦身', value: 2 },
+      { name: '保護心臟', value: 1 },
+      { name: '芳香', value: 1 },
+      { name: '改善記憶', value: 1 },
+    ],
+  },
+  {
+    id: 'banana',
+    name: '香蕉',
+    unlockedAt: 'tranquil-fountain-unlocked',
+    buyPrice: 15,
+    seller: '蔬果商',
+    effects: [
+      { name: '補充精力', value: 4 },
+      { name: '紓解壓力', value: 3 },
+      { name: '愉悅心情', value: 2 },
+      { name: '甜味', value: 1 },
+      { name: '促進消化', value: 1 },
     ],
   },
 ]

@@ -26,17 +26,23 @@ export const stages: StageDefinition[] = [
   {
     id: 4,
     label: '階段四',
-    summary: '東港村滿意度 220、正式顧客 17 人以上後寄信；隔天回信解鎖榨汁機、紅蘿蔔與梨。',
+    summary: '爺爺回信解鎖榨汁機、紅蘿蔔與梨；後半主線必須再解鎖靜謐噴泉。',
     unlockRequirement: {
       villageId: 'east-harbor',
       satisfactionRequired: 220,
       formalCustomersRequired: 17,
       action: '寄信給爺爺',
-      timing: '隔天收信後解鎖',
+      timing: '隔天收信後解鎖榨汁機',
     },
     progressionNotes: [
       '階段四任務：讓德里克（領主）成為顧客。',
       '完成後支付 300 金幣，解鎖新地區「靜謐噴泉」。',
+      '靜謐噴泉解鎖後才可寄下一封信給爺爺。',
     ],
+  },
+  {
+    id: 5,
+    label: '階段五',
+    summary: '靜謐噴泉解鎖後寄下一封信；隔天回信解鎖果汁調和器。',
   },
 ]

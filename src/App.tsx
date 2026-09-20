@@ -1,17 +1,41 @@
 import { useMemo, useState } from 'react'
 import { customers } from './data/customers'
+import { progressMilestoneLabels, progressMilestones } from './data/progress'
 import { recipes } from './data/recipes'
-import { stages } from './data/stages'
+import { villageNames } from './data/villages'
 import {
   customerIsUnlocked,
+  customerVillageIsAvailable,
+  villageIsAvailable,
+} from './domain/availability'
+import {
+  filterSuppliedCustomerRows,
+  sortCustomerRows,
+  type CustomerSortKey,
+  type SortDirection,
+} from './domain/customerList'
+import {
+  availableRecipes,
   matchingRecipesForCustomer,
   recipeMatchesCustomer,
 } from './domain/matching'
-import type { Customer, EffectValue, Recipe, StageId } from './types'
+import {
+  readCurrentProgress,
+  readSatisfactionByVillage,
+  STORAGE_KEYS,
+  writeCurrentProgress,
+  writeSatisfactionByVillage,
+} from './storage/plannerState'
+import type {
+  Customer,
+  EffectValue,
+  ProgressMilestoneId,
+  Recipe,
+  SatisfactionByVillage,
+  VillageId,
+} from './types'
 
 type Tab = 'customers' | 'recipes'
-type SortDirection = 'asc' | 'desc'
-type CustomerSortKey = 'name' | 'bestMatch' | 'bestPrice'
 type RecipeSortKey = 'name' | 'salePrice'
 type CustomerVisibility = 'available' | 'all'
 
@@ -22,17 +46,6 @@ const scheduleLabels = {
 } as const
 
 const recipeOrder = new Map(recipes.map((recipe, index) => [recipe.id, index]))
-
-const villageNames: Record<Customer['villageId'], string> = {
-  'east-harbor': '東港村',
-}
-
-function readStoredNumber(key: string, fallback: number) {
-  const raw = window.localStorage.getItem(key)
-  if (raw === null) return fallback
-  const value = Number(raw)
-  return Number.isFinite(value) ? value : fallback
-}
 
 function readStoredStringArray(key: string): string[] {
   const raw = window.localStorage.getItem(key)
@@ -53,15 +66,13 @@ function formatEffect(effect: EffectValue) {
 }
 
 function App() {
-  const [stage, setStage] = useState<StageId>(() => {
-    const stored = readStoredNumber('mjc-stage', 2)
-    return stored === 1 || stored === 2 || stored === 3 || stored === 4
-      ? stored
-      : 2
-  })
-  const [satisfaction, setSatisfaction] = useState(() =>
-    readStoredNumber('mjc-satisfaction', 0),
+  const [currentProgress, setCurrentProgress] = useState<ProgressMilestoneId>(() =>
+    readCurrentProgress(window.localStorage),
   )
+  const [satisfactionByVillage, setSatisfactionByVillage] =
+    useState<SatisfactionByVillage>(() =>
+      readSatisfactionByVillage(window.localStorage),
+    )
   const [query, setQuery] = useState('')
   const [tab, setTab] = useState<Tab>('customers')
   const [customerSortKey, setCustomerSortKey] =
@@ -74,77 +85,63 @@ function App() {
   const [recipeSortDirection, setRecipeSortDirection] =
     useState<SortDirection>('desc')
   const [suppliedCustomerIds, setSuppliedCustomerIds] = useState<string[]>(() =>
-    readStoredStringArray('mjc-supplied-today'),
+    readStoredStringArray(STORAGE_KEYS.suppliedToday),
   )
   const [showSuppliedToday, setShowSuppliedToday] = useState(true)
 
   const normalizedQuery = query.trim().toLocaleLowerCase('zh-Hant')
+  const tranquilFountainAvailable = villageIsAvailable(
+    'tranquil-fountain',
+    currentProgress,
+  )
 
   const customerRows = useMemo(() => {
     const rows = customers
+      .filter((customer) => customerVillageIsAvailable(customer, currentProgress))
       .map((customer) => ({
         customer,
-        unlocked: customerIsUnlocked(customer, satisfaction),
-        matches: matchingRecipesForCustomer(recipes, customer, stage),
+        unlocked: customerIsUnlocked(
+          customer,
+          currentProgress,
+          satisfactionByVillage,
+        ),
+        matches: matchingRecipesForCustomer(
+          recipes,
+          customer,
+          currentProgress,
+        ),
       }))
       .filter(({ unlocked }) => customerVisibility === 'all' || unlocked)
-      .filter(({ customer }) => showSuppliedToday || !suppliedCustomerIds.includes(customer.id))
-      .filter(({ customer, matches }) => {
-        if (!normalizedQuery) return true
-        const haystack = [
-          customer.name,
-          customer.occupation,
-          ...customer.preferences.map((preference) => preference.value),
-          ...matches.map((recipe) => recipe.name),
-        ]
-          .join(' ')
-          .toLocaleLowerCase('zh-Hant')
-        return haystack.includes(normalizedQuery)
-      })
 
-    const direction = customerSortDirection === 'asc' ? 1 : -1
+    const suppliedFilteredRows = filterSuppliedCustomerRows(
+      rows,
+      suppliedCustomerIds,
+      showSuppliedToday,
+    )
 
-    return rows.sort((a, b) => {
-      const aBest = a.matches[0]
-      const bBest = b.matches[0]
-
-      if (customerSortKey === 'bestMatch') {
-        if (!aBest && !bBest) {
-          return a.customer.name.localeCompare(b.customer.name, 'zh-Hant')
-        }
-        if (!aBest) return 1
-        if (!bBest) return -1
-
-        const orderDelta =
-          (recipeOrder.get(aBest.id) ?? Number.MAX_SAFE_INTEGER) -
-          (recipeOrder.get(bBest.id) ?? Number.MAX_SAFE_INTEGER)
-
-        return (
-          orderDelta * direction ||
-          a.customer.name.localeCompare(b.customer.name, 'zh-Hant')
-        )
-      }
-
-      if (customerSortKey === 'bestPrice') {
-        if (!aBest && !bBest) {
-          return a.customer.name.localeCompare(b.customer.name, 'zh-Hant')
-        }
-        if (!aBest) return 1
-        if (!bBest) return -1
-
-        return (
-          (aBest.salePrice - bBest.salePrice) * direction ||
-          (recipeOrder.get(aBest.id) ?? 0) - (recipeOrder.get(bBest.id) ?? 0) ||
-          a.customer.name.localeCompare(b.customer.name, 'zh-Hant')
-        )
-      }
-
-      return a.customer.name.localeCompare(b.customer.name, 'zh-Hant') * direction
+    const searchedRows = suppliedFilteredRows.filter(({ customer, matches }) => {
+      if (!normalizedQuery) return true
+      const haystack = [
+        customer.name,
+        customer.occupation,
+        ...(customer.preferences ?? []).map((preference) => preference.value),
+        ...matches.map((recipe) => recipe.name),
+      ]
+        .join(' ')
+        .toLocaleLowerCase('zh-Hant')
+      return haystack.includes(normalizedQuery)
     })
+
+    return sortCustomerRows(
+      searchedRows,
+      customerSortKey,
+      customerSortDirection,
+      recipeOrder,
+    )
   }, [
     normalizedQuery,
-    stage,
-    satisfaction,
+    currentProgress,
+    satisfactionByVillage,
     customerVisibility,
     showSuppliedToday,
     suppliedCustomerIds,
@@ -153,8 +150,7 @@ function App() {
   ])
 
   const recipeRows = useMemo(() => {
-    const rows = recipes
-      .filter((recipe) => recipe.stage <= stage)
+    const rows = availableRecipes(recipes, currentProgress)
       .filter((recipe) => {
         if (!normalizedQuery) return true
         return [
@@ -182,20 +178,26 @@ function App() {
     })
   }, [
     normalizedQuery,
-    stage,
+    currentProgress,
     recipeSortDirection,
     recipeSortKey,
   ])
 
-  function updateStage(value: StageId) {
-    setStage(value)
-    window.localStorage.setItem('mjc-stage', String(value))
+  function updateProgress(value: ProgressMilestoneId) {
+    setCurrentProgress(value)
+    writeCurrentProgress(window.localStorage, value)
   }
 
-  function updateSatisfaction(value: number) {
-    const next = Math.max(0, Math.floor(value || 0))
-    setSatisfaction(next)
-    window.localStorage.setItem('mjc-satisfaction', String(next))
+  function updateSatisfaction(villageId: VillageId, value: number) {
+    const normalized = Math.max(0, Math.floor(value || 0))
+    setSatisfactionByVillage((current) => {
+      const next = {
+        ...current,
+        [villageId]: normalized,
+      }
+      writeSatisfactionByVillage(window.localStorage, next)
+      return next
+    })
   }
 
   function toggleCustomerSort(key: CustomerSortKey) {
@@ -224,14 +226,14 @@ function App() {
         ? current.filter((id) => id !== customerId)
         : [...current, customerId]
 
-      window.localStorage.setItem('mjc-supplied-today', JSON.stringify(next))
+      window.localStorage.setItem(STORAGE_KEYS.suppliedToday, JSON.stringify(next))
       return next
     })
   }
 
   function resetSuppliedToday() {
     setSuppliedCustomerIds([])
-    window.localStorage.removeItem('mjc-supplied-today')
+    window.localStorage.removeItem(STORAGE_KEYS.suppliedToday)
   }
 
   return (
@@ -244,12 +246,14 @@ function App() {
 
       <section className="progress-panel" aria-label="目前進度">
         <label>
-          <span>目前階段</span>
+          <span>目前主線進度</span>
           <select
-            value={stage}
-            onChange={(event) => updateStage(Number(event.target.value) as StageId)}
+            value={currentProgress}
+            onChange={(event) =>
+              updateProgress(event.target.value as ProgressMilestoneId)
+            }
           >
-            {stages.map((item) => (
+            {progressMilestones.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.label}
               </option>
@@ -263,10 +267,30 @@ function App() {
             inputMode="numeric"
             min={0}
             type="number"
-            value={satisfaction}
-            onChange={(event) => updateSatisfaction(Number(event.target.value))}
+            value={satisfactionByVillage['east-harbor']}
+            onChange={(event) =>
+              updateSatisfaction('east-harbor', Number(event.target.value))
+            }
           />
         </label>
+
+        {tranquilFountainAvailable && (
+          <label>
+            <span>靜謐噴泉顧客滿意度</span>
+            <input
+              inputMode="numeric"
+              min={0}
+              type="number"
+              value={satisfactionByVillage['tranquil-fountain']}
+              onChange={(event) =>
+                updateSatisfaction(
+                  'tranquil-fountain',
+                  Number(event.target.value),
+                )
+              }
+            />
+          </label>
+        )}
       </section>
 
       <section className="search-panel">
@@ -336,7 +360,10 @@ function App() {
               重置今日供應
             </button>
             <span>
-              今日已供應 {suppliedCustomerIds.length} 人 · 東港村滿意度 {satisfaction}
+              今日已供應 {suppliedCustomerIds.length} 人 · 東港村滿意度{' '}
+              {satisfactionByVillage['east-harbor']}
+              {tranquilFountainAvailable &&
+                ` · 靜謐噴泉滿意度 ${satisfactionByVillage['tranquil-fountain']}`}
             </span>
           </div>
 
@@ -400,13 +427,18 @@ function App() {
           </div>
 
           {recipeRows.map((recipe) => (
-            <RecipeRow key={recipe.id} recipe={recipe} satisfaction={satisfaction} />
+            <RecipeRow
+              key={recipe.id}
+              recipe={recipe}
+              currentProgress={currentProgress}
+              satisfactionByVillage={satisfactionByVillage}
+            />
           ))}
         </section>
       )}
 
       <footer>
-        目前進度資料已記錄至東港村階段四；未確認配方／規則不自動推導。
+        Runtime 依主線進度與地區控制資料可用性；未確認配方／規則不自動推導。
       </footer>
     </main>
   )
@@ -456,6 +488,7 @@ function CustomerRow({
   onToggleSupplied: () => void
 }) {
   const bestMatch = matches[0]
+  const preferencesKnown = customer.preferences !== null
 
   const rowClassName = [
     'table-row',
@@ -496,11 +529,19 @@ function CustomerRow({
         </div>
 
         <div className="preferences-cell">
-          {customer.preferences.map((preference) => preference.value).join('・')}
+          {customer.preferences
+            ? customer.preferences.map((preference) => preference.value).join('・')
+            : <span className="muted">未知（？）</span>}
         </div>
 
         <div className="best-match-cell">
-          {bestMatch ? bestMatch.name : <span className="muted">無完全匹配</span>}
+          {!preferencesKnown ? (
+            <span className="muted">喜好未知</span>
+          ) : bestMatch ? (
+            bestMatch.name
+          ) : (
+            <span className="muted">無完全匹配</span>
+          )}
         </div>
 
         <div className="price-cell align-end">
@@ -530,17 +571,26 @@ function CustomerRow({
           </div>
         )}
 
-        <TagGroup
-          title="喜好"
-          tags={customer.preferences.map((preference) => preference.value)}
-        />
+        {customer.preferences ? (
+          <TagGroup
+            title="喜好"
+            tags={customer.preferences.map((preference) => preference.value)}
+          />
+        ) : (
+          <div className="detail-line">
+            <span className="detail-label">喜好</span>
+            <span>未知（？）</span>
+          </div>
+        )}
 
         <div className="match-list">
           <div className="section-title">
             <strong>完全滿足配方</strong>
-            <span>{matches.length} 種</span>
+            <span>{preferencesKnown ? `${matches.length} 種` : '待確認'}</span>
           </div>
-          {matches.length > 0 ? (
+          {!preferencesKnown ? (
+            <p className="muted">喜好尚未確認，無法判斷完全匹配配方。</p>
+          ) : matches.length > 0 ? (
             <ol>
               {matches.map((recipe) => (
                 <li key={recipe.id}>
@@ -550,7 +600,7 @@ function CustomerRow({
               ))}
             </ol>
           ) : (
-            <p className="muted">目前階段沒有能完全滿足所有喜好的已知配方。</p>
+            <p className="muted">目前主線進度沒有能完全滿足所有喜好的已知配方。</p>
           )}
         </div>
 
@@ -595,13 +645,17 @@ function SupplyToggle({
 
 function RecipeRow({
   recipe,
-  satisfaction,
+  currentProgress,
+  satisfactionByVillage,
 }: {
   recipe: Recipe
-  satisfaction: number
+  currentProgress: ProgressMilestoneId
+  satisfactionByVillage: SatisfactionByVillage
 }) {
   const matchingCustomers = customers
-    .filter((customer) => customerIsUnlocked(customer, satisfaction))
+    .filter((customer) =>
+      customerIsUnlocked(customer, currentProgress, satisfactionByVillage),
+    )
     .filter((customer) => recipeMatchesCustomer(recipe, customer))
 
   return (
@@ -609,7 +663,9 @@ function RecipeRow({
       <summary className="recipe-columns">
         <div className="primary-cell">
           <strong>{recipe.name}</strong>
-          <span className="cell-secondary">階段 {recipe.stage}</span>
+          <span className="cell-secondary">
+            {progressMilestoneLabels[recipe.unlockedAt]}
+          </span>
         </div>
 
         <div>{recipe.ingredients.join(' → ')}</div>
@@ -634,7 +690,7 @@ function RecipeRow({
               ? matchingCustomers
                   .map((customer) => `${customer.name}(${customer.occupation})`)
                   .join('、')
-              : '目前滿意度下沒有能完全滿足的已知顧客。'}
+              : '目前進度與滿意度下沒有能完全滿足的已知顧客。'}
           </p>
         </div>
       </div>

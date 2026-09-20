@@ -4,7 +4,7 @@ export const equipment: Equipment[] = [
   {
     id: 'citrus-juicer',
     name: '柑橘榨汁機',
-    stage: 1,
+    unlockedAt: 'opening',
     buyPrice: 300,
     seller: '木匠',
     note: '橙子或檸檬 1:1 製成果汁原汁。',
@@ -12,7 +12,7 @@ export const equipment: Equipment[] = [
   {
     id: 'finished-juice-station',
     name: '果汁成品台',
-    stage: 1,
+    unlockedAt: 'opening',
     buyPrice: 500,
     seller: '木匠',
     note: '果汁原汁 ×1 + 水 ×1 → 成品 ×2。',
@@ -20,7 +20,7 @@ export const equipment: Equipment[] = [
   {
     id: 'tragic-washing-station',
     name: '悲劇清洗台',
-    stage: 1,
+    unlockedAt: 'opening',
     buyPrice: 300,
     seller: '木匠',
     note: '用過的悲劇 ×1 + 水 ×1 → 乾淨悲劇 ×1。',
@@ -28,7 +28,7 @@ export const equipment: Equipment[] = [
   {
     id: 'seasoner',
     name: '調味器',
-    stage: 2,
+    unlockedAt: 'seasoner-unlocked',
     buyPrice: 300,
     seller: '木匠',
     note: '主線寄信給爺爺後睡一覺，隔天收到回信解鎖。',
@@ -36,7 +36,7 @@ export const equipment: Equipment[] = [
   {
     id: 'juice-jar',
     name: '果汁罐',
-    stage: 3,
+    unlockedAt: 'juice-jar-unlocked',
     buyPrice: 300,
     seller: '錫匠',
     note: '東港村滿意度 120、正式顧客 14 人以上後寄信給爺爺；隔天收信後解鎖購買。',
@@ -44,9 +44,17 @@ export const equipment: Equipment[] = [
   {
     id: 'juicer',
     name: '榨汁機',
-    stage: 4,
+    unlockedAt: 'juicer-unlocked',
     buyPrice: 400,
     seller: '木匠',
     note: '東港村滿意度 220、正式顧客 17 人以上後寄信給爺爺；隔天收信後解鎖。',
+  },
+  {
+    id: 'juice-blender',
+    name: '果汁調和器',
+    unlockedAt: 'juice-blender-unlocked',
+    buyPrice: 500,
+    seller: '木匠',
+    note: '靜謐噴泉解鎖後寄信給爺爺；隔天收到回信後解鎖，可把兩種果汁調和在一起。',
   },
 ]

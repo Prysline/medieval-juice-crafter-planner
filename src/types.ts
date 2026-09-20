@@ -1,4 +1,16 @@
-export type StageId = 1 | 2 | 3 | 4
+export type StageId = 1 | 2 | 3 | 4 | 5
+
+export type ProgressMilestoneId =
+  | 'opening'
+  | 'seasoner-unlocked'
+  | 'juice-jar-unlocked'
+  | 'juicer-unlocked'
+  | 'tranquil-fountain-unlocked'
+  | 'juice-blender-unlocked'
+
+export type VillageId = 'east-harbor' | 'tranquil-fountain'
+
+export type SatisfactionByVillage = Record<VillageId, number>
 
 export type PreferenceKind = 'ingredient' | 'effect'
 
@@ -22,9 +34,10 @@ export interface Customer {
   id: string
   name: string
   occupation: string
-  villageId: 'east-harbor'
+  villageId: VillageId
   satisfactionRequired: number
-  preferences: Preference[]
+  /** null 代表遊戲目前仍顯示「？」；不可解讀成沒有喜好。 */
+  preferences: Preference[] | null
   schedule?: ScheduleObservation[]
 }
 
@@ -32,7 +45,7 @@ export interface Recipe {
   id: string
   /** 網站使用的穩定名稱；順序敏感配方會把原料順序寫進名稱。 */
   name: string
-  stage: StageId
+  unlockedAt: ProgressMilestoneId
   salePrice: number
   /** 原料順序具有語意；不同調味順序可能產生不同特性。 */
   ingredients: string[]
@@ -43,7 +56,7 @@ export interface Recipe {
 export interface Ingredient {
   id: string
   name: string
-  stage: StageId
+  unlockedAt: ProgressMilestoneId
   buyPrice: number
   effects: EffectValue[]
   seller: string
@@ -52,14 +65,39 @@ export interface Ingredient {
 export interface Equipment {
   id: string
   name: string
-  stage: StageId
+  unlockedAt: ProgressMilestoneId
   buyPrice?: number
   seller?: string
   note?: string
 }
 
+export interface ShopInventoryEntry {
+  ingredientId: Ingredient['id']
+  buyPrice: number
+}
+
+export interface ShopDefinition {
+  id: string
+  name: string
+  villageId: VillageId
+  unlockedAt: ProgressMilestoneId
+  inventory: ShopInventoryEntry[]
+}
+
+export interface ProgressMilestoneDefinition {
+  id: ProgressMilestoneId
+  label: string
+  summary: string
+}
+
+export interface VillageDefinition {
+  id: VillageId
+  name: string
+  unlockedAt: ProgressMilestoneId
+}
+
 export interface StageUnlockRequirement {
-  villageId: 'east-harbor'
+  villageId: VillageId
   satisfactionRequired?: number
   formalCustomersRequired?: number
   action?: string

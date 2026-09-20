@@ -10,7 +10,7 @@ export const recipes: Recipe[] = [
   {
     id: 'lemon-juice',
     name: '檸檬汁',
-    stage: 1,
+    unlockedAt: 'opening',
     salePrice: 9,
     ingredients: ['檸檬'],
     effects: [
@@ -22,7 +22,7 @@ export const recipes: Recipe[] = [
   {
     id: 'orange-juice',
     name: '橙汁',
-    stage: 1,
+    unlockedAt: 'opening',
     salePrice: 11,
     ingredients: ['橙子'],
     effects: [
@@ -34,7 +34,7 @@ export const recipes: Recipe[] = [
   {
     id: 'orange-sugar',
     name: '橙子 - 糖（調製飲品）',
-    stage: 2,
+    unlockedAt: 'seasoner-unlocked',
     salePrice: 22,
     ingredients: ['橙子', '糖'],
     effects: [
@@ -47,7 +47,7 @@ export const recipes: Recipe[] = [
   {
     id: 'lemon-mint',
     name: '檸檬 - 薄荷（調製飲品）',
-    stage: 2,
+    unlockedAt: 'seasoner-unlocked',
     salePrice: 28,
     ingredients: ['檸檬', '薄荷'],
     effects: [
@@ -60,7 +60,7 @@ export const recipes: Recipe[] = [
   {
     id: 'orange-mint',
     name: '橙子 - 薄荷（調製飲品）',
-    stage: 2,
+    unlockedAt: 'seasoner-unlocked',
     salePrice: 30,
     ingredients: ['橙子', '薄荷'],
     effects: [
@@ -73,7 +73,7 @@ export const recipes: Recipe[] = [
   {
     id: 'lemon-sugar',
     name: '檸檬 - 糖（調製飲品）',
-    stage: 2,
+    unlockedAt: 'seasoner-unlocked',
     salePrice: 19,
     ingredients: ['檸檬', '糖'],
     effects: [
@@ -86,7 +86,7 @@ export const recipes: Recipe[] = [
   {
     id: 'orange-sugar-mint',
     name: '甜味（橙子 → 糖 → 薄荷）',
-    stage: 2,
+    unlockedAt: 'seasoner-unlocked',
     salePrice: 42,
     ingredients: ['橙子', '糖', '薄荷'],
     effects: [
@@ -100,7 +100,7 @@ export const recipes: Recipe[] = [
   {
     id: 'orange-mint-sugar',
     name: '甜味（橙子 → 薄荷 → 糖）',
-    stage: 2,
+    unlockedAt: 'seasoner-unlocked',
     salePrice: 42,
     ingredients: ['橙子', '薄荷', '糖'],
     effects: [
@@ -114,7 +114,7 @@ export const recipes: Recipe[] = [
   {
     id: 'lemon-sugar-mint',
     name: '甜味（檸檬 → 糖 → 薄荷）',
-    stage: 2,
+    unlockedAt: 'seasoner-unlocked',
     salePrice: 39,
     ingredients: ['檸檬', '糖', '薄荷'],
     effects: [
@@ -128,7 +128,7 @@ export const recipes: Recipe[] = [
   {
     id: 'lemon-mint-sugar',
     name: '甜味（檸檬 → 薄荷 → 糖）',
-    stage: 2,
+    unlockedAt: 'seasoner-unlocked',
     salePrice: 39,
     ingredients: ['檸檬', '薄荷', '糖'],
     effects: [
@@ -142,7 +142,7 @@ export const recipes: Recipe[] = [
   {
     id: 'pear-juice',
     name: '梨汁',
-    stage: 4,
+    unlockedAt: 'juicer-unlocked',
     salePrice: 13,
     ingredients: ['梨'],
     effects: [
@@ -154,7 +154,7 @@ export const recipes: Recipe[] = [
   {
     id: 'carrot-juice',
     name: '紅蘿蔔汁',
-    stage: 4,
+    unlockedAt: 'juicer-unlocked',
     salePrice: 10,
     ingredients: ['紅蘿蔔'],
     effects: [
@@ -166,7 +166,7 @@ export const recipes: Recipe[] = [
   {
     id: 'pear-sugar',
     name: '梨 - 糖（調製飲品）',
-    stage: 4,
+    unlockedAt: 'juicer-unlocked',
     salePrice: 24,
     ingredients: ['梨', '糖'],
     effects: [
@@ -179,7 +179,7 @@ export const recipes: Recipe[] = [
   {
     id: 'pear-mint',
     name: '梨 - 薄荷（調製飲品）',
-    stage: 4,
+    unlockedAt: 'juicer-unlocked',
     salePrice: 32,
     ingredients: ['梨', '薄荷'],
     effects: [
@@ -192,7 +192,7 @@ export const recipes: Recipe[] = [
   {
     id: 'carrot-sugar',
     name: '紅蘿蔔 - 糖（調製飲品）',
-    stage: 4,
+    unlockedAt: 'juicer-unlocked',
     salePrice: 20,
     ingredients: ['紅蘿蔔', '糖'],
     effects: [
@@ -205,7 +205,7 @@ export const recipes: Recipe[] = [
   {
     id: 'carrot-mint',
     name: '紅蘿蔔 - 薄荷（調製飲品）',
-    stage: 4,
+    unlockedAt: 'juicer-unlocked',
     salePrice: 29,
     ingredients: ['紅蘿蔔', '薄荷'],
     effects: [
@@ -218,7 +218,7 @@ export const recipes: Recipe[] = [
   {
     id: 'pear-mint-sugar',
     name: '甜味（梨 → 薄荷 → 糖）',
-    stage: 4,
+    unlockedAt: 'juicer-unlocked',
     salePrice: 44,
     ingredients: ['梨', '薄荷', '糖'],
     effects: [
@@ -232,7 +232,7 @@ export const recipes: Recipe[] = [
   {
     id: 'pear-sugar-mint',
     name: '甜味（梨 → 糖 → 薄荷）',
-    stage: 4,
+    unlockedAt: 'juicer-unlocked',
     salePrice: 44,
     ingredients: ['梨', '糖', '薄荷'],
     effects: [
@@ -246,7 +246,7 @@ export const recipes: Recipe[] = [
   {
     id: 'carrot-sugar-mint',
     name: '甜味（紅蘿蔔 → 糖 → 薄荷）',
-    stage: 4,
+    unlockedAt: 'juicer-unlocked',
     salePrice: 40,
     ingredients: ['紅蘿蔔', '糖', '薄荷'],
     effects: [
@@ -260,7 +260,7 @@ export const recipes: Recipe[] = [
   {
     id: 'carrot-mint-sugar',
     name: '甜味（紅蘿蔔 → 薄荷 → 糖）',
-    stage: 4,
+    unlockedAt: 'juicer-unlocked',
     salePrice: 40,
     ingredients: ['紅蘿蔔', '薄荷', '糖'],
     effects: [
