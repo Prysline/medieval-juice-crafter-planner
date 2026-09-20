@@ -25,12 +25,17 @@ export interface Customer {
 
 export interface Recipe {
   id: string
+  /** Stable planner label. For order-sensitive recipes this is the ingredient sequence. */
   name: string
   stage: StageId
   salePrice: number
+  /** Order is significant when the game produces different results by seasoning sequence. */
   ingredients: string[]
   effects: string[]
   equipment: string[]
+  /** In-game names may be randomized even when the ordered recipe is identical. */
+  gameNameExamples?: string[]
+  gameNameRandom?: boolean
 }
 
 export interface Ingredient {
