@@ -47,7 +47,7 @@ describe('customer recipe matching', () => {
     expect(orangeSugarMint?.effects).toContain('舒緩腸胃')
     expect(orangeSugarMint?.effects).not.toContain('補充精力')
     expect(orangeMintSugar?.effects).toContain('補充精力')
-    expect(lemonSugarMint?.gameNameExamples).toEqual(['甜味 勇氣', '甜味 輕吻'])
+    expect(lemonSugarMint?.name).toBe('甜味（檸檬 → 糖 → 薄荷）')
   })
 
   it('does not expose stage-two recipes at stage one', () => {
