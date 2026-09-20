@@ -7,7 +7,7 @@ function preferenceMatchesRecipe(recipe: Recipe, preference: Preference): boolea
     return recipe.ingredients.includes(preference.value)
   }
 
-  return recipe.effects.includes(preference.value)
+  return recipe.effects.some((effect) => effect.name === preference.value)
 }
 
 export function recipeMatchLevel(recipe: Recipe, customer: Customer): MatchLevel {
@@ -22,13 +22,6 @@ export function recipeMatchLevel(recipe: Recipe, customer: Customer): MatchLevel
   return 'none'
 }
 
-/**
- * Default acceptance rule.
- *
- * Potential customers require a sample that satisfies every known preference
- * before they become formal customers, so the planner treats only full matches
- * as acceptable by default.
- */
 export function recipeMatchesCustomer(recipe: Recipe, customer: Customer): boolean {
   return recipeMatchLevel(recipe, customer) === 'full'
 }
