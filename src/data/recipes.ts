@@ -140,6 +140,30 @@ export const recipes: Recipe[] = [
     equipment: ['柑橘榨汁機', '調味器', '果汁成品台'],
   },
   {
+    id: 'pear-juice',
+    name: '梨汁',
+    stage: 4,
+    salePrice: 13,
+    ingredients: ['梨'],
+    effects: [
+      { name: '促進消化', value: 4 },
+      { name: '保護心臟', value: 3 },
+    ],
+    equipment: ['榨汁機', '果汁成品台'],
+  },
+  {
+    id: 'carrot-juice',
+    name: '紅蘿蔔汁',
+    stage: 4,
+    salePrice: 10,
+    ingredients: ['紅蘿蔔'],
+    effects: [
+      { name: '改善視力', value: 4 },
+      { name: '調節血糖', value: 3 },
+    ],
+    equipment: ['榨汁機', '果汁成品台'],
+  },
+  {
     id: 'pear-sugar',
     name: '梨 - 糖（調製飲品）',
     stage: 4,
