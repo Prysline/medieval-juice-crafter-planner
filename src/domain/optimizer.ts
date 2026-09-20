@@ -1,7 +1,7 @@
 import { customers as canonicalCustomers } from '../data/customers'
 import { ingredients } from '../data/ingredients'
 import { generateRecipeCandidates } from './recipeGenerator'
-import { javascriptLpSolverAdapter } from './optimizerJavascriptLpSolver'
+import { highsSolverAdapter } from './optimizerHighsSolver'
 import type { BatchOptimizerSolver } from './optimizerSolver'
 import {
   buildOptimizationModel,
@@ -117,20 +117,20 @@ function buildShoppingList(
     .sort((a, b) => a.name.localeCompare(b.name, 'zh-Hant'))
 }
 
-export function optimizeBatchPlan(
+export async function optimizeBatchPlan(
   request: OptimizationRequest,
   options: {
     source?: OptimizationSource
     solver?: BatchOptimizerSolver
   } = {},
-): OptimizationResult {
+): Promise<OptimizationResult> {
   const source = options.source ?? {
     customers: canonicalCustomers,
     candidates: generateRecipeCandidates(request.currentProgress),
   }
   const model = buildOptimizationModel(request, source)
-  const solver = options.solver ?? javascriptLpSolverAdapter
-  const solution = solver.solve(model, request.objective)
+  const solver = options.solver ?? highsSolverAdapter
+  const solution = await solver.solve(model, request.objective)
   const batches = normalizeBatchPlans(
     model,
     solution.assignments,
