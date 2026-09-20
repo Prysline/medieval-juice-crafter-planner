@@ -138,3 +138,48 @@ export interface RecipeCandidate {
   equipment: string[]
   observedRecipeId?: Recipe['id']
 }
+
+
+export interface SavedRecipe {
+  id: string
+  name: string
+  ingredientIds: string[]
+  note?: string
+  createdAt: string
+}
+
+export type RecipeSequenceIssueCode =
+  | 'empty'
+  | 'too-many-ingredients'
+  | 'unknown-ingredient'
+  | 'invalid-base'
+  | 'invalid-seasoning'
+  | 'duplicate-ingredient'
+
+export interface RecipeSequenceIssue {
+  code: RecipeSequenceIssueCode
+  message: string
+  ingredientId?: string
+}
+
+export interface RecipeSequenceEvaluationSuccess {
+  valid: true
+  ingredientIds: string[]
+  candidate: RecipeCandidate
+  cost: {
+    batchIngredientCost: number | null
+    unitIngredientCost: number | null
+    missingIngredients: string[]
+  }
+  availableAtCurrentProgress: boolean
+}
+
+export interface RecipeSequenceEvaluationFailure {
+  valid: false
+  ingredientIds: string[]
+  issues: RecipeSequenceIssue[]
+}
+
+export type RecipeSequenceEvaluation =
+  | RecipeSequenceEvaluationSuccess
+  | RecipeSequenceEvaluationFailure
