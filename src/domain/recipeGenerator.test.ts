@@ -84,8 +84,8 @@ describe('recipe generator', () => {
     expect(lemonMint).toMatchObject({
       source: 'observed',
       salePrice: 28,
-      effectAmbiguity: undefined,
     })
+    expect(lemonMint?.effectAmbiguity).toBeUndefined()
     expect(lemonMint?.effects).toEqual([
       { name: '清新口氣', value: 4 },
       { name: '酸味', value: 4 },
