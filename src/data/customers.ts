@@ -1,0 +1,66 @@
+import type { Customer, Preference } from '../types'
+
+const ingredient = (value: string): Preference => ({ kind: 'ingredient', value })
+const effect = (value: string): Preference => ({ kind: 'effect', value })
+
+export const customers: Customer[] = [
+  { id: 'galiana', name: '加莉安娜', occupation: '麵包師', villageId: 'east-harbor', satisfactionRequired: 0, preferences: [ingredient('橙子'), effect('增強免疫'), effect('煥亮肌膚')] },
+  { id: 'otilde', name: '奧蒂爾德', occupation: '女釀酒師', villageId: 'east-harbor', satisfactionRequired: 0, preferences: [ingredient('橙子')] },
+  { id: 'ulrich', name: '烏爾里希', occupation: '管家', villageId: 'east-harbor', satisfactionRequired: 0, preferences: [effect('增強免疫')] },
+  { id: 'alia', name: '阿莉婭', occupation: '魚販', villageId: 'east-harbor', satisfactionRequired: 0, preferences: [effect('煥亮肌膚'), effect('增強免疫')] },
+  { id: 'leticia', name: '萊蒂西亞', occupation: '孩童', villageId: 'east-harbor', satisfactionRequired: 0, preferences: [effect('酸味')] },
+  { id: 'katrin', name: '卡特琳', occupation: '薄荷商人', villageId: 'east-harbor', satisfactionRequired: 0, preferences: [effect('酸味'), effect('增強免疫')] },
+  { id: 'viviana', name: '維維安娜', occupation: '女僕', villageId: 'east-harbor', satisfactionRequired: 0, preferences: [ingredient('檸檬')] },
+  { id: 'konrad', name: '康拉德', occupation: '漁夫', villageId: 'east-harbor', satisfactionRequired: 0, preferences: [effect('酸味')] },
+  { id: 'maximus', name: '馬克西姆斯', occupation: '錫匠', villageId: 'east-harbor', satisfactionRequired: 0, preferences: [effect('甜味'), effect('補充精力')] },
+  { id: 'lizzy', name: '莉齊', occupation: '售糖商人', villageId: 'east-harbor', satisfactionRequired: 0, preferences: [ingredient('橙子'), ingredient('薄荷')] },
+  { id: 'pierre', name: '皮埃爾', occupation: '旅行者', villageId: 'east-harbor', satisfactionRequired: 0, preferences: [effect('清新口氣'), effect('增強免疫')] },
+  { id: 'barti', name: '巴蒂', occupation: '孩童', villageId: 'east-harbor', satisfactionRequired: 0, preferences: [ingredient('薄荷'), effect('甜味')] },
+  { id: 'fulbertus', name: '富爾貝圖斯', occupation: '麵包師', villageId: 'east-harbor', satisfactionRequired: 0, preferences: [effect('清新口氣')] },
+  { id: 'lizzie', name: '莉姬', occupation: '貴婦', villageId: 'east-harbor', satisfactionRequired: 0, preferences: [effect('甜味'), effect('增強免疫')] },
+  { id: 'thomas', name: '托馬斯', occupation: '漁夫', villageId: 'east-harbor', satisfactionRequired: 0, preferences: [effect('甜味'), effect('舒緩腸胃')] },
+  {
+    id: 'jack',
+    name: '傑克',
+    occupation: '帽匠',
+    villageId: 'east-harbor',
+    satisfactionRequired: 0,
+    preferences: [ingredient('橙子')],
+    schedule: [{ type: 'leave_home', approxTime: '08:10～08:19', note: '離開家門後再走一小段才會實際離村。' }],
+  },
+  { id: 'harry', name: '哈里', occupation: '木匠', villageId: 'east-harbor', satisfactionRequired: 0, preferences: [effect('酸味'), effect('舒緩腸胃'), effect('清新口氣')] },
+  {
+    id: 'nanette',
+    name: '娜內特',
+    occupation: '魚販',
+    villageId: 'east-harbor',
+    satisfactionRequired: 0,
+    preferences: [ingredient('檸檬'), effect('增強免疫')],
+    schedule: [
+      { type: 'leave_home', approxTime: '08:30', note: '離開家門後再走一小段才會實際離村。' },
+      { type: 'return_village', approxTime: '23:10' },
+    ],
+  },
+  { id: 'betsy', name: '貝茜', occupation: '旅店店主', villageId: 'east-harbor', satisfactionRequired: 150, preferences: [effect('酸味'), effect('清新口氣'), effect('補充精力')] },
+  { id: 'zenobia', name: '澤諾比婭', occupation: '孩童', villageId: 'east-harbor', satisfactionRequired: 0, preferences: [ingredient('紅蘿蔔'), ingredient('梨')] },
+  { id: 'yolanda', name: '約蘭達', occupation: '編籃匠', villageId: 'east-harbor', satisfactionRequired: 0, preferences: [ingredient('橙子'), ingredient('檸檬')] },
+  { id: 'christian', name: '克雷斯蒂安', occupation: '貴婦', villageId: 'east-harbor', satisfactionRequired: 0, preferences: [ingredient('梨'), effect('促進消化')] },
+  { id: 'tricus', name: '特里庫斯', occupation: '孩童', villageId: 'east-harbor', satisfactionRequired: 0, preferences: [ingredient('梨'), effect('補充精力')] },
+  { id: 'ralph', name: '拉爾夫', occupation: '旅店侍者', villageId: 'east-harbor', satisfactionRequired: 0, preferences: [ingredient('紅蘿蔔')] },
+  { id: 'william', name: '威廉', occupation: '旅店侍者', villageId: 'east-harbor', satisfactionRequired: 0, preferences: [effect('促進消化'), effect('舒緩腸胃')] },
+  {
+    id: 'ivo',
+    name: '伊沃',
+    occupation: '蔬果商',
+    villageId: 'east-harbor',
+    satisfactionRequired: 120,
+    preferences: [ingredient('香蕉'), effect('改善視力')],
+    schedule: [
+      { type: 'outside_village_by', approxTime: '06:00', note: 'PC 起床時已在村外，出家門時間未知。' },
+      { type: 'return_village', approxTime: '22:00' },
+    ],
+  },
+  { id: 'patricia', name: '帕特里夏', occupation: '貴婦', villageId: 'east-harbor', satisfactionRequired: 200, preferences: [ingredient('橙子'), effect('紓解壓力'), effect('酸味')] },
+  { id: 'derrick', name: '德里克', occupation: '領主', villageId: 'east-harbor', satisfactionRequired: 250, preferences: [effect('清新口氣'), effect('改善視力')] },
+  { id: 'eric', name: '埃里克', occupation: '碼頭總管', villageId: 'east-harbor', satisfactionRequired: 200, preferences: [effect('改善視力'), effect('調節血糖')] },
+]
