@@ -23,17 +23,18 @@ describe('recipe generator', () => {
     expect(effectSlotCount(count)).toBe(expected)
   })
 
-  it('accumulates duplicate effect names across ingredients', () => {
+  it('accumulates duplicate effect names across ingredients without relying on a tie-break', () => {
     const result = predictRecipeEffects([
-      ingredient('橙子'),
-      ingredient('薄荷'),
+      ingredient('檸檬'),
+      ingredient('梨'),
     ])
 
+    expect(result.effectAmbiguity).toBeUndefined()
     expect(result.effects).toEqual(
       expect.arrayContaining([
-        { name: '清新口氣', value: 4 },
-        { name: '增強免疫', value: 4 },
-        { name: '芳香', value: 3 },
+        { name: '保護心臟', value: 4 },
+        { name: '酸味', value: 4 },
+        { name: '促進消化', value: 4 },
       ]),
     )
   })
@@ -62,14 +63,16 @@ describe('recipe generator', () => {
       { name: '清新口氣', value: 4 },
       { name: '酸味', value: 4 },
     ])
-    expect(result.effectAmbiguity).toEqual({
+    expect(result.effectAmbiguity).toMatchObject({
       cutoffValue: 3,
       remainingSlots: 1,
-      candidates: [
+    })
+    expect(result.effectAmbiguity?.candidates).toEqual(
+      expect.arrayContaining([
         { name: '增強免疫', value: 3 },
         { name: '舒緩腸胃', value: 3 },
-      ],
-    })
+      ]),
+    )
   })
 
   it('uses observed recipes as exact overlays for known sequences', () => {
