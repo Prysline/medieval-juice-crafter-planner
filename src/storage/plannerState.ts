@@ -10,6 +10,7 @@ export const STORAGE_KEYS = {
   progress: 'mjc-progress',
   satisfactionByVillage: 'mjc-satisfaction-by-village',
   suppliedToday: 'mjc-supplied-today',
+  formalCustomers: 'mjc-formal-customers',
   legacyStage: 'mjc-stage',
   legacySatisfaction: 'mjc-satisfaction',
 } as const
@@ -111,5 +112,39 @@ export function writeSatisfactionByVillage(
   storage.setItem(
     STORAGE_KEYS.satisfactionByVillage,
     JSON.stringify(satisfactionByVillage),
+  )
+}
+
+
+function readStoredStringArray(
+  storage: StorageLike,
+  key: string,
+): string[] {
+  const raw = storage.getItem(key)
+  if (raw === null) return []
+
+  try {
+    const value = JSON.parse(raw)
+    if (!Array.isArray(value)) return []
+
+    return [...new Set(
+      value.filter((item): item is string => typeof item === 'string'),
+    )]
+  } catch {
+    return []
+  }
+}
+
+export function readFormalCustomerIds(storage: StorageLike): string[] {
+  return readStoredStringArray(storage, STORAGE_KEYS.formalCustomers)
+}
+
+export function writeFormalCustomerIds(
+  storage: StorageLike,
+  customerIds: string[],
+): void {
+  storage.setItem(
+    STORAGE_KEYS.formalCustomers,
+    JSON.stringify([...new Set(customerIds)]),
   )
 }
