@@ -447,17 +447,57 @@ footer {
   }
 
   .table-list {
-    overflow-x: auto;
+    overflow: hidden;
   }
 
-  .table-head,
-  .table-row {
-    min-width: 720px;
+  .customer-columns {
+    grid-template-columns:
+      minmax(78px, 0.9fr)
+      minmax(102px, 1.15fr)
+      minmax(96px, 1.05fr)
+      42px;
+  }
+
+  .recipe-columns {
+    grid-template-columns:
+      minmax(118px, 1.15fr)
+      minmax(110px, 1fr)
+      46px;
+  }
+
+  .recipe-columns > :nth-child(3) {
+    display: none;
   }
 
   .table-head,
   .table-row > summary {
-    gap: 9px;
+    gap: 7px;
+  }
+
+  .table-head {
+    padding-inline: 9px;
+    font-size: 0.7rem;
+  }
+
+  .table-row > summary {
+    padding: 8px 26px 8px 9px;
+  }
+
+  .table-row > summary::after {
+    right: 8px;
+  }
+
+  .primary-cell strong,
+  .preferences-cell,
+  .best-match-cell,
+  .effects-cell,
+  .table-row > summary > div:not(.primary-cell) {
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
+  .cell-secondary {
+    font-size: 0.68rem;
   }
 }
 
