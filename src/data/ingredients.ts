@@ -53,4 +53,29 @@ export const ingredients: Ingredient[] = [
       { name: '補充精力', value: 3 },
     ],
   },
+  {
+    id: 'carrot',
+    name: '紅蘿蔔',
+    stage: 4,
+    buyPrice: 10,
+    seller: '蔬果商',
+    effects: [
+      { name: '改善視力', value: 4 },
+      { name: '調節血糖', value: 3 },
+      { name: '防止過食', value: 2 },
+      { name: '增強免疫', value: 1 },
+    ],
+  },
+  {
+    id: 'pear',
+    name: '梨',
+    stage: 4,
+    buyPrice: 13,
+    seller: '蔬果商',
+    effects: [
+      { name: '促進消化', value: 4 },
+      { name: '保護心臟', value: 3 },
+      { name: '輔助瘦身', value: 1 },
+    ],
+  },
 ]
