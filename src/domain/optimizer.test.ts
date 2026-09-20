@@ -46,6 +46,10 @@ function request(
     customerIds,
     currentProgress: 'seasoner-unlocked',
     suppliedCustomerIds: [],
+    satisfactionByVillage: {
+      'east-harbor': 999,
+      'tranquil-fountain': 999,
+    },
     candidatePolicy: 'observed-only',
     objective,
   }
@@ -252,6 +256,10 @@ describe('batch optimizer', () => {
       customerIds: canonicalCustomers.map((item) => item.id),
       currentProgress: 'tranquil-fountain-unlocked',
       suppliedCustomerIds: [],
+      satisfactionByVillage: {
+        'east-harbor': 999,
+        'tranquil-fountain': 999,
+      },
       candidatePolicy: 'allow-unambiguous-computed',
       objective: 'minimum-cost',
     })
