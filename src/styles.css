@@ -348,32 +348,30 @@ h1 {
   opacity: 0.78;
 }
 
-.supply-toggle {
+.supply-check {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 4px;
   justify-self: end;
-  min-height: 30px;
-  border: 1px solid #cfc0aa;
-  border-radius: 999px;
-  background: #fffdf8;
-  color: #776b5c;
-  padding: 4px 8px;
+  gap: 6px;
+  color: #5f5548;
   font-size: 0.72rem;
   font-weight: 900;
+  cursor: pointer;
+  user-select: none;
 }
 
-.supply-toggle.supplied {
-  border-color: #4f6744;
-  background: #dfeadb;
-  color: #38502f;
+.supply-check input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: #4f6744;
+  cursor: pointer;
 }
 
-.supply-toggle.mobile {
+.supply-check.mobile {
   display: none;
   justify-self: start;
-  margin-top: 3px;
+  margin-top: 4px;
 }
 
 .mobile-customer-meta {
@@ -545,7 +543,7 @@ footer {
     display: none;
   }
 
-  .supply-toggle.mobile {
+  .supply-check.mobile {
     display: inline-flex;
   }
 
