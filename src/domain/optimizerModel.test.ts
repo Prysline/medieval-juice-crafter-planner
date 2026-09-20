@@ -46,6 +46,10 @@ function candidate(
 const baseRequest: OptimizationRequest = {
   customerIds: ['a', 'b'],
   suppliedCustomerIds: [],
+  satisfactionByVillage: {
+    'east-harbor': 0,
+    'tranquil-fountain': 0,
+  },
   currentProgress: 'seasoner-unlocked',
   candidatePolicy: 'allow-unambiguous-computed',
   objective: 'minimum-cost',
@@ -85,7 +89,15 @@ describe('optimizer model', () => {
     ])
   })
 
-  it('reports unknown, future-region, and no-full-match customers as unresolved', () => {
+  it('reports unknown, locked, future-region, and no-full-match customers as unresolved', () => {
+    const locked: Customer = {
+      id: 'locked',
+      name: 'Locked',
+      occupation: '測試',
+      villageId: 'east-harbor',
+      satisfactionRequired: 100,
+      preferences: [{ kind: 'effect', value: '甜味' }],
+    }
     const future: Customer = {
       id: 'future',
       name: 'Future',
@@ -98,10 +110,10 @@ describe('optimizer model', () => {
     const model = buildOptimizationModel(
       {
         ...baseRequest,
-        customerIds: ['missing', 'future', 'b'],
+        customerIds: ['missing', 'locked', 'future', 'b'],
       },
       {
-        customers: [...customers, future],
+        customers: [...customers, locked, future],
         candidates: [
           candidate(
             'sweet',
@@ -116,6 +128,7 @@ describe('optimizer model', () => {
     expect(model.serviceableCustomerIds).toEqual([])
     expect(model.unresolvedCustomerIds).toEqual([
       'missing',
+      'locked',
       'future',
       'b',
     ])
