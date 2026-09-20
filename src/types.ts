@@ -71,4 +71,5 @@ export interface StageDefinition {
   label: string
   summary: string
   unlockRequirement?: StageUnlockRequirement
+  progressionNotes?: string[]
 }
