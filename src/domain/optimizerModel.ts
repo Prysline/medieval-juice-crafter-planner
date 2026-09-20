@@ -1,10 +1,11 @@
-import { customerVillageIsAvailable, isAvailableAtProgress } from './availability'
+import { customerIsUnlocked, isAvailableAtProgress } from './availability'
 import { recipeCandidateMatchesCustomer } from './matching'
 import { calculateRecipeIngredientCost } from './recipeCost'
 import type {
   Customer,
   ProgressMilestoneId,
   RecipeCandidate,
+  SatisfactionByVillage,
 } from '../types'
 
 export type OptimizationCandidatePolicy =
@@ -19,6 +20,7 @@ export interface OptimizationRequest {
   customerIds: string[]
   currentProgress: ProgressMilestoneId
   suppliedCustomerIds: string[]
+  satisfactionByVillage: SatisfactionByVillage
   candidatePolicy: OptimizationCandidatePolicy
   objective: OptimizationObjective
 }
@@ -98,7 +100,11 @@ export function buildOptimizationModel(
     const customer = customerById.get(customerId)
     if (
       !customer ||
-      !customerVillageIsAvailable(customer, request.currentProgress)
+      !customerIsUnlocked(
+        customer,
+        request.currentProgress,
+        request.satisfactionByVillage,
+      )
     ) {
       unresolvedCustomerIds.push(customerId)
       continue
