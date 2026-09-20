@@ -17,6 +17,16 @@ interface ObjectiveFix {
   value: number
 }
 
+function requiredFiniteNumber(
+  value: number | undefined,
+  label: string,
+): number {
+  if (value === undefined || !Number.isFinite(value)) {
+    throw new Error(`HiGHS returned invalid ${label}`)
+  }
+  return value
+}
+
 function objectiveOrder(
   objective: OptimizationObjective,
 ): ObjectiveKey[] {
@@ -166,7 +176,9 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
         )
       }
 
-      const optimum = Math.round(solution.objective)
+      const optimum = Math.round(
+        requiredFiniteNumber(solution.objective, `${objectiveKey} objective`),
+      )
       final = { built, solution }
       fixes.push({
         objective: objectiveKey,
@@ -178,14 +190,18 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
       throw new Error('HiGHS optimizer did not run')
     }
 
+    const finalStage = final
     const assignments = domain.serviceableCustomerIds.map(
       (customerId) => {
         const recipe = domain.recipes.find((entry) => {
-          const variable = final?.built.yByCustomerRecipe.get(
+          const variable = finalStage.built.yByCustomerRecipe.get(
             `${customerId}\u001f${entry.candidate.id}`,
           )
           return variable
-            ? final.solution.getValue(variable) > 0.5
+            ? requiredFiniteNumber(
+                finalStage.solution.getValue(variable),
+                `assignment ${customerId}/${entry.candidate.id}`,
+              ) > 0.5
             : false
         })
 
@@ -204,9 +220,14 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
 
     const batchCountByRecipeId: Record<string, number> = {}
     for (const recipe of domain.recipes) {
-      const variable = final.built.xByRecipeId.get(recipe.candidate.id)
+      const variable = finalStage.built.xByRecipeId.get(recipe.candidate.id)
       const count = variable
-        ? Math.round(final.solution.getValue(variable))
+        ? Math.round(
+            requiredFiniteNumber(
+              finalStage.solution.getValue(variable),
+              `batch count ${recipe.candidate.id}`,
+            ),
+          )
         : 0
 
       if (count > 0) {
