@@ -10,7 +10,7 @@ describe('matchingRecipesForCustomer', () => {
 
     const matches = matchingRecipesForCustomer(recipes, nanette!, 2)
 
-    expect(matches[0]?.name).toBe('甜味 慶典')
+    expect(matches[0]?.name).toBe('甜味 星塵')
     expect(matches.some((recipe) => recipe.name === '檸檬汁')).toBe(true)
     expect(matches.some((recipe) => recipe.name === '橙子 - 糖（調製飲品）')).toBe(true)
   })
