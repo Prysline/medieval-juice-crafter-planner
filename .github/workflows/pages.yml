@@ -3,7 +3,7 @@ name: Deploy MVP to GitHub Pages
 on:
   push:
     branches:
-      - feat/mvp-foundation
+      - main
   workflow_dispatch:
 
 permissions:
