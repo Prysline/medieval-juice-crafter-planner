@@ -191,6 +191,16 @@ h1 {
   color: white;
 }
 
+.customer-toolbar .reset-supply-button {
+  border-color: #cfc0aa;
+  background: #f5eee3;
+}
+
+.customer-toolbar .reset-supply-button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
 .customer-toolbar > span {
   margin-left: auto;
   color: #786b59;
@@ -215,9 +225,10 @@ h1 {
     minmax(110px, 1fr)
     minmax(72px, 0.58fr)
     minmax(88px, 0.68fr)
-    minmax(165px, 1.35fr)
-    minmax(145px, 1.15fr)
-    minmax(54px, 0.38fr);
+    minmax(155px, 1.28fr)
+    minmax(140px, 1.12fr)
+    minmax(54px, 0.38fr)
+    minmax(82px, 0.58fr);
 }
 
 .recipe-columns {
@@ -327,6 +338,42 @@ h1 {
 
 .locked-row > summary {
   background: rgba(246, 226, 218, 0.3);
+}
+
+.supplied-row > summary {
+  opacity: 0.58;
+}
+
+.supplied-row[open] > summary {
+  opacity: 0.78;
+}
+
+.supply-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  justify-self: end;
+  min-height: 30px;
+  border: 1px solid #cfc0aa;
+  border-radius: 999px;
+  background: #fffdf8;
+  color: #776b5c;
+  padding: 4px 8px;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.supply-toggle.supplied {
+  border-color: #4f6744;
+  background: #dfeadb;
+  color: #38502f;
+}
+
+.supply-toggle.mobile {
+  display: none;
+  justify-self: start;
+  margin-top: 3px;
 }
 
 .mobile-customer-meta {
@@ -486,15 +533,20 @@ footer {
 
   .customer-columns {
     grid-template-columns:
-      minmax(82px, 0.9fr)
-      minmax(100px, 1.15fr)
-      minmax(92px, 1.05fr)
+      minmax(86px, 0.95fr)
+      minmax(104px, 1.18fr)
+      minmax(92px, 1.04fr)
       42px;
   }
 
   .customer-columns > :nth-child(2),
-  .customer-columns > :nth-child(3) {
+  .customer-columns > :nth-child(3),
+  .customer-columns > :nth-child(7) {
     display: none;
+  }
+
+  .supply-toggle.mobile {
+    display: inline-flex;
   }
 
   .mobile-customer-meta {
