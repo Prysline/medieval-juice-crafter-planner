@@ -105,6 +105,7 @@ function App() {
         if (!normalizedQuery) return true
         return [
           recipe.name,
+          ...(recipe.gameNameExamples ?? []),
           ...recipe.ingredients,
           ...recipe.effects,
           ...recipe.equipment,
@@ -445,6 +446,15 @@ function RecipeRow({
         <TagGroup title="原料" tags={recipe.ingredients} />
         <TagGroup title="成品特性" tags={recipe.effects} />
         <TagGroup title="所需設備" tags={recipe.equipment} />
+
+        {recipe.gameNameRandom && recipe.gameNameExamples && (
+          <div className="detail-line">
+            <span className="detail-label">遊戲內名稱</span>
+            <span>
+              隨機；已觀察：{recipe.gameNameExamples.join('、')}
+            </span>
+          </div>
+        )}
 
         <div className="match-list">
           <div className="section-title">
