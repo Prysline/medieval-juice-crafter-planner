@@ -1,5 +1,13 @@
 import type { Recipe } from '../types'
 
+/**
+ * Canonical recipes shown in the normal planner database.
+ *
+ * For now we intentionally keep fixed entries to at most three ingredients.
+ * Longer repeated-seasoning sequences are useful for researching the effect
+ * formula, but they explode combinatorially and currently provide no observed
+ * sale-price benefit. Those observations live in recipeResearch.ts instead.
+ */
 export const recipes: Recipe[] = [
   {
     id: 'lemon-juice',
@@ -130,48 +138,6 @@ export const recipes: Recipe[] = [
       { name: '清新口氣', value: 4 },
       { name: '酸味', value: 4 },
       { name: '補充精力', value: 3 },
-    ],
-    equipment: ['柑橘榨汁機', '調味器', '果汁成品台'],
-  },
-  {
-    id: 'orange-sugar-mint-sugar',
-    name: '甜味（橙子 → 糖 → 薄荷 → 糖）',
-    stage: 2,
-    salePrice: 42,
-    ingredients: ['橙子', '糖', '薄荷', '糖'],
-    effects: [
-      { name: '甜味', value: 10 },
-      { name: '補充精力', value: 6 },
-      { name: '清新口氣', value: 4 },
-      { name: '增強免疫', value: 4 },
-    ],
-    equipment: ['柑橘榨汁機', '調味器', '果汁成品台'],
-  },
-  {
-    id: 'orange-sugar-mint-sugar-mint',
-    name: '甜味（橙子 → 糖 → 薄荷 → 糖 → 薄荷）',
-    stage: 2,
-    salePrice: 42,
-    ingredients: ['橙子', '糖', '薄荷', '糖', '薄荷'],
-    effects: [
-      { name: '甜味', value: 10 },
-      { name: '清新口氣', value: 8 },
-      { name: '舒緩腸胃', value: 6 },
-      { name: '補充精力', value: 6 },
-    ],
-    equipment: ['柑橘榨汁機', '調味器', '果汁成品台'],
-  },
-  {
-    id: 'orange-sugar-mint-sugar-mint-mint',
-    name: '甜味（橙子 → 糖 → 薄荷 → 糖 → 薄荷 → 薄荷）',
-    stage: 2,
-    salePrice: 42,
-    ingredients: ['橙子', '糖', '薄荷', '糖', '薄荷', '薄荷'],
-    effects: [
-      { name: '清新口氣', value: 12 },
-      { name: '甜味', value: 10 },
-      { name: '舒緩腸胃', value: 9 },
-      { name: '芳香', value: 7 },
     ],
     equipment: ['柑橘榨汁機', '調味器', '果汁成品台'],
   },
