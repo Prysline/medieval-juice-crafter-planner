@@ -2,8 +2,9 @@ import { progressMilestoneIds } from '../data/progress'
 import type {
   ProgressMilestoneId,
   SatisfactionByVillage,
-  StageId,
 } from '../types'
+
+type LegacyRuntimeStageId = 1 | 2 | 3 | 4
 
 export const STORAGE_KEYS = {
   progress: 'mjc-progress',
@@ -25,7 +26,9 @@ export function isProgressMilestoneId(value: string): value is ProgressMilestone
   return progressIds.has(value as ProgressMilestoneId)
 }
 
-export function legacyStageToProgress(stage: StageId): ProgressMilestoneId {
+export function legacyStageToProgress(
+  stage: LegacyRuntimeStageId,
+): ProgressMilestoneId {
   switch (stage) {
     case 1:
       return 'opening'
@@ -35,14 +38,12 @@ export function legacyStageToProgress(stage: StageId): ProgressMilestoneId {
       return 'juice-jar-unlocked'
     case 4:
       return 'juicer-unlocked'
-    case 5:
-      return 'juice-blender-unlocked'
   }
 }
 
-function parseLegacyStage(raw: string | null): StageId | null {
+function parseLegacyStage(raw: string | null): LegacyRuntimeStageId | null {
   const value = Number(raw)
-  return value === 1 || value === 2 || value === 3 || value === 4 || value === 5
+  return value === 1 || value === 2 || value === 3 || value === 4
     ? value
     : null
 }
