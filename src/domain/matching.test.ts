@@ -3,6 +3,7 @@ import { customers } from '../data/customers'
 import { recipeResearchObservations } from '../data/recipeResearch'
 import { recipes } from '../data/recipes'
 import {
+  availableRecipes,
   matchingRecipesForCustomer,
   partialMatchingRecipesForCustomer,
   recipeMatchLevel,
@@ -13,7 +14,7 @@ describe('customer recipe matching', () => {
     const nanette = customers.find((customer) => customer.id === 'nanette')
     expect(nanette).toBeDefined()
 
-    const matches = matchingRecipesForCustomer(recipes, nanette!, 2)
+    const matches = matchingRecipesForCustomer(recipes, nanette!, 'seasoner-unlocked')
 
     expect(matches.map((recipe) => recipe.name)).toEqual(['檸檬汁'])
   })
@@ -22,7 +23,7 @@ describe('customer recipe matching', () => {
     const katrin = customers.find((customer) => customer.id === 'katrin')
     expect(katrin).toBeDefined()
 
-    const matches = matchingRecipesForCustomer(recipes, katrin!, 2)
+    const matches = matchingRecipesForCustomer(recipes, katrin!, 'seasoner-unlocked')
     expect(matches.map((recipe) => recipe.name)).toEqual(['檸檬汁'])
   })
 
@@ -34,7 +35,7 @@ describe('customer recipe matching', () => {
     expect(lemonMint).toBeDefined()
     expect(recipeMatchLevel(lemonMint!, nanette!)).toBe('partial')
 
-    const partialMatches = partialMatchingRecipesForCustomer(recipes, nanette!, 2)
+    const partialMatches = partialMatchingRecipesForCustomer(recipes, nanette!, 'seasoner-unlocked')
     expect(partialMatches.some((recipe) => recipe.name === '檸檬 - 薄荷（調製飲品）')).toBe(true)
   })
 
@@ -57,7 +58,7 @@ describe('customer recipe matching', () => {
 
     expect(pearJuice).toMatchObject({
       name: '梨汁',
-      stage: 4,
+      unlockedAt: 'juicer-unlocked',
       salePrice: 13,
       ingredients: ['梨'],
     })
@@ -68,7 +69,7 @@ describe('customer recipe matching', () => {
 
     expect(carrotJuice).toMatchObject({
       name: '紅蘿蔔汁',
-      stage: 4,
+      unlockedAt: 'juicer-unlocked',
       salePrice: 10,
       ingredients: ['紅蘿蔔'],
     })
@@ -93,9 +94,17 @@ describe('customer recipe matching', () => {
     expect(carrotMintSugar?.effects).toContainEqual({ name: '補充精力', value: 3 })
   })
 
-  it('keeps stage-four recipes hidden before stage four', () => {
-    expect(recipes.filter((recipe) => recipe.stage <= 3).some((recipe) => recipe.id === 'pear-sugar')).toBe(false)
-    expect(recipes.filter((recipe) => recipe.stage <= 4).some((recipe) => recipe.id === 'pear-sugar')).toBe(true)
+  it('keeps juicer recipes hidden before juicer-unlocked', () => {
+    expect(
+      availableRecipes(recipes, 'juice-jar-unlocked').some(
+        (recipe) => recipe.id === 'pear-sugar',
+      ),
+    ).toBe(false)
+    expect(
+      availableRecipes(recipes, 'juicer-unlocked').some(
+        (recipe) => recipe.id === 'pear-sugar',
+      ),
+    ).toBe(true)
   })
 
   it('keeps the normal recipe database capped at three ingredients for now', () => {
@@ -124,7 +133,7 @@ describe('customer recipe matching', () => {
     const jack = customers.find((customer) => customer.id === 'jack')
     expect(jack).toBeDefined()
 
-    const matches = matchingRecipesForCustomer(recipes, jack!, 1)
+    const matches = matchingRecipesForCustomer(recipes, jack!, 'opening')
     expect(matches.map((recipe) => recipe.name)).toEqual(['橙汁'])
   })
 })
