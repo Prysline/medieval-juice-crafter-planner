@@ -1,14 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { customers } from '../data/customers'
 import { recipes } from '../data/recipes'
-import type { Recipe } from '../types'
 import {
   filterSuppliedCustomerRows,
   sortCustomerRows,
+  type CustomerListMatch,
   type CustomerListRow,
 } from './customerList'
 
-function row(customerId: string, matches: Recipe[] = []): CustomerListRow {
+function row(
+  customerId: string,
+  matches: CustomerListMatch[] = [],
+): CustomerListRow {
   const customer = customers.find((item) => item.id === customerId)
   if (!customer) throw new Error(`Missing fixture customer: ${customerId}`)
 
