@@ -1,0 +1,72 @@
+import { describe, expect, it } from 'vitest'
+import type { Customer, SatisfactionByVillage } from '../types'
+import {
+  optimizerCustomerIds,
+  type OptimizerCustomerScope,
+} from './optimizerUi'
+
+const customers: Customer[] = [
+  {
+    id: 'open-potential',
+    name: 'Open Potential',
+    occupation: '測試',
+    villageId: 'east-harbor',
+    satisfactionRequired: 0,
+    preferences: [{ kind: 'effect', value: '甜味' }],
+  },
+  {
+    id: 'open-formal',
+    name: 'Open Formal',
+    occupation: '測試',
+    villageId: 'east-harbor',
+    satisfactionRequired: 0,
+    preferences: [{ kind: 'effect', value: '甜味' }],
+  },
+  {
+    id: 'locked',
+    name: 'Locked',
+    occupation: '測試',
+    villageId: 'east-harbor',
+    satisfactionRequired: 100,
+    preferences: [{ kind: 'effect', value: '甜味' }],
+  },
+  {
+    id: 'future-village',
+    name: 'Future Village',
+    occupation: '測試',
+    villageId: 'tranquil-fountain',
+    satisfactionRequired: 0,
+    preferences: [{ kind: 'effect', value: '甜味' }],
+  },
+]
+
+const satisfaction: SatisfactionByVillage = {
+  'east-harbor': 0,
+  'tranquil-fountain': 0,
+}
+
+function ids(
+  scope: OptimizerCustomerScope,
+  suppliedCustomerIds: string[] = [],
+) {
+  return optimizerCustomerIds(
+    customers,
+    'seasoner-unlocked',
+    satisfaction,
+    suppliedCustomerIds,
+    ['open-formal'],
+    scope,
+  )
+}
+
+describe('optimizer UI demand selection', () => {
+  it('defaults to unlocked and unsupplied customers only', () => {
+    expect(ids('all')).toEqual(['open-potential', 'open-formal'])
+    expect(ids('all', ['open-formal'])).toEqual(['open-potential'])
+  })
+
+  it('separates potential and formal customer scopes', () => {
+    expect(ids('potential')).toEqual(['open-potential'])
+    expect(ids('formal')).toEqual(['open-formal'])
+  })
+})
