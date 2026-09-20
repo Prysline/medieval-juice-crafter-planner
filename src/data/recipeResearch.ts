@@ -4,12 +4,15 @@ export interface RecipeResearchObservation {
   ingredients: string[]
   salePrice: number
   effects: EffectValue[]
-  note?: string
+  /** 遊戲名稱中觀察到的前綴；只用來研究命名規則，不作為配方名稱保存。 */
+  observedPrefix?: string
 }
 
 /**
- * Observed longer seasoning sequences used to infer game mechanics.
- * These are intentionally not shown in the normal recipe database.
+ * 四原料以上的重複調味實測。
+ *
+ * 這些資料只用來研究特性累加、slot、同分排序與售價規則，
+ * 不會出現在一般配方資料庫。
  */
 export const recipeResearchObservations: RecipeResearchObservation[] = [
   {
@@ -31,7 +34,7 @@ export const recipeResearchObservations: RecipeResearchObservation[] = [
       { name: '芳香', value: 5 },
       { name: '甜味', value: 5 },
     ],
-    note: 'Game-name prefix observed as 清口, supporting dominant-effect prefix hypothesis.',
+    observedPrefix: '清口',
   },
   {
     ingredients: ['橙子', '糖', '薄荷', '糖', '薄荷'],
