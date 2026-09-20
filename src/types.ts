@@ -1,4 +1,4 @@
-export type StageId = 1 | 2
+export type StageId = 1 | 2 | 3 | 4
 
 export type PreferenceKind = 'ingredient' | 'effect'
 
@@ -54,5 +54,21 @@ export interface Equipment {
   name: string
   stage: StageId
   buyPrice?: number
+  seller?: string
   note?: string
+}
+
+export interface StageUnlockRequirement {
+  villageId: 'east-harbor'
+  satisfactionRequired?: number
+  formalCustomersRequired?: number
+  action?: string
+  timing?: string
+}
+
+export interface StageDefinition {
+  id: StageId
+  label: string
+  summary: string
+  unlockRequirement?: StageUnlockRequirement
 }
