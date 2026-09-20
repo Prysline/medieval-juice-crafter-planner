@@ -51,6 +51,33 @@ describe('customer recipe matching', () => {
     expect(lemonSugarMint?.name).toBe('甜味（檸檬 → 糖 → 薄荷）')
   })
 
+  it('stores confirmed stage-four single-ingredient juices', () => {
+    const pearJuice = recipes.find((recipe) => recipe.id === 'pear-juice')
+    const carrotJuice = recipes.find((recipe) => recipe.id === 'carrot-juice')
+
+    expect(pearJuice).toMatchObject({
+      name: '梨汁',
+      stage: 4,
+      salePrice: 13,
+      ingredients: ['梨'],
+    })
+    expect(pearJuice?.effects).toEqual([
+      { name: '促進消化', value: 4 },
+      { name: '保護心臟', value: 3 },
+    ])
+
+    expect(carrotJuice).toMatchObject({
+      name: '紅蘿蔔汁',
+      stage: 4,
+      salePrice: 10,
+      ingredients: ['紅蘿蔔'],
+    })
+    expect(carrotJuice?.effects).toEqual([
+      { name: '改善視力', value: 4 },
+      { name: '調節血糖', value: 3 },
+    ])
+  })
+
   it('keeps stage-four pear and carrot seasoning order as recipe identity', () => {
     const pearMintSugar = recipes.find((recipe) => recipe.id === 'pear-mint-sugar')
     const pearSugarMint = recipes.find((recipe) => recipe.id === 'pear-sugar-mint')
