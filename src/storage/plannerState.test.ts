@@ -50,6 +50,15 @@ describe('planner state migration', () => {
     expect(readCurrentProgress(storage)).not.toBe('tranquil-fountain-unlocked')
   })
 
+  it('does not treat an unreleased legacy stage 5 as juice blender progress', () => {
+    const storage = new MemoryStorage({
+      [STORAGE_KEYS.legacyStage]: '5',
+    })
+
+    expect(readCurrentProgress(storage)).toBe('seasoner-unlocked')
+    expect(readCurrentProgress(storage)).not.toBe('juice-blender-unlocked')
+  })
+
   it('prefers the new progress key after migration', () => {
     const storage = new MemoryStorage({
       [STORAGE_KEYS.progress]: 'tranquil-fountain-unlocked',
