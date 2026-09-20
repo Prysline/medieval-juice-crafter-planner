@@ -55,7 +55,9 @@ function formatEffect(effect: EffectValue) {
 function App() {
   const [stage, setStage] = useState<StageId>(() => {
     const stored = readStoredNumber('mjc-stage', 2)
-    return stored === 1 ? 1 : 2
+    return stored === 1 || stored === 2 || stored === 3 || stored === 4
+      ? stored
+      : 2
   })
   const [satisfaction, setSatisfaction] = useState(() =>
     readStoredNumber('mjc-satisfaction', 0),
@@ -404,7 +406,7 @@ function App() {
       )}
 
       <footer>
-        目前資料範圍：東港村、階段一～二。未確認規則不自動推導。
+        目前進度資料已記錄至東港村階段四；未確認配方／規則不自動推導。
       </footer>
     </main>
   )
