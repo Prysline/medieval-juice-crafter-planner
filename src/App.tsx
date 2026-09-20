@@ -714,7 +714,11 @@ function RecipeRow({
       <div className="row-details">
         <TagGroup title="原料順序" tags={[recipe.ingredients.join(' → ')]} />
         <TagGroup
-          title={recipe.source === 'observed' ? '成品特性（實測）' : '成品特性（預測確定）'}
+          title={
+            recipe.source === 'observed'
+              ? '成品特性（實測）'
+              : '成品特性（預測・無同分歧義）'
+          }
           tags={recipe.effects.map(formatEffect)}
         />
         {recipe.effectAmbiguity && (
