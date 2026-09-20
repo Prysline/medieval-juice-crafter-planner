@@ -37,6 +37,19 @@ describe('customer recipe matching', () => {
     expect(partialMatches.some((recipe) => recipe.name === '檸檬 - 薄荷（調製飲品）')).toBe(true)
   })
 
+  it('keeps seasoning order as recipe identity for three-ingredient drinks', () => {
+    const orangeSugarMint = recipes.find((recipe) => recipe.id === 'orange-sugar-mint')
+    const orangeMintSugar = recipes.find((recipe) => recipe.id === 'orange-mint-sugar')
+    const lemonSugarMint = recipes.find((recipe) => recipe.id === 'lemon-sugar-mint')
+
+    expect(orangeSugarMint?.salePrice).toBe(42)
+    expect(orangeMintSugar?.salePrice).toBe(42)
+    expect(orangeSugarMint?.effects).toContain('舒緩腸胃')
+    expect(orangeSugarMint?.effects).not.toContain('補充精力')
+    expect(orangeMintSugar?.effects).toContain('補充精力')
+    expect(lemonSugarMint?.gameNameExamples).toEqual(['甜味 勇氣', '甜味 輕吻'])
+  })
+
   it('does not expose stage-two recipes at stage one', () => {
     const jack = customers.find((customer) => customer.id === 'jack')
     expect(jack).toBeDefined()
