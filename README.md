@@ -1,49 +1,52 @@
 # Medieval Juice Crafter Planner
 
-A mobile-first companion planner for **Medieval Juice Crafter**.
+《Medieval Juice Crafter》繁體中文攻略／販售規劃工具。
 
-## MVP goals
+目前先解決遊玩途中最常用的查詢：
 
-- Track the player's current stage and East Harbor customer satisfaction.
-- Search customers by name, occupation, preference, or matching recipe.
-- Show currently unlocked recipes that can satisfy each customer, sorted by sale price.
-- Browse recipes by ingredient, effect, equipment, and name.
-- Keep game data separate from matching and planning logic.
-- Add no-waste batch optimization after the lookup flow is stable.
+- 依階段與顧客滿意度顯示目前可用資料。
+- 搜尋顧客、職業、喜好、配方、原料與特性。
+- 顧客只把「全部喜好都滿足」視為完全匹配。
+- 顧客列表可依姓名、最佳完全匹配、最高售價排序。
+- 配方列表可反查能完全滿足的顧客，顧客顯示為 `名字(職業)`。
+- 三原料配方保留調味順序；四原料以上的重複調味實測不進一般配方列表。
 
-## Current data coverage
+## 資料邊界
 
-The initial dataset covers:
+```text
+src/
+  data/
+    customers.ts       # 顧客、喜好、滿意度門檻、作息觀察
+    ingredients.ts     # 原料價格與原料特性數值
+    equipment.ts       # 設備與已知解鎖資訊
+    recipes.ts         # 一般網站顯示的已確認配方（目前最多三原料）
+    recipeResearch.ts  # 四原料以上的機制研究實測，不進一般列表
+    stages.ts          # 階段摘要
+  domain/
+    matching.ts        # 完全／部分匹配判定
+    matching.test.ts
+  App.tsx              # 目前 MVP UI
+  styles.css
+```
 
-- East Harbor customers currently recorded from direct gameplay.
-- Stage 1 lemon/orange juice recipes.
-- Stage 2 seasoning-machine recipes using mint and sugar.
-- Known customer satisfaction gates.
-- Observed leave-home / return-village times for Ivo, Jack, and Nanette.
+未確認的遊戲機制不會直接寫成正式配方或最佳化公式。
 
-Unverified rules are intentionally not promoted to confirmed game data.
-
-## Development
+## 開發
 
 ```bash
 npm install
 npm run dev
 ```
 
-Verification:
+驗證：
 
 ```bash
 npm test
 npm run build
 ```
 
-## Architecture
+## 部署
 
-```text
-src/
-  data/       # verified game data
-  domain/     # matching / future optimizer logic
-  App.tsx     # current mobile-first MVP UI
-```
+GitHub Pages 由 `.github/workflows/pages.yml` 建置 `dist/` 後部署；不要直接把 Vite 原始碼分支 root 當成 Pages 輸出。
 
-Player progress is currently stored in browser `localStorage`; no backend is required for the MVP.
+目前玩家進度使用瀏覽器 `localStorage` 保存，不需要後端。
