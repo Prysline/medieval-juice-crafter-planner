@@ -17,6 +17,14 @@ describe('customer recipe matching', () => {
     expect(matches.map((recipe) => recipe.name)).toEqual(['檸檬汁'])
   })
 
+  it('also keeps Katrin strict: only pure lemon fully satisfies acid + immunity', () => {
+    const katrin = customers.find((customer) => customer.id === 'katrin')
+    expect(katrin).toBeDefined()
+
+    const matches = matchingRecipesForCustomer(recipes, katrin!, 2)
+    expect(matches.map((recipe) => recipe.name)).toEqual(['檸檬汁'])
+  })
+
   it('keeps partial matches separate from accepted full matches', () => {
     const nanette = customers.find((customer) => customer.id === 'nanette')
     const lemonMint = recipes.find((recipe) => recipe.id === 'lemon-mint')
