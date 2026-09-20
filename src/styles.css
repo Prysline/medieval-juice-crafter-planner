@@ -387,8 +387,8 @@ h1 {
 }
 
 .formal-check,
-.formal-check,
 .supply-check {
+  display: inline-flex;
   align-items: center;
   gap: 6px;
   color: #5f5548;
