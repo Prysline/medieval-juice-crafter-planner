@@ -52,8 +52,8 @@ function request(
 }
 
 describe('batch optimizer', () => {
-  it('serves two customers sharing one recipe with one batch', () => {
-    const result = optimizeBatchPlan(
+  it('serves two customers sharing one recipe with one batch', async () => {
+    const result = await optimizeBatchPlan(
       request(['a', 'b']),
       {
         source: {
@@ -79,8 +79,8 @@ describe('batch optimizer', () => {
     expect(result.leftoverServings).toBe(0)
   })
 
-  it('chooses a shared batch when per-customer cheapest recipes cost more in total', () => {
-    const result = optimizeBatchPlan(
+  it('chooses a shared batch when per-customer cheapest recipes cost more in total', async () => {
+    const result = await optimizeBatchPlan(
       request(['a', 'b']),
       {
         source: {
@@ -106,8 +106,8 @@ describe('batch optimizer', () => {
     expect(result.batches[0].recipeId).toBe('shared')
   })
 
-  it('reports one leftover serving for an odd number of assigned customers', () => {
-    const result = optimizeBatchPlan(
+  it('reports one leftover serving for an odd number of assigned customers', async () => {
+    const result = await optimizeBatchPlan(
       request(['a', 'b', 'c']),
       {
         source: {
@@ -129,7 +129,7 @@ describe('batch optimizer', () => {
     expect(result.leftoverServings).toBe(1)
   })
 
-  it('minimum-cost and minimum-waste can choose different valid plans', () => {
+  it('minimum-cost and minimum-waste can choose different valid plans', async () => {
     const customers = [
       customer('a', '酸味'),
       customer('b', '增強免疫'),
@@ -146,11 +146,11 @@ describe('batch optimizer', () => {
       ),
     ]
 
-    const cheapest = optimizeBatchPlan(
+    const cheapest = await optimizeBatchPlan(
       request(['a', 'b', 'c'], 'minimum-cost'),
       { source: { customers, candidates } },
     )
-    const leastWaste = optimizeBatchPlan(
+    const leastWaste = await optimizeBatchPlan(
       request(['a', 'b', 'c'], 'minimum-waste'),
       { source: { customers, candidates } },
     )
@@ -164,8 +164,8 @@ describe('batch optimizer', () => {
     expect(leastWaste.leftoverServings).toBe(1)
   })
 
-  it('lists customers without any reliable full match as unresolved', () => {
-    const result = optimizeBatchPlan(
+  it('lists customers without any reliable full match as unresolved', async () => {
+    const result = await optimizeBatchPlan(
       request(['a', 'b']),
       {
         source: {
@@ -186,8 +186,8 @@ describe('batch optimizer', () => {
     expect(result.unresolvedCustomers).toEqual(['b'])
   })
 
-  it('excludes supplied customers from demand', () => {
-    const result = optimizeBatchPlan(
+  it('excludes supplied customers from demand', async () => {
+    const result = await optimizeBatchPlan(
       {
         ...request(['a', 'b']),
         suppliedCustomerIds: ['b'],
@@ -208,8 +208,8 @@ describe('batch optimizer', () => {
     expect(result.assignments.map((item) => item.customerId)).toEqual(['a'])
   })
 
-  it('aggregates a shopping list from selected batch counts', () => {
-    const result = optimizeBatchPlan(
+  it('aggregates a shopping list from selected batch counts', async () => {
+    const result = await optimizeBatchPlan(
       request(['a', 'b', 'c']),
       {
         source: {
@@ -247,8 +247,8 @@ describe('batch optimizer', () => {
       result.shoppingList.reduce((sum, item) => sum + item.totalCost, 0),
     ).toBe(result.totalIngredientCost)
   })
-  it('solves the current tranquil-fountain dataset without duplicate assignments', () => {
-    const result = optimizeBatchPlan({
+  it('solves the current tranquil-fountain dataset without duplicate assignments', async () => {
+    const result = await optimizeBatchPlan({
       customerIds: canonicalCustomers.map((item) => item.id),
       currentProgress: 'tranquil-fountain-unlocked',
       suppliedCustomerIds: [],
