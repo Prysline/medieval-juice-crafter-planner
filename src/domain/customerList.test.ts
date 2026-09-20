@@ -1,14 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { customers } from '../data/customers'
 import { recipes } from '../data/recipes'
-import type { Recipe } from '../types'
 import {
   filterSuppliedCustomerRows,
   sortCustomerRows,
+  type CustomerListMatch,
   type CustomerListRow,
 } from './customerList'
 
-function row(customerId: string, matches: Recipe[] = []): CustomerListRow {
+function row(
+  customerId: string,
+  matches: CustomerListMatch[] = [],
+): CustomerListRow {
   const customer = customers.find((item) => item.id === customerId)
   if (!customer) throw new Error(`Missing fixture customer: ${customerId}`)
 
@@ -53,6 +56,24 @@ describe('customer list regressions', () => {
         ({ customer }) => customer.id,
       ),
     ).toEqual(['nanette', 'jack', 'derrick'])
+  })
+
+  it('keeps unknown-price matches after known-price matches when sorting by price', () => {
+    const unknownMatch = {
+      id: 'computed-banana',
+      name: '預測（香蕉）',
+      salePrice: null,
+    }
+    const rows: CustomerListRow[] = [
+      row('jack', [unknownMatch]),
+      row('nanette', [lemon]),
+    ]
+
+    expect(
+      sortCustomerRows(rows, 'bestPrice', 'desc', recipeOrder).map(
+        ({ customer }) => customer.id,
+      ),
+    ).toEqual(['nanette', 'jack'])
   })
 
   it('keeps customers without a match after matched customers when sorting by price', () => {

@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { customers } from '../data/customers'
 import { recipeResearchObservations } from '../data/recipeResearch'
 import { recipes } from '../data/recipes'
+import { generateRecipeCandidates } from './recipeGenerator'
 import {
   availableRecipes,
   matchingRecipesForCustomer,
+  matchingRecipeCandidatesForCustomer,
   partialMatchingRecipesForCustomer,
+  recipeCandidateMatchesCustomer,
   recipeMatchLevel,
 } from './matching'
 
@@ -135,5 +138,77 @@ describe('customer recipe matching', () => {
 
     const matches = matchingRecipesForCustomer(recipes, jack!, 'opening')
     expect(matches.map((recipe) => recipe.name)).toEqual(['橙汁'])
+  })
+  it('allows exact computed candidates to participate in full matching', () => {
+    const candidates = generateRecipeCandidates('tranquil-fountain-unlocked')
+    const banana = candidates.find(
+      (candidate) => candidate.ingredients.join(' → ') === '香蕉',
+    )
+    const syntheticCustomer = {
+      id: 'computed-full-test',
+      name: '測試顧客',
+      occupation: '測試',
+      villageId: 'tranquil-fountain' as const,
+      satisfactionRequired: 0,
+      preferences: [
+        { kind: 'ingredient' as const, value: '香蕉' },
+        { kind: 'effect' as const, value: '補充精力' },
+      ],
+    }
+
+    expect(banana?.source).toBe('computed')
+    expect(banana?.effectAmbiguity).toBeUndefined()
+    expect(recipeCandidateMatchesCustomer(banana!, syntheticCustomer)).toBe(true)
+  })
+
+  it('never claims full match from an ambiguous computed cutoff', () => {
+    const candidates = generateRecipeCandidates('tranquil-fountain-unlocked')
+    const lemonCinnamon = candidates.find(
+      (candidate) => candidate.ingredients.join(' → ') === '檸檬 → 肉桂',
+    )
+    const syntheticCustomer = {
+      id: 'ambiguous-test',
+      name: '測試顧客',
+      occupation: '測試',
+      villageId: 'tranquil-fountain' as const,
+      satisfactionRequired: 0,
+      preferences: [
+        { kind: 'effect' as const, value: '酸味' },
+        { kind: 'effect' as const, value: '增強免疫' },
+      ],
+    }
+
+    expect(lemonCinnamon?.source).toBe('computed')
+    expect(lemonCinnamon?.effectAmbiguity).toBeDefined()
+    expect(recipeCandidateMatchesCustomer(lemonCinnamon!, syntheticCustomer)).toBe(false)
+  })
+
+  it('sorts known-price observed matches before unknown-price computed matches', () => {
+    const candidates = generateRecipeCandidates('tranquil-fountain-unlocked')
+    const syntheticCustomer = {
+      id: 'price-test',
+      name: '測試顧客',
+      occupation: '測試',
+      villageId: 'tranquil-fountain' as const,
+      satisfactionRequired: 0,
+      preferences: [{ kind: 'effect' as const, value: '補充精力' }],
+    }
+
+    const matches = matchingRecipeCandidatesForCustomer(
+      candidates,
+      syntheticCustomer,
+    )
+
+    const firstUnknownIndex = matches.findIndex(
+      (candidate) => candidate.salePrice === null,
+    )
+    const lastKnownIndex = matches.reduce(
+      (last, candidate, index) =>
+        candidate.salePrice !== null ? index : last,
+      -1,
+    )
+
+    expect(lastKnownIndex).toBeGreaterThanOrEqual(0)
+    expect(firstUnknownIndex).toBeGreaterThan(lastKnownIndex)
   })
 })

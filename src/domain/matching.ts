@@ -4,11 +4,17 @@ import type {
   Preference,
   ProgressMilestoneId,
   Recipe,
+  RecipeCandidate,
 } from '../types'
 
 export type MatchLevel = 'full' | 'partial' | 'none'
 
-function preferenceMatchesRecipe(recipe: Recipe, preference: Preference): boolean {
+type MatchableRecipe = Pick<RecipeCandidate, 'ingredients' | 'effects'>
+
+function preferenceMatchesRecipe(
+  recipe: MatchableRecipe,
+  preference: Preference,
+): boolean {
   if (preference.kind === 'ingredient') {
     return recipe.ingredients.includes(preference.value)
   }
@@ -16,7 +22,10 @@ function preferenceMatchesRecipe(recipe: Recipe, preference: Preference): boolea
   return recipe.effects.some((effect) => effect.name === preference.value)
 }
 
-export function recipeMatchLevel(recipe: Recipe, customer: Customer): MatchLevel {
+function matchLevel(
+  recipe: MatchableRecipe,
+  customer: Customer,
+): MatchLevel {
   if (!customer.preferences || customer.preferences.length === 0) return 'none'
 
   const matchedCount = customer.preferences.filter((preference) =>
@@ -28,8 +37,20 @@ export function recipeMatchLevel(recipe: Recipe, customer: Customer): MatchLevel
   return 'none'
 }
 
+export function recipeMatchLevel(recipe: Recipe, customer: Customer): MatchLevel {
+  return matchLevel(recipe, customer)
+}
+
 export function recipeMatchesCustomer(recipe: Recipe, customer: Customer): boolean {
   return recipeMatchLevel(recipe, customer) === 'full'
+}
+
+export function recipeCandidateMatchesCustomer(
+  candidate: RecipeCandidate,
+  customer: Customer,
+): boolean {
+  if (candidate.effectAmbiguity) return false
+  return matchLevel(candidate, customer) === 'full'
 }
 
 export function availableRecipes(
@@ -46,7 +67,11 @@ export function matchingRecipesForCustomer(
 ): Recipe[] {
   return availableRecipes(recipes, currentProgress)
     .filter((recipe) => recipeMatchesCustomer(recipe, customer))
-    .sort((a, b) => b.salePrice - a.salePrice || a.name.localeCompare(b.name, 'zh-Hant'))
+    .sort(
+      (a, b) =>
+        b.salePrice - a.salePrice ||
+        a.name.localeCompare(b.name, 'zh-Hant'),
+    )
 }
 
 export function partialMatchingRecipesForCustomer(
@@ -56,5 +81,28 @@ export function partialMatchingRecipesForCustomer(
 ): Recipe[] {
   return availableRecipes(recipes, currentProgress)
     .filter((recipe) => recipeMatchLevel(recipe, customer) === 'partial')
-    .sort((a, b) => b.salePrice - a.salePrice || a.name.localeCompare(b.name, 'zh-Hant'))
+    .sort(
+      (a, b) =>
+        b.salePrice - a.salePrice ||
+        a.name.localeCompare(b.name, 'zh-Hant'),
+    )
+}
+
+export function matchingRecipeCandidatesForCustomer(
+  candidates: RecipeCandidate[],
+  customer: Customer,
+): RecipeCandidate[] {
+  return candidates
+    .filter((candidate) => recipeCandidateMatchesCustomer(candidate, customer))
+    .sort((a, b) => {
+      if (a.salePrice === null && b.salePrice === null) {
+        return a.name.localeCompare(b.name, 'zh-Hant')
+      }
+      if (a.salePrice === null) return 1
+      if (b.salePrice === null) return -1
+      return (
+        b.salePrice - a.salePrice ||
+        a.name.localeCompare(b.name, 'zh-Hant')
+      )
+    })
 }

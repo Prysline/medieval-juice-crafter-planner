@@ -111,3 +111,30 @@ export interface StageDefinition {
   unlockRequirement?: StageUnlockRequirement
   progressionNotes?: string[]
 }
+
+
+export type RecipeCandidateSource = 'observed' | 'computed'
+
+export interface RecipeEffectAmbiguity {
+  cutoffValue: number
+  remainingSlots: number
+  candidates: EffectValue[]
+}
+
+export interface RecipeCandidate {
+  id: string
+  /** observed 沿用攻略穩定名稱；computed 使用描述性名稱，不宣稱為遊戲內正式名稱。 */
+  name: string
+  source: RecipeCandidateSource
+  unlockedAt: ProgressMilestoneId
+  /** computed 售價尚未確認，必須維持 null。 */
+  salePrice: number | null
+  /** 原料順序具有語意。 */
+  ingredients: string[]
+  /** observed 為實測成品特性；computed ambiguous 時只放一定會入選的特性。 */
+  effects: EffectValue[]
+  /** cutoff 同分且 slot 不足時列出所有候選，不自行選 tie-break。 */
+  effectAmbiguity?: RecipeEffectAmbiguity
+  equipment: string[]
+  observedRecipeId?: Recipe['id']
+}

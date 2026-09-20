@@ -11,6 +11,8 @@
 - 顧客列表可依姓名、最佳完全匹配、最高售價排序。
 - 配方列表可反查目前已解鎖、且滿意度門檻已達的顧客。
 - 三原料配方保留調味順序；四原料以上的重複調味實測不進一般配方列表。
+- 三種以下有效序列會自動產生候選：既有實測配方優先，未實測組合只顯示預測特性，不推導售價。
+- 預測若在 effect cutoff 出現未確認同分 tie，會明確標示 ambiguous，且不參與完全匹配推薦。
 - 舊版 `mjc-stage` / `mjc-satisfaction` localStorage 會保守遷移到新版進度資料。
 
 ## 進度模型
@@ -39,18 +41,30 @@ src/
     progress.ts        # canonical 主線進度節點與順序
     villages.ts        # 地區與 unlockedAt
     shops.ts           # 已確認的地區商店商品
-    recipes.ts         # 一般網站顯示的已確認配方（目前最多三原料）
+    recipes.ts         # 已確認配方；generator 會用相同有序原料序列作 observed overlay
     recipeResearch.ts  # 四原料以上的機制研究實測，不進一般列表
+    recipeIngredientCapabilities.ts # v1 果汁基底／調味材料能力邊界
     stages.ts          # 攻略閱讀章節，不作 runtime availability
   domain/
     availability.ts    # 集中式 progress / village / satisfaction availability
     customerList.ts    # 顧客排序與今日供應顯示純函式
-    matching.ts        # 完全／部分匹配判定
+    matching.ts        # 完全／部分匹配；ambiguous computed 不宣稱 full match
+    recipeGenerator.ts # ≤3 原料候選生成、effect 累加、slot 與 cutoff ambiguity
   storage/
     plannerState.ts    # localStorage 讀寫與 legacy migration
   App.tsx              # 目前 MVP UI
   styles.css
 ```
+
+PR 2B generator 第一版只處理「1 種果汁基底 + 0～2 種不重複調味材料」。果汁調和器的兩種果汁混合規則尚未確認，因此不在此 generator 自動組合兩個果汁基底。
+
+特性預測目前採用實測最支持的模型：
+
+```text
+slotCount = min(5, 不重複原料種類數 + 1)
+```
+
+同名特性先累加，再取最高 slot；cutoff 同分但剩餘 slot 不足時保留全部候選、不自行決定 tie-break。computed 配方的售價維持未知。
 
 未確認的遊戲機制不會直接寫成正式配方或最佳化公式。
 

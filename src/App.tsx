@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
 import { customers } from './data/customers'
 import { progressMilestoneLabels, progressMilestones } from './data/progress'
-import { recipes } from './data/recipes'
 import { villageNames } from './data/villages'
 import {
   customerIsUnlocked,
@@ -15,10 +14,10 @@ import {
   type SortDirection,
 } from './domain/customerList'
 import {
-  availableRecipes,
-  matchingRecipesForCustomer,
-  recipeMatchesCustomer,
+  matchingRecipeCandidatesForCustomer,
+  recipeCandidateMatchesCustomer,
 } from './domain/matching'
+import { generateRecipeCandidates } from './domain/recipeGenerator'
 import {
   readCurrentProgress,
   readSatisfactionByVillage,
@@ -30,7 +29,7 @@ import type {
   Customer,
   EffectValue,
   ProgressMilestoneId,
-  Recipe,
+  RecipeCandidate,
   SatisfactionByVillage,
   VillageId,
 } from './types'
@@ -44,8 +43,6 @@ const scheduleLabels = {
   outside_village_by: '已在村外',
   return_village: '回村',
 } as const
-
-const recipeOrder = new Map(recipes.map((recipe, index) => [recipe.id, index]))
 
 function readStoredStringArray(key: string): string[] {
   const raw = window.localStorage.getItem(key)
@@ -94,6 +91,17 @@ function App() {
     'tranquil-fountain',
     currentProgress,
   )
+  const recipeCandidates = useMemo(
+    () => generateRecipeCandidates(currentProgress),
+    [currentProgress],
+  )
+  const recipeOrder = useMemo(
+    () =>
+      new Map(
+        recipeCandidates.map((candidate, index) => [candidate.id, index]),
+      ),
+    [recipeCandidates],
+  )
 
   const customerRows = useMemo(() => {
     const rows = customers
@@ -105,10 +113,9 @@ function App() {
           currentProgress,
           satisfactionByVillage,
         ),
-        matches: matchingRecipesForCustomer(
-          recipes,
+        matches: matchingRecipeCandidatesForCustomer(
+          recipeCandidates,
           customer,
-          currentProgress,
         ),
       }))
       .filter(({ unlocked }) => customerVisibility === 'all' || unlocked)
@@ -142,6 +149,8 @@ function App() {
     normalizedQuery,
     currentProgress,
     satisfactionByVillage,
+    recipeCandidates,
+    recipeOrder,
     customerVisibility,
     showSuppliedToday,
     suppliedCustomerIds,
@@ -150,13 +159,14 @@ function App() {
   ])
 
   const recipeRows = useMemo(() => {
-    const rows = availableRecipes(recipes, currentProgress)
+    const rows = recipeCandidates
       .filter((recipe) => {
         if (!normalizedQuery) return true
         return [
           recipe.name,
           ...recipe.ingredients,
           ...recipe.effects.map((effect) => effect.name),
+          ...(recipe.effectAmbiguity?.candidates.map((effect) => effect.name) ?? []),
           ...recipe.equipment,
         ]
           .join(' ')
@@ -168,6 +178,15 @@ function App() {
 
     return rows.sort((a, b) => {
       if (recipeSortKey === 'salePrice') {
+        if (a.salePrice === null && b.salePrice === null) {
+          return (
+            ((recipeOrder.get(a.id) ?? 0) -
+              (recipeOrder.get(b.id) ?? 0)) *
+            direction
+          )
+        }
+        if (a.salePrice === null) return 1
+        if (b.salePrice === null) return -1
         return (
           (a.salePrice - b.salePrice) * direction ||
           (recipeOrder.get(a.id) ?? 0) - (recipeOrder.get(b.id) ?? 0)
@@ -178,7 +197,8 @@ function App() {
     })
   }, [
     normalizedQuery,
-    currentProgress,
+    recipeCandidates,
+    recipeOrder,
     recipeSortDirection,
     recipeSortKey,
   ])
@@ -438,7 +458,7 @@ function App() {
       )}
 
       <footer>
-        Runtime 依主線進度與地區控制資料可用性；未確認配方／規則不自動推導。
+        預測配方不自行推導售價；同分 cutoff 未確認時不宣稱完全匹配。
       </footer>
     </main>
   )
@@ -482,7 +502,7 @@ function CustomerRow({
   onToggleSupplied,
 }: {
   customer: Customer
-  matches: Recipe[]
+  matches: RecipeCandidate[]
   unlocked: boolean
   suppliedToday: boolean
   onToggleSupplied: () => void
@@ -545,7 +565,11 @@ function CustomerRow({
         </div>
 
         <div className="price-cell align-end">
-          {bestMatch ? bestMatch.salePrice : '—'}
+          {bestMatch
+            ? bestMatch.salePrice === null
+              ? '未知'
+              : bestMatch.salePrice
+            : '—'}
         </div>
 
         <SupplyToggle supplied={suppliedToday} onToggle={onToggleSupplied} />
@@ -595,7 +619,9 @@ function CustomerRow({
               {matches.map((recipe) => (
                 <li key={recipe.id}>
                   <span>{recipe.name}</span>
-                  <strong>售價 {recipe.salePrice}</strong>
+                  <strong>
+                    {recipe.salePrice === null ? '售價未知' : `售價 ${recipe.salePrice}`}
+                  </strong>
                 </li>
               ))}
             </ol>
@@ -648,7 +674,7 @@ function RecipeRow({
   currentProgress,
   satisfactionByVillage,
 }: {
-  recipe: Recipe
+  recipe: RecipeCandidate
   currentProgress: ProgressMilestoneId
   satisfactionByVillage: SatisfactionByVillage
 }) {
@@ -656,7 +682,7 @@ function RecipeRow({
     .filter((customer) =>
       customerIsUnlocked(customer, currentProgress, satisfactionByVillage),
     )
-    .filter((customer) => recipeMatchesCustomer(recipe, customer))
+    .filter((customer) => recipeCandidateMatchesCustomer(recipe, customer))
 
   return (
     <details className="table-row">
@@ -664,33 +690,60 @@ function RecipeRow({
         <div className="primary-cell">
           <strong>{recipe.name}</strong>
           <span className="cell-secondary">
-            {progressMilestoneLabels[recipe.unlockedAt]}
+            {progressMilestoneLabels[recipe.unlockedAt]} ·{' '}
+            {recipe.source === 'observed' ? '實測' : '預測'}
           </span>
         </div>
 
         <div>{recipe.ingredients.join(' → ')}</div>
 
-        <div className="effects-cell">{recipe.effects.map(formatEffect).join('・')}</div>
+        <div className="effects-cell">
+          {recipe.effects.map(formatEffect).join('・')}
+          {recipe.effectAmbiguity && (
+            <span className="muted">
+              {recipe.effects.length > 0 ? '・' : ''}同分候選待確認
+            </span>
+          )}
+        </div>
 
-        <div className="price-cell align-end">{recipe.salePrice}</div>
+        <div className="price-cell align-end">
+          {recipe.salePrice === null ? '未知' : recipe.salePrice}
+        </div>
       </summary>
 
       <div className="row-details">
         <TagGroup title="原料順序" tags={[recipe.ingredients.join(' → ')]} />
-        <TagGroup title="成品特性" tags={recipe.effects.map(formatEffect)} />
+        <TagGroup
+          title={
+            recipe.source === 'observed'
+              ? '成品特性（實測）'
+              : '成品特性（預測・無同分歧義）'
+          }
+          tags={recipe.effects.map(formatEffect)}
+        />
+        {recipe.effectAmbiguity && (
+          <TagGroup
+            title={`同分候選（剩 ${recipe.effectAmbiguity.remainingSlots} 格）`}
+            tags={recipe.effectAmbiguity.candidates.map(formatEffect)}
+          />
+        )}
         <TagGroup title="所需設備" tags={recipe.equipment} />
 
         <div className="match-list">
           <div className="section-title">
             <strong>可完全滿足顧客</strong>
-            <span>{matchingCustomers.length} 人</span>
+            <span>
+              {recipe.effectAmbiguity ? '待確認' : `${matchingCustomers.length} 人`}
+            </span>
           </div>
           <p className="customer-names">
-            {matchingCustomers.length
-              ? matchingCustomers
-                  .map((customer) => `${customer.name}(${customer.occupation})`)
-                  .join('、')
-              : '目前進度與滿意度下沒有能完全滿足的已知顧客。'}
+            {recipe.effectAmbiguity
+              ? '此預測存在未確認的同分 cutoff，暫不參與完全匹配判定。'
+              : matchingCustomers.length
+                ? matchingCustomers
+                    .map((customer) => `${customer.name}(${customer.occupation})`)
+                    .join('、')
+                : '目前進度與滿意度下沒有能完全滿足的已知顧客。'}
           </p>
         </div>
       </div>
