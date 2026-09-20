@@ -1,12 +1,18 @@
-import type { Customer, Recipe } from '../types'
+import type { Customer } from '../types'
 
 export type SortDirection = 'asc' | 'desc'
 export type CustomerSortKey = 'name' | 'bestMatch' | 'bestPrice'
 
+export interface CustomerListMatch {
+  id: string
+  name: string
+  salePrice: number | null
+}
+
 export interface CustomerListRow {
   customer: Customer
   unlocked: boolean
-  matches: Recipe[]
+  matches: CustomerListMatch[]
 }
 
 export function filterSuppliedCustomerRows(
@@ -55,6 +61,17 @@ export function sortCustomerRows(
       }
       if (!aBest) return 1
       if (!bBest) return -1
+
+      if (aBest.salePrice === null && bBest.salePrice === null) {
+        return (
+          ((recipeOrder.get(aBest.id) ?? 0) -
+            (recipeOrder.get(bBest.id) ?? 0)) *
+            direction ||
+          a.customer.name.localeCompare(b.customer.name, 'zh-Hant')
+        )
+      }
+      if (aBest.salePrice === null) return 1
+      if (bBest.salePrice === null) return -1
 
       return (
         (aBest.salePrice - bBest.salePrice) * direction ||
