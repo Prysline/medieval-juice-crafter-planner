@@ -564,20 +564,18 @@ function SupplyToggle({
   mobile?: boolean
 }) {
   return (
-    <button
-      type="button"
-      className={`supply-toggle${supplied ? ' supplied' : ''}${mobile ? ' mobile' : ''}`}
-      aria-pressed={supplied}
-      aria-label={supplied ? '取消今日已供應果汁' : '標記今日已供應果汁'}
-      onClick={(event) => {
-        event.preventDefault()
-        event.stopPropagation()
-        onToggle()
-      }}
+    <label
+      className={`supply-check${mobile ? ' mobile' : ''}`}
+      onClick={(event) => event.stopPropagation()}
     >
-      <span aria-hidden="true">{supplied ? '✓' : '○'}</span>
-      <span className="supply-toggle-label">{supplied ? '已供應' : '未供應'}</span>
-    </button>
+      <input
+        type="checkbox"
+        checked={supplied}
+        onChange={onToggle}
+        onClick={(event) => event.stopPropagation()}
+      />
+      <span>{supplied ? '已供應' : '未供應'}</span>
+    </label>
   )
 }
 
