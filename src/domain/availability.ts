@@ -7,6 +7,7 @@ import type {
   ProgressMilestoneId,
   Recipe,
   SatisfactionByVillage,
+  ShopDefinition,
   VillageId,
 } from '../types'
 
@@ -39,6 +40,16 @@ export function equipmentIsAvailable(
   currentProgress: ProgressMilestoneId,
 ): boolean {
   return isAvailableAtProgress(equipment.unlockedAt, currentProgress)
+}
+
+export function shopIsAvailable(
+  shop: ShopDefinition,
+  currentProgress: ProgressMilestoneId,
+): boolean {
+  return (
+    villageIsAvailable(shop.villageId, currentProgress) &&
+    isAvailableAtProgress(shop.unlockedAt, currentProgress)
+  )
 }
 
 export function villageIsAvailable(
