@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import OptimizerTools from './OptimizerTools'
 import RecipeTools from './RecipeTools'
 import { customers } from './data/customers'
 import { progressMilestoneLabels, progressMilestones } from './data/progress'
@@ -49,7 +50,7 @@ import type {
   VillageId,
 } from './types'
 
-type Tab = 'customers' | 'recipes' | 'tools'
+type Tab = 'customers' | 'recipes' | 'tools' | 'optimizer'
 type RecipeSortKey = 'name' | 'salePrice'
 type CustomerVisibility = 'available' | 'all'
 
@@ -375,7 +376,7 @@ function App() {
         )}
       </section>
 
-      {tab !== 'tools' && (
+      {(tab === 'customers' || tab === 'recipes') && (
         <section className="search-panel">
           <input
             aria-label="搜尋"
@@ -418,6 +419,13 @@ function App() {
           onClick={() => setTab('tools')}
         >
           配方工具
+        </button>
+        <button
+          type="button"
+          className={tab === 'optimizer' ? 'active' : ''}
+          onClick={() => setTab('optimizer')}
+        >
+          批次規劃
         </button>
       </nav>
 
@@ -536,10 +544,17 @@ function App() {
             />
           ))}
         </section>
-      ) : (
+      ) : tab === 'tools' ? (
         <RecipeTools
           currentProgress={currentProgress}
           satisfactionByVillage={satisfactionByVillage}
+        />
+      ) : (
+        <OptimizerTools
+          currentProgress={currentProgress}
+          satisfactionByVillage={satisfactionByVillage}
+          suppliedCustomerIds={suppliedCustomerIds}
+          formalCustomerIds={formalCustomerIds}
         />
       )}
 
