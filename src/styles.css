@@ -92,6 +92,34 @@ h1 {
   font-weight: 700;
 }
 
+.progress-stat {
+  display: grid;
+  gap: 3px;
+  align-content: center;
+  min-height: 72px;
+  border: 1px solid #dfd2bd;
+  border-radius: 12px;
+  background: #faf4e8;
+  padding: 9px 11px;
+  color: #6d604d;
+}
+
+.progress-stat span {
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.progress-stat strong {
+  color: #38502f;
+  font-size: 1.05rem;
+}
+
+.progress-stat small {
+  color: #847663;
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
 .progress-panel input,
 .progress-panel select,
 .search-panel input {
@@ -233,9 +261,10 @@ h1 {
 
 .recipe-columns {
   grid-template-columns:
-    minmax(180px, 1.3fr)
-    minmax(140px, 1fr)
-    minmax(220px, 1.6fr)
+    minmax(165px, 1.2fr)
+    minmax(125px, 0.92fr)
+    minmax(185px, 1.35fr)
+    minmax(120px, 0.76fr)
     minmax(54px, 0.36fr);
 }
 
@@ -319,8 +348,17 @@ h1 {
 }
 
 .best-match-cell {
+  display: grid;
+  gap: 3px;
   color: #4f6744;
   font-weight: 800;
+}
+
+.recommendation-compact {
+  color: #8a6a2a;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1.35;
 }
 
 .village-cell {
@@ -348,10 +386,10 @@ h1 {
   opacity: 0.78;
 }
 
+.formal-check,
+.formal-check,
 .supply-check {
-  display: inline-flex;
   align-items: center;
-  justify-self: end;
   gap: 6px;
   color: #5f5548;
   font-size: 0.72rem;
@@ -360,6 +398,28 @@ h1 {
   user-select: none;
 }
 
+.supply-check {
+  justify-self: end;
+}
+
+.formal-check {
+  justify-self: start;
+  width: fit-content;
+  border-radius: 999px;
+  padding: 2px 6px;
+}
+
+.formal-check.formal {
+  background: #dfeadb;
+  color: #406136;
+}
+
+.formal-check.potential {
+  background: #eee6da;
+  color: #756856;
+}
+
+.formal-check input,
 .supply-check input {
   width: 18px;
   height: 18px;
@@ -449,6 +509,55 @@ h1 {
   background: #faf4e8;
   padding: 4px 7px;
   font-size: 0.76rem;
+}
+
+.recommendation-box {
+  display: grid;
+  gap: 7px;
+  margin-top: 14px;
+  border: 1px solid #dfd2bd;
+  border-radius: 11px;
+  background: #faf4e8;
+  padding: 10px 11px;
+}
+
+.recommendation-box .section-title {
+  margin-bottom: 0;
+}
+
+.recommendation-line {
+  display: grid;
+  grid-template-columns: minmax(112px, 0.72fr) minmax(0, 1.4fr);
+  gap: 10px;
+  align-items: start;
+  color: #6a5e4e;
+  font-size: 0.8rem;
+}
+
+.recommendation-line > span:first-child {
+  font-weight: 800;
+}
+
+.recommendation-line > div {
+  display: grid;
+  gap: 2px;
+}
+
+.recommendation-line strong {
+  color: #38502f;
+  font-size: 0.82rem;
+}
+
+.recommendation-line small {
+  color: #795d22;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.cost-cell {
+  color: #795d22 !important;
+  font-size: 0.76rem !important;
+  font-weight: 800;
 }
 
 .match-list {
@@ -555,13 +664,19 @@ footer {
 
   .recipe-columns {
     grid-template-columns:
-      minmax(118px, 1.15fr)
-      minmax(110px, 1fr)
+      minmax(118px, 1.2fr)
+      minmax(88px, 0.82fr)
       46px;
   }
 
+  .recipe-columns > :nth-child(2),
   .recipe-columns > :nth-child(3) {
     display: none;
+  }
+
+  .recommendation-line {
+    grid-template-columns: 1fr;
+    gap: 3px;
   }
 
   .table-head,
