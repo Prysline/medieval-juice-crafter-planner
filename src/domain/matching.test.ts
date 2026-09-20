@@ -144,12 +144,21 @@ describe('customer recipe matching', () => {
     const banana = candidates.find(
       (candidate) => candidate.ingredients.join(' → ') === '香蕉',
     )
-    const ingrid = customers.find((customer) => customer.id === 'ingrid')
+    const syntheticCustomer = {
+      id: 'computed-full-test',
+      name: '測試顧客',
+      occupation: '測試',
+      villageId: 'tranquil-fountain' as const,
+      satisfactionRequired: 0,
+      preferences: [
+        { kind: 'ingredient' as const, value: '香蕉' },
+        { kind: 'effect' as const, value: '補充精力' },
+      ],
+    }
 
     expect(banana?.source).toBe('computed')
     expect(banana?.effectAmbiguity).toBeUndefined()
-    expect(ingrid).toBeDefined()
-    expect(recipeCandidateMatchesCustomer(banana!, ingrid!)).toBe(true)
+    expect(recipeCandidateMatchesCustomer(banana!, syntheticCustomer)).toBe(true)
   })
 
   it('never claims full match from an ambiguous computed cutoff', () => {
