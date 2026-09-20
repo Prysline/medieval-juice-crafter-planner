@@ -17,7 +17,7 @@
 - 配方同時顯示批次原料成本與單杯原料成本；目前每批固定產出 2 杯。
 - 「配方工具」可用目前正式支援的 V1 製作鏈即時模擬有序原料序列；observed 配方優先，否則顯示 computed / ambiguity。
 - 個人配方只保存自訂名稱、有序 ingredient IDs、備註與建立時間；effects、cost、equipment、matching 每次由目前 domain 重新計算。
-- 全日 batch optimizer domain 已支援最低成本／最少浪費兩種 lexicographic objective、每批 2 杯、unresolved 顧客與購物清單；UI 尚未接入。
+- 「批次規劃」頁籤已接入 optimizer domain：可切全部／潛在／正式顧客、observed-only／allow computed、最低成本／最少浪費，並顯示批次、分配、原料清單、成本、剩餘杯與 unresolved 顧客。
 - 預測若在 effect cutoff 出現未確認同分 tie，會明確標示 ambiguous，且不參與完全匹配推薦。
 - 舊版 `mjc-stage` / `mjc-satisfaction` localStorage 會保守遷移到新版進度資料。
 
@@ -64,12 +64,14 @@ src/
     optimizerSolver.ts # 可替換的 async solver adapter contract
     optimizerHighsSolver.ts # HiGHS WASM lexicographic MIP adapter
     optimizer.ts       # batch plan / shopping list / unresolved result normalization
+    optimizerUi.ts     # UI 預設需求集合：已解鎖、今日未供應、正式／潛在篩選
   storage/
     plannerState.ts    # localStorage 讀寫、正式顧客與 legacy migration
     savedRecipes.ts    # 個人配方 schema validation / CRUD
   types.ts             # 共用 domain / data 型別
-  App.tsx              # 顧客／配方／配方工具頁籤
+  App.tsx              # 顧客／配方／配方工具／批次規劃頁籤
   RecipeTools.tsx      # Recipe Simulator + Personal Recipes UI
+  OptimizerTools.tsx   # lazy-load optimizer、控制項與結果 UI
   styles.css
   main.tsx             # React 入口
   **/*.test.ts         # domain / storage regression tests
@@ -96,7 +98,7 @@ V1 solver 使用 `@bubblyworld/highs-ts@1.3.0`（HiGHS WASM），並隔離在 so
 - `minimum-cost`：原料成本 → 批數／剩餘杯 → 配方種類數。
 - `minimum-waste`：批數／剩餘杯 → 原料成本 → 配方種類數。
 
-目前 solver domain 為 async；Slice C UI 應以 lazy import 載入 optimizer，避免主頁初始 bundle 直接包含 WASM。實測 bundle probe 的 HiGHS WASM 約 3.65 MB（gzip 約 1.10 MB），因此不應 eager-load。
+solver domain 為 async；「批次規劃」UI 只有在玩家按下「產生批次規劃」時才 dynamic import optimizer。Vite production build 會拆出約 22.84 kB optimizer JS、42.44 kB HiGHS glue 與 3.65 MB WASM（gzip 約 1.10 MB），避免首頁 initial bundle eager-load solver。
 
 ## 開發
 
