@@ -13,6 +13,7 @@ type Tab = 'customers' | 'recipes'
 type SortDirection = 'asc' | 'desc'
 type CustomerSortKey = 'name' | 'bestMatch' | 'bestPrice'
 type RecipeSortKey = 'name' | 'salePrice'
+type CustomerVisibility = 'available' | 'all'
 
 const scheduleLabels = {
   leave_home: '出家門',
@@ -21,6 +22,10 @@ const scheduleLabels = {
 } as const
 
 const recipeOrder = new Map(recipes.map((recipe, index) => [recipe.id, index]))
+
+const villageNames: Record<Customer['villageId'], string> = {
+  'east-harbor': '東港村',
+}
 
 function readStoredNumber(key: string, fallback: number) {
   const raw = window.localStorage.getItem(key)
@@ -45,6 +50,8 @@ function App() {
   const [tab, setTab] = useState<Tab>('customers')
   const [customerSortKey, setCustomerSortKey] =
     useState<CustomerSortKey>('bestMatch')
+  const [customerVisibility, setCustomerVisibility] =
+    useState<CustomerVisibility>('available')
   const [customerSortDirection, setCustomerSortDirection] =
     useState<SortDirection>('asc')
   const [recipeSortKey, setRecipeSortKey] = useState<RecipeSortKey>('salePrice')
@@ -57,8 +64,10 @@ function App() {
     const rows = customers
       .map((customer) => ({
         customer,
+        unlocked: customerIsUnlocked(customer, satisfaction),
         matches: matchingRecipesForCustomer(recipes, customer, stage),
       }))
+      .filter(({ unlocked }) => customerVisibility === 'all' || unlocked)
       .filter(({ customer, matches }) => {
         if (!normalizedQuery) return true
         const haystack = [
@@ -114,6 +123,8 @@ function App() {
   }, [
     normalizedQuery,
     stage,
+    satisfaction,
+    customerVisibility,
     customerSortDirection,
     customerSortKey,
   ])
@@ -253,7 +264,28 @@ function App() {
       </nav>
 
       {tab === 'customers' ? (
-        <section className="table-list customer-table" aria-label="顧客">
+        <>
+          <div className="customer-toolbar" aria-label="顧客顯示範圍">
+            <button
+              type="button"
+              className={customerVisibility === 'available' ? 'active' : ''}
+              onClick={() => setCustomerVisibility('available')}
+            >
+              目前可解鎖
+            </button>
+            <button
+              type="button"
+              className={customerVisibility === 'all' ? 'active' : ''}
+              onClick={() => setCustomerVisibility('all')}
+            >
+              全部顧客
+            </button>
+            <span>
+              東港村滿意度 {satisfaction}
+            </span>
+          </div>
+
+          <section className="table-list customer-table" aria-label="顧客">
           <div className="table-head customer-columns">
             <SortableHeader
               label="顧客"
@@ -261,6 +293,8 @@ function App() {
               direction={customerSortDirection}
               onClick={() => toggleCustomerSort('name')}
             />
+            <span>村子</span>
+            <span>解鎖滿意度</span>
             <span>喜好</span>
             <SortableHeader
               label="最佳完全匹配"
@@ -277,15 +311,16 @@ function App() {
             />
           </div>
 
-          {customerRows.map(({ customer, matches }) => (
+          {customerRows.map(({ customer, matches, unlocked }) => (
             <CustomerRow
               key={customer.id}
               customer={customer}
               matches={matches}
-              unlocked={customerIsUnlocked(customer, satisfaction)}
+              unlocked={unlocked}
             />
           ))}
-        </section>
+          </section>
+        </>
       ) : (
         <section className="table-list recipe-table" aria-label="配方">
           <div className="table-head recipe-columns">
@@ -361,11 +396,28 @@ function CustomerRow({
   const bestMatch = matches[0]
 
   return (
-    <details className="table-row">
+    <details className={`table-row${unlocked ? '' : ' locked-row'}`}>
       <summary className="customer-columns">
         <div className="primary-cell">
           <strong>{customer.name}</strong>
           <span className="cell-secondary">{customer.occupation}</span>
+          <span className="mobile-customer-meta">
+            {villageNames[customer.villageId]} · {customer.satisfactionRequired > 0
+              ? `解鎖 ${customer.satisfactionRequired}`
+              : '無滿意度門檻'}
+          </span>
+        </div>
+
+        <div className="village-cell">{villageNames[customer.villageId]}</div>
+
+        <div className="unlock-cell">
+          {customer.satisfactionRequired > 0 ? (
+            <span className={unlocked ? 'status unlocked' : 'status locked'}>
+              {unlocked ? `${customer.satisfactionRequired} ✓` : customer.satisfactionRequired}
+            </span>
+          ) : (
+            <span className="no-threshold">—</span>
+          )}
         </div>
 
         <div className="preferences-cell">
@@ -382,12 +434,22 @@ function CustomerRow({
       </summary>
 
       <div className="row-details">
-        {customer.satisfactionRequired > 0 && (
+        <div className="detail-line">
+          <span className="detail-label">村子</span>
+          <span>{villageNames[customer.villageId]}</span>
+        </div>
+
+        {customer.satisfactionRequired > 0 ? (
           <div className="detail-line">
-            <span className="detail-label">顧客滿意度門檻</span>
+            <span className="detail-label">解鎖滿意度</span>
             <span className={unlocked ? 'status unlocked' : 'status locked'}>
               {unlocked ? `${customer.satisfactionRequired}（已達）` : customer.satisfactionRequired}
             </span>
+          </div>
+        ) : (
+          <div className="detail-line">
+            <span className="detail-label">解鎖滿意度</span>
+            <span>無已知門檻</span>
           </div>
         )}
 
