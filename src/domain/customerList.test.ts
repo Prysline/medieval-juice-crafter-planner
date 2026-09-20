@@ -55,6 +55,24 @@ describe('customer list regressions', () => {
     ).toEqual(['nanette', 'jack', 'derrick'])
   })
 
+  it('keeps unknown-price matches after known-price matches when sorting by price', () => {
+    const unknownMatch = {
+      id: 'computed-banana',
+      name: '預測（香蕉）',
+      salePrice: null,
+    }
+    const rows: CustomerListRow[] = [
+      row('jack', [unknownMatch]),
+      row('nanette', [lemon]),
+    ]
+
+    expect(
+      sortCustomerRows(rows, 'bestPrice', 'desc', recipeOrder).map(
+        ({ customer }) => customer.id,
+      ),
+    ).toEqual(['nanette', 'jack'])
+  })
+
   it('keeps customers without a match after matched customers when sorting by price', () => {
     const rows = [
       row('derrick'),
