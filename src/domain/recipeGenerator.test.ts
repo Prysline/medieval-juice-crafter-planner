@@ -150,6 +150,27 @@ describe('recipe generator', () => {
     }
   })
 
+  it('keeps all pre-fountain valid sequences on observed data', () => {
+    const seasonerCandidates = generateRecipeCandidates('seasoner-unlocked')
+    const juicerCandidates = generateRecipeCandidates('juicer-unlocked')
+
+    expect(seasonerCandidates).toHaveLength(10)
+    expect(juicerCandidates).toHaveLength(20)
+    expect(seasonerCandidates.every((candidate) => candidate.source === 'observed')).toBe(true)
+    expect(juicerCandidates.every((candidate) => candidate.source === 'observed')).toBe(true)
+  })
+
+  it('does not invent juice-blender combinations when stage five unlocks', () => {
+    const beforeBlender = generateRecipeCandidates('tranquil-fountain-unlocked')
+      .map((candidate) => candidate.ingredients.join(' → '))
+      .sort()
+    const afterBlender = generateRecipeCandidates('juice-blender-unlocked')
+      .map((candidate) => candidate.ingredients.join(' → '))
+      .sort()
+
+    expect(afterBlender).toEqual(beforeBlender)
+  })
+
   it('never invents a sale price for computed candidates', () => {
     const candidates = generateRecipeCandidates('tranquil-fountain-unlocked')
     const bananaCinnamon = candidates.find(
