@@ -91,7 +91,7 @@ function App() {
       <header className="hero">
         <p className="eyebrow">Medieval Juice Crafter</p>
         <h1>果汁攻略規劃器</h1>
-        <p className="lede">先把「這位客人現在能喝什麼？」變成幾秒就查得到。</p>
+        <p className="lede">快速查顧客、配方與目前能完全滿足的飲料。</p>
       </header>
 
       <section className="progress-panel" aria-label="目前進度">
@@ -155,9 +155,9 @@ function App() {
       </nav>
 
       {tab === 'customers' ? (
-        <section className="card-grid" aria-label="顧客">
+        <section className="result-list" aria-label="顧客">
           {customerRows.map(({ customer, matches }) => (
-            <CustomerCard
+            <CustomerRow
               key={customer.id}
               customer={customer}
               matches={matches}
@@ -166,9 +166,9 @@ function App() {
           ))}
         </section>
       ) : (
-        <section className="card-grid" aria-label="配方">
+        <section className="result-list" aria-label="配方">
           {recipeRows.map((recipe) => (
-            <RecipeCard key={recipe.id} recipe={recipe} satisfaction={satisfaction} />
+            <RecipeRow key={recipe.id} recipe={recipe} satisfaction={satisfaction} />
           ))}
         </section>
       )}
@@ -180,7 +180,7 @@ function App() {
   )
 }
 
-function CustomerCard({
+function CustomerRow({
   customer,
   matches,
   unlocked,
@@ -189,58 +189,78 @@ function CustomerCard({
   matches: Recipe[]
   unlocked: boolean
 }) {
+  const bestMatch = matches[0]
+
   return (
-    <article className="card customer-card">
-      <div className="card-heading">
-        <div>
-          <h2>{customer.name}</h2>
-          <p>{customer.occupation} · 東港村</p>
+    <details className="list-row">
+      <summary>
+        <div className="summary-main">
+          <div className="summary-title-line">
+            <strong>{customer.name}</strong>
+            <span>{customer.occupation}</span>
+            {customer.satisfactionRequired > 0 && (
+              <span className={unlocked ? 'status unlocked' : 'status locked'}>
+                {unlocked ? '已達門檻' : `滿意度 ${customer.satisfactionRequired}`}
+              </span>
+            )}
+          </div>
+          <p className="summary-meta">
+            {customer.preferences.map((preference) => preference.value).join('・')}
+          </p>
         </div>
-        {customer.satisfactionRequired > 0 && (
-          <span className={unlocked ? 'status unlocked' : 'status locked'}>
-            {unlocked ? '已達門檻' : `滿意度 ${customer.satisfactionRequired}`}
-          </span>
-        )}
-      </div>
 
-      <TagGroup
-        title="喜好"
-        tags={customer.preferences.map((preference) => preference.value)}
-      />
-
-      <div className="match-list">
-        <div className="section-title">
-          <strong>完全滿足配方</strong>
-          <span>{matches.length} 種</span>
+        <div className="summary-result">
+          {bestMatch ? (
+            <>
+              <span>{bestMatch.name}</span>
+              <strong>{bestMatch.salePrice}</strong>
+            </>
+          ) : (
+            <span className="muted">目前無完全匹配</span>
+          )}
         </div>
-        {matches.length > 0 ? (
-          <ol>
-            {matches.map((recipe) => (
-              <li key={recipe.id}>
-                <span>{recipe.name}</span>
-                <strong>{recipe.salePrice}</strong>
-              </li>
+      </summary>
+
+      <div className="row-details">
+        <TagGroup
+          title="喜好"
+          tags={customer.preferences.map((preference) => preference.value)}
+        />
+
+        <div className="match-list">
+          <div className="section-title">
+            <strong>完全滿足配方</strong>
+            <span>{matches.length} 種</span>
+          </div>
+          {matches.length > 0 ? (
+            <ol>
+              {matches.map((recipe) => (
+                <li key={recipe.id}>
+                  <span>{recipe.name}</span>
+                  <strong>{recipe.salePrice}</strong>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="muted">目前階段沒有能完全滿足所有喜好的已知配方。</p>
+          )}
+        </div>
+
+        {customer.schedule && (
+          <div className="schedule">
+            {customer.schedule.map((entry, index) => (
+              <span key={`${entry.type}-${index}`} title={entry.note}>
+                {scheduleLabels[entry.type]} {entry.approxTime}
+              </span>
             ))}
-          </ol>
-        ) : (
-          <p className="muted">目前階段沒有能完全滿足所有喜好的已知配方。</p>
+          </div>
         )}
       </div>
-
-      {customer.schedule && (
-        <div className="schedule">
-          {customer.schedule.map((entry, index) => (
-            <span key={`${entry.type}-${index}`} title={entry.note}>
-              {scheduleLabels[entry.type]} {entry.approxTime}
-            </span>
-          ))}
-        </div>
-      )}
-    </article>
+    </details>
   )
 }
 
-function RecipeCard({
+function RecipeRow({
   recipe,
   satisfaction,
 }: {
@@ -252,30 +272,41 @@ function RecipeCard({
     .filter((customer) => recipeMatchesCustomer(recipe, customer))
 
   return (
-    <article className="card recipe-card">
-      <div className="card-heading">
-        <div>
-          <h2>{recipe.name}</h2>
-          <p>階段 {recipe.stage}</p>
+    <details className="list-row">
+      <summary>
+        <div className="summary-main">
+          <div className="summary-title-line">
+            <strong>{recipe.name}</strong>
+            <span>階段 {recipe.stage}</span>
+          </div>
+          <p className="summary-meta">{recipe.ingredients.join('・')}</p>
         </div>
-        <span className="price">{recipe.salePrice}</span>
-      </div>
 
-      <TagGroup title="原料" tags={recipe.ingredients} />
-      <TagGroup title="成品特性" tags={recipe.effects} />
-
-      <div className="match-list">
-        <div className="section-title">
-          <strong>可完全滿足顧客</strong>
-          <span>{matchingCustomers.length} 人</span>
+        <div className="summary-result recipe-price">
+          <strong>{recipe.salePrice}</strong>
         </div>
-        <p className="customer-names">
-          {matchingCustomers.length
-            ? matchingCustomers.map((customer) => customer.name).join('、')
-            : '目前滿意度下沒有能完全滿足的已知顧客。'}
-        </p>
+      </summary>
+
+      <div className="row-details">
+        <TagGroup title="原料" tags={recipe.ingredients} />
+        <TagGroup title="成品特性" tags={recipe.effects} />
+        <TagGroup title="所需設備" tags={recipe.equipment} />
+
+        <div className="match-list">
+          <div className="section-title">
+            <strong>可完全滿足顧客</strong>
+            <span>{matchingCustomers.length} 人</span>
+          </div>
+          <p className="customer-names">
+            {matchingCustomers.length
+              ? matchingCustomers
+                  .map((customer) => `${customer.name}(${customer.occupation})`)
+                  .join('、')
+              : '目前滿意度下沒有能完全滿足的已知顧客。'}
+          </p>
+        </div>
       </div>
-    </article>
+    </details>
   )
 }
 
