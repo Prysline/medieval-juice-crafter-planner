@@ -9,29 +9,35 @@ export interface CustomerListMatch {
   salePrice: number | null
 }
 
-export interface CustomerListRow {
+export interface CustomerListRow<
+  TMatch extends CustomerListMatch = CustomerListMatch,
+> {
   customer: Customer
   unlocked: boolean
-  matches: CustomerListMatch[]
+  matches: TMatch[]
 }
 
-export function filterSuppliedCustomerRows(
-  rows: CustomerListRow[],
+export function filterSuppliedCustomerRows<
+  TMatch extends CustomerListMatch,
+>(
+  rows: CustomerListRow<TMatch>[],
   suppliedCustomerIds: string[],
   showSuppliedToday: boolean,
-): CustomerListRow[] {
+): CustomerListRow<TMatch>[] {
   if (showSuppliedToday) return rows
 
   const supplied = new Set(suppliedCustomerIds)
   return rows.filter(({ customer }) => !supplied.has(customer.id))
 }
 
-export function sortCustomerRows(
-  rows: CustomerListRow[],
+export function sortCustomerRows<
+  TMatch extends CustomerListMatch,
+>(
+  rows: CustomerListRow<TMatch>[],
   sortKey: CustomerSortKey,
   sortDirection: SortDirection,
   recipeOrder: Map<string, number>,
-): CustomerListRow[] {
+): CustomerListRow<TMatch>[] {
   const direction = sortDirection === 'asc' ? 1 : -1
 
   return [...rows].sort((a, b) => {
