@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { customers } from '../data/customers'
+import { recipeResearchObservations } from '../data/recipeResearch'
 import { recipes } from '../data/recipes'
 import {
   matchingRecipesForCustomer,
@@ -50,19 +51,24 @@ describe('customer recipe matching', () => {
     expect(lemonSugarMint?.name).toBe('甜味（檸檬 → 糖 → 薄荷）')
   })
 
-  it('records repeated seasoning effect totals from observed recipes', () => {
-    const fourIngredient = recipes.find(
-      (recipe) => recipe.id === 'orange-sugar-mint-sugar',
+  it('keeps the normal recipe database capped at three ingredients for now', () => {
+    expect(Math.max(...recipes.map((recipe) => recipe.ingredients.length))).toBe(3)
+  })
+
+  it('keeps longer repeated-seasoning observations in research data', () => {
+    const orangeSugarMintMint = recipeResearchObservations.find(
+      (observation) =>
+        observation.ingredients.join('|') === '橙子|糖|薄荷|薄荷',
     )
-    const sixIngredient = recipes.find(
-      (recipe) => recipe.id === 'orange-sugar-mint-sugar-mint-mint',
+    const sixIngredient = recipeResearchObservations.find(
+      (observation) => observation.ingredients.length === 6,
     )
 
-    expect(fourIngredient?.effects).toEqual([
-      { name: '甜味', value: 10 },
-      { name: '補充精力', value: 6 },
-      { name: '清新口氣', value: 4 },
-      { name: '增強免疫', value: 4 },
+    expect(orangeSugarMintMint?.effects).toEqual([
+      { name: '清新口氣', value: 8 },
+      { name: '舒緩腸胃', value: 6 },
+      { name: '芳香', value: 5 },
+      { name: '甜味', value: 5 },
     ])
     expect(sixIngredient?.effects).toContainEqual({ name: '芳香', value: 7 })
   })
