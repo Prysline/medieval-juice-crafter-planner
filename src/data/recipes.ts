@@ -7,7 +7,10 @@ export const recipes: Recipe[] = [
     stage: 1,
     salePrice: 9,
     ingredients: ['檸檬'],
-    effects: ['酸味', '增強免疫'],
+    effects: [
+      { name: '酸味', value: 4 },
+      { name: '增強免疫', value: 3 },
+    ],
     equipment: ['柑橘榨汁機', '果汁成品台'],
   },
   {
@@ -16,7 +19,10 @@ export const recipes: Recipe[] = [
     stage: 1,
     salePrice: 11,
     ingredients: ['橙子'],
-    effects: ['增強免疫', '煥亮肌膚'],
+    effects: [
+      { name: '增強免疫', value: 4 },
+      { name: '煥亮肌膚', value: 2 },
+    ],
     equipment: ['柑橘榨汁機', '果汁成品台'],
   },
   {
@@ -25,7 +31,11 @@ export const recipes: Recipe[] = [
     stage: 2,
     salePrice: 22,
     ingredients: ['橙子', '糖'],
-    effects: ['甜味', '增強免疫', '補充精力'],
+    effects: [
+      { name: '甜味', value: 5 },
+      { name: '增強免疫', value: 4 },
+      { name: '補充精力', value: 3 },
+    ],
     equipment: ['柑橘榨汁機', '調味器', '果汁成品台'],
   },
   {
@@ -34,7 +44,11 @@ export const recipes: Recipe[] = [
     stage: 2,
     salePrice: 28,
     ingredients: ['檸檬', '薄荷'],
-    effects: ['清新口氣', '酸味', '舒緩腸胃'],
+    effects: [
+      { name: '清新口氣', value: 4 },
+      { name: '酸味', value: 4 },
+      { name: '舒緩腸胃', value: 3 },
+    ],
     equipment: ['柑橘榨汁機', '調味器', '果汁成品台'],
   },
   {
@@ -43,7 +57,11 @@ export const recipes: Recipe[] = [
     stage: 2,
     salePrice: 30,
     ingredients: ['橙子', '薄荷'],
-    effects: ['清新口氣', '增強免疫', '舒緩腸胃'],
+    effects: [
+      { name: '清新口氣', value: 4 },
+      { name: '增強免疫', value: 4 },
+      { name: '舒緩腸胃', value: 3 },
+    ],
     equipment: ['柑橘榨汁機', '調味器', '果汁成品台'],
   },
   {
@@ -52,7 +70,11 @@ export const recipes: Recipe[] = [
     stage: 2,
     salePrice: 19,
     ingredients: ['檸檬', '糖'],
-    effects: ['甜味', '酸味', '補充精力'],
+    effects: [
+      { name: '甜味', value: 5 },
+      { name: '酸味', value: 4 },
+      { name: '補充精力', value: 3 },
+    ],
     equipment: ['柑橘榨汁機', '調味器', '果汁成品台'],
   },
   {
@@ -61,7 +83,12 @@ export const recipes: Recipe[] = [
     stage: 2,
     salePrice: 42,
     ingredients: ['橙子', '糖', '薄荷'],
-    effects: ['甜味', '清新口氣', '增強免疫', '舒緩腸胃'],
+    effects: [
+      { name: '甜味', value: 5 },
+      { name: '清新口氣', value: 4 },
+      { name: '增強免疫', value: 4 },
+      { name: '舒緩腸胃', value: 3 },
+    ],
     equipment: ['柑橘榨汁機', '調味器', '果汁成品台'],
   },
   {
@@ -70,7 +97,12 @@ export const recipes: Recipe[] = [
     stage: 2,
     salePrice: 42,
     ingredients: ['橙子', '薄荷', '糖'],
-    effects: ['甜味', '清新口氣', '增強免疫', '補充精力'],
+    effects: [
+      { name: '甜味', value: 5 },
+      { name: '清新口氣', value: 4 },
+      { name: '增強免疫', value: 4 },
+      { name: '補充精力', value: 3 },
+    ],
     equipment: ['柑橘榨汁機', '調味器', '果汁成品台'],
   },
   {
@@ -79,7 +111,12 @@ export const recipes: Recipe[] = [
     stage: 2,
     salePrice: 39,
     ingredients: ['檸檬', '糖', '薄荷'],
-    effects: ['甜味', '清新口氣', '酸味', '舒緩腸胃'],
+    effects: [
+      { name: '甜味', value: 5 },
+      { name: '清新口氣', value: 4 },
+      { name: '酸味', value: 4 },
+      { name: '舒緩腸胃', value: 3 },
+    ],
     equipment: ['柑橘榨汁機', '調味器', '果汁成品台'],
   },
   {
@@ -88,7 +125,54 @@ export const recipes: Recipe[] = [
     stage: 2,
     salePrice: 39,
     ingredients: ['檸檬', '薄荷', '糖'],
-    effects: ['甜味', '清新口氣', '酸味', '補充精力'],
+    effects: [
+      { name: '甜味', value: 5 },
+      { name: '清新口氣', value: 4 },
+      { name: '酸味', value: 4 },
+      { name: '補充精力', value: 3 },
+    ],
+    equipment: ['柑橘榨汁機', '調味器', '果汁成品台'],
+  },
+  {
+    id: 'orange-sugar-mint-sugar',
+    name: '甜味（橙子 → 糖 → 薄荷 → 糖）',
+    stage: 2,
+    salePrice: 42,
+    ingredients: ['橙子', '糖', '薄荷', '糖'],
+    effects: [
+      { name: '甜味', value: 10 },
+      { name: '補充精力', value: 6 },
+      { name: '清新口氣', value: 4 },
+      { name: '增強免疫', value: 4 },
+    ],
+    equipment: ['柑橘榨汁機', '調味器', '果汁成品台'],
+  },
+  {
+    id: 'orange-sugar-mint-sugar-mint',
+    name: '甜味（橙子 → 糖 → 薄荷 → 糖 → 薄荷）',
+    stage: 2,
+    salePrice: 42,
+    ingredients: ['橙子', '糖', '薄荷', '糖', '薄荷'],
+    effects: [
+      { name: '甜味', value: 10 },
+      { name: '清新口氣', value: 8 },
+      { name: '舒緩腸胃', value: 6 },
+      { name: '補充精力', value: 6 },
+    ],
+    equipment: ['柑橘榨汁機', '調味器', '果汁成品台'],
+  },
+  {
+    id: 'orange-sugar-mint-sugar-mint-mint',
+    name: '甜味（橙子 → 糖 → 薄荷 → 糖 → 薄荷 → 薄荷）',
+    stage: 2,
+    salePrice: 42,
+    ingredients: ['橙子', '糖', '薄荷', '糖', '薄荷', '薄荷'],
+    effects: [
+      { name: '清新口氣', value: 12 },
+      { name: '甜味', value: 10 },
+      { name: '舒緩腸胃', value: 9 },
+      { name: '芳香', value: 7 },
+    ],
     equipment: ['柑橘榨汁機', '調味器', '果汁成品台'],
   },
 ]
