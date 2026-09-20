@@ -271,7 +271,7 @@ function App() {
               className={customerVisibility === 'available' ? 'active' : ''}
               onClick={() => setCustomerVisibility('available')}
             >
-              目前可解鎖
+              滿意度門檻已達
             </button>
             <button
               type="button"
