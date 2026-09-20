@@ -1,12 +1,10 @@
 import type { Recipe } from '../types'
 
 /**
- * Canonical recipes shown in the normal planner database.
+ * 一般網站顯示的已確認配方。
  *
- * For now we intentionally keep fixed entries to at most three ingredients.
- * Longer repeated-seasoning sequences are useful for researching the effect
- * formula, but they explode combinatorially and currently provide no observed
- * sale-price benefit. Those observations live in recipeResearch.ts instead.
+ * 目前固定條目最多收錄三種原料。四原料以上的重複調味組合會快速膨脹，
+ * 且目前只觀察到特性變化、沒有售價收益，因此改放 recipeResearch.ts 研究。
  */
 export const recipes: Recipe[] = [
   {
