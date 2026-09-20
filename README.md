@@ -15,6 +15,8 @@
 - 三原料配方保留調味順序；四原料以上的重複調味實測不進一般配方列表。
 - 三種以下有效序列會自動產生候選：既有實測配方優先，未實測組合只顯示預測特性，不推導售價。
 - 配方同時顯示批次原料成本與單杯原料成本；目前每批固定產出 2 杯。
+- 「配方工具」可用目前正式支援的 V1 製作鏈即時模擬有序原料序列；observed 配方優先，否則顯示 computed / ambiguity。
+- 個人配方只保存自訂名稱、有序 ingredient IDs、備註與建立時間；effects、cost、equipment、matching 每次由目前 domain 重新計算。
 - 預測若在 effect cutoff 出現未確認同分 tie，會明確標示 ambiguous，且不參與完全匹配推薦。
 - 舊版 `mjc-stage` / `mjc-satisfaction` localStorage 會保守遷移到新版進度資料。
 
@@ -55,11 +57,14 @@ src/
     customerRecommendation.ts # 單人最低成本 full-match recommendation
     matching.ts        # 完全／部分匹配；ambiguous computed 不宣稱 full match
     recipeCost.ts      # 批次／單杯原料成本
-    recipeGenerator.ts # ≤3 原料候選生成、effect 累加、slot 與 cutoff ambiguity
+    recipeEvaluator.ts # 單一有序序列 validation / observed overlay / computed evaluation
+    recipeGenerator.ts # 只枚舉 V1 合法候選，再交由 evaluator 評估
   storage/
     plannerState.ts    # localStorage 讀寫、正式顧客與 legacy migration
+    savedRecipes.ts    # 個人配方 schema validation / CRUD
   types.ts             # 共用 domain / data 型別
-  App.tsx              # 目前 MVP UI
+  App.tsx              # 顧客／配方／配方工具頁籤
+  RecipeTools.tsx      # Recipe Simulator + Personal Recipes UI
   styles.css
   main.tsx             # React 入口
   **/*.test.ts         # domain / storage regression tests
@@ -95,4 +100,4 @@ npm run build
 
 GitHub Pages 由 `.github/workflows/pages.yml` 在 `main` 更新後建置 `dist/` 並部署。
 
-目前玩家進度使用瀏覽器 `localStorage` 保存，不需要後端。正式顧客使用 `mjc-formal-customers`，與每日重置的 `mjc-supplied-today` 分開保存。
+目前玩家進度使用瀏覽器 `localStorage` 保存，不需要後端。正式顧客使用 `mjc-formal-customers`，與每日重置的 `mjc-supplied-today` 分開保存；個人配方使用 `mjc-saved-recipes`，只保存玩家輸入資料，不保存 derived evaluation。

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import RecipeTools from './RecipeTools'
 import { customers } from './data/customers'
 import { progressMilestoneLabels, progressMilestones } from './data/progress'
 import { villageNames } from './data/villages'
@@ -48,7 +49,7 @@ import type {
   VillageId,
 } from './types'
 
-type Tab = 'customers' | 'recipes'
+type Tab = 'customers' | 'recipes' | 'tools'
 type RecipeSortKey = 'name' | 'salePrice'
 type CustomerVisibility = 'available' | 'all'
 
@@ -374,19 +375,25 @@ function App() {
         )}
       </section>
 
-      <section className="search-panel">
-        <input
-          aria-label="搜尋"
-          placeholder="搜尋顧客、職業、配方、原料、特性……"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-        {query && (
-          <button className="clear-button" type="button" onClick={() => setQuery('')}>
-            清除
-          </button>
-        )}
-      </section>
+      {tab !== 'tools' && (
+        <section className="search-panel">
+          <input
+            aria-label="搜尋"
+            placeholder="搜尋顧客、職業、配方、原料、特性……"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          {query && (
+            <button
+              className="clear-button"
+              type="button"
+              onClick={() => setQuery('')}
+            >
+              清除
+            </button>
+          )}
+        </section>
+      )}
 
       <nav className="tabs" aria-label="資料類型">
         <button
@@ -404,6 +411,13 @@ function App() {
         >
           配方
           <span>{recipeRows.length}</span>
+        </button>
+        <button
+          type="button"
+          className={tab === 'tools' ? 'active' : ''}
+          onClick={() => setTab('tools')}
+        >
+          配方工具
         </button>
       </nav>
 
@@ -492,7 +506,7 @@ function App() {
           )}
           </section>
         </>
-      ) : (
+      ) : tab === 'recipes' ? (
         <section className="table-list recipe-table" aria-label="配方">
           <div className="table-head recipe-columns">
             <SortableHeader
@@ -522,6 +536,11 @@ function App() {
             />
           ))}
         </section>
+      ) : (
+        <RecipeTools
+          currentProgress={currentProgress}
+          satisfactionByVillage={satisfactionByVillage}
+        />
       )}
 
       <footer>
