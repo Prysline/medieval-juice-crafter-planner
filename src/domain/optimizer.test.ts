@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Customer, RecipeCandidate } from '../types'
+import { customers as canonicalCustomers } from '../data/customers'
 import { optimizeBatchPlan } from './optimizer'
 import type { OptimizationRequest } from './optimizerModel'
 
@@ -242,6 +243,25 @@ describe('batch optimizer', () => {
         },
       ]),
     )
+    expect(
+      result.shoppingList.reduce((sum, item) => sum + item.totalCost, 0),
+    ).toBe(result.totalIngredientCost)
+  })
+  it('solves the current tranquil-fountain dataset without duplicate assignments', () => {
+    const result = optimizeBatchPlan({
+      customerIds: canonicalCustomers.map((item) => item.id),
+      currentProgress: 'tranquil-fountain-unlocked',
+      suppliedCustomerIds: [],
+      candidatePolicy: 'allow-unambiguous-computed',
+      objective: 'minimum-cost',
+    })
+
+    const assignedIds = result.assignments.map((item) => item.customerId)
+    expect(new Set(assignedIds).size).toBe(assignedIds.length)
+    expect(
+      assignedIds.length + result.unresolvedCustomers.length,
+    ).toBe(canonicalCustomers.length)
+    expect(result.batches.every((batch) => batch.customerIds.length <= 2)).toBe(true)
     expect(
       result.shoppingList.reduce((sum, item) => sum + item.totalCost, 0),
     ).toBe(result.totalIngredientCost)
