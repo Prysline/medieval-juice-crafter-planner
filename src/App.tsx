@@ -210,7 +210,7 @@ function CustomerCard({
 
       <div className="match-list">
         <div className="section-title">
-          <strong>目前可供應</strong>
+          <strong>完全滿足配方</strong>
           <span>{matches.length} 種</span>
         </div>
         {matches.length > 0 ? (
@@ -223,7 +223,7 @@ function CustomerCard({
             ))}
           </ol>
         ) : (
-          <p className="muted">目前階段沒有已知可匹配配方。</p>
+          <p className="muted">目前階段沒有能完全滿足所有喜好的已知配方。</p>
         )}
       </div>
 
@@ -266,13 +266,13 @@ function RecipeCard({
 
       <div className="match-list">
         <div className="section-title">
-          <strong>可匹配顧客</strong>
+          <strong>可完全滿足顧客</strong>
           <span>{matchingCustomers.length} 人</span>
         </div>
         <p className="customer-names">
           {matchingCustomers.length
             ? matchingCustomers.map((customer) => customer.name).join('、')
-            : '目前滿意度下沒有已知顧客。'}
+            : '目前滿意度下沒有能完全滿足的已知顧客。'}
         </p>
       </div>
     </article>
