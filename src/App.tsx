@@ -34,6 +34,20 @@ function readStoredNumber(key: string, fallback: number) {
   return Number.isFinite(value) ? value : fallback
 }
 
+function readStoredStringArray(key: string): string[] {
+  const raw = window.localStorage.getItem(key)
+  if (raw === null) return []
+
+  try {
+    const value = JSON.parse(raw)
+    return Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === 'string')
+      : []
+  } catch {
+    return []
+  }
+}
+
 function formatEffect(effect: EffectValue) {
   return `${effect.name}（${effect.value}）`
 }
@@ -57,6 +71,9 @@ function App() {
   const [recipeSortKey, setRecipeSortKey] = useState<RecipeSortKey>('salePrice')
   const [recipeSortDirection, setRecipeSortDirection] =
     useState<SortDirection>('desc')
+  const [suppliedCustomerIds, setSuppliedCustomerIds] = useState<string[]>(() =>
+    readStoredStringArray('mjc-supplied-today'),
+  )
 
   const normalizedQuery = query.trim().toLocaleLowerCase('zh-Hant')
 
@@ -195,6 +212,22 @@ function App() {
     setRecipeSortDirection(key === 'salePrice' ? 'desc' : 'asc')
   }
 
+  function toggleSuppliedToday(customerId: string) {
+    setSuppliedCustomerIds((current) => {
+      const next = current.includes(customerId)
+        ? current.filter((id) => id !== customerId)
+        : [...current, customerId]
+
+      window.localStorage.setItem('mjc-supplied-today', JSON.stringify(next))
+      return next
+    })
+  }
+
+  function resetSuppliedToday() {
+    setSuppliedCustomerIds([])
+    window.localStorage.removeItem('mjc-supplied-today')
+  }
+
   return (
     <main className="app-shell">
       <header className="hero">
@@ -280,8 +313,16 @@ function App() {
             >
               全部顧客
             </button>
+            <button
+              type="button"
+              className="reset-supply-button"
+              disabled={suppliedCustomerIds.length === 0}
+              onClick={resetSuppliedToday}
+            >
+              重置今日供應
+            </button>
             <span>
-              東港村滿意度 {satisfaction}
+              今日已供應 {suppliedCustomerIds.length} 人 · 東港村滿意度 {satisfaction}
             </span>
           </div>
 
@@ -309,6 +350,7 @@ function App() {
               alignEnd
               onClick={() => toggleCustomerSort('bestPrice')}
             />
+            <span className="align-end">今日已供應</span>
           </div>
 
           {customerRows.map(({ customer, matches, unlocked }) => (
@@ -317,6 +359,8 @@ function App() {
               customer={customer}
               matches={matches}
               unlocked={unlocked}
+              suppliedToday={suppliedCustomerIds.includes(customer.id)}
+              onToggleSupplied={() => toggleSuppliedToday(customer.id)}
             />
           ))}
           </section>
@@ -388,15 +432,27 @@ function CustomerRow({
   customer,
   matches,
   unlocked,
+  suppliedToday,
+  onToggleSupplied,
 }: {
   customer: Customer
   matches: Recipe[]
   unlocked: boolean
+  suppliedToday: boolean
+  onToggleSupplied: () => void
 }) {
   const bestMatch = matches[0]
 
+  const rowClassName = [
+    'table-row',
+    unlocked ? '' : 'locked-row',
+    suppliedToday ? 'supplied-row' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+
   return (
-    <details className={`table-row${unlocked ? '' : ' locked-row'}`}>
+    <details className={rowClassName}>
       <summary className="customer-columns">
         <div className="primary-cell">
           <strong>{customer.name}</strong>
@@ -406,6 +462,11 @@ function CustomerRow({
               ? `解鎖 ${customer.satisfactionRequired}`
               : '無滿意度門檻'}
           </span>
+          <SupplyToggle
+            mobile
+            supplied={suppliedToday}
+            onToggle={onToggleSupplied}
+          />
         </div>
 
         <div className="village-cell">{villageNames[customer.villageId]}</div>
@@ -431,6 +492,8 @@ function CustomerRow({
         <div className="price-cell align-end">
           {bestMatch ? bestMatch.salePrice : '—'}
         </div>
+
+        <SupplyToggle supplied={suppliedToday} onToggle={onToggleSupplied} />
       </summary>
 
       <div className="row-details">
@@ -488,6 +551,33 @@ function CustomerRow({
         )}
       </div>
     </details>
+  )
+}
+
+function SupplyToggle({
+  supplied,
+  onToggle,
+  mobile = false,
+}: {
+  supplied: boolean
+  onToggle: () => void
+  mobile?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      className={`supply-toggle${supplied ? ' supplied' : ''}${mobile ? ' mobile' : ''}`}
+      aria-pressed={supplied}
+      aria-label={supplied ? '取消今日已供應果汁' : '標記今日已供應果汁'}
+      onClick={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        onToggle()
+      }}
+    >
+      <span aria-hidden="true">{supplied ? '✓' : '○'}</span>
+      <span className="supply-toggle-label">{supplied ? '已供應' : '未供應'}</span>
+    </button>
   )
 }
 
