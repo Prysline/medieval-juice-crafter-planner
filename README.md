@@ -2,14 +2,48 @@
 
 A mobile-first companion planner for **Medieval Juice Crafter**.
 
-## Goals
+## MVP goals
 
-- Track stage, village, customer and equipment unlocks.
-- Search customers and see which currently unlocked drinks match their preferences.
-- Browse recipes by ingredient, effect and sale price.
-- Plan customer sales with a no-waste batch mode.
-- Expand later into preparation, jar, inventory-slot and multi-trip planning.
+- Track the player's current stage and East Harbor customer satisfaction.
+- Search customers by name, occupation, preference, or matching recipe.
+- Show currently unlocked recipes that can satisfy each customer, sorted by sale price.
+- Browse recipes by ingredient, effect, equipment, and name.
+- Keep game data separate from matching and planning logic.
+- Add no-waste batch optimization after the lookup flow is stable.
 
-## Status
+## Current data coverage
 
-Early MVP foundation. Game data is being verified from direct gameplay observations and screenshots.
+The initial dataset covers:
+
+- East Harbor customers currently recorded from direct gameplay.
+- Stage 1 lemon/orange juice recipes.
+- Stage 2 seasoning-machine recipes using mint and sugar.
+- Known customer satisfaction gates.
+- Observed leave-home / return-village times for Ivo, Jack, and Nanette.
+
+Unverified rules are intentionally not promoted to confirmed game data.
+
+## Development
+
+```bash
+npm install
+npm run dev
+```
+
+Verification:
+
+```bash
+npm test
+npm run build
+```
+
+## Architecture
+
+```text
+src/
+  data/       # verified game data
+  domain/     # matching / future optimizer logic
+  App.tsx     # current mobile-first MVP UI
+```
+
+Player progress is currently stored in browser `localStorage`; no backend is required for the MVP.
