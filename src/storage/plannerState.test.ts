@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   readCurrentProgress,
+  readFormalCustomerIds,
   readSatisfactionByVillage,
   STORAGE_KEYS,
   writeCurrentProgress,
+  writeFormalCustomerIds,
 } from './plannerState'
 
 class MemoryStorage {
@@ -116,5 +118,29 @@ describe('planner state migration', () => {
     readSatisfactionByVillage(storage)
 
     expect(storage.getItem(STORAGE_KEYS.suppliedToday)).toBe(supplied)
+  })
+  it('stores formal customers independently from today supply state', () => {
+    const supplied = JSON.stringify(['nanette'])
+    const storage = new MemoryStorage({
+      [STORAGE_KEYS.suppliedToday]: supplied,
+    })
+
+    writeFormalCustomerIds(storage, ['jack'])
+
+    expect(readFormalCustomerIds(storage)).toEqual(['jack'])
+    expect(storage.getItem(STORAGE_KEYS.suppliedToday)).toBe(supplied)
+  })
+
+  it('deduplicates and safely reads formal customer ids', () => {
+    const storage = new MemoryStorage({
+      [STORAGE_KEYS.formalCustomers]: JSON.stringify([
+        'jack',
+        'jack',
+        42,
+        'nanette',
+      ]),
+    })
+
+    expect(readFormalCustomerIds(storage)).toEqual(['jack', 'nanette'])
   })
 })
