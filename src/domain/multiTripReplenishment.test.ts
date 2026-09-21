@@ -363,9 +363,13 @@ describe('multi-trip replenishment', () => {
       ),
     ).toEqual([
       'a-customer-1',
+      'a-customer-2',
       'b-customer-1',
+      'b-customer-2',
       'c-customer-1',
+      'c-customer-2',
       'd-customer-1',
+      'd-customer-2',
     ])
     expect(
       result.trips.flatMap((trip) =>
