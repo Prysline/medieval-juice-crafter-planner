@@ -28,7 +28,7 @@ describe('recipe sequence evaluator', () => {
     })
   })
 
-  it('returns computed data only when no observed overlay exists', () => {
+  it('returns observed tranquil-fountain data for a newly synced sequence', () => {
     const result = evaluateRecipeSequence(
       ['banana', 'cinnamon'],
       'tranquil-fountain-unlocked',
@@ -37,13 +37,58 @@ describe('recipe sequence evaluator', () => {
     expect(result.valid).toBe(true)
     if (!result.valid) return
 
-    expect(result.candidate.source).toBe('computed')
-    expect(result.candidate.salePrice).toBeNull()
-    expect(result.candidate.ingredients).toEqual(['香蕉', '肉桂'])
+    expect(result.candidate).toMatchObject({
+      id: 'banana-cinnamon',
+      source: 'observed',
+      salePrice: 37,
+      ingredients: ['香蕉', '肉桂'],
+      effects: [
+        { name: '調節血糖', value: 4 },
+        { name: '補充精力', value: 4 },
+        { name: '紓解壓力', value: 3 },
+      ],
+    })
     expect(result.cost).toMatchObject({
       batchIngredientCost: 31,
       unitIngredientCost: 15.5,
     })
+  })
+
+  it('uses the observed three-ingredient overlay instead of a computed prediction', () => {
+    const result = evaluateRecipeSequence(
+      ['banana', 'cinnamon', 'mint'],
+      'tranquil-fountain-unlocked',
+    )
+
+    expect(result.valid).toBe(true)
+    if (!result.valid) return
+
+    expect(result.candidate).toMatchObject({
+      id: 'banana-cinnamon-mint',
+      source: 'observed',
+      salePrice: 58,
+      effects: [
+        { name: '清新口氣', value: 4 },
+        { name: '紓解壓力', value: 4 },
+        { name: '調節血糖', value: 4 },
+        { name: '補充精力', value: 4 },
+      ],
+    })
+    expect(result.candidate.effectAmbiguity).toBeUndefined()
+  })
+
+  it('returns computed data only when no observed overlay exists', () => {
+    const result = evaluateRecipeSequence(
+      ['banana', 'sugar'],
+      'tranquil-fountain-unlocked',
+    )
+
+    expect(result.valid).toBe(true)
+    if (!result.valid) return
+
+    expect(result.candidate.source).toBe('computed')
+    expect(result.candidate.salePrice).toBeNull()
+    expect(result.candidate.ingredients).toEqual(['香蕉', '糖'])
   })
 
   it('preserves seasoning order as recipe identity', () => {
