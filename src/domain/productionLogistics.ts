@@ -381,7 +381,12 @@ export function buildProductionLogisticsPlan(
     ) >= 1
   }
 
-  function ensureRaw(ingredientId: string, quantity: number): boolean {
+  function ensureRaw(
+    ingredientId: string,
+    quantity: number,
+    machineSlotsUsed = 0,
+    machineSlotsAvailable = 0,
+  ): boolean {
     const key = rawKey(ingredientId)
     const available = materialQuantity(materials, key)
     if (available >= quantity) return true
@@ -396,7 +401,13 @@ export function buildProductionLogisticsPlan(
       missing,
       PROCESSING_STACK_CAPACITY,
     )
-    const snapshot = storageSnapshot(materials, inventory, settings)
+    const snapshot = storageSnapshot(
+      materials,
+      inventory,
+      settings,
+      machineSlotsUsed,
+      machineSlotsAvailable,
+    )
     if (!storageFits(snapshot)) {
       removeMaterial(materials, key, missing)
       return false
@@ -412,7 +423,11 @@ export function buildProductionLogisticsPlan(
     return true
   }
 
-  function ensureWater(quantity: number): boolean {
+  function ensureWater(
+    quantity: number,
+    machineSlotsUsed = 0,
+    machineSlotsAvailable = 0,
+  ): boolean {
     const available = materialQuantity(materials, 'water')
     if (available >= quantity) return true
 
@@ -438,7 +453,13 @@ export function buildProductionLogisticsPlan(
       fetchUnits,
       WATER_STACK_CAPACITY,
     )
-    const snapshot = storageSnapshot(materials, inventory, settings)
+    const snapshot = storageSnapshot(
+      materials,
+      inventory,
+      settings,
+      machineSlotsUsed,
+      machineSlotsAvailable,
+    )
     if (!storageFits(snapshot)) {
       removeMaterial(materials, 'water', fetchUnits)
       return false
@@ -482,6 +503,8 @@ export function buildProductionLogisticsPlan(
       }
 
       const materialsBefore = cloneMaterials(materials)
+      const machineSlotsAvailable = equipmentSlotCapacity(step.kind)
+      let preloadedMachineSlots = 0
 
       if (step.kind === 'juicing') {
         const ingredientId = step.addedIngredientId
@@ -492,50 +515,50 @@ export function buildProductionLogisticsPlan(
           }
           continue
         }
-      } else if (step.kind === 'seasoning') {
-        const ingredientId = step.addedIngredientId
-        if (!ingredientId || !ensureRaw(ingredientId, quantity)) {
-          materials.clear()
-          for (const [key, value] of materialsBefore) {
-            materials.set(key, value)
-          }
-          continue
-        }
-      } else if (step.kind === 'finalizing') {
-        if (!ensureWater(quantity)) {
-          materials.clear()
-          for (const [key, value] of materialsBefore) {
-            materials.set(key, value)
-          }
-          continue
-        }
-      }
-
-      if (step.kind === 'juicing') {
-        removeMaterial(
-          materials,
-          rawKey(step.addedIngredientId ?? ''),
-          quantity,
-        )
+        removeMaterial(materials, rawKey(ingredientId), quantity)
       } else {
-        for (const [key, required] of intermediateRequirements(
-          operation,
-        )) {
+        const requirements = intermediateRequirements(operation)
+        for (const [key, required] of requirements) {
           removeMaterial(materials, key, required)
+          preloadedMachineSlots += 1
         }
 
         if (step.kind === 'seasoning') {
-          removeMaterial(
-            materials,
-            rawKey(step.addedIngredientId ?? ''),
-            quantity,
-          )
+          const ingredientId = step.addedIngredientId
+          if (
+            !ingredientId ||
+            !ensureRaw(
+              ingredientId,
+              quantity,
+              preloadedMachineSlots,
+              machineSlotsAvailable,
+            )
+          ) {
+            materials.clear()
+            for (const [key, value] of materialsBefore) {
+              materials.set(key, value)
+            }
+            continue
+          }
+          removeMaterial(materials, rawKey(ingredientId), quantity)
         } else if (step.kind === 'finalizing') {
+          if (
+            !ensureWater(
+              quantity,
+              preloadedMachineSlots,
+              machineSlotsAvailable,
+            )
+          ) {
+            materials.clear()
+            for (const [key, value] of materialsBefore) {
+              materials.set(key, value)
+            }
+            continue
+          }
           removeMaterial(materials, 'water', quantity)
         }
       }
 
-      const machineSlotsAvailable = equipmentSlotCapacity(step.kind)
       const loadedSnapshot = storageSnapshot(
         materials,
         inventory,
