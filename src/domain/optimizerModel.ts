@@ -31,6 +31,11 @@ export interface OptimizationConstraints {
   maxJarTypeSwitches?: number
 }
 
+export interface OptimizationCarriedJuiceJarState {
+  recipeId: string | null
+  servings: number
+}
+
 export interface OptimizationRequest {
   customerIds: string[]
   currentProgress: ProgressMilestoneId
@@ -43,8 +48,13 @@ export interface OptimizationRequest {
   /** Ordered lexicographic criteria. Defaults to [objective]. */
   priorities?: OptimizationCriterion[]
   constraints?: OptimizationConstraints
-  /** Empty-jar availability used only by jar-switch criteria/constraints. */
+  /** Legacy empty-jar summary used when initialCarriedJuiceJars is omitted. */
   availableJuiceJarCount?: number
+  /**
+   * Minimal container summary used only by jar-switch criteria/constraints.
+   * This is not a packing or route model.
+   */
+  initialCarriedJuiceJars?: OptimizationCarriedJuiceJarState[]
 }
 
 export interface OptimizationSource {
@@ -83,13 +93,61 @@ export function normalizedOptimizationPriorities(
   return unique(requested) as OptimizationCriterion[]
 }
 
+export function normalizedInitialCarriedJuiceJars(
+  request: OptimizationRequest,
+): OptimizationCarriedJuiceJarState[] {
+  if (
+    request.initialCarriedJuiceJars &&
+    request.initialCarriedJuiceJars.length > 0
+  ) {
+    return request.initialCarriedJuiceJars.map((jar) => {
+      const servings =
+        typeof jar.servings === 'number' && Number.isFinite(jar.servings)
+          ? Math.max(0, Math.floor(jar.servings))
+          : 0
+
+      return {
+        recipeId:
+          servings > 0 && typeof jar.recipeId === 'string' && jar.recipeId
+            ? jar.recipeId
+            : null,
+        servings,
+      }
+    })
+  }
+
+  const value = request.availableJuiceJarCount
+  const count =
+    typeof value === 'number' && Number.isFinite(value)
+      ? Math.max(1, Math.floor(value))
+      : 1
+
+  return Array.from({ length: count }, () => ({
+    recipeId: null,
+    servings: 0,
+  }))
+}
+
 export function normalizedAvailableJuiceJarCount(
   request: OptimizationRequest,
 ): number {
-  const value = request.availableJuiceJarCount
-  return typeof value === 'number' && Number.isFinite(value)
-    ? Math.max(1, Math.floor(value))
-    : 1
+  return normalizedInitialCarriedJuiceJars(request).length
+}
+
+export function minimumJarTypeSwitchesForRecipeIds(
+  request: OptimizationRequest,
+  recipeIds: string[],
+): number {
+  const jars = normalizedInitialCarriedJuiceJars(request)
+  const initialRecipeIds = new Set(
+    jars.flatMap((jar) => (jar.recipeId && jar.servings > 0 ? [jar.recipeId] : [])),
+  )
+  const emptyJarCount = jars.filter(
+    (jar) => !jar.recipeId || jar.servings <= 0,
+  ).length
+  const unmatchedRecipeKinds = new Set(recipeIds).difference(initialRecipeIds).size
+
+  return Math.max(0, unmatchedRecipeKinds - emptyJarCount)
 }
 
 export function isRevenueCriterion(
