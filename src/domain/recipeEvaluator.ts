@@ -73,19 +73,34 @@ export function predictRecipeEffects(sequence: Ingredient[]): {
   effects: EffectValue[]
   effectAmbiguity?: RecipeCandidate['effectAmbiguity']
 } {
-  const totals = new Map<string, number>()
-
-  for (const ingredient of sequence) {
-    for (const effect of ingredient.effects) {
-      totals.set(effect.name, (totals.get(effect.name) ?? 0) + effect.value)
+  const totals = new Map<
+    string,
+    {
+      value: number
+      lastContributionIndex: number
     }
-  }
+  >()
+
+  sequence.forEach((ingredient, ingredientIndex) => {
+    for (const effect of ingredient.effects) {
+      const current = totals.get(effect.name)
+      totals.set(effect.name, {
+        value: (current?.value ?? 0) + effect.value,
+        lastContributionIndex: ingredientIndex,
+      })
+    }
+  })
 
   const ranked = [...totals.entries()]
-    .map(([name, value]) => ({ name, value }))
+    .map(([name, data]) => ({
+      name,
+      value: data.value,
+      lastContributionIndex: data.lastContributionIndex,
+    }))
     .sort(
       (a, b) =>
         b.value - a.value ||
+        b.lastContributionIndex - a.lastContributionIndex ||
         a.name.localeCompare(b.name, 'zh-Hant'),
     )
 
@@ -93,28 +108,48 @@ export function predictRecipeEffects(sequence: Ingredient[]): {
     new Set(sequence.map((item) => item.id)).size,
   )
   if (ranked.length <= slotCount) {
-    return { effects: ranked }
+    return {
+      effects: ranked.map(({ name, value }) => ({ name, value })),
+    }
   }
 
-  const cutoffValue = ranked[slotCount - 1]?.value
-  if (cutoffValue === undefined) {
-    return { effects: ranked }
+  const cutoff = ranked[slotCount - 1]
+  if (!cutoff) {
+    return {
+      effects: ranked.map(({ name, value }) => ({ name, value })),
+    }
   }
 
-  const guaranteed = ranked.filter((effect) => effect.value > cutoffValue)
-  const tiedAtCutoff = ranked.filter((effect) => effect.value === cutoffValue)
-  const remainingSlots = slotCount - guaranteed.length
+  const outranksCutoff = ranked.filter(
+    (effect) =>
+      effect.value > cutoff.value ||
+      (effect.value === cutoff.value &&
+        effect.lastContributionIndex > cutoff.lastContributionIndex),
+  )
+  const tiedAtCutoff = ranked.filter(
+    (effect) =>
+      effect.value === cutoff.value &&
+      effect.lastContributionIndex === cutoff.lastContributionIndex,
+  )
+  const remainingSlots = slotCount - outranksCutoff.length
 
   if (tiedAtCutoff.length <= remainingSlots) {
-    return { effects: [...guaranteed, ...tiedAtCutoff] }
+    return {
+      effects: [...outranksCutoff, ...tiedAtCutoff].map(
+        ({ name, value }) => ({ name, value }),
+      ),
+    }
   }
 
   return {
-    effects: guaranteed,
+    effects: outranksCutoff.map(({ name, value }) => ({ name, value })),
     effectAmbiguity: {
-      cutoffValue,
+      cutoffValue: cutoff.value,
       remainingSlots,
-      candidates: tiedAtCutoff,
+      candidates: tiedAtCutoff.map(({ name, value }) => ({
+        name,
+        value,
+      })),
     },
   }
 }

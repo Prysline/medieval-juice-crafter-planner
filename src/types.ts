@@ -45,6 +45,12 @@ export interface Recipe {
   id: string
   /** 網站使用的穩定名稱；順序敏感配方會把原料順序寫進名稱。 */
   name: string
+  /**
+   * 截圖直接觀察到的遊戲內顯示名。
+   * 三原料以上名稱的預設規則為「最高特性 + 隨機詞彙」，因此這只是一次觀察值，
+   * 不作為同一 sequence 的穩定 canonical identity。
+   */
+  observedDisplayName?: string
   unlockedAt: ProgressMilestoneId
   salePrice: number
   /** 原料順序具有語意；不同調味順序可能產生不同特性。 */
@@ -133,7 +139,10 @@ export interface RecipeCandidate {
   ingredients: string[]
   /** observed 為實測成品特性；computed ambiguous 時只放一定會入選的特性。 */
   effects: EffectValue[]
-  /** cutoff 同分且 slot 不足時列出所有候選，不自行選 tie-break。 */
+  /**
+   * 套用「較晚加入原料優先」後，若 cutoff 仍同分且最後貢獻位置相同，
+   * 列出剩餘候選，不自行發明次級 tie-break。
+   */
   effectAmbiguity?: RecipeEffectAmbiguity
   equipment: string[]
   observedRecipeId?: Recipe['id']
