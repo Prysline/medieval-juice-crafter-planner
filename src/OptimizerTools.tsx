@@ -578,7 +578,7 @@ function OptimizerResultPanel({
                     個可用 slot
                   </p>
                   {trip.juiceJars.map((load) => (
-                    <p
+                    <div
                       key={
                         plan.policy +
                         '-' +
@@ -587,9 +587,14 @@ function OptimizerResultPanel({
                         load.physicalJarId
                       }
                     >
-                      果汁罐 {load.physicalJarId}：{load.recipeName} ×
-                      {load.servings} 杯 · {jarFillActionLabel(load)}
-                    </p>
+                      <p>
+                        果汁罐 {load.physicalJarId}：{load.recipeName} ×
+                        {load.servings} 杯 · {jarFillActionLabel(load)}
+                      </p>
+                      <p>
+                        完整符合顧客：{load.customerIds.map(customerLabel).join('、')}
+                      </p>
+                    </div>
                   ))}
                 </article>
               ))}
@@ -598,7 +603,7 @@ function OptimizerResultPanel({
         )}
 
         <small className="optimizer-boundary-note">
-          這裡只排從家出發、販售後回家的可行裝載；不推導跨村路線、顧客順序或到達時間。
+          每個 jar load 的顧客都沿用 optimizer 已通過「全部喜好皆符合」的 full-match assignment；這裡只排從家出發、販售後回家的可行裝載，不另外重判配方，也不推導跨村路線、顧客順序或到達時間。
         </small>
       </section>
 
