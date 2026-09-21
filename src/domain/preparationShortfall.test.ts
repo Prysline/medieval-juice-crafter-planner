@@ -17,6 +17,7 @@ const demand: PreparationDemand = {
     {
       recipeId: 'lemon-sugar',
       recipeName: '檸檬糖',
+      customerIds: ['a', 'b', 'c'],
       productionUnits: 2,
       producedServings: 4,
       assignedServings: 3,
