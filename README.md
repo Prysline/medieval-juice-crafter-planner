@@ -18,6 +18,7 @@
 - 「配方工具」已改為 ordered sequence builder：點原料直接 append，可重複調味、四原料以上、逐項刪除／清空；observed 精確序列優先，否則顯示 computed / ambiguity。
 - 個人配方只保存自訂名稱、有序 ingredient IDs、備註與建立時間；effects、cost、equipment、matching 每次由目前 domain 重新計算。
 - 「批次規劃」已重構為 production optimizer：可依序指定主要／次要 lexicographic 目標，包含最低成本、最少浪費、最高已知銷售總額、最高已知毛利、最少機器操作與最少果汁罐換裝；結果按最終果汁分組顧客，並顯示共享中間半成品、1～5 份 stack 操作、原料清單、收入／毛利與 unresolved 顧客。
+- Core model correction 2B 已把可用 physical jar 數接進多趟販售 schedule；UI 會分開顯示「保留杯具並回家清洗」與「背包滿時允許丟棄」兩種 policy 的販售趟數與逐罐排程。
 - Inventory / packing D1～D4 已建立：`mjc-inventory` 保存原料、水、杯具與果汁罐狀態；`PreparationDemand` 消費 production-unit optimizer 結果，並已有 stock offset、single-trip packing 與 multi-trip replenishment。
 - 預測若在 effect cutoff 出現未確認同分 tie，會明確標示 ambiguous，且不參與完全匹配推薦。
 - 舊版 `mjc-stage` / `mjc-satisfaction` localStorage 會保守遷移到新版進度資料。
@@ -72,7 +73,7 @@ src/
     preparationShortfall.ts # 既有成品／raw inventory → 實際新製作與缺口
     purchaseSources.ts # 已知購買來源、最低價／同價保留 decision
     singleTripPacking.ts # 販售趟 finished-drink jars + clean cups 最小必要 slot / overflow
-    multiTripReplenishment.ts # 多趟販售、杯具 policy、jar-rack staging
+    multiTripReplenishment.ts # physical jar schedule、多趟販售、杯具 policy、jar-rack staging
     scheduleRouteReadiness.ts # 作息觀察 normalization 與 route-data blockers
   storage/
     plannerState.ts    # localStorage 讀寫、正式顧客與 legacy migration
@@ -182,9 +183,13 @@ used-cup handling 必須明確選 policy：
 - `retain-and-wash`：每趟 departure load 只允許使用 9 / 10 slots，預留 1 slot 給第一個 used-cup stack；每趟（最後一趟除外）回家後把該趟 used cups 全部洗回 clean cups，再供下一趟重用。這個「預留 1 slot」是網站 packing policy，不是額外宣稱遊戲 UI 規則。
 - `allow-drop-if-full`：departure 可使用完整 10 slots；若 10 slots 全滿，網站只標示 used cups **可能掉落**，不假裝它們一定能回收，也不假設跨趟重用。
 
-每趟最多 staging 5 個果汁罐，對應已確認的果汁罐架 5 slots；規劃採「一次 staging 一趟」的模型。若未來確認遊戲允許不經罐架同時準備更多罐，這項 constraint 再另行調整。
+每趟同時可用的果汁罐數會取 **玩家可用 physical jar 數、果汁罐架 5 slots、背包／杯具 policy 可容納量** 的共同限制。規劃採「一次 staging 一趟」的模型；若未來確認遊戲允許不經罐架同時準備更多罐，這項 constraint 再另行調整。
 
-目前 jar grouping 使用 deterministic capacity-first first-fit-decreasing；它目標是產生可行、可解釋的多趟 load，**不宣稱已做最少趟數的全域最佳化**。
+Core model correction 2B 已把 physical jar identity 接進 D4 schedule。每個 load 都記錄實際果汁罐編號，以及「首次裝填／補裝同種／換裝」狀態；同一 physical jar 在同一趟只會出現一次。當果汁種類多於可用罐數時，新增果汁種類會串到既有 jar queue 上，讓 schedule 實際實現 `max(0, 果汁種類數 - 可用果汁罐數)` 的最低換裝數；當罐數足夠時，額外空罐可平行承擔同一種果汁的多個容量 10 load，而不製造假換裝。
+
+`jarTypeSwitches` 與 `tripCount` 現在都從**同一份可行 physical jar schedule** 取得：換裝數可從 schedule 逐罐重算，趟數就是 schedule 的 trip 數；optimizer UI 會再檢查 downstream schedule 的換裝數與 recipe-assignment solver 回報一致，若漂移則停止顯示結果。兩種 used-cup policy 仍各自建 schedule，因此趟數不同時會分開顯示，不合併成沒有 policy 語意的單一數字。
+
+trip grouping 仍是 deterministic capacity-first feasible planning；它目標是產生可解釋、符合 physical jar / rack / backpack / cup constraints 的共同排程，**不宣稱已做最少趟數的全域最佳化**。
 
 
 ## Schedule / route readiness boundary
