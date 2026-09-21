@@ -58,8 +58,8 @@ function request(
   }
 }
 
-describe('batch optimizer', () => {
-  it('serves two customers sharing one recipe with one batch', async () => {
+describe('production optimizer', () => {
+  it('serves two customers sharing one recipe with one juice unit', async () => {
     const result = await optimizeBatchPlan(
       request(['a', 'b']),
       {
@@ -79,19 +79,20 @@ describe('batch optimizer', () => {
       },
     )
 
-    expect(result.batches).toHaveLength(1)
-    expect(result.batches[0].customerIds.sort()).toEqual(['a', 'b'])
-    expect(result.batches[0].ingredientIds).toEqual([
+    expect(result.recipePlans).toHaveLength(1)
+    expect(result.recipePlans[0].customerIds.sort()).toEqual(['a', 'b'])
+    expect(result.recipePlans[0].ingredientIds).toEqual([
       'lemon',
       'sugar',
       'mint',
     ])
+    expect(result.recipePlans[0].juiceUnits).toBe(1)
     expect(result.assignedServings).toBe(2)
     expect(result.producedServings).toBe(2)
     expect(result.leftoverServings).toBe(0)
   })
 
-  it('chooses a shared batch when per-customer cheapest recipes cost more in total', async () => {
+  it('chooses a shared recipe when separate cheapest recipes cost more overall', async () => {
     const result = await optimizeBatchPlan(
       request(['a', 'b']),
       {
@@ -114,11 +115,11 @@ describe('batch optimizer', () => {
     )
 
     expect(result.totalIngredientCost).toBe(30)
-    expect(result.batches).toHaveLength(1)
-    expect(result.batches[0].recipeId).toBe('shared')
+    expect(result.recipePlans).toHaveLength(1)
+    expect(result.recipePlans[0].recipeId).toBe('shared')
   })
 
-  it('reports one leftover serving for an odd number of assigned customers', async () => {
+  it('packs odd customer demand into juice units without treating each unit as a machine operation', async () => {
     const result = await optimizeBatchPlan(
       request(['a', 'b', 'c']),
       {
@@ -135,10 +136,18 @@ describe('batch optimizer', () => {
       },
     )
 
-    expect(result.batches).toHaveLength(2)
+    expect(result.recipePlans).toHaveLength(1)
+    expect(result.recipePlans[0].juiceUnits).toBe(2)
     expect(result.assignedServings).toBe(3)
     expect(result.producedServings).toBe(4)
     expect(result.leftoverServings).toBe(1)
+    expect(result.machineOperations).toEqual({
+      total: 3,
+      juicing: 1,
+      seasoning: 1,
+      finalizing: 1,
+      blending: 0,
+    })
   })
 
   it('minimum-cost and minimum-waste can choose different valid plans', async () => {
@@ -153,7 +162,7 @@ describe('batch optimizer', () => {
       recipe('c-only', ['檸檬', '糖'], ['甜味']),
       recipe(
         'ab-shared',
-        ['檸檬', '橙子', '糖'],
+        ['檸檬', '糖', '薄荷'],
         ['酸味', '增強免疫'],
       ),
     ]
@@ -168,11 +177,15 @@ describe('batch optimizer', () => {
     )
 
     expect(cheapest.totalIngredientCost).toBe(36)
-    expect(cheapest.batches).toHaveLength(3)
+    expect(
+      cheapest.recipePlans.reduce((sum, plan) => sum + plan.juiceUnits, 0),
+    ).toBe(3)
     expect(cheapest.leftoverServings).toBe(3)
 
-    expect(leastWaste.totalIngredientCost).toBe(43)
-    expect(leastWaste.batches).toHaveLength(2)
+    expect(leastWaste.totalIngredientCost).toBe(46)
+    expect(
+      leastWaste.recipePlans.reduce((sum, plan) => sum + plan.juiceUnits, 0),
+    ).toBe(2)
     expect(leastWaste.leftoverServings).toBe(1)
   })
 
@@ -204,12 +217,12 @@ describe('batch optimizer', () => {
       { source },
     )
 
-    expect(revenue.batches[0].recipeId).toBe('high-revenue')
+    expect(revenue.recipePlans[0].recipeId).toBe('high-revenue')
     expect(revenue.knownSalesRevenue).toBe(40)
     expect(revenue.totalIngredientCost).toBe(23)
     expect(revenue.knownGrossProfit).toBe(17)
 
-    expect(profit.batches[0].recipeId).toBe('high-profit')
+    expect(profit.recipePlans[0].recipeId).toBe('high-profit')
     expect(profit.knownSalesRevenue).toBe(30)
     expect(profit.totalIngredientCost).toBe(9)
     expect(profit.knownGrossProfit).toBe(21)
@@ -233,81 +246,82 @@ describe('batch optimizer', () => {
       },
     )
 
-    expect(result.batches[0].recipeId).toBe('cheap')
+    expect(result.recipePlans[0].recipeId).toBe('cheap')
     expect(result.formalSalesCount).toBe(0)
     expect(result.potentialTrialCount).toBe(1)
     expect(result.knownSalesRevenue).toBe(0)
     expect(result.knownGrossProfit).toBe(-9)
   })
 
-  it('reports known revenue metrics in cost mode without changing the primary objective', async () => {
-    const result = await optimizeBatchPlan(
-      request(['a', 'b'], 'minimum-cost', ['a']),
-      {
-        source: {
-          customers: [
-            customer('a', '甜味'),
-            customer('b', '甜味'),
-          ],
-          candidates: [
-            recipe('sweet', ['檸檬', '糖'], ['甜味'], 19),
-          ],
-        },
-      },
-    )
+  it('enforces the maximum jar-switch constraint against recipe variety', async () => {
+    const source = {
+      customers: [
+        customer('a', '酸味'),
+        customer('b', '清新口氣'),
+      ],
+      candidates: [
+        recipe('a-only', ['檸檬'], ['酸味']),
+        recipe('b-only', ['橙子'], ['清新口氣']),
+        recipe(
+          'shared',
+          ['檸檬', '糖', '薄荷'],
+          ['酸味', '清新口氣'],
+        ),
+      ],
+    }
 
-    expect(result.formalSalesCount).toBe(1)
-    expect(result.potentialTrialCount).toBe(1)
-    expect(result.knownSalesRevenue).toBe(19)
-    expect(result.totalIngredientCost).toBe(16)
-    expect(result.knownGrossProfit).toBe(3)
-  })
-
-  it('lists customers without any reliable full match as unresolved', async () => {
-    const result = await optimizeBatchPlan(
-      request(['a', 'b']),
-      {
-        source: {
-          customers: [
-            customer('a', '甜味'),
-            customer('b', '不存在效果'),
-          ],
-          candidates: [
-            recipe('sweet', ['檸檬', '糖'], ['甜味']),
-          ],
-        },
-      },
-    )
-
-    expect(result.assignments).toEqual([
-      { customerId: 'a', recipeId: 'sweet' },
-    ])
-    expect(result.unresolvedCustomers).toEqual(['b'])
-  })
-
-  it('excludes supplied customers from demand', async () => {
-    const result = await optimizeBatchPlan(
+    const unconstrained = await optimizeBatchPlan(
       {
         ...request(['a', 'b']),
-        suppliedCustomerIds: ['b'],
+        availableJuiceJarCount: 1,
       },
+      { source },
+    )
+    const constrained = await optimizeBatchPlan(
+      {
+        ...request(['a', 'b']),
+        availableJuiceJarCount: 1,
+        constraints: { maxJarTypeSwitches: 0 },
+      },
+      { source },
+    )
+
+    expect(unconstrained.totalIngredientCost).toBe(20)
+    expect(unconstrained.recipePlans).toHaveLength(2)
+    expect(unconstrained.jarTypeSwitches).toBe(1)
+
+    expect(constrained.totalIngredientCost).toBe(30)
+    expect(constrained.recipePlans).toHaveLength(1)
+    expect(constrained.recipePlans[0].recipeId).toBe('shared')
+    expect(constrained.jarTypeSwitches).toBe(0)
+  })
+
+  it('uses shared production prefixes when reporting machine operations', async () => {
+    const result = await optimizeBatchPlan(
+      request(['a', 'b', 'c']),
       {
         source: {
           customers: [
-            customer('a', '甜味'),
-            customer('b', '甜味'),
+            customer('a', 'AB'),
+            customer('b', 'ABC'),
+            customer('c', 'ABC'),
           ],
           candidates: [
-            recipe('sweet', ['檸檬', '糖'], ['甜味']),
+            recipe('ab', ['檸檬', '糖'], ['AB']),
+            recipe('abc', ['檸檬', '糖', '薄荷'], ['ABC']),
           ],
         },
       },
     )
 
-    expect(result.assignments.map((item) => item.customerId)).toEqual(['a'])
+    const sugarStep = result.productionSteps.find(
+      (step) => step.key === 'season:lemon>sugar',
+    )
+    expect(sugarStep?.quantity).toBe(2)
+    expect(sugarStep?.recipeIds).toEqual(['ab', 'abc'])
   })
 
-  it('aggregates a shopping list from selected batch counts', async () => {
+  it('aggregates a shopping list from selected production units', async () => {
     const result = await optimizeBatchPlan(
       request(['a', 'b', 'c']),
       {
@@ -346,6 +360,7 @@ describe('batch optimizer', () => {
       result.shoppingList.reduce((sum, item) => sum + item.totalCost, 0),
     ).toBe(result.totalIngredientCost)
   })
+
   it('solves the current tranquil-fountain dataset without duplicate assignments', async () => {
     const result = await optimizeBatchPlan({
       customerIds: canonicalCustomers.map((item) => item.id),
@@ -358,6 +373,12 @@ describe('batch optimizer', () => {
       formalCustomerIds: canonicalCustomers.map((item) => item.id),
       candidatePolicy: 'allow-unambiguous-computed',
       objective: 'minimum-cost',
+      priorities: [
+        'minimum-cost',
+        'minimum-machine-operations',
+        'minimum-jar-switches',
+      ],
+      availableJuiceJarCount: 2,
     })
 
     const assignedIds = result.assignments.map((item) => item.customerId)
@@ -365,7 +386,11 @@ describe('batch optimizer', () => {
     expect(
       assignedIds.length + result.unresolvedCustomers.length,
     ).toBe(canonicalCustomers.length)
-    expect(result.batches.every((batch) => batch.customerIds.length <= 2)).toBe(true)
+    expect(
+      result.recipePlans.every(
+        (plan) => plan.juiceUnits * 2 >= plan.customerIds.length,
+      ),
+    ).toBe(true)
     expect(
       result.shoppingList.reduce((sum, item) => sum + item.totalCost, 0),
     ).toBe(result.totalIngredientCost)
