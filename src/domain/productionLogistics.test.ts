@@ -194,6 +194,36 @@ describe('production logistics', () => {
     })
   })
 
+  it('frees the last backpack slot by loading the first machine input before fetching water', () => {
+    const jars = Array.from({ length: 9 }, (_, index) => ({
+      id: `jar-${index + 1}`,
+      recipeId: null,
+      servings: 0,
+    }))
+
+    const result = buildProductionLogisticsPlan(
+      shortfall(['lemon'], 1),
+      inventory({
+        ingredientUnits: { lemon: 1 },
+        shelfCount: 0,
+        juiceJars: jars,
+      }),
+      settings({ carriedJuiceJarCount: 9 }),
+    )
+
+    expect(result.feasible).toBe(true)
+    expect(result.waterFetchTrips).toBe(1)
+    const fetch = result.actions.find(
+      (action) => action.kind === 'fetch-water',
+    )
+    expect(fetch?.snapshot).toMatchObject({
+      backpackSlotsUsed: 1,
+      backpackSlotsAvailable: 1,
+      machineSlotsUsed: 1,
+      machineSlotsAvailable: 3,
+    })
+  })
+
   it('rejects production when carried jars leave no transient backpack slot', () => {
     const jars = Array.from({ length: 10 }, (_, index) => ({
       id: `jar-${index + 1}`,
