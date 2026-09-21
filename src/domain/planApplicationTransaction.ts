@@ -333,6 +333,12 @@ function validatePlanBasis(
   const assignedCustomerIds = result.assignments.map(
     (assignment) => assignment.customerId,
   )
+  if (result.assignedServings !== assignedCustomerIds.length) {
+    throw new Error(
+      'Optimization assignment count does not match its result summary',
+    )
+  }
+
   const duplicateAssigned = duplicateValue(assignedCustomerIds)
   if (duplicateAssigned) {
     throw new Error(
@@ -376,6 +382,16 @@ function validatePlanBasis(
   if (shortfallAssigned !== assignedCustomerIds.length) {
     throw new Error(
       'Preparation shortfall does not match optimization assignments',
+    )
+  }
+
+  const plannedLeftovers = salesPlan.leftoverJarContents.reduce(
+    (sum, leftover) => sum + leftover.servings,
+    0,
+  )
+  if (plannedLeftovers !== salesPlan.totalLeftoverServings) {
+    throw new Error(
+      'Sales plan leftover summary does not match terminal jar contents',
     )
   }
 
