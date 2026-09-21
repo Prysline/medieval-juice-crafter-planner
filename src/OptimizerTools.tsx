@@ -327,6 +327,14 @@ export default function OptimizerTools({
       const buildCheckedSalesTripPlan = (
         policy: UsedCupTripPolicy,
       ): MultiTripReplenishmentPlan => {
+        const stationaryJuiceJarCount = Math.min(
+          Math.max(
+            0,
+            capacitySummary.physicalJuiceJarCount -
+              result.availableJuiceJarCount,
+          ),
+          capacitySummary.jarRackStagingCapacity,
+        )
         const plan = buildMultiTripReplenishmentPlan(
           preparationDemand,
           policy,
@@ -335,6 +343,7 @@ export default function OptimizerTools({
             cleanCups: inventoryState.cleanCups,
             usedCups: inventoryState.usedCups,
           },
+          stationaryJuiceJarCount,
         )
         if (plan.jarTypeSwitches !== result.jarTypeSwitches) {
           throw new Error(
@@ -1158,7 +1167,18 @@ function SalesTripPlanBlock({
           {' · '}結束實體杯 {plan.finalPhysicalCupCount}
           {plan.droppedUsedCups > 0 ? ' · 掉落 ' + plan.droppedUsedCups : ''}
         </p>
-        <small>{tripPolicyNote(plan)}</small>
+        <p>
+          販售後保留成品 {plan.totalLeftoverServings} 杯
+          {plan.totalLeftoverServings > 0
+            ? ' · 分布於 ' + plan.leftoverJarContents.length + ' 個 physical jar 記錄'
+            : ''}
+        </p>
+        <small>
+          {tripPolicyNote(plan)}
+          {plan.totalLeftoverServings > 0
+            ? ' 剩餘成品目前只保存於本次 planner result；跨日寫回 inventory 仍待 Apply Plan。'
+            : ''}
+        </small>
       </article>
 
       {plan.trips.map((trip) => (
@@ -1198,8 +1218,12 @@ function SalesTripPlanBlock({
               }
             >
               <p>
-                果汁罐 {load.physicalJarId}：{load.recipeName} ×{load.servings}{' '}
-                杯 · {jarFillActionLabel(load)}
+                果汁罐 {load.physicalJarId}：{load.recipeName} · 販售 {load.servings}{' '}
+                杯
+                {load.retainedLeftoverServings > 0
+                  ? ' · 販售後保留 ' + load.retainedLeftoverServings + ' 杯'
+                  : ''}
+                {' · '}{jarFillActionLabel(load)}
               </p>
               <p>
                 完整符合顧客：{load.customerIds.map(customerLabel).join('、')}
@@ -1208,6 +1232,35 @@ function SalesTripPlanBlock({
           ))}
         </article>
       ))}
+      {plan.leftoverJarContents.some(
+        (item) => item.location !== 'sales-trip',
+      ) && (
+        <article className="optimizer-batch-card">
+          <div>
+            <strong>留在家中的剩餘成品</strong>
+            <span>不增加今日顧客服務量</span>
+          </div>
+          {plan.leftoverJarContents
+            .filter((item) => item.location !== 'sales-trip')
+            .map((item) => (
+              <p
+                key={
+                  plan.policy +
+                  '-leftover-' +
+                  item.physicalJarId +
+                  '-' +
+                  item.recipeId
+                }
+              >
+                果汁罐 {item.physicalJarId}：{item.recipeName} ×{item.servings} 杯
+                {' · '}
+                {item.location === 'jar-rack'
+                  ? '果汁罐架 staging'
+                  : '未用於販售的 carried jar'}
+              </p>
+            ))}
+        </article>
+      )}
     </div>
   )
 }
