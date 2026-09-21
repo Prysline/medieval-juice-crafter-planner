@@ -45,7 +45,11 @@ export interface Recipe {
   id: string
   /** 網站使用的穩定名稱；順序敏感配方會把原料順序寫進名稱。 */
   name: string
-  /** 截圖直接觀察到的遊戲內顯示名；不拿來推導未確認的名稱生成規則。 */
+  /**
+   * 截圖直接觀察到的遊戲內顯示名。
+   * 三原料以上名稱的預設規則為「最高特性 + 隨機詞彙」，因此這只是一次觀察值，
+   * 不作為同一 sequence 的穩定 canonical identity。
+   */
   observedDisplayName?: string
   unlockedAt: ProgressMilestoneId
   salePrice: number
