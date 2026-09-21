@@ -240,7 +240,8 @@ Phase 4 已完成：
 6. PR #35 完成靜謐噴泉配方研究同步：新增 4 筆實測配方；已確認的特性同分規則改為「同分時較晚加入原料優先」；相同不重複原料集合的調味順序／重複既有原料不提高售價已鎖進研究回歸測試，但推導配方售價仍不推導。
 7. PR #37 完成 **Phase 5A persistent jar identity bridge**：sales schedule / leftover result 改用 persistent `mjc-inventory` jar IDs，並保存選中 carried jars 的初始 contents metadata；這沒有改變第一次換裝語意，也不寫回 inventory。
 8. PR #39 完成 **Phase 5B1｜庫存編輯器與明確常駐攜帶果汁罐選擇**：可編輯原料、水、乾淨／用過的杯子、架子／罐架與逐罐內容；`PlannerSettings` 的實際程式欄位改為 `carriedJuiceJarIds`，舊數量設定會一次遷移。
-9. **下一個最小切片是 Data-0｜果汁調和器實測資料同步**：把先前已整理進 Notion、但 repo 尚未同步的果汁調和器實測配方／成品特性／實測售價與多層果汁調和回歸測試補進程式；不在這一步擴張候選配方搜尋。Data-0 完成後才進 **Phase 5B2｜初始果汁罐內容規劃規則**，之後再做 **Phase 5C｜套用規劃與庫存交易**。路線最佳化仍等待跨村移動時間、位置資訊、完整顧客服務時段與商店營業時間資料。
+9. PR #42 完成 **Data-0｜果汁調和器實測資料同步**：4 筆直接實測果汁調和器配方已進正式 `recipes`，evaluator 會依完整有序原料序列精確覆蓋推導結果；`observedDisplayName`、實測售價與成品特性已鎖 regression，三個需榨汁原料的多層果汁調和製作圖也已回歸確認。這一步沒有擴張候選配方搜尋，也沒有推導果汁調和器通用售價公式。
+10. **下一個最小切片是 Phase 5B2｜初始果汁罐內容規劃規則**，之後再做 **Phase 5C｜套用規劃與庫存交易**。路線最佳化仍等待跨村移動時間、位置資訊、完整顧客服務時段與商店營業時間資料。
 
 
 ## Schedule / route readiness boundary
