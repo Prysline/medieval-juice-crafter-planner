@@ -25,6 +25,8 @@ export interface RecipeBatchPlan {
   recipeName: string
   batchNumber: number
   customerIds: string[]
+  /** Ordered ingredient ids used by one batch; preserves future sequence identity. */
+  ingredientIds: string[]
   batchIngredientCost: number
 }
 
@@ -69,11 +71,20 @@ function normalizeBatchPlans(
     if (batchCount <= 0) return []
 
     const customerIds = assignedByRecipe.get(recipe.candidate.id) ?? []
+    const ingredientIds = recipe.candidate.ingredients.map((ingredientName) => {
+      const ingredient = ingredientByName.get(ingredientName)
+      if (!ingredient) {
+        throw new Error(`Missing ingredient id for batch plan: ${ingredientName}`)
+      }
+      return ingredient.id
+    })
+
     return Array.from({ length: batchCount }, (_, batchIndex) => ({
       recipeId: recipe.candidate.id,
       recipeName: recipe.candidate.name,
       batchNumber: batchIndex + 1,
       customerIds: customerIds.slice(batchIndex * 2, batchIndex * 2 + 2),
+      ingredientIds,
       batchIngredientCost: recipe.batchIngredientCost,
     }))
   })
