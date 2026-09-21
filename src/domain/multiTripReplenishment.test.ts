@@ -129,9 +129,7 @@ function expectScheduleConsistency(
     ),
   ).toBe(true)
 
-  for (const item of result.leftoverJarContents.filter(
-    (content) => content.location === 'sales-trip',
-  )) {
+  for (const item of result.leftoverJarContents) {
     const trip = result.trips.find(
       (candidate) => candidate.tripNumber === item.tripNumber,
     )
@@ -492,7 +490,6 @@ describe('multi-trip replenishment', () => {
         recipeId: 'sweet',
         recipeName: '甜味果汁',
         servings: 1,
-        location: 'sales-trip',
         tripNumber: 1,
       },
     ])
@@ -537,7 +534,6 @@ describe('multi-trip replenishment', () => {
         physicalJarId: 1,
         recipeId: 'a',
         servings: 1,
-        location: 'sales-trip',
       },
     ])
     expectScheduleConsistency(result)
