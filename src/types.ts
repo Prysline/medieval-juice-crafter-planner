@@ -194,7 +194,7 @@ export interface JuiceJarInventoryItem {
 }
 
 export interface InventoryState {
-  /** 只保存數量，不在 D1 假設一般原料 stack size。 */
+  /** 只保存原料總數量；stack 5 與實際裝載由 domain 規則計算。 */
   ingredientUnits: Record<string, number>
   waterUnits: number
   cleanCups: number
