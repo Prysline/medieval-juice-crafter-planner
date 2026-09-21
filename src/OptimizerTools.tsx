@@ -1088,7 +1088,7 @@ function OptimizerResultPanel({
         )}
 
         <small className="optimizer-boundary-note">
-          ▸ 表示配方內部 ingredient / sequence 順序；→ 只用於實際加工或狀態轉換。此區使用 stock offset 後的 net production plan，不再重複顯示 gross optimizer steps。現行 inventory 尚未保存每件物品的精確位置，因此 Phase 3 把既有 production materials 視為 home supply，依一般架與背包容量建立 deterministic feasible placement / transfer；同時追蹤 machine slots 與 finalizer output 的 physical jar receiver。罐內既有內容與首次換裝相容性仍維持 deferred，clean / used cups 的實際占位與 transition 留到 Phase 4。
+          ▸ 表示配方內部原料順序；→ 只表示實際加工或狀態轉換。此區顯示庫存抵扣後真正需要執行的製作量；每個膠囊代表一個機器 slot 內的原料、果汁、水或輸出。
         </small>
 
         <div className="optimizer-logistics-summary">
