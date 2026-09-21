@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { customers } from './data/customers'
+import { ingredients } from './data/ingredients'
 import {
   optimizerCustomerIds,
   optimizerCustomerLabel,
@@ -8,6 +9,7 @@ import {
 } from './domain/optimizerUi'
 import type {
   OptimizationCandidatePolicy,
+  OptimizationCriterion,
   OptimizationObjective,
   OptimizationResult,
 } from './domain/optimizer'
@@ -29,13 +31,61 @@ type OptimizerRunState =
   | { status: 'success'; result: OptimizationResult }
   | { status: 'error'; message: string }
 
+type OptionalCriterion = OptimizationCriterion | 'none'
+
 const customerById = new Map(
   customers.map((customer) => [customer.id, customer]),
 )
+const ingredientNameById = new Map(
+  ingredients.map((ingredient) => [ingredient.id, ingredient.name]),
+)
+
+const secondaryCriterionOptions: Array<{
+  value: OptimizationCriterion
+  label: string
+}> = [
+  { value: 'minimum-machine-operations', label: '最少機器操作' },
+  { value: 'minimum-jar-switches', label: '最少果汁罐換裝' },
+  { value: 'minimum-cost', label: '最低原料成本' },
+  { value: 'minimum-waste', label: '最少剩餘杯' },
+  { value: 'maximum-known-revenue', label: '最高已知銷售總額' },
+  { value: 'maximum-known-gross-profit', label: '最高已知毛利' },
+]
 
 function customerLabel(customerId: string): string {
   const customer = customerById.get(customerId)
   return customer ? optimizerCustomerLabel(customer) : customerId
+}
+
+function ingredientLabel(ingredientId: string): string {
+  return ingredientNameById.get(ingredientId) ?? ingredientId
+}
+
+function sequenceLabel(ingredientIds: string[]): string {
+  return ingredientIds.map(ingredientLabel).join(' → ')
+}
+
+function criterionLabel(criterion: OptimizationCriterion): string {
+  if (criterion === 'minimum-cost') return '最低原料成本'
+  if (criterion === 'minimum-waste') return '最少剩餘杯'
+  if (criterion === 'maximum-known-revenue') return '最高已知銷售總額'
+  if (criterion === 'maximum-known-gross-profit') return '最高已知毛利'
+  if (criterion === 'minimum-machine-operations') return '最少機器操作'
+  return '最少果汁罐換裝'
+}
+
+function uniquePriorities(
+  primary: OptimizationObjective,
+  secondaryOne: OptionalCriterion,
+  secondaryTwo: OptionalCriterion,
+): OptimizationCriterion[] {
+  return [
+    primary,
+    ...(secondaryOne === 'none' ? [] : [secondaryOne]),
+    ...(secondaryTwo === 'none' ? [] : [secondaryTwo]),
+  ].filter(
+    (criterion, index, values) => values.indexOf(criterion) === index,
+  )
 }
 
 export default function OptimizerTools({
@@ -49,9 +99,20 @@ export default function OptimizerTools({
     useState<OptimizationCandidatePolicy>('observed-only')
   const [objective, setObjective] =
     useState<OptimizationObjective>('minimum-cost')
+  const [secondaryOne, setSecondaryOne] =
+    useState<OptionalCriterion>('none')
+  const [secondaryTwo, setSecondaryTwo] =
+    useState<OptionalCriterion>('none')
+  const [availableJuiceJarCount, setAvailableJuiceJarCount] = useState(1)
+  const [maxJarTypeSwitches, setMaxJarTypeSwitches] = useState('')
   const [runState, setRunState] = useState<OptimizerRunState>({
     status: 'idle',
   })
+
+  const priorities = useMemo(
+    () => uniquePriorities(objective, secondaryOne, secondaryTwo),
+    [objective, secondaryOne, secondaryTwo],
+  )
 
   const customerIds = useMemo(
     () =>
@@ -81,7 +142,9 @@ export default function OptimizerTools({
     formalCustomerIds,
     scope,
     candidatePolicy,
-    objective,
+    priorities,
+    availableJuiceJarCount,
+    maxJarTypeSwitches,
   ])
 
   async function runOptimizer() {
@@ -89,6 +152,11 @@ export default function OptimizerTools({
 
     try {
       const { optimizeBatchPlan } = await import('./domain/optimizer')
+      const parsedMaxSwitches =
+        maxJarTypeSwitches.trim() === ''
+          ? undefined
+          : Math.max(0, Math.floor(Number(maxJarTypeSwitches)))
+
       const result = await optimizeBatchPlan({
         customerIds,
         currentProgress,
@@ -97,6 +165,13 @@ export default function OptimizerTools({
         formalCustomerIds,
         candidatePolicy,
         objective,
+        priorities,
+        availableJuiceJarCount,
+        constraints:
+          parsedMaxSwitches === undefined ||
+          !Number.isFinite(parsedMaxSwitches)
+            ? undefined
+            : { maxJarTypeSwitches: parsedMaxSwitches },
       })
 
       setRunState({ status: 'success', result })
@@ -106,24 +181,24 @@ export default function OptimizerTools({
         message:
           error instanceof Error
             ? error.message
-            : '批次規劃器發生未知錯誤。',
+            : '最佳化規劃器發生未知錯誤。',
       })
     }
   }
 
   return (
-    <section className="optimizer-tools" aria-label="批次規劃">
+    <section className="optimizer-tools" aria-label="最佳化規劃">
       <div className="tool-panel optimizer-control-panel">
         <div className="tool-heading">
           <div>
-            <p className="tool-kicker">Batch Optimizer</p>
-            <h2>全日批次規劃</h2>
+            <p className="tool-kicker">Production Optimizer</p>
+            <h2>全日製作與販售規劃</h2>
           </div>
           <span className="tool-badge">{customerIds.length} 人需求</span>
         </div>
 
         <p className="tool-description">
-          預設只處理目前已解鎖、且今日尚未供應的顧客。第一版只使用可靠 full match；不處理庫存、果汁罐、背包、商人分配或路線。
+          以 full match 顧客分配為基礎，同時計算實際果汁份數、1～5 份製作 stack、共享中間半成品、機器操作與果汁罐換裝。路線與未確認的果汁調和器產量仍不自行推導。
         </p>
 
         <div className="optimizer-controls">
@@ -172,7 +247,7 @@ export default function OptimizerTools({
           </label>
 
           <label>
-            <span>最佳化目標</span>
+            <span>主要目標</span>
             <select
               value={objective}
               onChange={(event) =>
@@ -189,17 +264,54 @@ export default function OptimizerTools({
               </option>
             </select>
           </label>
+
+          <PrioritySelect
+            label="次要目標 1"
+            value={secondaryOne}
+            onChange={setSecondaryOne}
+          />
+          <PrioritySelect
+            label="次要目標 2"
+            value={secondaryTwo}
+            onChange={setSecondaryTwo}
+          />
+
+          <label>
+            <span>可用果汁罐</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={1}
+              value={availableJuiceJarCount}
+              onChange={(event) =>
+                setAvailableJuiceJarCount(
+                  Math.max(1, Math.floor(Number(event.target.value) || 1)),
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>最大果汁罐換裝次數</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={0}
+              placeholder="不限制"
+              value={maxJarTypeSwitches}
+              onChange={(event) => setMaxJarTypeSwitches(event.target.value)}
+            />
+          </label>
         </div>
 
         <div className="optimizer-demand-summary">
           <strong>本次需求：{customerIds.length} 人</strong>
+          <span>最佳化順序：{priorities.map(criterionLabel).join(' → ')}</span>
           <span>
-            已解鎖且今日未供應；範圍：
-            {scope === 'all'
-              ? '全部'
-              : scope === 'formal'
-                ? '正式顧客'
-                : '潛在顧客'}
+            果汁罐：{availableJuiceJarCount} 個
+            {maxJarTypeSwitches.trim() !== ''
+              ? ' · 最多換裝 ' + maxJarTypeSwitches + ' 次'
+              : ' · 換裝不限'}
           </span>
         </div>
 
@@ -211,7 +323,7 @@ export default function OptimizerTools({
         >
           {runState.status === 'loading'
             ? '正在載入求解器並規劃…'
-            : '產生批次規劃'}
+            : '產生最佳化規劃'}
         </button>
 
         <p className="optimizer-lazy-note">
@@ -221,24 +333,56 @@ export default function OptimizerTools({
 
       {runState.status === 'error' && (
         <div className="optimizer-error" role="alert">
-          <strong>批次規劃失敗</strong>
+          <strong>最佳化規劃失敗</strong>
           <span>{runState.message}</span>
         </div>
       )}
 
       {runState.status === 'success' && (
-        <OptimizerResultPanel result={runState.result} objective={objective} />
+        <OptimizerResultPanel
+          result={runState.result}
+          priorities={priorities}
+        />
       )}
     </section>
   )
 }
 
+function PrioritySelect({
+  label,
+  value,
+  onChange,
+}: {
+  label: string
+  value: OptionalCriterion
+  onChange: (value: OptionalCriterion) => void
+}) {
+  return (
+    <label>
+      <span>{label}</span>
+      <select
+        value={value}
+        onChange={(event) =>
+          onChange(event.target.value as OptionalCriterion)
+        }
+      >
+        <option value="none">不指定</option>
+        {secondaryCriterionOptions.map((option) => (
+          <option value={option.value} key={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
 function OptimizerResultPanel({
   result,
-  objective,
+  priorities,
 }: {
   result: OptimizationResult
-  objective: OptimizationObjective
+  priorities: OptimizationCriterion[]
 }) {
   return (
     <div className="optimizer-results">
@@ -257,27 +401,51 @@ function OptimizerResultPanel({
         />
         <MetricCard
           label="正式販售 / 潛在試喝"
-          value={`${result.formalSalesCount} / ${result.potentialTrialCount}`}
+          value={result.formalSalesCount + ' / ' + result.potentialTrialCount}
         />
-        <MetricCard label="製作批數" value={String(result.batches.length)} />
+        <MetricCard
+          label="最終果汁種類"
+          value={String(result.recipePlans.length)}
+        />
+        <MetricCard
+          label="機器操作"
+          value={result.machineOperations.total + ' 次'}
+        />
+        <MetricCard
+          label="果汁罐換裝"
+          value={result.jarTypeSwitches + ' 次'}
+        />
         <MetricCard
           label="已分配 / 產出"
-          value={`${result.assignedServings} / ${result.producedServings}`}
+          value={result.assignedServings + ' / ' + result.producedServings}
         />
         <MetricCard label="剩餘杯" value={String(result.leftoverServings)} />
       </div>
 
       <div className="optimizer-result-note">
-        <strong>{objectiveLabel(objective)}</strong>
-        <span>{objectiveDescription(objective)}</span>
+        <strong>
+          最佳化順序：{priorities.map(criterionLabel).join(' → ')}
+        </strong>
+        <span>
+          製作操作：榨汁 {result.machineOperations.juicing} 次 · 調味{' '}
+          {result.machineOperations.seasoning} 次 · 成品台{' '}
+          {result.machineOperations.finalizing} 次
+        </span>
+        <span>
+          可用果汁罐 {result.availableJuiceJarCount} 個；同罐改裝成另一種果汁才計入換裝。
+        </span>
         {(result.potentialTrialCount > 0 ||
           result.unknownFormalSalePriceCount > 0) && (
           <small>
             {result.potentialTrialCount > 0
-              ? `潛在試喝 ${result.potentialTrialCount} 杯的收入未確認，不計入已知銷售總額。`
+              ? '潛在試喝 ' +
+                result.potentialTrialCount +
+                ' 杯的收入未確認，不計入已知銷售總額。'
               : ''}
             {result.unknownFormalSalePriceCount > 0
-              ? ` 正式販售另有 ${result.unknownFormalSalePriceCount} 杯售價未知。`
+              ? ' 正式販售另有 ' +
+                result.unknownFormalSalePriceCount +
+                ' 杯售價未知。'
               : ''}
           </small>
         )}
@@ -285,37 +453,71 @@ function OptimizerResultPanel({
 
       <section className="optimizer-result-section">
         <div className="section-title">
-          <strong>製作批次</strong>
-          <span>{result.batches.length} 批</span>
+          <strong>果汁分配</strong>
+          <span>{result.recipePlans.length} 種</span>
         </div>
-        {result.batches.length === 0 ? (
-          <p className="empty-tool-state">本次沒有可製作的批次。</p>
+        {result.recipePlans.length === 0 ? (
+          <p className="empty-tool-state">本次沒有可製作的果汁。</p>
         ) : (
           <div className="optimizer-batch-list">
-            {result.batches.map((batch) => (
+            {result.recipePlans.map((plan) => (
               <article
                 className="optimizer-batch-card"
-                key={`${batch.recipeId}-${batch.batchNumber}`}
+                key={plan.recipeId}
               >
                 <div>
-                  <strong>
-                    {batch.recipeName} · 第 {batch.batchNumber} 批
-                  </strong>
+                  <strong>{plan.recipeName}</strong>
                   <span>
-                    原料成本：{optimizerMoney(batch.batchIngredientCost)}／批
+                    原料成本：{optimizerMoney(plan.totalIngredientCost)}
                   </span>
                 </div>
                 <p>
-                  {batch.customerIds.length > 0
-                    ? `分配顧客：${batch.customerIds
-                        .map(customerLabel)
-                        .join('、')}`
-                    : '此批目前沒有分配顧客'}
+                  顧客：{plan.customerIds.map(customerLabel).join('、')}
+                </p>
+                <p>
+                  需求 {plan.assignedServings} 杯 · 製作果汁 {plan.juiceUnits}{' '}
+                  份 → {plan.producedServings} 杯
+                  {plan.leftoverServings > 0
+                    ? ' · 剩餘 ' + plan.leftoverServings + ' 杯'
+                    : ''}
                 </p>
               </article>
             ))}
           </div>
         )}
+      </section>
+
+      <section className="optimizer-result-section">
+        <div className="section-title">
+          <strong>製作步驟</strong>
+          <span>{result.machineOperations.total} 次操作</span>
+        </div>
+        <div className="optimizer-batch-list">
+          {result.productionSteps.map((step) => (
+            <article className="optimizer-batch-card" key={step.key}>
+              <div>
+                <strong>
+                  {step.kind === 'juicing'
+                    ? step.equipment + '：' + sequenceLabel(step.toIngredientIds)
+                    : step.kind === 'seasoning'
+                      ? sequenceLabel(step.fromIngredientIds) +
+                        ' + ' +
+                        ingredientLabel(step.addedIngredientId ?? '') +
+                        ' → ' +
+                        sequenceLabel(step.toIngredientIds)
+                      : '果汁成品台：' + sequenceLabel(step.fromIngredientIds)}
+                </strong>
+                <span>{step.operationCount} 次操作</span>
+              </div>
+              <p>
+                處理 {step.quantity} 份
+                {step.operationCount > 1
+                  ? '；依每次最多 5 份拆分'
+                  : ''}
+              </p>
+            </article>
+          ))}
+        </div>
       </section>
 
       <section className="optimizer-result-section">
@@ -340,33 +542,8 @@ function OptimizerResultPanel({
           </div>
         )}
         <small className="optimizer-boundary-note">
-          目前只聚合原料數量；若同一原料可在多個商店取得，不在此版本替玩家選商人。
+          目前只聚合原料數量；商店路線與跨村時間仍保持分層，不在此處猜測。
         </small>
-      </section>
-
-      <section className="optimizer-result-section">
-        <div className="section-title">
-          <strong>顧客分配</strong>
-          <span>{result.assignments.length} 人</span>
-        </div>
-        <div className="optimizer-assignment-list">
-          {result.assignments.map((assignment) => {
-            const batch = result.batches.find(
-              (item) =>
-                item.recipeId === assignment.recipeId &&
-                item.customerIds.includes(assignment.customerId),
-            )
-            return (
-              <div
-                className="optimizer-assignment-row"
-                key={assignment.customerId}
-              >
-                <strong>{customerLabel(assignment.customerId)}</strong>
-                <span>{batch?.recipeName ?? assignment.recipeId}</span>
-              </div>
-            )
-          })}
-        </div>
       </section>
 
       {result.unresolvedCustomers.length > 0 && (
@@ -381,28 +558,6 @@ function OptimizerResultPanel({
       )}
     </div>
   )
-}
-
-function objectiveLabel(objective: OptimizationObjective): string {
-  if (objective === 'minimum-cost') return '最低成本模式'
-  if (objective === 'minimum-waste') return '最少浪費模式'
-  if (objective === 'maximum-known-revenue') {
-    return '最高已知銷售總額模式'
-  }
-  return '最高已知毛利模式'
-}
-
-function objectiveDescription(objective: OptimizationObjective): string {
-  if (objective === 'minimum-cost') {
-    return '先最小化原料成本；同成本再減少批數／剩餘杯與配方種類。'
-  }
-  if (objective === 'minimum-waste') {
-    return '先最小化批數／剩餘杯；再比較原料成本與配方種類。'
-  }
-  if (objective === 'maximum-known-revenue') {
-    return '先最大化正式顧客的已知販售收入；同收入再降低原料成本與批數。'
-  }
-  return '先最大化「正式顧客已知販售收入－全部製作批次原料成本」；同毛利再降低原料成本與批數。'
 }
 
 function MetricCard({
