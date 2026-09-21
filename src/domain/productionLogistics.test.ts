@@ -150,7 +150,7 @@ describe('production logistics', () => {
     )
 
     expect(result.feasible).toBe(true)
-    expect(result.ingredientAcquisitionTrips).toBe(2)
+    expect(result.ingredientAcquisitionActions).toBe(2)
     expect(
       result.actions
         .filter((action) => action.kind === 'acquire-ingredient')
