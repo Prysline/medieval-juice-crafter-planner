@@ -146,8 +146,9 @@ export function buildOptimizationModel(
     const cost = calculateRecipeIngredientCost(candidate)
     if (cost.batchIngredientCost === null) return []
 
-    // Blender quantity/yield is still unknown. Automatic optimizer only admits
-    // paths that can be expressed as one juice base plus zero or more seasonings.
+    // Production eligibility is delegated to the production graph. Multi-base
+    // candidates are allowed once they can be expressed as confirmed Blender
+    // segment edges; unknown Blender sale/effect rules remain outside this layer.
     const productionPath = productionPathForCandidate(candidate)
     if (!productionPath) return []
 
