@@ -187,6 +187,57 @@ describe('multi-trip replenishment', () => {
     expectScheduleConsistency(result)
   })
 
+  it('uses the same persistent jar identities for both cup policies', () => {
+    const jars: JuiceJarInventoryItem[] = [
+      { id: 'persistent-a', recipeId: 'lemon-juice', servings: 2 },
+      { id: 'persistent-b', recipeId: null, servings: 0 },
+    ]
+    const salesDemand = namedRecipes(['A', 'B'], 1)
+    const cups = { cleanCups: 2, usedCups: 0 }
+
+    const retain = buildMultiTripReplenishmentPlanWithCups(
+      salesDemand,
+      'retain-and-wash',
+      jars,
+      cups,
+    )
+    const drop = buildMultiTripReplenishmentPlanWithCups(
+      salesDemand,
+      'allow-drop-if-full',
+      jars,
+      cups,
+    )
+
+    expect(retain.carriedJuiceJars).toEqual(drop.carriedJuiceJars)
+    expect(
+      new Set(
+        retain.trips.flatMap((trip) =>
+          trip.juiceJars.map((load) => load.physicalJarId),
+        ),
+      ),
+    ).toEqual(
+      new Set(
+        drop.trips.flatMap((trip) =>
+          trip.juiceJars.map((load) => load.physicalJarId),
+        ),
+      ),
+    )
+  })
+
+  it('rejects duplicate persistent carried jar IDs', () => {
+    expect(() =>
+      buildMultiTripReplenishmentPlanWithCups(
+        namedRecipes(['A'], 1),
+        'retain-and-wash',
+        [
+          { id: 'duplicate', recipeId: null, servings: 0 },
+          { id: 'duplicate', recipeId: null, servings: 0 },
+        ],
+        { cleanCups: 1, usedCups: 0 },
+      ),
+    ).toThrow(/unique persistent inventory IDs/)
+  })
+
   it('reuses one physical jar across four juice types and records three switches', () => {
     const result = buildPlan(
       namedRecipes(['A', 'B', 'C', 'D'], 1),
