@@ -30,8 +30,6 @@ export interface MultiTripJuiceJarLoad {
   previousRecipeName: string | null
 }
 
-export type LeftoverJarLocation = 'sales-trip'
-
 export interface MultiTripLeftoverJarContent {
   /**
    * Plan-local physical jar identity. Leftovers stay in this same whole jar;
@@ -41,9 +39,8 @@ export interface MultiTripLeftoverJarContent {
   recipeId: string
   recipeName: string
   servings: number
-  location: LeftoverJarLocation
-  /** The trip whose sales load leaves these servings behind, when applicable. */
-  tripNumber: number | null
+  /** The trip whose sales load leaves these servings behind. */
+  tripNumber: number
 }
 
 export interface CupInventoryInput {
@@ -722,7 +719,6 @@ function allocateLeftoverJarContents(
       recipeId,
       recipeName: candidate.load.recipeName,
       servings: retained,
-      location: 'sales-trip',
       tripNumber: candidate.trip.tripNumber,
     })
   }
