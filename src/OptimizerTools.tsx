@@ -10,7 +10,6 @@ import {
 import type {
   OptimizationCandidatePolicy,
   OptimizationCriterion,
-  OptimizationObjective,
   OptimizationResult,
 } from './domain/optimizer'
 import type {
