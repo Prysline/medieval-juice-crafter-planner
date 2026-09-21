@@ -42,7 +42,7 @@ export function buildPreparationDemand(
       quantity: item.quantity,
     })),
     productionWaterUnits: result.recipePlans.reduce(
-      (sum, recipe) => sum + recipe.productionUnits,
+      (sum, recipe) => sum + recipe.juiceUnits,
       0,
     ),
     cleanCupUses: result.assignedServings,
@@ -62,7 +62,7 @@ export function buildPreparationDemand(
       return {
         recipeId: recipe.recipeId,
         recipeName: recipe.recipeName,
-        productionUnits: recipe.productionUnits,
+        productionUnits: recipe.juiceUnits,
         producedServings: recipe.producedServings,
         assignedServings: recipe.assignedServings,
         leftoverServings: recipe.leftoverServings,
