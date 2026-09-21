@@ -14,6 +14,8 @@ export interface PreparationRecipeIngredient {
 export interface PreparationRecipeDemand {
   recipeId: string
   recipeName: string
+  /** Customers already assigned by the optimizer through the full-match gate. */
+  customerIds: string[]
   productionUnits: number
   producedServings: number
   assignedServings: number
@@ -62,6 +64,7 @@ export function buildPreparationDemand(
       return {
         recipeId: recipe.recipeId,
         recipeName: recipe.recipeName,
+        customerIds: [...recipe.customerIds],
         productionUnits: recipe.juiceUnits,
         producedServings: recipe.producedServings,
         assignedServings: recipe.assignedServings,

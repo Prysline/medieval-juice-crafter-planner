@@ -13,6 +13,10 @@ import type {
   OptimizationResult,
 } from './domain/optimizer'
 import type {
+  MultiTripJuiceJarLoad,
+  MultiTripReplenishmentPlan,
+} from './domain/multiTripReplenishment'
+import type {
   ProgressMilestoneId,
   SatisfactionByVillage,
 } from './types'
@@ -24,10 +28,19 @@ interface OptimizerToolsProps {
   formalCustomerIds: string[]
 }
 
+interface SalesTripPlans {
+  retainAndWash: MultiTripReplenishmentPlan
+  allowDropIfFull: MultiTripReplenishmentPlan
+}
+
 type OptimizerRunState =
   | { status: 'idle' }
   | { status: 'loading' }
-  | { status: 'success'; result: OptimizationResult }
+  | {
+      status: 'success'
+      result: OptimizationResult
+      salesTripPlans: SalesTripPlans
+    }
   | { status: 'error'; message: string }
 
 type OptionalCriterion = OptimizationCriterion | 'none'
@@ -71,6 +84,30 @@ function criterionLabel(criterion: OptimizationCriterion): string {
   if (criterion === 'maximum-known-gross-profit') return '最高已知毛利'
   if (criterion === 'minimum-machine-operations') return '最少機器操作'
   return '最少果汁罐換裝'
+}
+
+function jarFillActionLabel(load: MultiTripJuiceJarLoad): string {
+  if (load.fillAction === 'initial-fill') return '首次裝填'
+  if (load.fillAction === 'refill-same-type') return '補裝同種'
+
+  return (
+    (load.previousRecipeName ?? load.previousRecipeId ?? '前一種果汁') +
+    ' → ' +
+    load.recipeName +
+    ' 換裝'
+  )
+}
+
+function tripPolicyLabel(plan: MultiTripReplenishmentPlan): string {
+  return plan.policy === 'retain-and-wash'
+    ? '保留杯具並回家清洗'
+    : '背包滿時允許丟棄'
+}
+
+function tripPolicyNote(plan: MultiTripReplenishmentPlan): string {
+  return plan.policy === 'retain-and-wash'
+    ? '每趟預留 1 格處理 used cups；非最後一趟回家後清洗，再供下一趟重用。'
+    : '出發可使用完整 10 格；滿載時 used cups 可能掉落，不假設跨趟回收重用。'
 }
 
 function uniquePriorities(
@@ -150,7 +187,15 @@ export default function OptimizerTools({
     setRunState({ status: 'loading' })
 
     try {
-      const { optimizeBatchPlan } = await import('./domain/optimizer')
+      const [
+        { optimizeBatchPlan },
+        { buildPreparationDemand },
+        { buildMultiTripReplenishmentPlan },
+      ] = await Promise.all([
+        import('./domain/optimizer'),
+        import('./domain/preparationDemand'),
+        import('./domain/multiTripReplenishment'),
+      ])
       const parsedMaxSwitches =
         maxJarTypeSwitches.trim() === ''
           ? undefined
@@ -177,7 +222,33 @@ export default function OptimizerTools({
             : { maxJarTypeSwitches: parsedMaxSwitches },
       })
 
-      setRunState({ status: 'success', result })
+      const preparationDemand = buildPreparationDemand(result)
+      const salesTripPlans: SalesTripPlans = {
+        retainAndWash: buildMultiTripReplenishmentPlan(
+          preparationDemand,
+          'retain-and-wash',
+          result.availableJuiceJarCount,
+        ),
+        allowDropIfFull: buildMultiTripReplenishmentPlan(
+          preparationDemand,
+          'allow-drop-if-full',
+          result.availableJuiceJarCount,
+        ),
+      }
+
+      for (const plan of Object.values(salesTripPlans)) {
+        if (plan.jarTypeSwitches !== result.jarTypeSwitches) {
+          throw new Error(
+            '果汁罐換裝與販售趟數排程不一致，已停止顯示結果。',
+          )
+        }
+      }
+
+      setRunState({
+        status: 'success',
+        result,
+        salesTripPlans,
+      })
     } catch (error) {
       setRunState({
         status: 'error',
@@ -344,6 +415,7 @@ export default function OptimizerTools({
         <OptimizerResultPanel
           result={runState.result}
           priorities={priorities}
+          salesTripPlans={runState.salesTripPlans}
         />
       )}
     </section>
@@ -382,9 +454,11 @@ function PrioritySelect({
 function OptimizerResultPanel({
   result,
   priorities,
+  salesTripPlans,
 }: {
   result: OptimizationResult
   priorities: OptimizationCriterion[]
+  salesTripPlans: SalesTripPlans
 }) {
   return (
     <div className="optimizer-results">
@@ -418,6 +492,14 @@ function OptimizerResultPanel({
           value={result.jarTypeSwitches + ' 次'}
         />
         <MetricCard
+          label="販售趟數（保留杯具）"
+          value={salesTripPlans.retainAndWash.tripCount + ' 趟'}
+        />
+        <MetricCard
+          label="販售趟數（允許丟棄）"
+          value={salesTripPlans.allowDropIfFull.tripCount + ' 趟'}
+        />
+        <MetricCard
           label="已分配 / 產出"
           value={result.assignedServings + ' / ' + result.producedServings}
         />
@@ -436,6 +518,9 @@ function OptimizerResultPanel({
         <span>
           可用果汁罐 {result.availableJuiceJarCount} 個；同罐改裝成另一種果汁才計入換裝。
         </span>
+        <span>
+          販售趟數由同一份 physical jar schedule 計算；杯具 policy 不同時分開顯示，不合併成單一數字。
+        </span>
         {(result.potentialTrialCount > 0 ||
           result.unknownFormalSalePriceCount > 0) && (
           <small>
@@ -452,6 +537,75 @@ function OptimizerResultPanel({
           </small>
         )}
       </div>
+
+      <section className="optimizer-result-section">
+        <div className="section-title">
+          <strong>販售趟數與果汁罐排程</strong>
+          <span>依杯具 policy 分開</span>
+        </div>
+
+        {[salesTripPlans.retainAndWash, salesTripPlans.allowDropIfFull].map(
+          (plan) => (
+            <div className="optimizer-batch-list" key={plan.policy}>
+              <article className="optimizer-batch-card">
+                <div>
+                  <strong>{tripPolicyLabel(plan)}</strong>
+                  <span>
+                    {plan.tripCount} 趟 · 果汁罐換裝 {plan.jarTypeSwitches} 次
+                  </span>
+                </div>
+                <p>
+                  實際使用 {plan.physicalJarsUsed} / {plan.availableJuiceJarCount}{' '}
+                  個果汁罐；單趟最多使用 {plan.maxJarRackSlotsUsed} 個。
+                </p>
+                <small>{tripPolicyNote(plan)}</small>
+              </article>
+
+              {plan.trips.map((trip) => (
+                <article
+                  className="optimizer-batch-card"
+                  key={plan.policy + '-' + trip.tripNumber}
+                >
+                  <div>
+                    <strong>第 {trip.tripNumber} 趟</strong>
+                    <span>
+                      {trip.totalServings} 杯 · {trip.juiceJars.length} 罐
+                    </span>
+                  </div>
+                  <p>
+                    杯具 {trip.cleanCupStacks} 疊 · 出發占用{' '}
+                    {trip.departureSlots} / {trip.effectiveDepartureSlotLimit}{' '}
+                    個可用 slot
+                  </p>
+                  {trip.juiceJars.map((load) => (
+                    <div
+                      key={
+                        plan.policy +
+                        '-' +
+                        trip.tripNumber +
+                        '-' +
+                        load.physicalJarId
+                      }
+                    >
+                      <p>
+                        果汁罐 {load.physicalJarId}：{load.recipeName} ×
+                        {load.servings} 杯 · {jarFillActionLabel(load)}
+                      </p>
+                      <p>
+                        完整符合顧客：{load.customerIds.map(customerLabel).join('、')}
+                      </p>
+                    </div>
+                  ))}
+                </article>
+              ))}
+            </div>
+          ),
+        )}
+
+        <small className="optimizer-boundary-note">
+          每個 jar load 的顧客都沿用 optimizer 已通過「全部喜好皆符合」的 full-match assignment；這裡只排從家出發、販售後回家的可行裝載，不另外重判配方，也不推導跨村路線、顧客順序或到達時間。
+        </small>
+      </section>
 
       <section className="optimizer-result-section">
         <div className="section-title">
