@@ -120,6 +120,7 @@ function criterionLabel(criterion: OptimizationCriterion): string {
 }
 
 function jarFillActionLabel(load: MultiTripJuiceJarLoad): string {
+  if (load.fillAction === 'use-existing') return '使用既有成品'
   if (load.fillAction === 'initial-fill') return '首次裝填'
   if (load.fillAction === 'refill-same-type') return '補裝同種'
 
@@ -421,6 +422,10 @@ export default function OptimizerTools({
         priorities,
         availableJuiceJarCount:
           capacitySummary.effectiveCarriedJuiceJarCount,
+        initialCarriedJuiceJars: carriedJuiceJars.map((jar) => ({
+          recipeId: jar.recipeId,
+          servings: jar.servings,
+        })),
         constraints:
           parsedMaxSwitches === undefined ||
           !Number.isFinite(parsedMaxSwitches)
@@ -461,6 +466,7 @@ export default function OptimizerTools({
             cleanCups: inventoryState.cleanCups,
             usedCups: inventoryState.usedCups,
           },
+          preparationShortfall,
         )
         if (plan.jarTypeSwitches !== result.jarTypeSwitches) {
           throw new Error(
@@ -1570,7 +1576,7 @@ function SalesTripPlanBlock({
           {plan.totalLeftoverServings > 0
             ? ' 剩餘成品只會留在該 recipe 最後販售的同一 persistent physical jar；目前仍不寫回 inventory，跨日 commit 留待 Apply Plan。'
             : ''}
-          {' '}目前初始 jar contents 只作 metadata；第一次補裝／換裝相容性留待 Phase 5B。
+          {' '}初始 jar contents 已納入實際販售來源與第一次補裝／換裝判定；未被今日需求喝空的既有內容不會為了減少換裝而自動丟棄。
         </small>
       </article>
 

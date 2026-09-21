@@ -5,7 +5,8 @@ import type {
   BatchSolverSolution,
 } from './optimizerSolver'
 import {
-  normalizedAvailableJuiceJarCount,
+  minimumJarTypeSwitchesForRecipeIds,
+  normalizedInitialCarriedJuiceJars,
   type BatchOptimizationModel,
   type OptimizationCriterion,
 } from './optimizerModel'
@@ -222,20 +223,87 @@ function buildHighsStage(
     }),
   )
 
-  const availableJars = normalizedAvailableJuiceJarCount(domain.request)
+  const initialJars = normalizedInitialCarriedJuiceJars(
+    domain.request,
+  )
+  const emptyJarCount = initialJars.filter(
+    (jar) => !jar.recipeId || jar.servings <= 0,
+  ).length
+  const initialRecipeIds = new Set(
+    initialJars.flatMap((jar) =>
+      jar.recipeId && jar.servings > 0 ? [jar.recipeId] : [],
+    ),
+  )
+  const unmatchedKindExpression = sum(
+    ...domain.recipes.flatMap((recipe) => {
+      if (initialRecipeIds.has(recipe.candidate.id)) return []
+      const z = zByRecipeId.get(recipe.candidate.id)
+      return z ? [z] : []
+    }),
+  )
   const jarSwitches = model.intVar(
     0,
     Math.max(0, domain.recipes.length),
     'jar_type_switches',
   )
   model.addConstraint(
-    kindExpression.minus(jarSwitches).leq(availableJars),
+    unmatchedKindExpression
+      .minus(jarSwitches)
+      .leq(emptyJarCount),
     'jar_switch_lower_bound',
   )
   model.addConstraint(
-    jarSwitches.minus(kindExpression).leq(0),
+    jarSwitches.minus(unmatchedKindExpression).leq(0),
     'jar_switch_usage',
   )
+
+  if (emptyJarCount === 0) {
+    const cumulativeServingsByRecipe = new Map<string, number>()
+    const reusableJarVars: BoolVariable[] = []
+
+    initialJars.forEach((jar, jarIndex) => {
+      if (!jar.recipeId || jar.servings <= 0) return
+      const cumulative =
+        (cumulativeServingsByRecipe.get(jar.recipeId) ?? 0) +
+        jar.servings
+      cumulativeServingsByRecipe.set(jar.recipeId, cumulative)
+
+      const assignedServings = sum(
+        ...domain.serviceableCustomerIds.flatMap((customerId) => {
+          const y = yByCustomerRecipe.get(
+            `${customerId}\u001f${jar.recipeId}`,
+          )
+          return y ? [y] : []
+        }),
+      )
+      const reusable = model.boolVar(
+        `initial_jar_reusable_${jarIndex}`,
+      )
+      model.addConstraint(
+        reusable.times(cumulative).minus(assignedServings).leq(0),
+        `initial_jar_reusable_threshold_${jarIndex}`,
+      )
+      reusableJarVars.push(reusable)
+    })
+
+    if (reusableJarVars.length > 0) {
+      model.addConstraint(
+        unmatchedKindExpression
+          .minus(
+            sum(...reusableJarVars).times(
+              Math.max(1, domain.recipes.length),
+            ),
+          )
+          .leq(0),
+        'initial_jar_switch_requires_reusable_jar',
+      )
+    } else {
+      model.addConstraint(
+        unmatchedKindExpression.leq(0),
+        'initial_jar_switch_requires_reusable_jar',
+      )
+    }
+  }
 
   const maxJarTypeSwitches =
     domain.request.constraints?.maxJarTypeSwitches
@@ -244,7 +312,9 @@ function buildHighsStage(
     Number.isFinite(maxJarTypeSwitches)
   ) {
     model.addConstraint(
-      jarSwitches.leq(Math.max(0, Math.floor(maxJarTypeSwitches))),
+      unmatchedKindExpression.leq(
+        emptyJarCount + Math.max(0, Math.floor(maxJarTypeSwitches)),
+      ),
       'jar_switch_hard_limit',
     )
   }
@@ -395,9 +465,9 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
           ),
         0,
       )
-    const jarTypeSwitches = Math.max(
-      0,
-      recipeKinds - normalizedAvailableJuiceJarCount(domain.request),
+    const jarTypeSwitches = minimumJarTypeSwitchesForRecipeIds(
+      domain.request,
+      Object.keys(productionUnitsByRecipeId),
     )
 
     return {
