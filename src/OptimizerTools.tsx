@@ -135,6 +135,17 @@ function tripPolicyNote(plan: MultiTripReplenishmentPlan): string {
     : '出發可使用完整 10 格；背包滿時接受 used cups 可能掉落。這不是玩家主動把物品丟到地面作 storage。'
 }
 
+function productionLogisticsActionKindLabel(
+  kind: ProductionLogisticsPlan['actions'][number]['kind'],
+): string {
+  if (kind === 'acquire-ingredient') return '取得原料'
+  if (kind === 'fetch-water') return '取水'
+  if (kind === 'load-machine') return '放入機器'
+  if (kind === 'run-machine') return '機器加工'
+  if (kind === 'unload-intermediate') return '取出中間產物'
+  return '成品裝罐'
+}
+
 function uniquePriorities(
   primary: OptimizationCriterion,
   secondaryOne: OptionalCriterion,
@@ -962,7 +973,7 @@ function OptimizerResultPanel({
         )}
 
         <small className="optimizer-boundary-note">
-          ▸ 表示配方內部 ingredient / sequence 順序；→ 只用於實際加工或狀態轉換。此區使用 stock offset 後的 net production plan，不再重複顯示 gross optimizer steps。Phase 3 logistics 目前追蹤 production materials、一般架、背包、machine slots 與 finalizer output 的 physical jar receiver；罐內既有內容與首次換裝相容性仍維持 deferred，clean / used cups 的實際占位與 transition 留到 Phase 4。
+          ▸ 表示配方內部 ingredient / sequence 順序；→ 只用於實際加工或狀態轉換。此區使用 stock offset 後的 net production plan，不再重複顯示 gross optimizer steps。現行 inventory 尚未保存每件物品的精確位置，因此 Phase 3 把既有 production materials 視為 home supply，依一般架與背包容量建立 deterministic feasible placement / transfer；同時追蹤 machine slots 與 finalizer output 的 physical jar receiver。罐內既有內容與首次換裝相容性仍維持 deferred，clean / used cups 的實際占位與 transition 留到 Phase 4。
         </small>
 
         <div className="optimizer-logistics-summary">
@@ -971,7 +982,7 @@ function OptimizerResultPanel({
           </strong>
           <span>
             原料取得動作 {productionLogistics.ingredientAcquisitionActions} · 取水{' '}
-            {productionLogistics.waterFetchTrips} 趟 · logistics actions{' '}
+            {productionLogistics.waterFetchTrips} 趟 · 物流動作{' '}
             {productionLogistics.actions.length}
           </span>
           <span>
@@ -979,7 +990,7 @@ function OptimizerResultPanel({
             {productionLogistics.initialSnapshot.shelfSlotsAvailable} slots · 背包一般物品{' '}
             {productionLogistics.initialSnapshot.backpackSlotsUsed}/
             {productionLogistics.initialSnapshot.backpackSlotsAvailable} slots · 常駐果汁罐{' '}
-            {productionLogistics.initialSnapshot.carriedJarSlots} slots · finalizer receiver{' '}
+            {productionLogistics.initialSnapshot.carriedJarSlots} slots · 成品罐接手{' '}
             {productionLogistics.initialSnapshot.outputJarReceiverSlots} 個 physical jars
             （背包 {productionLogistics.initialSnapshot.carriedOutputJarSlots} · rack{' '}
             {productionLogistics.initialSnapshot.rackOutputJarSlots}）
@@ -1009,7 +1020,9 @@ function OptimizerResultPanel({
                     <strong>
                       {action.index}. {action.label}
                     </strong>
-                    <span>{action.kind}</span>
+                    <span>
+                      {productionLogisticsActionKindLabel(action.kind)}
+                    </span>
                   </div>
                   <p>
                     一般架 {action.snapshot.shelfSlotsUsed}/
