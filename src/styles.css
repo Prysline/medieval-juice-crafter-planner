@@ -1332,6 +1332,16 @@ footer {
   font-size: 0.78rem;
 }
 
+.optimizer-shopping-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.optimizer-shopping-values span {
+  white-space: nowrap;
+}
+
 .optimizer-boundary-note {
   display: block;
   margin-top: 9px;
@@ -1358,6 +1368,11 @@ footer {
   .optimizer-shopping-row,
   .optimizer-assignment-row {
     grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  .optimizer-shopping-values {
+    display: grid;
     gap: 2px;
   }
 }
