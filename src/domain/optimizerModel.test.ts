@@ -50,6 +50,7 @@ const baseRequest: OptimizationRequest = {
     'east-harbor': 0,
     'tranquil-fountain': 0,
   },
+  formalCustomerIds: ['a', 'b'],
   currentProgress: 'seasoner-unlocked',
   candidatePolicy: 'allow-unambiguous-computed',
   objective: 'minimum-cost',
@@ -184,6 +185,49 @@ describe('optimizer model', () => {
 
     expect(allowComputed.serviceableCustomerIds).toEqual(['a'])
     expect(allowComputed.recipes.map((recipe) => recipe.candidate.id)).toEqual([
+      'computed',
+    ])
+  })
+
+  it('requires known sale price for formal customers only in revenue objectives', () => {
+    const unknownPrice = candidate(
+      'computed',
+      'computed',
+      ['檸檬', '糖'],
+      [{ name: '甜味', value: 5 }],
+    )
+
+    const formalRevenue = buildOptimizationModel(
+      {
+        ...baseRequest,
+        customerIds: ['a'],
+        formalCustomerIds: ['a'],
+        objective: 'maximum-known-revenue',
+      },
+      {
+        customers,
+        candidates: [unknownPrice],
+      },
+    )
+
+    expect(formalRevenue.serviceableCustomerIds).toEqual([])
+    expect(formalRevenue.unresolvedCustomerIds).toEqual(['a'])
+
+    const potentialRevenue = buildOptimizationModel(
+      {
+        ...baseRequest,
+        customerIds: ['a'],
+        formalCustomerIds: [],
+        objective: 'maximum-known-revenue',
+      },
+      {
+        customers,
+        candidates: [unknownPrice],
+      },
+    )
+
+    expect(potentialRevenue.serviceableCustomerIds).toEqual(['a'])
+    expect(potentialRevenue.recipes.map((recipe) => recipe.candidate.id)).toEqual([
       'computed',
     ])
   })
