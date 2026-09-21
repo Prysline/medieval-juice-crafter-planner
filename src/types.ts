@@ -218,8 +218,8 @@ export interface InventoryState {
 }
 
 export interface PlannerSettings {
-  /** 本次規劃預計常駐背包中的 physical juice jars。 */
-  carriedJuiceJarCount: number
+  /** 本次規劃明確選中的常駐 physical juice jar identities。 */
+  carriedJuiceJarIds: string[]
   /** opt-in：接受背包滿時 used cup 可能掉落。 */
   allowUsedCupDropIfFull: boolean
 }
