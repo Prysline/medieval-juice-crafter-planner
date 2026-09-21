@@ -202,6 +202,7 @@ function observedCandidate(recipe: Recipe): RecipeCandidate {
   return {
     id: recipe.id,
     name: recipe.name,
+    observedDisplayName: recipe.observedDisplayName,
     source: 'observed',
     unlockedAt: recipe.unlockedAt,
     salePrice: recipe.salePrice,
