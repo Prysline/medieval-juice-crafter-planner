@@ -78,6 +78,11 @@ describe('batch optimizer', () => {
 
     expect(result.batches).toHaveLength(1)
     expect(result.batches[0].customerIds.sort()).toEqual(['a', 'b'])
+    expect(result.batches[0].ingredientIds).toEqual([
+      'lemon',
+      'sugar',
+      'mint',
+    ])
     expect(result.assignedServings).toBe(2)
     expect(result.producedServings).toBe(2)
     expect(result.leftoverServings).toBe(0)
