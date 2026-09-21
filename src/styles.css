@@ -1521,6 +1521,57 @@ footer {
   margin-top: 9px;
 }
 
+.optimizer-batch-card > .optimizer-shopping-list {
+  display: grid;
+  gap: 7px;
+  justify-content: stretch;
+  align-items: stretch;
+}
+
+.optimizer-batch-card > .optimizer-machine-slots,
+.optimizer-batch-card > .optimizer-operation-splits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-start;
+  align-items: center;
+}
+
+.optimizer-machine-slots span,
+.optimizer-operation-splits span {
+  border: 1px solid #ddcfba;
+  border-radius: 999px;
+  background: #f8f0e2;
+  padding: 3px 7px;
+  color: #6d604d;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-align: left;
+}
+
+.optimizer-result-section > .optimizer-batch-list + .optimizer-batch-list {
+  margin-top: 10px;
+}
+
+.optimizer-policy-comparison {
+  margin-top: 10px;
+  border: 1px solid #e2d7c5;
+  border-radius: 10px;
+  background: #fffdf8;
+  padding: 8px 10px;
+}
+
+.optimizer-policy-comparison > summary {
+  cursor: pointer;
+  color: #5d4d36;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.optimizer-policy-comparison[open] > summary {
+  margin-bottom: 8px;
+}
+
 @media (max-width: 720px) {
   .optimizer-controls,
   .optimizer-metrics {

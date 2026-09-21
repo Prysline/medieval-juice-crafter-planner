@@ -5,6 +5,8 @@ import {
   optimizerCustomerIds,
   optimizerCustomerLabel,
   optimizerMoney,
+  optimizerOperationQuantities,
+  optimizerWaterFetchSlots,
   type OptimizerCustomerScope,
 } from './domain/optimizerUi'
 import type {
@@ -16,6 +18,7 @@ import type {
   MultiTripJuiceJarLoad,
   MultiTripReplenishmentPlan,
 } from './domain/multiTripReplenishment'
+import type { PreparationShortfall } from './domain/preparationShortfall'
 import type {
   ProgressMilestoneId,
   SatisfactionByVillage,
@@ -39,6 +42,7 @@ type OptimizerRunState =
   | {
       status: 'success'
       result: OptimizationResult
+      preparationShortfall: PreparationShortfall
       salesTripPlans: SalesTripPlans
     }
   | { status: 'error'; message: string }
@@ -74,7 +78,7 @@ function ingredientLabel(ingredientId: string): string {
 }
 
 function sequenceLabel(ingredientIds: string[]): string {
-  return ingredientIds.map(ingredientLabel).join(' → ')
+  return ingredientIds.map(ingredientLabel).join(' ▸ ')
 }
 
 function criterionLabel(criterion: OptimizationCriterion): string {
@@ -101,13 +105,13 @@ function jarFillActionLabel(load: MultiTripJuiceJarLoad): string {
 function tripPolicyLabel(plan: MultiTripReplenishmentPlan): string {
   return plan.policy === 'retain-and-wash'
     ? '保留杯具並回家清洗'
-    : '背包滿時允許丟棄'
+    : '接受背包滿時 used cup 掉落'
 }
 
 function tripPolicyNote(plan: MultiTripReplenishmentPlan): string {
   return plan.policy === 'retain-and-wash'
-    ? '每趟預留 1 格處理 used cups；非最後一趟回家後清洗，再供下一趟重用。'
-    : '出發可使用完整 10 格；滿載時 used cups 可能掉落，不假設跨趟回收重用。'
+    ? '目前 approximation：每趟固定預留 1 格處理 used cups；非最後一趟回家後清洗，再供下一趟重用。'
+    : '出發可使用完整 10 格；背包滿時接受 used cups 可能掉落。這不是玩家主動把物品丟到地面作 storage。'
 }
 
 function uniquePriorities(
@@ -190,11 +194,15 @@ export default function OptimizerTools({
       const [
         { optimizeBatchPlan },
         { buildPreparationDemand },
+        { buildPreparationShortfall },
         { buildMultiTripReplenishmentPlan },
+        { readInventoryState },
       ] = await Promise.all([
         import('./domain/optimizer'),
         import('./domain/preparationDemand'),
+        import('./domain/preparationShortfall'),
         import('./domain/multiTripReplenishment'),
+        import('./storage/inventoryState'),
       ])
       const parsedMaxSwitches =
         maxJarTypeSwitches.trim() === ''
@@ -223,6 +231,11 @@ export default function OptimizerTools({
       })
 
       const preparationDemand = buildPreparationDemand(result)
+      const inventoryState = readInventoryState(window.localStorage)
+      const preparationShortfall = buildPreparationShortfall(
+        preparationDemand,
+        inventoryState,
+      )
       const salesTripPlans: SalesTripPlans = {
         retainAndWash: buildMultiTripReplenishmentPlan(
           preparationDemand,
@@ -247,6 +260,7 @@ export default function OptimizerTools({
       setRunState({
         status: 'success',
         result,
+        preparationShortfall,
         salesTripPlans,
       })
     } catch (error) {
@@ -272,7 +286,7 @@ export default function OptimizerTools({
         </div>
 
         <p className="tool-description">
-          以 full match 顧客分配為基礎，同時計算實際果汁份數、1～5 份製作 stack、共享中間半成品、機器操作與果汁罐換裝。路線與未確認的果汁調和器產量仍不自行推導。
+          以 full match 顧客分配為基礎，同時計算實際果汁份數、1～5 份製作 stack、共享中間半成品、機器操作與果汁罐換裝。路線仍不自行推導；果汁調和器 1:1:1、q = 1～5 已確認，但 blending edge 尚未接入 automatic production graph。
         </p>
 
         <div className="optimizer-controls">
@@ -414,6 +428,7 @@ export default function OptimizerTools({
       {runState.status === 'success' && (
         <OptimizerResultPanel
           result={runState.result}
+          preparationShortfall={runState.preparationShortfall}
           priorities={priorities}
           salesTripPlans={runState.salesTripPlans}
         />
@@ -451,15 +466,61 @@ function PrioritySelect({
   )
 }
 
+function machineSlotLabels(equipment: string): string[] {
+  if (equipment === '柑橘榨汁機' || equipment === '榨汁機') {
+    return ['input', 'output']
+  }
+  if (equipment === '調味器') {
+    return ['果汁 input', '調味材料 input', 'output']
+  }
+  if (equipment === '果汁成品台') {
+    return ['果汁 input', '水 input', 'output']
+  }
+  if (equipment === '果汁調和器') {
+    return ['果汁 A input', '果汁 B input', 'output']
+  }
+  return ['machine slots 依設備規則']
+}
+
+function productionStepLabel(
+  step: OptimizationResult['productionSteps'][number],
+): string {
+  if (step.kind === 'juicing') {
+    return ingredientLabel(step.addedIngredientId ?? '') + ' → 原汁'
+  }
+  if (step.kind === 'seasoning') {
+    return (
+      sequenceLabel(step.fromIngredientIds) +
+      ' + ' +
+      ingredientLabel(step.addedIngredientId ?? '') +
+      ' → ' +
+      sequenceLabel(step.toIngredientIds)
+    )
+  }
+  return sequenceLabel(step.fromIngredientIds) + ' + 水 → 販售成品'
+}
+
 function OptimizerResultPanel({
   result,
+  preparationShortfall,
   priorities,
   salesTripPlans,
 }: {
   result: OptimizationResult
+  preparationShortfall: PreparationShortfall
   priorities: OptimizationCriterion[]
   salesTripPlans: SalesTripPlans
 }) {
+  const purchaseItemByIngredientId = new Map(
+    result.shoppingList.map((item) => [item.ingredientId, item]),
+  )
+  const productionStepsByEquipment = result.productionSteps.reduce<
+    Record<string, OptimizationResult['productionSteps']>
+  >((groups, step) => {
+    ;(groups[step.equipment] ??= []).push(step)
+    return groups
+  }, {})
+
   return (
     <div className="optimizer-results">
       <div className="optimizer-metrics" aria-label="最佳化摘要">
@@ -492,12 +553,8 @@ function OptimizerResultPanel({
           value={result.jarTypeSwitches + ' 次'}
         />
         <MetricCard
-          label="販售趟數（保留杯具）"
+          label="販售趟數（目前策略）"
           value={salesTripPlans.retainAndWash.tripCount + ' 趟'}
-        />
-        <MetricCard
-          label="販售趟數（允許丟棄）"
-          value={salesTripPlans.allowDropIfFull.tripCount + ' 趟'}
         />
         <MetricCard
           label="已分配 / 產出"
@@ -519,7 +576,7 @@ function OptimizerResultPanel({
           可用果汁罐 {result.availableJuiceJarCount} 個；同罐改裝成另一種果汁才計入換裝。
         </span>
         <span>
-          販售趟數由同一份 physical jar schedule 計算；杯具 policy 不同時分開顯示，不合併成單一數字。
+          販售摘要目前採「保留杯具並回家清洗」approximation；替代 used-cup policy 可在販售排程展開比較。
         </span>
         {(result.potentialTrialCount > 0 ||
           result.unknownFormalSalePriceCount > 0) && (
@@ -540,70 +597,156 @@ function OptimizerResultPanel({
 
       <section className="optimizer-result-section">
         <div className="section-title">
-          <strong>販售趟數與果汁罐排程</strong>
-          <span>依杯具 policy 分開</span>
+          <strong>所需物資</strong>
+          <span>先看需求，再分購買／免費取得</span>
         </div>
 
-        {[salesTripPlans.retainAndWash, salesTripPlans.allowDropIfFull].map(
-          (plan) => (
-            <div className="optimizer-batch-list" key={plan.policy}>
-              <article className="optimizer-batch-card">
-                <div>
-                  <strong>{tripPolicyLabel(plan)}</strong>
-                  <span>
-                    {plan.tripCount} 趟 · 果汁罐換裝 {plan.jarTypeSwitches} 次
-                  </span>
-                </div>
-                <p>
-                  實際使用 {plan.physicalJarsUsed} / {plan.availableJuiceJarCount}{' '}
-                  個果汁罐；單趟最多使用 {plan.maxJarRackSlotsUsed} 個。
-                </p>
-                <small>{tripPolicyNote(plan)}</small>
-              </article>
+        <div className="optimizer-batch-list">
+          <article className="optimizer-batch-card">
+            <div>
+              <strong>原料</strong>
+              <span>{preparationShortfall.ingredients.length} 種實際製作需求</span>
+            </div>
+            {preparationShortfall.ingredients.length === 0 ? (
+              <p>目前成品庫存已足夠，不需再消耗新原料。</p>
+            ) : (
+              <div className="optimizer-shopping-list">
+                {preparationShortfall.ingredients.map((item) => {
+                  const purchaseItem = purchaseItemByIngredientId.get(
+                    item.ingredientId,
+                  )
+                  return (
+                    <div
+                      className="optimizer-shopping-row"
+                      key={item.ingredientId}
+                    >
+                      <strong>{item.name}</strong>
+                      <div className="optimizer-shopping-values">
+                        <span>需求：{item.requiredUnits} 單位</span>
+                        <span>
+                          現有：{item.inventoryUnitsAvailable} 單位 · 使用{' '}
+                          {item.inventoryUnitsUsed} 單位
+                        </span>
+                        <span>
+                          {item.purchaseUnits > 0
+                            ? '需購買：' + item.purchaseUnits + ' 單位'
+                            : '需購買：0（庫存足夠）'}
+                        </span>
+                        {item.purchaseUnits > 0 && purchaseItem && (
+                          <span>
+                            購買小計：
+                            {optimizerMoney(
+                              item.purchaseUnits * purchaseItem.unitPrice,
+                            )}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </article>
 
-              {plan.trips.map((trip) => (
-                <article
-                  className="optimizer-batch-card"
-                  key={plan.policy + '-' + trip.tripNumber}
-                >
+          <article className="optimizer-batch-card">
+            <div>
+              <strong>水</strong>
+              <span>免費取得 · 10 / slot</span>
+            </div>
+            <p>
+              需求 {preparationShortfall.productionWaterUnitsRequired} · 現有{' '}
+              {preparationShortfall.waterUnitsAvailable} · 使用{' '}
+              {preparationShortfall.waterUnitsUsed} · 需取得{' '}
+              {preparationShortfall.waterUnitsToFetch}
+            </p>
+            <small>
+              本次缺水若一次搬回，需要{' '}
+              {optimizerWaterFetchSlots(
+                preparationShortfall.waterUnitsToFetch,
+              )}{' '}
+              個背包 slot；實際取水／回架／再製作的多趟順序留待 production logistics。
+            </small>
+          </article>
+
+          <article className="optimizer-batch-card">
+            <div>
+              <strong>杯具</strong>
+              <span>目前仍使用既有 cup-lifecycle approximation</span>
+            </div>
+            <p>
+              乾淨杯需求 {preparationShortfall.cleanCupUses} · 現有{' '}
+              {preparationShortfall.cleanCupsAvailable} · 洗滌前短缺{' '}
+              {preparationShortfall.cleanCupShortfallBeforeWashing}
+            </p>
+            <small>
+              現有 used cups：{preparationShortfall.usedCupsAvailable}。used cup 不會在沒有清洗計畫時直接算成 clean cup。
+            </small>
+          </article>
+        </div>
+
+        <small className="optimizer-boundary-note">
+          「需購買」只指有購買來源的原料；水免費，因此列為「需取得」而不是從結果中省略。
+        </small>
+      </section>
+
+      <section className="optimizer-result-section">
+        <div className="section-title">
+          <strong>製作步驟</strong>
+          <span>{result.machineOperations.total} 次操作</span>
+        </div>
+
+        {Object.keys(productionStepsByEquipment).length === 0 ? (
+          <p className="empty-tool-state">目前沒有需要新增製作的步驟。</p>
+        ) : (
+          Object.entries(productionStepsByEquipment).map(
+            ([equipment, steps]) => (
+              <div className="optimizer-batch-list" key={equipment}>
+                <article className="optimizer-batch-card">
                   <div>
-                    <strong>第 {trip.tripNumber} 趟</strong>
+                    <strong>{equipment}</strong>
                     <span>
-                      {trip.totalServings} 杯 · {trip.juiceJars.length} 罐
+                      {steps.reduce(
+                        (sum, step) => sum + step.operationCount,
+                        0,
+                      )}{' '}
+                      次操作
                     </span>
                   </div>
-                  <p>
-                    杯具 {trip.cleanCupStacks} 疊 · 出發占用{' '}
-                    {trip.departureSlots} / {trip.effectiveDepartureSlotLimit}{' '}
-                    個可用 slot
-                  </p>
-                  {trip.juiceJars.map((load) => (
-                    <div
-                      key={
-                        plan.policy +
-                        '-' +
-                        trip.tripNumber +
-                        '-' +
-                        load.physicalJarId
-                      }
-                    >
-                      <p>
-                        果汁罐 {load.physicalJarId}：{load.recipeName} ×
-                        {load.servings} 杯 · {jarFillActionLabel(load)}
-                      </p>
-                      <p>
-                        完整符合顧客：{load.customerIds.map(customerLabel).join('、')}
-                      </p>
-                    </div>
-                  ))}
+                  <div
+                    className="optimizer-machine-slots"
+                    aria-label={equipment + ' machine slots'}
+                  >
+                    {machineSlotLabels(equipment).map((slot) => (
+                      <span key={slot}>{slot}</span>
+                    ))}
+                  </div>
                 </article>
-              ))}
-            </div>
-          ),
+
+                {steps.map((step) => (
+                  <article className="optimizer-batch-card" key={step.key}>
+                    <div>
+                      <strong>{productionStepLabel(step)}</strong>
+                      <span>{step.operationCount} 次操作</span>
+                    </div>
+                    <p>總處理量：{step.quantity} 份</p>
+                    <div className="optimizer-operation-splits">
+                      {optimizerOperationQuantities(step.quantity).map(
+                        (quantity, index) => (
+                          <span key={index}>
+                            操作 {index + 1}：{quantity} 份
+                          </span>
+                        ),
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ),
+          )
         )}
 
         <small className="optimizer-boundary-note">
-          每個 jar load 的顧客都沿用 optimizer 已通過「全部喜好皆符合」的 full-match assignment；這裡只排從家出發、販售後回家的可行裝載，不另外重判配方，也不推導跨村路線、顧客順序或到達時間。
+          ▸ 表示配方內部 ingredient / sequence 順序；→ 只用於實際加工或狀態轉換。
         </small>
       </section>
 
@@ -617,10 +760,7 @@ function OptimizerResultPanel({
         ) : (
           <div className="optimizer-batch-list">
             {result.recipePlans.map((plan) => (
-              <article
-                className="optimizer-batch-card"
-                key={plan.recipeId}
-              >
+              <article className="optimizer-batch-card" key={plan.recipeId}>
                 <div>
                   <strong>{plan.recipeName}</strong>
                   <span>
@@ -645,60 +785,22 @@ function OptimizerResultPanel({
 
       <section className="optimizer-result-section">
         <div className="section-title">
-          <strong>製作步驟</strong>
-          <span>{result.machineOperations.total} 次操作</span>
+          <strong>販售排程</strong>
+          <span>目前策略：保留杯具並回家清洗</span>
         </div>
-        <div className="optimizer-batch-list">
-          {result.productionSteps.map((step) => (
-            <article className="optimizer-batch-card" key={step.key}>
-              <div>
-                <strong>
-                  {step.kind === 'juicing'
-                    ? step.equipment + '：' + sequenceLabel(step.toIngredientIds)
-                    : step.kind === 'seasoning'
-                      ? sequenceLabel(step.fromIngredientIds) +
-                        ' + ' +
-                        ingredientLabel(step.addedIngredientId ?? '') +
-                        ' → ' +
-                        sequenceLabel(step.toIngredientIds)
-                      : '果汁成品台：' + sequenceLabel(step.fromIngredientIds)}
-                </strong>
-                <span>{step.operationCount} 次操作</span>
-              </div>
-              <p>
-                處理 {step.quantity} 份
-                {step.operationCount > 1
-                  ? '；依每次最多 5 份拆分'
-                  : ''}
-              </p>
-            </article>
-          ))}
-        </div>
-      </section>
 
-      <section className="optimizer-result-section">
-        <div className="section-title">
-          <strong>採買原料</strong>
-          <span>{result.shoppingList.length} 種</span>
-        </div>
-        {result.shoppingList.length === 0 ? (
-          <p className="empty-tool-state">目前沒有需要購買的原料。</p>
-        ) : (
-          <div className="optimizer-shopping-list">
-            {result.shoppingList.map((item) => (
-              <div className="optimizer-shopping-row" key={item.ingredientId}>
-                <strong>{item.name}</strong>
-                <div className="optimizer-shopping-values">
-                  <span>數量：{item.quantity} 單位</span>
-                  <span>單價：{optimizerMoney(item.unitPrice)}／單位</span>
-                  <span>小計：{optimizerMoney(item.totalCost)}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <SalesTripPlanBlock plan={salesTripPlans.retainAndWash} />
+
+        <details className="optimizer-policy-comparison">
+          <summary>
+            比較替代策略：接受背包滿時 used cup 掉落（
+            {salesTripPlans.allowDropIfFull.tripCount} 趟）
+          </summary>
+          <SalesTripPlanBlock plan={salesTripPlans.allowDropIfFull} />
+        </details>
+
         <small className="optimizer-boundary-note">
-          目前只聚合原料數量；商店路線與跨村時間仍保持分層，不在此處猜測。
+          兩種 policy 都仍沿用目前 D4 approximation。這裡只排從家出發、販售後回家的可行裝載，不推導跨村路線、顧客順序或到達時間。
         </small>
       </section>
 
@@ -707,11 +809,70 @@ function OptimizerResultPanel({
           <strong>
             目前沒有可靠 full match：{result.unresolvedCustomers.length} 人
           </strong>
-          <p>
-            {result.unresolvedCustomers.map(customerLabel).join('、')}
-          </p>
+          <p>{result.unresolvedCustomers.map(customerLabel).join('、')}</p>
         </section>
       )}
+    </div>
+  )
+}
+
+function SalesTripPlanBlock({
+  plan,
+}: {
+  plan: MultiTripReplenishmentPlan
+}) {
+  return (
+    <div className="optimizer-batch-list">
+      <article className="optimizer-batch-card">
+        <div>
+          <strong>{tripPolicyLabel(plan)}</strong>
+          <span>
+            {plan.tripCount} 趟 · 果汁罐換裝 {plan.jarTypeSwitches} 次
+          </span>
+        </div>
+        <p>
+          實際使用 {plan.physicalJarsUsed} / {plan.availableJuiceJarCount}{' '}
+          個果汁罐；單趟最多使用 {plan.maxJarRackSlotsUsed} 個。
+        </p>
+        <small>{tripPolicyNote(plan)}</small>
+      </article>
+
+      {plan.trips.map((trip) => (
+        <article
+          className="optimizer-batch-card"
+          key={plan.policy + '-' + trip.tripNumber}
+        >
+          <div>
+            <strong>第 {trip.tripNumber} 趟</strong>
+            <span>
+              {trip.totalServings} 杯 · {trip.juiceJars.length} 罐
+            </span>
+          </div>
+          <p>
+            杯具 {trip.cleanCupStacks} 疊 · 出發占用 {trip.departureSlots} /{' '}
+            {trip.effectiveDepartureSlotLimit} 個可用 slot
+          </p>
+          {trip.juiceJars.map((load) => (
+            <div
+              key={
+                plan.policy +
+                '-' +
+                trip.tripNumber +
+                '-' +
+                load.physicalJarId
+              }
+            >
+              <p>
+                果汁罐 {load.physicalJarId}：{load.recipeName} ×{load.servings}{' '}
+                杯 · {jarFillActionLabel(load)}
+              </p>
+              <p>
+                完整符合顧客：{load.customerIds.map(customerLabel).join('、')}
+              </p>
+            </div>
+          ))}
+        </article>
+      ))}
     </div>
   )
 }
