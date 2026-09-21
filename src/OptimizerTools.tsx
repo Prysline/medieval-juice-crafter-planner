@@ -14,6 +14,10 @@ import type {
   OptimizationCriterion,
   OptimizationResult,
 } from './domain/optimizer'
+import {
+  formatRecipeDisplayName,
+  formatRecipeSequence,
+} from './domain/displayFormat'
 import type {
   MultiTripJuiceJarLoad,
   MultiTripReplenishmentPlan,
@@ -95,7 +99,7 @@ function ingredientLabel(ingredientId: string): string {
 }
 
 function sequenceLabel(ingredientIds: string[]): string {
-  return ingredientIds.map(ingredientLabel).join(' ▸ ')
+  return formatRecipeSequence(ingredientIds.map(ingredientLabel))
 }
 
 function criterionLabel(criterion: OptimizationCriterion): string {
@@ -112,9 +116,11 @@ function jarFillActionLabel(load: MultiTripJuiceJarLoad): string {
   if (load.fillAction === 'refill-same-type') return '補裝同種'
 
   return (
-    (load.previousRecipeName ?? load.previousRecipeId ?? '前一種果汁') +
+    formatRecipeDisplayName(
+      load.previousRecipeName ?? load.previousRecipeId ?? '前一種果汁',
+    ) +
     ' → ' +
-    load.recipeName +
+    formatRecipeDisplayName(load.recipeName) +
     ' 換裝'
   )
 }
@@ -672,20 +678,114 @@ function PrioritySelect({
   )
 }
 
-function machineSlotLabels(equipment: string): string[] {
-  if (equipment === '柑橘榨汁機' || equipment === '榨汁機') {
-    return ['input', 'output']
-  }
-  if (equipment === '調味器') {
-    return ['果汁 input', '調味材料 input', 'output']
-  }
-  if (equipment === '果汁成品台') {
-    return ['果汁 input', '水 input', 'output']
-  }
-  if (equipment === '果汁調和器') {
-    return ['果汁 A input', '果汁 B input', 'output']
-  }
-  return ['machine slots 依設備規則']
+type ProductionStep =
+  ProductionLogisticsPlan['productionPlan']['steps'][number]
+
+function MachineSlotPill({
+  role,
+  label,
+}: {
+  role: string
+  label: string
+}) {
+  return (
+    <span className="optimizer-slot-pill">
+      <small>{role}</small>
+      <strong>{label}</strong>
+    </span>
+  )
+}
+
+function MachineBatchFlow({
+  step,
+  quantity,
+  batchIndex,
+}: {
+  step: ProductionStep
+  quantity: number
+  batchIndex: number
+}) {
+  const outputQuantity =
+    step.kind === 'finalizing' ? quantity * 2 : quantity
+  const outputLabel =
+    step.kind === 'juicing'
+      ? sequenceLabel(step.toIngredientIds) + '原汁'
+      : step.kind === 'finalizing'
+        ? sequenceLabel(step.toIngredientIds) + '成品'
+        : sequenceLabel(step.toIngredientIds)
+
+  return (
+    <div className="optimizer-operation-flow">
+      <span className="optimizer-batch-index">
+        第 {batchIndex + 1} 批
+      </span>
+      <div className="optimizer-slot-flow">
+        {step.kind === 'juicing' ? (
+          <MachineSlotPill
+            role="input"
+            label={
+              ingredientLabel(step.addedIngredientId ?? '') +
+              ' ×' +
+              quantity
+            }
+          />
+        ) : (
+          <MachineSlotPill
+            role={step.kind === 'blending' ? 'input A' : '果汁 input'}
+            label={sequenceLabel(step.fromIngredientIds) + ' ×' + quantity}
+          />
+        )}
+
+        {(step.kind === 'seasoning' ||
+          step.kind === 'blending' ||
+          step.kind === 'finalizing') && (
+          <span className="optimizer-slot-operator">＋</span>
+        )}
+
+        {step.kind === 'seasoning' && (
+          <MachineSlotPill
+            role="調味 input"
+            label={
+              ingredientLabel(step.addedIngredientId ?? '') +
+              ' ×' +
+              quantity
+            }
+          />
+        )}
+
+        {step.kind === 'blending' && (
+          <MachineSlotPill
+            role="input B"
+            label={
+              sequenceLabel(step.secondaryFromIngredientIds ?? []) +
+              ' ×' +
+              quantity
+            }
+          />
+        )}
+
+        {step.kind === 'finalizing' && (
+          <MachineSlotPill
+            role="水 input"
+            label={'水 ×' + quantity}
+          />
+        )}
+
+        <span className="optimizer-slot-arrow" aria-hidden="true">
+          →
+        </span>
+        <MachineSlotPill
+          role="output"
+          label={
+            outputLabel +
+            ' ×' +
+            outputQuantity +
+            (step.kind === 'finalizing' ? '杯' : '')
+          }
+        />
+      </div>
+    </div>
+  )
 }
 
 function productionStepLabel(
@@ -936,53 +1036,59 @@ function OptimizerResultPanel({
         ) : (
           Object.entries(productionStepsByEquipment).map(
             ([equipment, steps]) => (
-              <div className="optimizer-batch-list" key={equipment}>
-                <article className="optimizer-batch-card">
+              <section
+                className="optimizer-machine-group"
+                key={equipment}
+                aria-label={equipment + ' 製作步驟'}
+              >
+                <header className="optimizer-machine-header">
                   <div>
+                    <span>機器</span>
                     <strong>{equipment}</strong>
-                    <span>
-                      {steps.reduce(
-                        (sum, step) => sum + step.operationCount,
-                        0,
-                      )}{' '}
-                      次操作
-                    </span>
                   </div>
-                  <div
-                    className="optimizer-machine-slots"
-                    aria-label={equipment + ' machine slots'}
-                  >
-                    {machineSlotLabels(equipment).map((slot) => (
-                      <span key={slot}>{slot}</span>
-                    ))}
-                  </div>
-                </article>
+                  <span>
+                    {steps.reduce(
+                      (sum, step) => sum + step.operationCount,
+                      0,
+                    )}{' '}
+                    批 · 每批 1～5 份
+                  </span>
+                </header>
 
-                {steps.map((step) => (
-                  <article className="optimizer-batch-card" key={step.key}>
-                    <div>
-                      <strong>{productionStepLabel(step)}</strong>
-                      <span>{step.operationCount} 次操作</span>
-                    </div>
-                    <p>總處理量：{step.quantity} 份</p>
-                    <div className="optimizer-operation-splits">
-                      {optimizerOperationQuantities(step.quantity).map(
-                        (quantity, index) => (
-                          <span key={index}>
-                            操作 {index + 1}：{quantity} 份
-                          </span>
-                        ),
-                      )}
-                    </div>
-                  </article>
-                ))}
-              </div>
+                <div className="optimizer-machine-steps">
+                  {steps.map((step) => (
+                    <article
+                      className="optimizer-production-step-card"
+                      key={step.key}
+                    >
+                      <div className="optimizer-production-step-heading">
+                        <strong>{productionStepLabel(step)}</strong>
+                        <span>
+                          總量 {step.quantity} 份 · {step.operationCount} 批
+                        </span>
+                      </div>
+                      <div className="optimizer-operation-batches">
+                        {optimizerOperationQuantities(step.quantity).map(
+                          (quantity, index) => (
+                            <MachineBatchFlow
+                              key={index}
+                              step={step}
+                              quantity={quantity}
+                              batchIndex={index}
+                            />
+                          ),
+                        )}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </section>
             ),
           )
         )}
 
         <small className="optimizer-boundary-note">
-          ▸ 表示配方內部 ingredient / sequence 順序；→ 只用於實際加工或狀態轉換。此區使用 stock offset 後的 net production plan，不再重複顯示 gross optimizer steps。現行 inventory 尚未保存每件物品的精確位置，因此 Phase 3 把既有 production materials 視為 home supply，依一般架與背包容量建立 deterministic feasible placement / transfer；同時追蹤 machine slots 與 finalizer output 的 physical jar receiver。罐內既有內容與首次換裝相容性仍維持 deferred，clean / used cups 的實際占位與 transition 留到 Phase 4。
+          ▸ 表示配方內部原料順序；→ 只表示實際加工或狀態轉換。此區顯示庫存抵扣後真正需要執行的製作量；每個膠囊代表一個機器 slot 內的原料、果汁、水或輸出。
         </small>
 
         <div className="optimizer-logistics-summary">
@@ -1071,7 +1177,7 @@ function OptimizerResultPanel({
             {result.recipePlans.map((plan) => (
               <article className="optimizer-batch-card" key={plan.recipeId}>
                 <div>
-                  <strong>{plan.recipeName}</strong>
+                  <strong>{formatRecipeDisplayName(plan.recipeName)}</strong>
                   <span>
                     原料成本：{optimizerMoney(plan.totalIngredientCost)}
                   </span>
@@ -1209,7 +1315,7 @@ function SalesTripPlanBlock({
               }
             >
               <p>
-                果汁罐 {load.physicalJarId}：{load.recipeName} · 販售 {load.servings}{' '}
+                果汁罐 {load.physicalJarId}：{formatRecipeDisplayName(load.recipeName)} · 販售 {load.servings}{' '}
                 杯
                 {load.retainedLeftoverServings > 0
                   ? ' · 販售後保留 ' + load.retainedLeftoverServings + ' 杯'

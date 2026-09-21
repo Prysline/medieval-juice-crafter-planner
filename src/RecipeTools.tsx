@@ -12,6 +12,12 @@ import {
   evaluateRecipeSequence,
 } from './domain/recipeEvaluator'
 import {
+  formatMoney,
+  formatRecipeDisplayName,
+  formatRecipeIngredientCost,
+  formatRecipeSequence,
+} from './domain/displayFormat'
+import {
   readSavedRecipes,
   removeSavedRecipe,
   upsertSavedRecipe,
@@ -39,12 +45,6 @@ const capabilityByIngredientId = new Map(
   ]),
 )
 
-function formatCost(value: number | null): string {
-  if (value === null) return '未知'
-  const amount = Number.isInteger(value) ? String(value) : value.toFixed(1)
-  return `${amount} 金幣`
-}
-
 function recipeSourceLabel(evaluation: RecipeSequenceEvaluation): string {
   if (!evaluation.valid) return '無法評估'
   return evaluation.candidate.source === 'observed' ? '實測' : '預測'
@@ -52,9 +52,9 @@ function recipeSourceLabel(evaluation: RecipeSequenceEvaluation): string {
 
 function ingredientSequenceLabel(ingredientIds: string[]): string {
   if (ingredientIds.length === 0) return '尚未設定'
-  return ingredientIds
-    .map((id) => ingredientById.get(id)?.name ?? id)
-    .join(' → ')
+  return formatRecipeSequence(
+    ingredientIds.map((id) => ingredientById.get(id)?.name ?? id),
+  )
 }
 
 function ingredientRoleLabel(ingredientId: string): string {
@@ -436,9 +436,9 @@ function EvaluationPanel({
     <div className="evaluation-panel">
       <div className="evaluation-title">
         <div>
-          <strong>{candidate.name}</strong>
+          <strong>{formatRecipeDisplayName(candidate.name)}</strong>
           <span>
-            {candidate.ingredients.join(' → ')} ·{' '}
+            {formatRecipeSequence(candidate.ingredients)} ·{' '}
             {candidate.source === 'observed' ? '實測' : '預測'}
             {evaluation.usesBlender
               ? ` · 調和 ${evaluation.drinkSegmentCount} 段`
@@ -463,8 +463,11 @@ function EvaluationPanel({
           <dt>原料成本</dt>
           <dd>
             {evaluation.usesBlender
-              ? `${formatCost(cost.batchIngredientCost)} 原料合計 · 每杯成本未確認`
-              : `${formatCost(cost.batchIngredientCost)}／批 · ${formatCost(cost.unitIngredientCost)}／杯`}
+              ? `${formatMoney(cost.batchIngredientCost)} 原料合計 · 每杯成本未確認`
+              : formatRecipeIngredientCost(
+                  cost.batchIngredientCost,
+                  cost.unitIngredientCost,
+                )}
           </dd>
         </div>
         <div>
@@ -472,7 +475,7 @@ function EvaluationPanel({
           <dd>
             {candidate.salePrice === null
               ? '未知'
-              : `${candidate.salePrice} 金幣`}
+              : formatMoney(candidate.salePrice)}
           </dd>
         </div>
         <div>
@@ -605,7 +608,7 @@ function SavedRecipeRow({
         <>
           <div className="saved-recipe-summary">
             <div>
-              <strong>{evaluation.candidate.ingredients.join(' → ')}</strong>
+              <strong>{formatRecipeSequence(evaluation.candidate.ingredients)}</strong>
               <span>
                 {evaluation.candidate.source === 'observed'
                   ? '實測'
@@ -619,8 +622,11 @@ function SavedRecipeRow({
             </div>
             <span>
               {evaluation.usesBlender
-                ? `${formatCost(evaluation.cost.batchIngredientCost)} 原料合計 · 每杯成本未確認`
-                : `${formatCost(evaluation.cost.batchIngredientCost)}／批 · ${formatCost(evaluation.cost.unitIngredientCost)}／杯`}
+                ? `${formatMoney(evaluation.cost.batchIngredientCost)} 原料合計 · 每杯成本未確認`
+                : formatRecipeIngredientCost(
+                    evaluation.cost.batchIngredientCost,
+                    evaluation.cost.unitIngredientCost,
+                  )}
             </span>
           </div>
           <p className="saved-recipe-meta">
