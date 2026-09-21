@@ -1310,6 +1310,134 @@ footer {
   margin: 0;
 }
 
+.optimizer-inventory-editor {
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(82, 66, 44, 0.16);
+  border-radius: 14px;
+  background: rgba(255, 253, 248, 0.94);
+  padding: 13px;
+}
+
+.optimizer-inventory-editor .section-title {
+  align-items: baseline;
+}
+
+.optimizer-inventory-editor .section-title span {
+  color: #7c6e5c;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.optimizer-inventory-grid,
+.optimizer-ingredient-inventory {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.optimizer-inventory-grid label,
+.optimizer-ingredient-inventory label,
+.optimizer-jar-card > label {
+  display: grid;
+  gap: 5px;
+  color: #6d604d;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.optimizer-inventory-grid input,
+.optimizer-ingredient-inventory input,
+.optimizer-jar-card select,
+.optimizer-jar-card > label > input {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid #d6c8b3;
+  border-radius: 9px;
+  background: #fffdf8;
+  color: #2f2a22;
+  padding: 7px 9px;
+}
+
+.optimizer-inventory-subsection {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid #e7dccb;
+  padding-top: 11px;
+}
+
+.optimizer-inventory-subsection > strong,
+.optimizer-inventory-subheading strong {
+  color: #4f6744;
+  font-size: 0.82rem;
+}
+
+.optimizer-inventory-subheading {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.optimizer-inventory-subheading span,
+.optimizer-inventory-empty {
+  margin: 0;
+  color: #7a6d5d;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.optimizer-jar-inventory {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.optimizer-jar-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(90px, 0.42fr);
+  gap: 8px;
+  border: 1px solid #e2d7c5;
+  border-radius: 11px;
+  background: #fffaf1;
+  padding: 10px;
+}
+
+.optimizer-jar-heading {
+  display: flex;
+  grid-column: 1 / -1;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.optimizer-jar-heading > strong {
+  color: #38502f;
+  font-size: 0.8rem;
+}
+
+.optimizer-jar-carry-toggle {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  color: #6d604d;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.optimizer-jar-carry-toggle input {
+  width: 17px;
+  height: 17px;
+  margin: 0;
+}
+
+.optimizer-jar-card select:disabled,
+.optimizer-jar-card input:disabled,
+.optimizer-jar-carry-toggle input:disabled {
+  cursor: default;
+  opacity: 0.48;
+}
+
 .segmented-control {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1819,6 +1947,17 @@ footer {
   }
 
   .optimizer-controls .optimizer-checkbox-control {
+    grid-column: auto;
+  }
+
+  .optimizer-inventory-grid,
+  .optimizer-ingredient-inventory,
+  .optimizer-jar-inventory,
+  .optimizer-jar-card {
+    grid-template-columns: 1fr;
+  }
+
+  .optimizer-jar-heading {
     grid-column: auto;
   }
 
