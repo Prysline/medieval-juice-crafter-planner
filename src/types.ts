@@ -197,7 +197,20 @@ export interface InventoryState {
   /** 只保存原料總數量；stack 5 與實際裝載由 domain 規則計算。 */
   ingredientUnits: Record<string, number>
   waterUnits: number
+  /** clean + used = 玩家目前實際持有的杯具總數。 */
   cleanCups: number
   usedCups: number
+  /** 每個 item 都代表一個實際 physical jar；空罐也保留 identity。 */
   juiceJars: JuiceJarInventoryItem[]
+  /** 一般架子數；每架固定 9 slots。 */
+  shelfCount: number
+  /** 果汁罐架數；每架固定 5 slots。 */
+  jarRackCount: number
+}
+
+export interface PlannerSettings {
+  /** 本次規劃預計常駐背包中的 physical juice jars。 */
+  carriedJuiceJarCount: number
+  /** opt-in：接受背包滿時 used cup 可能掉落。 */
+  allowUsedCupDropIfFull: boolean
 }
