@@ -230,10 +230,48 @@ function validatePlanBasis(
 
   if (
     salesPlan.initialCleanCups !== basis.inventory.cleanCups ||
-    salesPlan.initialUsedCups !== basis.inventory.usedCups
+    salesPlan.initialUsedCups !== basis.inventory.usedCups ||
+    salesPlan.initialPhysicalCupCount !==
+      basis.inventory.cleanCups + basis.inventory.usedCups
   ) {
     throw new Error(
       'Sales plan cup inventory does not match the transaction basis',
+    )
+  }
+
+  if (
+    salesPlan.finalCleanCups + salesPlan.finalUsedCups !==
+      salesPlan.finalPhysicalCupCount ||
+    salesPlan.finalPhysicalCupCount !==
+      salesPlan.initialPhysicalCupCount - salesPlan.droppedUsedCups
+  ) {
+    throw new Error(
+      'Sales plan final cup state does not conserve physical cups',
+    )
+  }
+
+  const expectedPolicy = basis.plannerSettings.allowUsedCupDropIfFull
+    ? 'allow-drop-if-full'
+    : 'retain-and-wash'
+  if (salesPlan.policy !== expectedPolicy) {
+    throw new Error(
+      'Sales plan cup policy does not match the transaction basis',
+    )
+  }
+
+  const plannedCarriedJarIds = salesPlan.carriedJuiceJars.map(
+    (jar) => jar.physicalJarId,
+  )
+  if (
+    plannedCarriedJarIds.length !==
+      basis.plannerSettings.carriedJuiceJarIds.length ||
+    plannedCarriedJarIds.some(
+      (id, index) =>
+        id !== basis.plannerSettings.carriedJuiceJarIds[index],
+    )
+  ) {
+    throw new Error(
+      'Sales plan carried jars do not match the transaction basis',
     )
   }
 
@@ -299,6 +337,16 @@ function validatePlanBasis(
   if (duplicateAssigned) {
     throw new Error(
       `Optimization result assigns customer ${duplicateAssigned} more than once`,
+    )
+  }
+
+  const alreadySupplied = new Set(basis.suppliedCustomerIds)
+  const reassignedCustomerId = assignedCustomerIds.find((id) =>
+    alreadySupplied.has(id),
+  )
+  if (reassignedCustomerId) {
+    throw new Error(
+      `Optimization result includes already supplied customer ${reassignedCustomerId}`,
     )
   }
 
