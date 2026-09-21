@@ -1,6 +1,6 @@
 import type {
   BatchOptimizationModel,
-  OptimizationObjective,
+  OptimizationCriterion,
 } from './optimizerModel'
 
 export interface BatchSolverAssignment {
@@ -10,17 +10,20 @@ export interface BatchSolverAssignment {
 
 export interface BatchSolverSolution {
   assignments: BatchSolverAssignment[]
-  batchCountByRecipeId: Record<string, number>
+  /** Number of juice units to make. One juice unit becomes two sellable servings. */
+  productionUnitsByRecipeId: Record<string, number>
   metrics: {
     totalIngredientCost: number
-    totalBatches: number
+    totalProductionUnits: number
     recipeKinds: number
+    machineOperations: number
+    jarTypeSwitches: number
   }
 }
 
 export interface BatchOptimizerSolver {
   solve(
     model: BatchOptimizationModel,
-    objective: OptimizationObjective,
+    priorities: OptimizationCriterion[],
   ): Promise<BatchSolverSolution>
 }
