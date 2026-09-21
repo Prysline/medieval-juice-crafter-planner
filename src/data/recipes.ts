@@ -169,7 +169,7 @@ export const recipes: Recipe[] = [
   },
   {
     id: 'banana-cinnamon-mint',
-    name: '香蕉 → 肉桂 → 薄荷（調製飲品）',
+    name: '清口（香蕉 → 肉桂 → 薄荷）',
     observedDisplayName: '清口 奢華',
     unlockedAt: 'tranquil-fountain-unlocked',
     salePrice: 58,
@@ -184,7 +184,7 @@ export const recipes: Recipe[] = [
   },
   {
     id: 'orange-cinnamon-mint',
-    name: '橙子 → 肉桂 → 薄荷（調製飲品）',
+    name: '清口（橙子 → 肉桂 → 薄荷）',
     observedDisplayName: '清口 希望',
     unlockedAt: 'tranquil-fountain-unlocked',
     salePrice: 53,
