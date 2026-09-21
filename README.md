@@ -15,7 +15,7 @@
 - 三原料配方保留調味順序；四原料以上的重複調味實測不進一般配方列表。
 - 三種以下有效序列會自動產生候選：既有實測配方優先，未實測組合只顯示預測特性，不推導售價。
 - 配方同時顯示批次原料成本與單杯原料成本；目前每批固定產出 2 杯。
-- 「配方工具」可用目前正式支援的 V1 製作鏈即時模擬有序原料序列；observed 配方優先，否則顯示 computed / ambiguity。
+- 「配方工具」已改為 ordered sequence builder：點原料直接 append，可重複調味、四原料以上、逐項刪除／清空；observed 精確序列優先，否則顯示 computed / ambiguity。
 - 個人配方只保存自訂名稱、有序 ingredient IDs、備註與建立時間；effects、cost、equipment、matching 每次由目前 domain 重新計算。
 - 「批次規劃」頁籤已接入 optimizer domain：可切全部／潛在／正式顧客、observed-only／allow computed、最低成本／最少浪費／最高已知銷售總額／最高已知毛利，並顯示批次、分配、原料清單、成本、已知收入／毛利、剩餘杯與 unresolved 顧客。
 - Inventory foundation 已建立：`mjc-inventory` 保存原料數量、水、乾淨／用過杯具與果汁罐狀態；`PreparationDemand` 將 optimizer 結果轉成全天 gross 備料需求，尚未開始 backpack packing。
@@ -85,7 +85,11 @@ src/
   **/*.test.ts         # domain / storage regression tests
 ```
 
-PR 2B generator 第一版只處理「1 種果汁基底 + 0～2 種不重複調味材料」。果汁調和器的兩種果汁混合規則尚未確認，因此不在此 generator 自動組合兩個果汁基底。
+PR 2B generator 仍只**自動枚舉**「1 種果汁基底 + 0～2 種不重複調味材料」，避免候選爆炸；這不再是 simulator/evaluator 的能力上限。
+
+手動 simulator 使用 ordered sequence：重複調味與四原料以上都可評估；每遇到新的 juice-base 就開始下一杯飲料 segment。兩杯飲料經果汁調和器組合時，網站只做 `front.sequence + back.sequence`，不另造 Blender 專用配方格式。多 juice-base sequence 的 unlock 至少為 `juice-blender-unlocked`，equipment 會包含果汁調和器。
+
+果汁調和器的遊戲內精確輸入比例、產量與售價公式仍未確認，因此 blended sequence 只顯示 ordered ingredients / effects / 原料合計，不推導每杯成本或售價。
 
 特性預測目前採用實測最支持的模型：
 
