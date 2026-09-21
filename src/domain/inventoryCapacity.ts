@@ -4,7 +4,11 @@ import {
   JUICE_JAR_RACK_SLOT_CAPACITY,
   JUICE_JAR_SLOT_COST,
 } from './inventoryRules'
-import type { InventoryState, PlannerSettings } from '../types'
+import type {
+  InventoryState,
+  JuiceJarInventoryItem,
+  PlannerSettings,
+} from '../types'
 
 export interface InventoryCapacitySummary {
   shelfCount: number
@@ -15,9 +19,29 @@ export interface InventoryCapacitySummary {
   physicalCupCount: number
   requestedCarriedJuiceJarCount: number
   effectiveCarriedJuiceJarCount: number
+  carriedJuiceJarIds: string[]
   carriedJarSlotCost: number
   backpackSlotsRemainingAfterCarriedJars: number
   carriedJarRequestExceedsOwned: boolean
+}
+
+export function selectCarriedJuiceJars(
+  inventory: InventoryState,
+  settings: PlannerSettings,
+): JuiceJarInventoryItem[] {
+  const requestedCarriedJuiceJarCount = Math.max(
+    0,
+    Math.floor(settings.carriedJuiceJarCount),
+  )
+  const effectiveCarriedJuiceJarCount = Math.min(
+    requestedCarriedJuiceJarCount,
+    inventory.juiceJars.length,
+    BACKPACK_SLOT_CAPACITY,
+  )
+
+  return inventory.juiceJars
+    .slice(0, effectiveCarriedJuiceJarCount)
+    .map((jar) => ({ ...jar }))
 }
 
 export function buildInventoryCapacitySummary(
@@ -29,11 +53,12 @@ export function buildInventoryCapacitySummary(
     0,
     Math.floor(settings.carriedJuiceJarCount),
   )
-  const effectiveCarriedJuiceJarCount = Math.min(
-    requestedCarriedJuiceJarCount,
-    physicalJuiceJarCount,
-    BACKPACK_SLOT_CAPACITY,
+  const carriedJuiceJars = selectCarriedJuiceJars(
+    inventory,
+    settings,
   )
+  const effectiveCarriedJuiceJarCount =
+    carriedJuiceJars.length
   const carriedJarSlotCost =
     effectiveCarriedJuiceJarCount * JUICE_JAR_SLOT_COST
 
@@ -48,6 +73,7 @@ export function buildInventoryCapacitySummary(
     physicalCupCount: inventory.cleanCups + inventory.usedCups,
     requestedCarriedJuiceJarCount,
     effectiveCarriedJuiceJarCount,
+    carriedJuiceJarIds: carriedJuiceJars.map((jar) => jar.id),
     carriedJarSlotCost,
     backpackSlotsRemainingAfterCarriedJars:
       BACKPACK_SLOT_CAPACITY - carriedJarSlotCost,

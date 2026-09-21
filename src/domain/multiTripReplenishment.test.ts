@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { JuiceJarInventoryItem } from '../types'
 import type { PreparationDemand } from './preparationDemand'
 import {
   buildMultiTripReplenishmentPlan as buildMultiTripReplenishmentPlanWithCups,
@@ -51,6 +52,14 @@ function demand(
   }
 }
 
+function carriedJars(count: number): JuiceJarInventoryItem[] {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `jar-${index + 1}`,
+    recipeId: null,
+    servings: 0,
+  }))
+}
+
 function buildPlan(
   salesDemand: PreparationDemand,
   policy: UsedCupTripPolicy,
@@ -63,7 +72,7 @@ function buildPlan(
   return buildMultiTripReplenishmentPlanWithCups(
     salesDemand,
     policy,
-    carriedJuiceJarCount,
+    carriedJars(carriedJuiceJarCount),
     cups,
   )
 }
@@ -145,6 +154,90 @@ function expectScheduleConsistency(
 }
 
 describe('multi-trip replenishment', () => {
+  it('preserves persistent jar IDs and initial contents as plan metadata', () => {
+    const result = buildMultiTripReplenishmentPlanWithCups(
+      namedRecipes(['A', 'B'], 1),
+      'allow-drop-if-full',
+      [
+        { id: 'owned-filled', recipeId: 'lemon-juice', servings: 4 },
+        { id: 'owned-empty', recipeId: null, servings: 0 },
+      ],
+      { cleanCups: 2, usedCups: 0 },
+    )
+
+    expect(result.carriedJuiceJars).toEqual([
+      {
+        physicalJarId: 'owned-filled',
+        initialRecipeId: 'lemon-juice',
+        initialServings: 4,
+      },
+      {
+        physicalJarId: 'owned-empty',
+        initialRecipeId: null,
+        initialServings: 0,
+      },
+    ])
+    expect(
+      new Set(
+        result.trips.flatMap((trip) =>
+          trip.juiceJars.map((load) => load.physicalJarId),
+        ),
+      ),
+    ).toEqual(new Set(['owned-filled', 'owned-empty']))
+    expectScheduleConsistency(result)
+  })
+
+  it('uses the same persistent jar identities for both cup policies', () => {
+    const jars: JuiceJarInventoryItem[] = [
+      { id: 'persistent-a', recipeId: 'lemon-juice', servings: 2 },
+      { id: 'persistent-b', recipeId: null, servings: 0 },
+    ]
+    const salesDemand = namedRecipes(['A', 'B'], 1)
+    const cups = { cleanCups: 2, usedCups: 0 }
+
+    const retain = buildMultiTripReplenishmentPlanWithCups(
+      salesDemand,
+      'retain-and-wash',
+      jars,
+      cups,
+    )
+    const drop = buildMultiTripReplenishmentPlanWithCups(
+      salesDemand,
+      'allow-drop-if-full',
+      jars,
+      cups,
+    )
+
+    expect(retain.carriedJuiceJars).toEqual(drop.carriedJuiceJars)
+    expect(
+      new Set(
+        retain.trips.flatMap((trip) =>
+          trip.juiceJars.map((load) => load.physicalJarId),
+        ),
+      ),
+    ).toEqual(
+      new Set(
+        drop.trips.flatMap((trip) =>
+          trip.juiceJars.map((load) => load.physicalJarId),
+        ),
+      ),
+    )
+  })
+
+  it('rejects duplicate persistent carried jar IDs', () => {
+    expect(() =>
+      buildMultiTripReplenishmentPlanWithCups(
+        namedRecipes(['A'], 1),
+        'retain-and-wash',
+        [
+          { id: 'duplicate', recipeId: null, servings: 0 },
+          { id: 'duplicate', recipeId: null, servings: 0 },
+        ],
+        { cleanCups: 1, usedCups: 0 },
+      ),
+    ).toThrow(/unique persistent inventory IDs/)
+  })
+
   it('reuses one physical jar across four juice types and records three switches', () => {
     const result = buildPlan(
       namedRecipes(['A', 'B', 'C', 'D'], 1),
@@ -162,7 +255,7 @@ describe('multi-trip replenishment', () => {
           (load) => load.physicalJarId,
         ),
       ),
-    ).toEqual([1, 1, 1, 1])
+    ).toEqual(['jar-1', 'jar-1', 'jar-1', 'jar-1'])
     expect(
       result.trips.flatMap((trip) =>
         trip.juiceJars.flatMap((load) => load.customerIds),
@@ -225,12 +318,12 @@ describe('multi-trip replenishment', () => {
     expect(result.tripCount).toBe(2)
     expect(result.jarTypeSwitches).toBe(0)
     expect(result.trips[0].juiceJars[0]).toMatchObject({
-      physicalJarId: 1,
+      physicalJarId: 'jar-1',
       servings: 10,
       fillAction: 'initial-fill',
     })
     expect(result.trips[1].juiceJars[0]).toMatchObject({
-      physicalJarId: 1,
+      physicalJarId: 'jar-1',
       servings: 5,
       fillAction: 'refill-same-type',
     })
@@ -479,14 +572,14 @@ describe('multi-trip replenishment', () => {
     expect(result.totalAssignedServings).toBe(3)
     expect(result.totalLeftoverServings).toBe(1)
     expect(result.trips[0].juiceJars[0]).toMatchObject({
-      physicalJarId: 1,
+      physicalJarId: 'jar-1',
       recipeId: 'sweet',
       servings: 3,
       retainedLeftoverServings: 1,
     })
     expect(result.leftoverJarContents).toEqual([
       {
-        physicalJarId: 1,
+        physicalJarId: 'jar-1',
         recipeId: 'sweet',
         recipeName: '甜味果汁',
         servings: 1,
@@ -525,13 +618,13 @@ describe('multi-trip replenishment', () => {
       .flatMap((trip) => trip.juiceJars)
       .at(-1)
     expect(finalLoad).toMatchObject({
-      physicalJarId: 1,
+      physicalJarId: 'jar-1',
       recipeId: 'a',
       retainedLeftoverServings: 1,
     })
     expect(result.leftoverJarContents).toMatchObject([
       {
-        physicalJarId: 1,
+        physicalJarId: 'jar-1',
         recipeId: 'a',
         servings: 1,
       },
@@ -580,6 +673,18 @@ describe('multi-trip replenishment', () => {
       expect(result).toEqual({
         policy,
         carriedJuiceJarCount: 2,
+        carriedJuiceJars: [
+          {
+            physicalJarId: 'jar-1',
+            initialRecipeId: null,
+            initialServings: 0,
+          },
+          {
+            physicalJarId: 'jar-2',
+            initialRecipeId: null,
+            initialServings: 0,
+          },
+        ],
         physicalJarsUsed: 0,
         totalJarLoads: 0,
         distinctFinalJuiceTypes: 0,

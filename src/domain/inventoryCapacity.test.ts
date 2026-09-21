@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { InventoryState, PlannerSettings } from '../types'
-import { buildInventoryCapacitySummary } from './inventoryCapacity'
+import {
+  buildInventoryCapacitySummary,
+  selectCarriedJuiceJars,
+} from './inventoryCapacity'
 
 function inventory(
   patch: Partial<InventoryState> = {},
@@ -53,10 +56,31 @@ describe('inventory capacity summary', () => {
       physicalCupCount: 11,
       requestedCarriedJuiceJarCount: 2,
       effectiveCarriedJuiceJarCount: 2,
+      carriedJuiceJarIds: ['jar-1', 'jar-2'],
       carriedJarSlotCost: 2,
       backpackSlotsRemainingAfterCarriedJars: 8,
       carriedJarRequestExceedsOwned: false,
     })
+  })
+
+  it('selects persistent carried jar identities in stable inventory order', () => {
+    const state = inventory({
+      juiceJars: [
+        { id: 'jar-filled', recipeId: 'lemon-juice', servings: 4 },
+        { id: 'jar-empty', recipeId: null, servings: 0 },
+        { id: 'jar-third', recipeId: 'orange-juice', servings: 2 },
+      ],
+    })
+
+    expect(
+      selectCarriedJuiceJars(
+        state,
+        settings({ carriedJuiceJarCount: 2 }),
+      ),
+    ).toEqual([
+      { id: 'jar-filled', recipeId: 'lemon-juice', servings: 4 },
+      { id: 'jar-empty', recipeId: null, servings: 0 },
+    ])
   })
 
   it('caps carried jars by actual ownership without treating rack slots as jars', () => {

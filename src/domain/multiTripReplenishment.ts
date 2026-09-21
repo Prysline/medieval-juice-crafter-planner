@@ -4,6 +4,7 @@ import {
   JUICE_JAR_CAPACITY,
   JUICE_JAR_SLOT_COST,
 } from './inventoryRules'
+import type { JuiceJarInventoryItem } from '../types'
 import type { PreparationDemand } from './preparationDemand'
 
 export type UsedCupTripPolicy =
@@ -16,7 +17,7 @@ export type JuiceJarFillAction =
   | 'type-switch'
 
 export interface MultiTripJuiceJarLoad {
-  physicalJarId: number
+  physicalJarId: string
   recipeId: string
   recipeName: string
   customerIds: string[]
@@ -31,16 +32,20 @@ export interface MultiTripJuiceJarLoad {
 }
 
 export interface MultiTripLeftoverJarContent {
-  /**
-   * Plan-local physical jar identity. Leftovers stay in this same whole jar;
-   * cross-jar liquid transfer and persistence to inventory IDs are deferred.
-   */
-  physicalJarId: number
+  /** Persistent InventoryState.juiceJars[].id. */
+  physicalJarId: string
   recipeId: string
   recipeName: string
   servings: number
   /** The trip whose sales load leaves these servings behind. */
   tripNumber: number
+}
+
+export interface MultiTripPhysicalJar {
+  /** Persistent InventoryState.juiceJars[].id. */
+  physicalJarId: string
+  initialRecipeId: string | null
+  initialServings: number
 }
 
 export interface CupInventoryInput {
@@ -75,6 +80,7 @@ export interface MultiTripSalesTrip {
 export interface MultiTripReplenishmentPlan {
   policy: UsedCupTripPolicy
   carriedJuiceJarCount: number
+  carriedJuiceJars: MultiTripPhysicalJar[]
   physicalJarsUsed: number
   totalJarLoads: number
   distinctFinalJuiceTypes: number
@@ -114,17 +120,30 @@ interface RecipeJarDemand {
 }
 
 interface JarQueue {
-  physicalJarId: number
+  physicalJarId: string
   loads: MultiTripJuiceJarLoad[]
 }
 
-function normalizedCarriedJuiceJarCount(value: number): number {
-  return Number.isFinite(value)
-    ? Math.min(
-        BACKPACK_SLOT_CAPACITY,
-        Math.max(0, Math.floor(value)),
+function normalizeCarriedJuiceJars(
+  jars: JuiceJarInventoryItem[],
+): MultiTripPhysicalJar[] {
+  const limited = jars.slice(0, BACKPACK_SLOT_CAPACITY)
+  const seen = new Set<string>()
+
+  return limited.map((jar) => {
+    if (!jar.id || seen.has(jar.id)) {
+      throw new Error(
+        'Carried physical juice jars require unique persistent inventory IDs',
       )
-    : 0
+    }
+    seen.add(jar.id)
+
+    return {
+      physicalJarId: jar.id,
+      initialRecipeId: jar.recipeId,
+      initialServings: jar.servings,
+    }
+  })
 }
 
 function splitCustomerServings(
@@ -219,21 +238,21 @@ function queueLoadSort(a: JarQueue, b: JarQueue): number {
     a.loads.length - b.loads.length ||
     a.loads.reduce((sum, load) => sum + load.servings, 0) -
       b.loads.reduce((sum, load) => sum + load.servings, 0) ||
-    a.physicalJarId - b.physicalJarId
+    a.physicalJarId.localeCompare(b.physicalJarId)
   )
 }
 
 function buildJarQueuesWithSwitches(
   recipes: RecipeJarDemand[],
-  carriedJuiceJarCount: number,
+  carriedJuiceJarIds: string[],
 ): JarQueue[] {
-  const queues = Array.from(
-    { length: carriedJuiceJarCount },
-    (_, index): JarQueue => ({
-      physicalJarId: index + 1,
+  const queues = carriedJuiceJarIds.map(
+    (physicalJarId): JarQueue => ({
+      physicalJarId,
       loads: [],
     }),
   )
+  const carriedJuiceJarCount = carriedJuiceJarIds.length
 
   const terminalRecipes = [...recipes]
     .filter((recipe) => recipe.leftoverServings > 0)
@@ -274,14 +293,14 @@ function buildJarQueuesWithSwitches(
 
 function buildJarQueuesWithoutSwitches(
   recipes: RecipeJarDemand[],
-  carriedJuiceJarCount: number,
+  carriedJuiceJarIds: string[],
 ): JarQueue[] {
   const totalJarLoads = recipes.reduce(
     (sum, recipe) => sum + recipe.chunks.length,
     0,
   )
   const jarsToUse = Math.min(
-    carriedJuiceJarCount,
+    carriedJuiceJarIds.length,
     totalJarLoads,
   )
   const allocatedByRecipeId = new Map(
@@ -330,17 +349,26 @@ function buildJarQueuesWithoutSwitches(
   }
 
   const queues: JarQueue[] = []
-  let nextPhysicalJarId = 1
+  let nextPhysicalJarIndex = 0
 
   for (const recipe of recipes) {
     const count =
       allocatedByRecipeId.get(recipe.recipeId) ?? 1
     const recipeQueues = Array.from(
       { length: count },
-      (): JarQueue => ({
-        physicalJarId: nextPhysicalJarId++,
-        loads: [],
-      }),
+      (): JarQueue => {
+        const physicalJarId =
+          carriedJuiceJarIds[nextPhysicalJarIndex++]
+        if (!physicalJarId) {
+          throw new Error(
+            'Physical jar queue allocation exceeded carried jar identities',
+          )
+        }
+        return {
+          physicalJarId,
+          loads: [],
+        }
+      },
     )
 
     recipe.chunks.forEach((chunk, index) => {
@@ -358,18 +386,18 @@ function buildJarQueuesWithoutSwitches(
 
 function buildPhysicalJarQueues(
   recipes: RecipeJarDemand[],
-  carriedJuiceJarCount: number,
+  carriedJuiceJarIds: string[],
 ): JarQueue[] {
   if (recipes.length === 0) return []
 
-  return recipes.length > carriedJuiceJarCount
+  return recipes.length > carriedJuiceJarIds.length
     ? buildJarQueuesWithSwitches(
         recipes,
-        carriedJuiceJarCount,
+        carriedJuiceJarIds,
       )
     : buildJarQueuesWithoutSwitches(
         recipes,
-        carriedJuiceJarCount,
+        carriedJuiceJarIds,
       )
 }
 
@@ -533,14 +561,14 @@ function buildTrips(
             'zh-Hant',
           ) ||
           a.recipeId.localeCompare(b.recipeId) ||
-          a.physicalJarId - b.physicalJarId,
+          a.physicalJarId.localeCompare(b.physicalJarId),
       )
 
     const trip = {
       juiceJars: [] as MultiTripJuiceJarLoad[],
       totalServings: 0,
     }
-    const selectedServingsByJarId = new Map<number, number>()
+    const selectedServingsByJarId = new Map<string, number>()
 
     for (const jar of candidates) {
       let servingsToTake = 0
@@ -661,7 +689,7 @@ function allocateLeftoverJarContents(
   if (expectedTotal === 0) return []
 
   const lastSalesLoadByJar = new Map<
-    number,
+    string,
     {
       trip: MultiTripSalesTrip
       load: MultiTripJuiceJarLoad
@@ -697,7 +725,7 @@ function allocateLeftoverJarContents(
         (remainingByRecipe.get(b.load.recipeId) ?? 0) -
           (remainingByRecipe.get(a.load.recipeId) ?? 0) ||
         b.load.servings - a.load.servings ||
-        a.load.physicalJarId - b.load.physicalJarId,
+        a.load.physicalJarId.localeCompare(b.load.physicalJarId),
     )
 
   for (const candidate of finalSalesCandidates) {
@@ -758,7 +786,7 @@ function allocateLeftoverJarContents(
 
   return contents.sort(
     (a, b) =>
-      a.physicalJarId - b.physicalJarId ||
+      a.physicalJarId.localeCompare(b.physicalJarId) ||
       a.recipeName.localeCompare(b.recipeName, 'zh-Hant') ||
       a.recipeId.localeCompare(b.recipeId),
   )
@@ -767,11 +795,11 @@ function allocateLeftoverJarContents(
 export function countJarTypeSwitchesFromSchedule(
   trips: MultiTripSalesTrip[],
 ): number {
-  const lastRecipeByJar = new Map<number, string>()
+  const lastRecipeByJar = new Map<string, string>()
   let switches = 0
 
   for (const trip of trips) {
-    const seenJarIds = new Set<number>()
+    const seenJarIds = new Set<string>()
 
     for (const load of trip.juiceJars) {
       if (seenJarIds.has(load.physicalJarId)) {
@@ -813,13 +841,15 @@ export function countJarTypeSwitchesFromSchedule(
 export function buildMultiTripReplenishmentPlan(
   demand: PreparationDemand,
   policy: UsedCupTripPolicy,
-  carriedJuiceJarCount: number,
+  carriedJuiceJarInventory: JuiceJarInventoryItem[],
   cups: CupInventoryInput,
 ): MultiTripReplenishmentPlan {
-  const normalizedJarCount =
-    normalizedCarriedJuiceJarCount(
-      carriedJuiceJarCount,
-    )
+  const carriedJuiceJars =
+    normalizeCarriedJuiceJars(carriedJuiceJarInventory)
+  const carriedJuiceJarIds = carriedJuiceJars.map(
+    (jar) => jar.physicalJarId,
+  )
+  const normalizedJarCount = carriedJuiceJarIds.length
   const initialCupState: CupState = {
     cleanCups: normalizedCupCount(cups.cleanCups),
     usedCups: normalizedCupCount(cups.usedCups),
@@ -842,7 +872,7 @@ export function buildMultiTripReplenishmentPlan(
 
   const queues = buildPhysicalJarQueues(
     recipes,
-    normalizedJarCount,
+    carriedJuiceJarIds,
   )
   const { trips: mutableTrips, finalCupState } = buildTrips(
     queues,
@@ -970,6 +1000,7 @@ export function buildMultiTripReplenishmentPlan(
   return {
     policy,
     carriedJuiceJarCount: normalizedJarCount,
+    carriedJuiceJars,
     physicalJarsUsed: physicalJarIdsUsed.size,
     totalJarLoads,
     distinctFinalJuiceTypes: recipes.length,
