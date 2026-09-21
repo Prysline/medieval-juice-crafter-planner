@@ -962,7 +962,7 @@ function OptimizerResultPanel({
         )}
 
         <small className="optimizer-boundary-note">
-          ▸ 表示配方內部 ingredient / sequence 順序；→ 只用於實際加工或狀態轉換。此區使用 stock offset 後的 net production plan，不再重複顯示 gross optimizer steps。
+          ▸ 表示配方內部 ingredient / sequence 順序；→ 只用於實際加工或狀態轉換。此區使用 stock offset 後的 net production plan，不再重複顯示 gross optimizer steps。Phase 3 logistics 目前追蹤 production materials、一般架、背包與 machine slots；clean / used cups 的實際占位與 transition 留到 Phase 4。
         </small>
 
         <div className="optimizer-logistics-summary">
@@ -970,7 +970,7 @@ function OptimizerResultPanel({
             製作物流：{productionLogistics.feasible ? '可行' : '目前不可行'}
           </strong>
           <span>
-            原料取得 {productionLogistics.ingredientAcquisitionTrips} 趟 · 取水{' '}
+            原料取得動作 {productionLogistics.ingredientAcquisitionActions} · 取水{' '}
             {productionLogistics.waterFetchTrips} 趟 · logistics actions{' '}
             {productionLogistics.actions.length}
           </span>
