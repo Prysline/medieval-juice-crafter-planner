@@ -755,7 +755,7 @@ function OptimizerResultPanel({
           {result.machineOperations.finalizing} 次
         </span>
         <span>
-          可用果汁罐 {result.availableJuiceJarCount} 個；同罐改裝成另一種果汁才計入換裝。
+          常駐攜帶果汁罐 {result.availableJuiceJarCount} 個；同罐改裝成另一種果汁才計入換裝。
         </span>
         <span>
           販售摘要目前採「{tripPolicyLabel(selectedSalesTripPlan)}」approximation；替代 used-cup policy 可在販售排程展開比較。
