@@ -462,8 +462,9 @@ function EvaluationPanel({
         <div>
           <dt>原料成本</dt>
           <dd>
-            {formatCost(cost.batchIngredientCost)}／批 ·{' '}
-            {formatCost(cost.unitIngredientCost)}／杯
+            {evaluation.usesBlender
+              ? `${formatCost(cost.batchIngredientCost)} 原料合計 · 每杯成本未確認`
+              : `${formatCost(cost.batchIngredientCost)}／批 · ${formatCost(cost.unitIngredientCost)}／杯`}
           </dd>
         </div>
         <div>
@@ -617,8 +618,9 @@ function SavedRecipeRow({
               </span>
             </div>
             <span>
-              {formatCost(evaluation.cost.batchIngredientCost)}／批 ·{' '}
-              {formatCost(evaluation.cost.unitIngredientCost)}／杯
+              {evaluation.usesBlender
+                ? `${formatCost(evaluation.cost.batchIngredientCost)} 原料合計 · 每杯成本未確認`
+                : `${formatCost(evaluation.cost.batchIngredientCost)}／批 · ${formatCost(evaluation.cost.unitIngredientCost)}／杯`}
             </span>
           </div>
           <p className="saved-recipe-meta">
