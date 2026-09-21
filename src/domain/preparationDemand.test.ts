@@ -88,6 +88,7 @@ describe('preparation demand adapter', () => {
         {
           recipeId: 'lemon',
           recipeName: '檸檬汁',
+          customerIds: ['a', 'b'],
           productionUnits: 1,
           producedServings: 2,
           assignedServings: 2,
@@ -99,6 +100,7 @@ describe('preparation demand adapter', () => {
         {
           recipeId: 'orange',
           recipeName: '橙汁',
+          customerIds: ['c'],
           productionUnits: 1,
           producedServings: 2,
           assignedServings: 1,
