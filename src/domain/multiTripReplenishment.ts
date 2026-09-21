@@ -401,7 +401,7 @@ function appendRecipeChunks(
   }
 }
 
-function queueLoadSort(function queueLoadSort(a: JarQueue, b: JarQueue): number {
+function queueLoadSort(a: JarQueue, b: JarQueue): number {
   return (
     a.loads.length - b.loads.length ||
     a.loads.reduce((sum, load) => sum + load.servings, 0) -
@@ -581,7 +581,7 @@ function buildPhysicalJarQueues(
     : buildJarQueuesWithoutSwitches(recipes, queues)
 }
 
-function cleanCupStacksFor(function cleanCupStacksFor(cups: number): number {
+function cleanCupStacksFor(cups: number): number {
   return Math.ceil(Math.max(0, cups) / CLEAN_CUP_STACK_CAPACITY)
 }
 
@@ -1050,7 +1050,7 @@ export function countJarTypeSwitchesFromSchedule(
   return switches
 }
 
-export function buildMultiTripReplenishmentPlan(export function buildMultiTripReplenishmentPlan(
+export function buildMultiTripReplenishmentPlan(
   demand: PreparationDemand,
   policy: UsedCupTripPolicy,
   carriedJuiceJarInventory: JuiceJarInventoryItem[],
