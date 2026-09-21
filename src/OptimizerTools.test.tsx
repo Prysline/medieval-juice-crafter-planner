@@ -1,0 +1,150 @@
+import { describe, expect, it } from 'vitest'
+import { renderToStaticMarkup } from 'react-dom/server'
+import type { MultiTripProductionJarFill } from './domain/multiTripReplenishment'
+import type { PlanApplicationTransactionDraft } from './domain/planApplicationTransaction'
+import { PlanApplicationPreview } from './OptimizerTools'
+
+function transactionDraft(): PlanApplicationTransactionDraft {
+  return {
+    schemaVersion: 'plan-application-v1',
+    before: {
+      inventory: {
+        ingredientUnits: { lemon: 3 },
+        waterUnits: 4,
+        cleanCups: 2,
+        usedCups: 1,
+        juiceJars: [
+          {
+            id: 'jar-1',
+            recipeId: 'lemon-juice',
+            servings: 2,
+          },
+        ],
+        shelfCount: 1,
+        jarRackCount: 1,
+      },
+      currentProgress: 'opening',
+      satisfactionByVillage: {
+        'east-harbor': 0,
+        'tranquil-fountain': 0,
+      },
+      formalCustomerIds: ['jack'],
+      suppliedCustomerIds: [],
+      plannerSettings: {
+        carriedJuiceJarIds: ['jar-1'],
+        allowUsedCupDropIfFull: false,
+      },
+    },
+    after: {
+      inventory: {
+        ingredientUnits: { lemon: 2 },
+        waterUnits: 2,
+        cleanCups: 0,
+        usedCups: 3,
+        juiceJars: [
+          {
+            id: 'jar-1',
+            recipeId: 'orange-juice',
+            servings: 1,
+          },
+        ],
+        shelfCount: 1,
+        jarRackCount: 1,
+      },
+      currentProgress: 'opening',
+      satisfactionByVillage: {
+        'east-harbor': 0,
+        'tranquil-fountain': 0,
+      },
+      formalCustomerIds: ['jack'],
+      suppliedCustomerIds: ['jack'],
+      plannerSettings: {
+        carriedJuiceJarIds: ['jar-1'],
+        allowUsedCupDropIfFull: false,
+      },
+    },
+    changes: {
+      ingredients: [
+        {
+          ingredientId: 'lemon',
+          beforeUnits: 3,
+          afterUnits: 2,
+          consumedFromInventory: 1,
+          acquiredAndConsumedUnits: 0,
+        },
+      ],
+      water: {
+        beforeUnits: 4,
+        afterUnits: 2,
+        consumedFromInventory: 2,
+        productionUnitsRequired: 1,
+        cupWashUnitsRequired: 1,
+        externalUnitsRequired: 0,
+      },
+      cups: {
+        cleanBefore: 2,
+        cleanAfter: 0,
+        usedBefore: 1,
+        usedAfter: 3,
+        physicalBefore: 3,
+        physicalAfter: 3,
+        droppedUsedCups: 0,
+      },
+      juiceJars: [
+        {
+          physicalJarId: 'jar-1',
+          before: {
+            id: 'jar-1',
+            recipeId: 'lemon-juice',
+            servings: 2,
+          },
+          after: {
+            id: 'jar-1',
+            recipeId: 'orange-juice',
+            servings: 1,
+          },
+        },
+      ],
+      newlySuppliedCustomerIds: ['jack'],
+    },
+  }
+}
+
+const fills: MultiTripProductionJarFill[] = [
+  {
+    physicalJarId: 'jar-1',
+    recipeId: 'orange-juice',
+    recipeName: '橙汁',
+    beforeTripNumber: 2,
+    servings: 2,
+    fillAction: 'type-switch',
+    previousRecipeId: 'lemon-juice',
+    previousRecipeName: '檸檬汁',
+  },
+]
+
+describe('plan application preview', () => {
+  it('renders before/after inventory, jar events, and newly supplied customers without an apply control', () => {
+    const html = renderToStaticMarkup(
+      <PlanApplicationPreview
+        draft={transactionDraft()}
+        productionJarFills={fills}
+      />,
+    )
+
+    expect(html).toContain('套用規劃預覽')
+    expect(html).toContain('只預覽，不會修改庫存')
+    expect(html).toContain('檸檬')
+    expect(html).toContain('庫存水量')
+    expect(html).toContain('乾淨杯')
+    expect(html).toContain('用過的杯子')
+    expect(html).toContain('果汁罐 jar-1')
+    expect(html).toContain('檸檬汁')
+    expect(html).toContain('橙汁')
+    expect(html).toContain('換裝')
+    expect(html).toContain('第 2 趟販售前')
+    expect(html).toContain('傑克')
+    expect(html).toContain('帽匠')
+    expect(html).not.toContain('確認套用</button>')
+  })
+})

@@ -1940,9 +1940,130 @@ footer {
   margin-bottom: 8px;
 }
 
+
+.optimizer-transaction-preview {
+  display: grid;
+  gap: 10px;
+}
+
+.optimizer-transaction-note,
+.optimizer-transaction-warning {
+  margin: 0;
+  border-left: 4px solid #8f7243;
+  background: #fbf7ef;
+  padding: 8px 10px;
+  color: #6d604d;
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+.optimizer-transaction-warning {
+  border-left-color: #9a5b3b;
+  background: #fff0e8;
+  color: #74432f;
+}
+
+.optimizer-transaction-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.optimizer-transaction-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #e2d7c5;
+  border-radius: 10px;
+  background: #fffaf1;
+  padding: 10px 11px;
+}
+
+.optimizer-transaction-card > p {
+  margin: 0;
+  color: #6d604d;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.optimizer-transaction-card-heading {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.optimizer-transaction-card-heading strong,
+.optimizer-transaction-fill-events > strong {
+  color: #38502f;
+  font-size: 0.82rem;
+}
+
+.optimizer-transaction-card-heading span {
+  color: #795d22;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-align: right;
+}
+
+.optimizer-transaction-list {
+  display: grid;
+  gap: 6px;
+}
+
+.optimizer-transaction-row {
+  display: grid;
+  grid-template-columns: minmax(105px, 0.72fr) minmax(0, 1fr);
+  gap: 2px 10px;
+  border-top: 1px solid #eee4d5;
+  padding-top: 6px;
+}
+
+.optimizer-transaction-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.optimizer-transaction-row > strong {
+  color: #4f6744;
+  font-size: 0.78rem;
+}
+
+.optimizer-transaction-row > span {
+  color: #5d5140;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-align: right;
+}
+
+.optimizer-transaction-row > small {
+  grid-column: 1 / -1;
+  color: #7a6d5d;
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+.optimizer-transaction-jars {
+  margin-top: 0;
+}
+
+.optimizer-transaction-fill-events {
+  display: grid;
+  gap: 4px;
+  border-top: 1px dashed #ddcfba;
+  padding-top: 8px;
+}
+
+.optimizer-transaction-fill-events p {
+  margin: 0;
+  color: #6d604d;
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
 @media (max-width: 720px) {
   .optimizer-controls,
-  .optimizer-metrics {
+  .optimizer-metrics,
+  .optimizer-transaction-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1974,9 +2095,21 @@ footer {
   }
 
   .optimizer-shopping-row,
-  .optimizer-assignment-row {
+  .optimizer-assignment-row,
+  .optimizer-transaction-row {
     grid-template-columns: 1fr;
     gap: 2px;
+  }
+
+  .optimizer-transaction-card-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .optimizer-transaction-card-heading span,
+  .optimizer-transaction-row > span {
+    text-align: left;
   }
 
   .optimizer-shopping-values {
