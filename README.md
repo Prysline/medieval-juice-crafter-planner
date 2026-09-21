@@ -72,6 +72,7 @@ src/
     purchaseSources.ts # 已知購買來源、最低價／同價保留 decision
     singleTripPacking.ts # 販售趟 finished-drink jars + clean cups 最小必要 slot / overflow
     multiTripReplenishment.ts # 多趟販售、杯具 policy、jar-rack staging
+    scheduleRouteReadiness.ts # 作息觀察 normalization 與 route-data blockers
   storage/
     plannerState.ts    # localStorage 讀寫、正式顧客與 legacy migration
     savedRecipes.ts    # 個人配方 schema validation / CRUD
@@ -160,3 +161,24 @@ used-cup handling 必須明確選 policy：
 每趟最多 staging 5 個果汁罐，對應已確認的果汁罐架 5 slots；規劃採「一次 staging 一趟」的模型。若未來確認遊戲允許不經罐架同時準備更多罐，這項 constraint 再另行調整。
 
 目前 jar grouping 使用 deterministic capacity-first first-fit-decreasing；它目標是產生可行、可解釋的多趟 load，**不宣稱已做最少趟數的全域最佳化**。
+
+
+## Schedule / route readiness boundary
+
+D5 目前只做到 **schedule normalization + route-readiness**，不實作 route optimizer，因為 source 尚未提供足夠資料。
+
+目前可安全使用的作息資料只有少數顧客觀察：
+
+- `leave_home`：只代表離開家門，**不等於實際離村時間**。
+- `outside_village_by`：只代表到該時間時已在村外，不能反推出精確離村時間。
+- `return_village`：保留觀察到的約略返村時間。
+- `HH:MM` 與 `HH:MM～HH:MM` 可轉成 minutes 作排序／比較，但原始字串仍保留；不支援的文字維持 unparsed。
+
+目前 route optimization 明確被以下 source gaps 阻塞：
+
+- 沒有跨村 travel time。
+- 沒有 home / shop / customer 的可計算 location identity／座標。
+- 大多數顧客沒有完整 service window；目前有 schedule observation 的也不能直接推成完整可服務區間。
+- shop hours 未記錄。
+
+因此任何 route / arrival-time / customer-ordering objective 都必須等資料補齊後再實作；網站不會把離家門時間冒充成離村截止時間。
