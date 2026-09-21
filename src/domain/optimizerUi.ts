@@ -1,3 +1,4 @@
+import { WATER_STACK_CAPACITY } from './inventoryRules'
 import { customerIsUnlocked } from './availability'
 import type {
   Customer,
@@ -44,4 +45,10 @@ export function optimizerCustomerLabel(
 
 export function optimizerMoney(value: number): string {
   return `${value} 金幣`
+}
+
+
+export function optimizerWaterFetchSlots(unitsToFetch: number): number {
+  if (!Number.isFinite(unitsToFetch) || unitsToFetch <= 0) return 0
+  return Math.ceil(Math.floor(unitsToFetch) / WATER_STACK_CAPACITY)
 }
