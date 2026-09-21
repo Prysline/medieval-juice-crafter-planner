@@ -185,15 +185,36 @@ describe('production logistics', () => {
           action.snapshot.machineSlotsUsed > 0,
       ),
     ).toBe(true)
+    const handoffs = result.actions.filter(
+      (action) => action.kind === 'handoff-finished',
+    )
     expect(
-      result.actions
-        .filter((action) => action.kind === 'handoff-finished')
-        .every(
-          (action) =>
-            action.quantity <= 10 &&
-            action.outputJarReceiver === 'carried-jar',
-        ),
+      handoffs.every(
+        (action) =>
+          action.quantity <= 10 &&
+          action.outputJarReceiver === 'carried-jar' &&
+          action.outputPhysicalJarId === 'jar-1',
+      ),
     ).toBe(true)
+    expect(
+      handoffs.map((action) => ({
+        quantity: action.quantity,
+        beforeSalesTripNumber: action.beforeSalesTripNumber,
+        requiresCompletedSalesTrips:
+          action.requiresCompletedSalesTrips,
+      })),
+    ).toEqual([
+      {
+        quantity: 10,
+        beforeSalesTripNumber: 1,
+        requiresCompletedSalesTrips: 0,
+      },
+      {
+        quantity: 4,
+        beforeSalesTripNumber: 2,
+        requiresCompletedSalesTrips: 1,
+      },
+    ])
   })
 
   it('acquires missing raw ingredients just in time through backpack capacity', () => {
