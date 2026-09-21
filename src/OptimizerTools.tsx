@@ -962,7 +962,7 @@ function OptimizerResultPanel({
         )}
 
         <small className="optimizer-boundary-note">
-          ▸ 表示配方內部 ingredient / sequence 順序；→ 只用於實際加工或狀態轉換。此區使用 stock offset 後的 net production plan，不再重複顯示 gross optimizer steps。Phase 3 logistics 目前追蹤 production materials、一般架、背包與 machine slots；clean / used cups 的實際占位與 transition 留到 Phase 4。
+          ▸ 表示配方內部 ingredient / sequence 順序；→ 只用於實際加工或狀態轉換。此區使用 stock offset 後的 net production plan，不再重複顯示 gross optimizer steps。Phase 3 logistics 目前追蹤 production materials、一般架、背包、machine slots 與 finalizer output 的 physical jar receiver；罐內既有內容與首次換裝相容性仍維持 deferred，clean / used cups 的實際占位與 transition 留到 Phase 4。
         </small>
 
         <div className="optimizer-logistics-summary">
@@ -979,7 +979,10 @@ function OptimizerResultPanel({
             {productionLogistics.initialSnapshot.shelfSlotsAvailable} slots · 背包一般物品{' '}
             {productionLogistics.initialSnapshot.backpackSlotsUsed}/
             {productionLogistics.initialSnapshot.backpackSlotsAvailable} slots · 常駐果汁罐{' '}
-            {productionLogistics.initialSnapshot.carriedJarSlots} slots
+            {productionLogistics.initialSnapshot.carriedJarSlots} slots · finalizer receiver{' '}
+            {productionLogistics.initialSnapshot.outputJarReceiverSlots} 個 physical jars
+            （背包 {productionLogistics.initialSnapshot.carriedOutputJarSlots} · rack{' '}
+            {productionLogistics.initialSnapshot.rackOutputJarSlots}）
           </span>
         </div>
 
@@ -1019,6 +1022,12 @@ function OptimizerResultPanel({
                         action.snapshot.machineSlotsUsed +
                         '/' +
                         action.snapshot.machineSlotsAvailable
+                      : ''}
+                    {action.outputJarReceiver
+                      ? ' · output → ' +
+                        (action.outputJarReceiver === 'carried-jar'
+                          ? '常駐 physical jar'
+                          : 'jar-rack staging physical jar')
                       : ''}
                   </p>
                 </article>
