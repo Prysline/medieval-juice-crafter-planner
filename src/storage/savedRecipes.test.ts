@@ -108,6 +108,37 @@ describe('saved recipe storage', () => {
     expect(evaluation.candidate.effectAmbiguity).toBeDefined()
   })
 
+  it('round-trips a blended sequence and re-evaluates blender metadata', () => {
+    const storage = new MemoryStorage()
+    const blended: SavedRecipe = {
+      id: 'blended',
+      name: '檸檬糖＋橙薄荷',
+      ingredientIds: ['lemon', 'sugar', 'orange', 'mint'],
+      createdAt: '2026-09-21T00:00:00.000Z',
+    }
+
+    writeSavedRecipes(storage, [blended])
+    const [restored] = readSavedRecipes(storage)
+
+    expect(restored.ingredientIds).toEqual([
+      'lemon',
+      'sugar',
+      'orange',
+      'mint',
+    ])
+
+    const evaluation = evaluateRecipeSequence(
+      restored.ingredientIds,
+      'juice-blender-unlocked',
+    )
+    expect(evaluation.valid).toBe(true)
+    if (!evaluation.valid) return
+
+    expect(evaluation.usesBlender).toBe(true)
+    expect(evaluation.drinkSegmentCount).toBe(2)
+    expect(evaluation.candidate.equipment).toContain('果汁調和器')
+  })
+
   it('removes a saved recipe without touching other entries', () => {
     const other: SavedRecipe = {
       ...saved,

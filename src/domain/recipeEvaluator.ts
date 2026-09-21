@@ -43,13 +43,26 @@ const observedRecipeByIdSequence = new Map(
   }),
 )
 
-function latestUnlock(sequence: Ingredient[]): ProgressMilestoneId {
-  return sequence.reduce<ProgressMilestoneId>((latest, ingredient) => {
-    const latestIndex = progressMilestoneIndex.get(latest) ?? -1
-    const ingredientIndex =
-      progressMilestoneIndex.get(ingredient.unlockedAt) ?? -1
-    return ingredientIndex > latestIndex ? ingredient.unlockedAt : latest
-  }, 'opening')
+function laterMilestone(
+  left: ProgressMilestoneId,
+  right: ProgressMilestoneId,
+): ProgressMilestoneId {
+  const leftIndex = progressMilestoneIndex.get(left) ?? -1
+  const rightIndex = progressMilestoneIndex.get(right) ?? -1
+  return rightIndex > leftIndex ? right : left
+}
+
+function latestUnlock(
+  sequence: Ingredient[],
+  extras: ProgressMilestoneId[] = [],
+): ProgressMilestoneId {
+  return [
+    ...sequence.map((ingredient) => ingredient.unlockedAt),
+    ...extras,
+  ].reduce<ProgressMilestoneId>(
+    (latest, milestone) => laterMilestone(latest, milestone),
+    'opening',
+  )
 }
 
 export function effectSlotCount(uniqueIngredientCount: number): number {
@@ -106,21 +119,48 @@ export function predictRecipeEffects(sequence: Ingredient[]): {
   }
 }
 
+function sequenceCapabilities(
+  ingredientIds: string[],
+): RecipeIngredientCapability[] {
+  return ingredientIds.flatMap((id) => {
+    const capability = capabilityByIngredientId.get(id)
+    return capability ? [capability] : []
+  })
+}
+
 function equipmentForSequence(
-  baseCapability: RecipeIngredientCapability,
-  sequenceLength: number,
+  capabilities: RecipeIngredientCapability[],
 ): string[] {
-  if (!baseCapability.baseEquipment) {
-    throw new Error(
-      `Juice base missing equipment: ${baseCapability.ingredientId}`,
-    )
+  const result: string[] = []
+
+  for (const capability of capabilities) {
+    if (
+      capability.roles.includes('juice-base') &&
+      capability.baseEquipment &&
+      !result.includes(capability.baseEquipment)
+    ) {
+      result.push(capability.baseEquipment)
+    }
   }
 
-  return [
-    baseCapability.baseEquipment,
-    ...(sequenceLength > 1 ? ['調味器'] : []),
-    '果汁成品台',
-  ]
+  if (
+    capabilities.some((capability) =>
+      capability.roles.includes('seasoning'),
+    )
+  ) {
+    result.push('調味器')
+  }
+
+  result.push('果汁成品台')
+
+  const drinkSegmentCount = capabilities.filter((capability) =>
+    capability.roles.includes('juice-base'),
+  ).length
+  if (drinkSegmentCount > 1) {
+    result.push('果汁調和器')
+  }
+
+  return result
 }
 
 function observedCandidate(recipe: Recipe): RecipeCandidate {
@@ -139,21 +179,27 @@ function observedCandidate(recipe: Recipe): RecipeCandidate {
 
 function computedCandidate(
   sequence: Ingredient[],
-  baseCapability: RecipeIngredientCapability,
+  capabilities: RecipeIngredientCapability[],
 ): RecipeCandidate {
   const prediction = predictRecipeEffects(sequence)
   const ingredientNames = sequence.map((ingredient) => ingredient.name)
+  const drinkSegmentCount = capabilities.filter((capability) =>
+    capability.roles.includes('juice-base'),
+  ).length
 
   return {
     id: `computed:${sequence.map((ingredient) => ingredient.id).join('+')}`,
     name: `預測（${ingredientNames.join(' → ')}）`,
     source: 'computed',
-    unlockedAt: latestUnlock(sequence),
+    unlockedAt: latestUnlock(
+      sequence,
+      drinkSegmentCount > 1 ? ['juice-blender-unlocked'] : [],
+    ),
     salePrice: null,
     ingredients: ingredientNames,
     effects: prediction.effects,
     effectAmbiguity: prediction.effectAmbiguity,
-    equipment: equipmentForSequence(baseCapability, sequence.length),
+    equipment: equipmentForSequence(capabilities),
   }
 }
 
@@ -162,34 +208,15 @@ function validateRecipeSequence(
 ): {
   issues: RecipeSequenceIssue[]
   ingredients: Ingredient[]
-  baseCapability: RecipeIngredientCapability | null
+  capabilities: RecipeIngredientCapability[]
 } {
   const issues: RecipeSequenceIssue[] = []
 
   if (ingredientIds.length === 0) {
     issues.push({
       code: 'empty',
-      message: '請先選擇一種果汁基底。',
+      message: '請點選原料建立配方順序。',
     })
-  }
-
-  if (ingredientIds.length > 3) {
-    issues.push({
-      code: 'too-many-ingredients',
-      message: '目前正式模擬器最多支援三種不重複原料。',
-    })
-  }
-
-  const seen = new Set<string>()
-  for (const id of ingredientIds) {
-    if (seen.has(id)) {
-      issues.push({
-        code: 'duplicate-ingredient',
-        ingredientId: id,
-        message: '目前正式模擬器不支援重複加入同一原料。',
-      })
-    }
-    seen.add(id)
   }
 
   const sequence: Ingredient[] = []
@@ -203,41 +230,47 @@ function validateRecipeSequence(
       })
       continue
     }
+
     sequence.push(ingredient)
+
+    if (!capabilityByIngredientId.has(id)) {
+      issues.push({
+        code: 'unsupported-ingredient',
+        ingredientId: id,
+        message: `目前尚未建立「${ingredient.name}」的製作角色資料。`,
+      })
+    }
   }
 
+  const capabilities = sequenceCapabilities(ingredientIds)
   const firstId = ingredientIds[0]
-  const baseCapability = firstId
-    ? capabilityByIngredientId.get(firstId) ?? null
-    : null
+  const firstCapability = firstId
+    ? capabilityByIngredientId.get(firstId)
+    : undefined
 
   if (
     firstId &&
-    (!baseCapability || !baseCapability.roles.includes('juice-base'))
+    (!firstCapability || !firstCapability.roles.includes('juice-base'))
   ) {
     issues.push({
       code: 'invalid-base',
       ingredientId: firstId,
-      message: '第一個原料必須是目前已確認可製成果汁基底的原料。',
+      message: '配方順序必須從果汁基底開始。',
     })
-  }
-
-  for (const id of ingredientIds.slice(1)) {
-    const capability = capabilityByIngredientId.get(id)
-    if (!capability || !capability.roles.includes('seasoning')) {
-      issues.push({
-        code: 'invalid-seasoning',
-        ingredientId: id,
-        message: '第二、三個原料目前只允許已確認的調味材料。',
-      })
-    }
   }
 
   return {
     issues,
     ingredients: sequence,
-    baseCapability,
+    capabilities,
   }
+}
+
+export function combineRecipeSequences(
+  frontIngredientIds: string[],
+  backIngredientIds: string[],
+): string[] {
+  return [...frontIngredientIds, ...backIngredientIds]
 }
 
 export function evaluateRecipeSequence(
@@ -249,8 +282,8 @@ export function evaluateRecipeSequence(
 
   if (
     validation.issues.length > 0 ||
-    !validation.baseCapability ||
-    validation.ingredients.length !== normalizedIds.length
+    validation.ingredients.length !== normalizedIds.length ||
+    validation.capabilities.length !== normalizedIds.length
   ) {
     return {
       valid: false,
@@ -259,10 +292,14 @@ export function evaluateRecipeSequence(
     }
   }
 
+  const drinkSegmentCount = validation.capabilities.filter((capability) =>
+    capability.roles.includes('juice-base'),
+  ).length
+  const usesBlender = drinkSegmentCount > 1
   const observed = observedRecipeByIdSequence.get(sequenceKey(normalizedIds))
   const candidate = observed
     ? observedCandidate(observed)
-    : computedCandidate(validation.ingredients, validation.baseCapability)
+    : computedCandidate(validation.ingredients, validation.capabilities)
 
   return {
     valid: true,
@@ -273,5 +310,7 @@ export function evaluateRecipeSequence(
       candidate.unlockedAt,
       currentProgress,
     ),
+    drinkSegmentCount,
+    usesBlender,
   }
 }

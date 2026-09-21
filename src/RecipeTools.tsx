@@ -1,16 +1,16 @@
 import { useMemo, useState } from 'react'
 import { customers } from './data/customers'
 import { ingredients } from './data/ingredients'
-import {
-  recipeIngredientCapabilities,
-  type RecipeIngredientRole,
-} from './data/recipeIngredientCapabilities'
+import { recipeIngredientCapabilities } from './data/recipeIngredientCapabilities'
 import {
   customerIsUnlocked,
   ingredientIsAvailable,
 } from './domain/availability'
 import { recipeCandidateMatchesCustomer } from './domain/matching'
-import { evaluateRecipeSequence } from './domain/recipeEvaluator'
+import {
+  combineRecipeSequences,
+  evaluateRecipeSequence,
+} from './domain/recipeEvaluator'
 import {
   readSavedRecipes,
   removeSavedRecipe,
@@ -32,24 +32,37 @@ interface RecipeToolsProps {
 const ingredientById = new Map(
   ingredients.map((ingredient) => [ingredient.id, ingredient]),
 )
-
-function capabilitiesForRole(role: RecipeIngredientRole) {
-  return recipeIngredientCapabilities.filter((capability) =>
-    capability.roles.includes(role),
-  )
-}
-
-const baseCapabilities = capabilitiesForRole('juice-base')
-const seasoningCapabilities = capabilitiesForRole('seasoning')
+const capabilityByIngredientId = new Map(
+  recipeIngredientCapabilities.map((capability) => [
+    capability.ingredientId,
+    capability,
+  ]),
+)
 
 function formatCost(value: number | null): string {
   if (value === null) return '未知'
-  return Number.isInteger(value) ? String(value) : value.toFixed(1)
+  const amount = Number.isInteger(value) ? String(value) : value.toFixed(1)
+  return `${amount} 金幣`
 }
 
 function recipeSourceLabel(evaluation: RecipeSequenceEvaluation): string {
   if (!evaluation.valid) return '無法評估'
   return evaluation.candidate.source === 'observed' ? '實測' : '預測'
+}
+
+function ingredientSequenceLabel(ingredientIds: string[]): string {
+  if (ingredientIds.length === 0) return '尚未設定'
+  return ingredientIds
+    .map((id) => ingredientById.get(id)?.name ?? id)
+    .join(' → ')
+}
+
+function ingredientRoleLabel(ingredientId: string): string {
+  const capability = capabilityByIngredientId.get(ingredientId)
+  if (!capability) return ''
+  if (capability.roles.includes('juice-base')) return '果汁'
+  if (capability.roles.includes('seasoning')) return '調味'
+  return ''
 }
 
 function makeSavedRecipeId(): string {
@@ -63,17 +76,9 @@ export function RecipeTools({
   currentProgress,
   satisfactionByVillage,
 }: RecipeToolsProps) {
-  const firstAvailableBase =
-    baseCapabilities.find((capability) => {
-      const ingredient = ingredientById.get(capability.ingredientId)
-      return ingredient
-        ? ingredientIsAvailable(ingredient, currentProgress)
-        : false
-    })?.ingredientId ?? baseCapabilities[0]?.ingredientId ?? ''
-
-  const [ingredientIds, setIngredientIds] = useState<string[]>(() =>
-    firstAvailableBase ? [firstAvailableBase] : [],
-  )
+  const [ingredientIds, setIngredientIds] = useState<string[]>([])
+  const [blenderFrontIds, setBlenderFrontIds] = useState<string[]>([])
+  const [blenderBackIds, setBlenderBackIds] = useState<string[]>([])
   const [savedRecipes, setSavedRecipes] = useState<SavedRecipe[]>(() =>
     readSavedRecipes(window.localStorage),
   )
@@ -110,32 +115,14 @@ export function RecipeTools({
       )
   }, [evaluation, currentProgress, satisfactionByVillage])
 
-  function setBase(ingredientId: string) {
-    setIngredientIds((current) => [
-      ingredientId,
-      ...current.slice(1),
-    ])
+  function appendIngredient(ingredientId: string) {
+    setIngredientIds((current) => [...current, ingredientId])
   }
 
-  function setFirstSeasoning(ingredientId: string) {
-    setIngredientIds((current) => {
-      const base = current[0]
-      if (!base) return ingredientId ? [ingredientId] : []
-      if (!ingredientId) return [base]
-      return [base, ingredientId]
-    })
-  }
-
-  function setSecondSeasoning(ingredientId: string) {
-    setIngredientIds((current) => {
-      const base = current[0]
-      const first = current[1]
-      if (!base) return []
-      if (!first) return [base]
-      return ingredientId
-        ? [base, first, ingredientId]
-        : [base, first]
-    })
+  function removeIngredientAt(index: number) {
+    setIngredientIds((current) =>
+      current.filter((_, currentIndex) => currentIndex !== index),
+    )
   }
 
   function persistSavedRecipes(next: SavedRecipe[]) {
@@ -169,10 +156,7 @@ export function RecipeTools({
     const nextRecipe: SavedRecipe = {
       ...recipe,
       ...patch,
-      name:
-        patch.name === undefined
-          ? recipe.name
-          : patch.name,
+      name: patch.name === undefined ? recipe.name : patch.name,
       note:
         patch.note === undefined
           ? recipe.note
@@ -191,8 +175,22 @@ export function RecipeTools({
     setSaveNote(recipe.note ?? '')
   }
 
-  const firstSeasoningId = ingredientIds[1] ?? ''
-  const secondSeasoningId = ingredientIds[2] ?? ''
+  function captureBlenderSide(side: 'front' | 'back') {
+    if (!evaluation.valid) return
+    const sequence = [...evaluation.ingredientIds]
+    if (side === 'front') {
+      setBlenderFrontIds(sequence)
+    } else {
+      setBlenderBackIds(sequence)
+    }
+  }
+
+  function blendSequences() {
+    if (blenderFrontIds.length === 0 || blenderBackIds.length === 0) return
+    setIngredientIds(
+      combineRecipeSequences(blenderFrontIds, blenderBackIds),
+    )
+  }
 
   return (
     <section className="recipe-tools" aria-label="配方工具">
@@ -206,103 +204,141 @@ export function RecipeTools({
         </div>
 
         <p className="tool-description">
-          目前只支援 1 種果汁基底＋0～2 種不重複調味材料；不模擬果汁調和器或四原料以上配方。
+          直接點原料建立有序配方；重複調味與四原料以上都可評估。第二個果汁基底會形成新的飲料段，整體序列需要果汁調和器。
         </p>
 
-        <div className="simulator-inputs">
-          <label>
-            <span>果汁基底</span>
-            <select
-              value={ingredientIds[0] ?? ''}
-              onChange={(event) => setBase(event.target.value)}
-            >
-              {baseCapabilities.map((capability) => {
-                const ingredient = ingredientById.get(capability.ingredientId)
-                if (!ingredient) return null
-                const available = ingredientIsAvailable(
-                  ingredient,
-                  currentProgress,
-                )
+        <div className="sequence-builder">
+          <div className="sequence-builder-heading">
+            <strong>目前配方順序</strong>
+            <span>{ingredientIds.length} 項</span>
+          </div>
+
+          {ingredientIds.length === 0 ? (
+            <p className="sequence-empty">點下方原料開始建立配方。</p>
+          ) : (
+            <div className="sequence-strip" aria-label="目前配方順序">
+              {ingredientIds.map((ingredientId, index) => {
+                const ingredient = ingredientById.get(ingredientId)
                 return (
-                  <option
-                    key={ingredient.id}
-                    value={ingredient.id}
-                    disabled={!available}
+                  <button
+                    type="button"
+                    className="sequence-chip"
+                    key={`${ingredientId}-${index}`}
+                    onClick={() => removeIngredientAt(index)}
+                    title="點擊移除此項"
                   >
-                    {ingredient.name}
-                    {!available ? '（尚未解鎖）' : ''}
-                  </option>
+                    <span>{ingredient?.name ?? ingredientId}</span>
+                    <small>{index + 1}</small>
+                    <b>×</b>
+                  </button>
                 )
               })}
-            </select>
-          </label>
+            </div>
+          )}
 
-          <label>
-            <span>第一調味</span>
-            <select
-              value={firstSeasoningId}
-              onChange={(event) =>
-                setFirstSeasoning(event.target.value)
+          <div className="ingredient-palette">
+            {ingredients.map((ingredient) => {
+              const available = ingredientIsAvailable(
+                ingredient,
+                currentProgress,
+              )
+              return (
+                <button
+                  type="button"
+                  key={ingredient.id}
+                  disabled={!available}
+                  onClick={() => appendIngredient(ingredient.id)}
+                >
+                  <strong>{ingredient.name}</strong>
+                  <span>
+                    {ingredientRoleLabel(ingredient.id)}
+                    {!available ? ' · 尚未解鎖' : ''}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="sequence-actions">
+            <button
+              type="button"
+              disabled={ingredientIds.length === 0}
+              onClick={() =>
+                setIngredientIds((current) => current.slice(0, -1))
               }
             >
-              <option value="">不加入</option>
-              {seasoningCapabilities.map((capability) => {
-                const ingredient = ingredientById.get(capability.ingredientId)
-                if (!ingredient) return null
-                const available = ingredientIsAvailable(
-                  ingredient,
-                  currentProgress,
-                )
-                return (
-                  <option
-                    key={ingredient.id}
-                    value={ingredient.id}
-                    disabled={
-                      !available ||
-                      ingredient.id === secondSeasoningId
-                    }
-                  >
-                    {ingredient.name}
-                    {!available ? '（尚未解鎖）' : ''}
-                  </option>
-                )
-              })}
-            </select>
-          </label>
-
-          <label>
-            <span>第二調味</span>
-            <select
-              value={secondSeasoningId}
-              disabled={!firstSeasoningId}
-              onChange={(event) =>
-                setSecondSeasoning(event.target.value)
-              }
+              移除最後一項
+            </button>
+            <button
+              type="button"
+              disabled={ingredientIds.length === 0}
+              onClick={() => setIngredientIds([])}
             >
-              <option value="">不加入</option>
-              {seasoningCapabilities.map((capability) => {
-                const ingredient = ingredientById.get(capability.ingredientId)
-                if (!ingredient) return null
-                const available = ingredientIsAvailable(
-                  ingredient,
-                  currentProgress,
-                )
-                return (
-                  <option
-                    key={ingredient.id}
-                    value={ingredient.id}
-                    disabled={
-                      !available ||
-                      ingredient.id === firstSeasoningId
-                    }
-                  >
-                    {ingredient.name}
-                    {!available ? '（尚未解鎖）' : ''}
-                  </option>
-                )
-              })}
-            </select>
-          </label>
+              清空
+            </button>
+          </div>
+        </div>
+
+        <div className="blender-panel">
+          <div className="section-title">
+            <strong>果汁調和器</strong>
+            <span>前方飲料 + 後方飲料</span>
+          </div>
+          <p>
+            先在上方點出一杯飲料，存到前方或後方槽；調和時只做序列串接，後方飲料的原料順序完整接在前方後面。
+          </p>
+
+          <div className="blender-slots">
+            <div>
+              <span>前方飲料</span>
+              <strong>{ingredientSequenceLabel(blenderFrontIds)}</strong>
+              <button
+                type="button"
+                disabled={!evaluation.valid}
+                onClick={() => captureBlenderSide('front')}
+              >
+                使用目前序列
+              </button>
+            </div>
+            <div>
+              <span>後方飲料</span>
+              <strong>{ingredientSequenceLabel(blenderBackIds)}</strong>
+              <button
+                type="button"
+                disabled={!evaluation.valid}
+                onClick={() => captureBlenderSide('back')}
+              >
+                使用目前序列
+              </button>
+            </div>
+          </div>
+
+          <div className="blender-actions">
+            <button
+              type="button"
+              disabled={
+                blenderFrontIds.length === 0 ||
+                blenderBackIds.length === 0
+              }
+              onClick={() => {
+                setBlenderFrontIds(blenderBackIds)
+                setBlenderBackIds(blenderFrontIds)
+              }}
+            >
+              交換前後
+            </button>
+            <button
+              type="button"
+              className="primary"
+              disabled={
+                blenderFrontIds.length === 0 ||
+                blenderBackIds.length === 0
+              }
+              onClick={blendSequences}
+            >
+              調和為目前序列
+            </button>
+          </div>
         </div>
 
         <EvaluationPanel
@@ -315,7 +351,7 @@ export function RecipeTools({
             <span>個人配方名稱</span>
             <input
               value={saveName}
-              placeholder="例如：日常香蕉肉桂"
+              placeholder="例如：檸檬糖＋橙薄荷"
               onChange={(event) => setSaveName(event.target.value)}
             />
           </label>
@@ -323,7 +359,7 @@ export function RecipeTools({
             <span>備註（選填）</span>
             <input
               value={saveNote}
-              placeholder="例如：先糖後薄荷"
+              placeholder="例如：先檸檬糖，再接橙薄荷"
               onChange={(event) => setSaveNote(event.target.value)}
             />
           </label>
@@ -348,7 +384,7 @@ export function RecipeTools({
 
         {savedRecipes.length === 0 ? (
           <p className="empty-tool-state">
-            還沒有個人配方。先在上方模擬器建立一個序列，再儲存常用名稱與備註。
+            還沒有個人配方。先在上方點出一個序列，再儲存常用名稱與備註。
           </p>
         ) : (
           <div className="saved-recipe-list">
@@ -382,7 +418,7 @@ function EvaluationPanel({
   if (!evaluation.valid) {
     return (
       <div className="evaluation-panel evaluation-invalid">
-        <strong>目前序列不能用正式模擬器評估</strong>
+        <strong>目前序列無法評估</strong>
         <ul>
           {evaluation.issues.map((issue, index) => (
             <li key={`${issue.code}-${issue.ingredientId ?? index}`}>
@@ -404,6 +440,9 @@ function EvaluationPanel({
           <span>
             {candidate.ingredients.join(' → ')} ·{' '}
             {candidate.source === 'observed' ? '實測' : '預測'}
+            {evaluation.usesBlender
+              ? ` · 調和 ${evaluation.drinkSegmentCount} 段`
+              : ''}
           </span>
         </div>
         <span
@@ -423,8 +462,9 @@ function EvaluationPanel({
         <div>
           <dt>原料成本</dt>
           <dd>
-            {formatCost(cost.batchIngredientCost)} / 批 ·{' '}
-            {formatCost(cost.unitIngredientCost)} / 杯
+            {evaluation.usesBlender
+              ? `${formatCost(cost.batchIngredientCost)} 原料合計 · 每杯成本未確認`
+              : `${formatCost(cost.batchIngredientCost)}／批 · ${formatCost(cost.unitIngredientCost)}／杯`}
           </dd>
         </div>
         <div>
@@ -432,7 +472,7 @@ function EvaluationPanel({
           <dd>
             {candidate.salePrice === null
               ? '未知'
-              : candidate.salePrice}
+              : `${candidate.salePrice} 金幣`}
           </dd>
         </div>
         <div>
@@ -446,7 +486,10 @@ function EvaluationPanel({
               ? '同分 cutoff 待確認，暫不判定'
               : matchingCustomers.length > 0
                 ? matchingCustomers
-                    .map((customer) => customer.name)
+                    .map(
+                      (customer) =>
+                        `${customer.name}（${customer.occupation}）`,
+                    )
                     .join('、')
                 : '目前沒有'}
           </dd>
@@ -571,11 +614,13 @@ function SavedRecipeRow({
                 {evaluation.availableAtCurrentProgress
                   ? '目前可用'
                   : '目前進度未解鎖'}
+                {evaluation.usesBlender ? ' · 果汁調和器' : ''}
               </span>
             </div>
             <span>
-              {formatCost(evaluation.cost.batchIngredientCost)} / 批 ·{' '}
-              {formatCost(evaluation.cost.unitIngredientCost)} / 杯
+              {evaluation.usesBlender
+                ? `${formatCost(evaluation.cost.batchIngredientCost)} 原料合計 · 每杯成本未確認`
+                : `${formatCost(evaluation.cost.batchIngredientCost)}／批 · ${formatCost(evaluation.cost.unitIngredientCost)}／杯`}
             </span>
           </div>
           <p className="saved-recipe-meta">
@@ -583,7 +628,10 @@ function SavedRecipeRow({
               ? '同分 cutoff 待確認；暫不參與 full-match recommendation / optimizer。'
               : matchingCustomers.length > 0
                 ? `完全匹配：${matchingCustomers
-                    .map((customer) => customer.name)
+                    .map(
+                      (customer) =>
+                        `${customer.name}（${customer.occupation}）`,
+                    )
                     .join('、')}`
                 : '目前沒有已解鎖的完全匹配顧客。'}
           </p>

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { evaluateRecipeSequence } from './recipeEvaluator'
+import {
+  combineRecipeSequences,
+  evaluateRecipeSequence,
+} from './recipeEvaluator'
 
 describe('recipe sequence evaluator', () => {
   it('returns observed data for an observed sequence', () => {
@@ -63,9 +66,90 @@ describe('recipe sequence evaluator', () => {
     )
   })
 
-  it('rejects two juice bases instead of inferring blender rules', () => {
+  it('treats a second juice base as a blender segment', () => {
     const result = evaluateRecipeSequence(
       ['banana', 'pear'],
+      'juice-blender-unlocked',
+    )
+
+    expect(result.valid).toBe(true)
+    if (!result.valid) return
+
+    expect(result.candidate.source).toBe('computed')
+    expect(result.drinkSegmentCount).toBe(2)
+    expect(result.usesBlender).toBe(true)
+    expect(result.candidate.unlockedAt).toBe('juice-blender-unlocked')
+    expect(result.candidate.equipment).toContain('果汁調和器')
+  })
+
+  it('keeps a blender sequence evaluable before unlock but marks it unavailable', () => {
+    const result = evaluateRecipeSequence(
+      ['lemon', 'sugar', 'orange', 'mint'],
+      'tranquil-fountain-unlocked',
+    )
+
+    expect(result.valid).toBe(true)
+    if (!result.valid) return
+
+    expect(result.ingredientIds).toEqual([
+      'lemon',
+      'sugar',
+      'orange',
+      'mint',
+    ])
+    expect(result.usesBlender).toBe(true)
+    expect(result.availableAtCurrentProgress).toBe(false)
+    expect(result.candidate.unlockedAt).toBe('juice-blender-unlocked')
+  })
+
+  it('allows repeated seasonings and sequences longer than generator v1', () => {
+    const repeated = evaluateRecipeSequence(
+      ['orange', 'sugar', 'sugar'],
+      'seasoner-unlocked',
+    )
+    const long = evaluateRecipeSequence(
+      ['orange', 'sugar', 'mint', 'cinnamon'],
+      'tranquil-fountain-unlocked',
+    )
+
+    expect(repeated.valid).toBe(true)
+    expect(long.valid).toBe(true)
+
+    if (repeated.valid) {
+      expect(repeated.candidate.ingredients).toEqual([
+        '橙子',
+        '糖',
+        '糖',
+      ])
+      expect(repeated.cost.batchIngredientCost).toBe(25)
+    }
+    if (long.valid) {
+      expect(long.candidate.ingredients).toEqual([
+        '橙子',
+        '糖',
+        '薄荷',
+        '肉桂',
+      ])
+    }
+  })
+
+  it('concatenates front and back drink sequences without rewriting order', () => {
+    expect(
+      combineRecipeSequences(
+        ['lemon', 'sugar'],
+        ['orange', 'mint'],
+      ),
+    ).toEqual([
+      'lemon',
+      'sugar',
+      'orange',
+      'mint',
+    ])
+  })
+
+  it('still requires the overall sequence to start from a juice base', () => {
+    const result = evaluateRecipeSequence(
+      ['sugar', 'lemon'],
       'juice-blender-unlocked',
     )
 
@@ -74,38 +158,9 @@ describe('recipe sequence evaluator', () => {
 
     expect(result.issues).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ code: 'invalid-seasoning' }),
+        expect.objectContaining({ code: 'invalid-base' }),
       ]),
     )
-  })
-
-  it('rejects duplicate ingredients and sequences longer than v1', () => {
-    const duplicate = evaluateRecipeSequence(
-      ['orange', 'sugar', 'sugar'],
-      'seasoner-unlocked',
-    )
-    const tooLong = evaluateRecipeSequence(
-      ['orange', 'sugar', 'mint', 'cinnamon'],
-      'tranquil-fountain-unlocked',
-    )
-
-    expect(duplicate.valid).toBe(false)
-    expect(tooLong.valid).toBe(false)
-
-    if (!duplicate.valid) {
-      expect(duplicate.issues).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ code: 'duplicate-ingredient' }),
-        ]),
-      )
-    }
-    if (!tooLong.valid) {
-      expect(tooLong.issues).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ code: 'too-many-ingredients' }),
-        ]),
-      )
-    }
   })
 
   it('keeps a valid saved sequence evaluable when current progress is earlier', () => {
