@@ -549,14 +549,16 @@ function App() {
           currentProgress={currentProgress}
           satisfactionByVillage={satisfactionByVillage}
         />
-      ) : (
+      ) : null}
+
+      <div hidden={tab !== 'optimizer'}>
         <OptimizerTools
           currentProgress={currentProgress}
           satisfactionByVillage={satisfactionByVillage}
           suppliedCustomerIds={suppliedCustomerIds}
           formalCustomerIds={formalCustomerIds}
         />
-      )}
+      </div>
 
       <footer>
         預測配方不自行推導售價；同分 cutoff 未確認時不宣稱完全匹配。
