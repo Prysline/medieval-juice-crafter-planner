@@ -1,6 +1,10 @@
 import { customerIsUnlocked, isAvailableAtProgress } from './availability'
 import { recipeCandidateMatchesCustomer } from './matching'
 import { calculateRecipeIngredientCost } from './recipeCost'
+import {
+  productionPathForCandidate,
+  type RecipeProductionPath,
+} from './productionPlan'
 import type {
   Customer,
   ProgressMilestoneId,
@@ -18,6 +22,15 @@ export type OptimizationObjective =
   | 'maximum-known-revenue'
   | 'maximum-known-gross-profit'
 
+export type OptimizationCriterion =
+  | OptimizationObjective
+  | 'minimum-machine-operations'
+  | 'minimum-jar-switches'
+
+export interface OptimizationConstraints {
+  maxJarTypeSwitches?: number
+}
+
 export interface OptimizationRequest {
   customerIds: string[]
   currentProgress: ProgressMilestoneId
@@ -25,7 +38,13 @@ export interface OptimizationRequest {
   satisfactionByVillage: SatisfactionByVillage
   formalCustomerIds: string[]
   candidatePolicy: OptimizationCandidatePolicy
+  /** Primary objective kept for compatibility with saved/UI state. */
   objective: OptimizationObjective
+  /** Ordered lexicographic criteria. Defaults to [objective]. */
+  priorities?: OptimizationCriterion[]
+  constraints?: OptimizationConstraints
+  /** Empty-jar availability used only by jar-switch criteria/constraints. */
+  availableJuiceJarCount?: number
 }
 
 export interface OptimizationSource {
@@ -35,8 +54,10 @@ export interface OptimizationSource {
 
 export interface EligibleOptimizationRecipe {
   candidate: RecipeCandidate
-  batchIngredientCost: number
+  /** Cost for one juice unit, which becomes two sellable servings. */
+  juiceUnitIngredientCost: number
   eligibleCustomerIds: string[]
+  productionPath: RecipeProductionPath
 }
 
 export interface BatchOptimizationModel {
@@ -51,13 +72,39 @@ function unique(values: string[]): string[] {
   return [...new Set(values)]
 }
 
-export function isRevenueObjective(
-  objective: OptimizationObjective,
+export function normalizedOptimizationPriorities(
+  request: OptimizationRequest,
+): OptimizationCriterion[] {
+  const requested =
+    request.priorities && request.priorities.length > 0
+      ? request.priorities
+      : [request.objective]
+
+  return unique(requested) as OptimizationCriterion[]
+}
+
+export function normalizedAvailableJuiceJarCount(
+  request: OptimizationRequest,
+): number {
+  const value = request.availableJuiceJarCount
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(1, Math.floor(value))
+    : 1
+}
+
+export function isRevenueCriterion(
+  criterion: OptimizationCriterion,
 ): boolean {
   return (
-    objective === 'maximum-known-revenue' ||
-    objective === 'maximum-known-gross-profit'
+    criterion === 'maximum-known-revenue' ||
+    criterion === 'maximum-known-gross-profit'
   )
+}
+
+export function requestUsesRevenueCriterion(
+  request: OptimizationRequest,
+): boolean {
+  return normalizedOptimizationPriorities(request).some(isRevenueCriterion)
 }
 
 function candidateIsEligible(
@@ -99,15 +146,22 @@ export function buildOptimizationModel(
     const cost = calculateRecipeIngredientCost(candidate)
     if (cost.batchIngredientCost === null) return []
 
+    // Blender quantity/yield is still unknown. Automatic optimizer only admits
+    // paths that can be expressed as one juice base plus zero or more seasonings.
+    const productionPath = productionPathForCandidate(candidate)
+    if (!productionPath) return []
+
     return [{
       candidate,
-      batchIngredientCost: cost.batchIngredientCost,
+      juiceUnitIngredientCost: cost.batchIngredientCost,
+      productionPath,
     }]
   })
 
   const unresolvedCustomerIds: string[] = []
   const serviceableCustomerIds: string[] = []
   const eligibleRecipeIdsByCustomer = new Map<string, string[]>()
+  const revenueSensitive = requestUsesRevenueCriterion(request)
 
   for (const customerId of demandIds) {
     const customer = customerById.get(customerId)
@@ -130,7 +184,7 @@ export function buildOptimizationModel(
         }
 
         if (
-          isRevenueObjective(request.objective) &&
+          revenueSensitive &&
           formalIds.has(customerId) &&
           candidate.salePrice === null
         ) {
@@ -150,7 +204,6 @@ export function buildOptimizationModel(
     eligibleRecipeIdsByCustomer.set(customerId, recipeIds)
   }
 
-  const serviceableSet = new Set(serviceableCustomerIds)
   const recipes = eligibleCandidates.flatMap((entry) => {
     const eligibleCustomerIds = serviceableCustomerIds.filter((customerId) =>
       eligibleRecipeIdsByCustomer.get(customerId)?.includes(entry.candidate.id),
@@ -159,9 +212,7 @@ export function buildOptimizationModel(
     return eligibleCustomerIds.length > 0
       ? [{
           ...entry,
-          eligibleCustomerIds: eligibleCustomerIds.filter((id) =>
-            serviceableSet.has(id),
-          ),
+          eligibleCustomerIds,
         }]
       : []
   })
