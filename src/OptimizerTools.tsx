@@ -75,7 +75,7 @@ function criterionLabel(criterion: OptimizationCriterion): string {
 }
 
 function uniquePriorities(
-  primary: OptimizationObjective,
+  primary: OptimizationCriterion,
   secondaryOne: OptionalCriterion,
   secondaryTwo: OptionalCriterion,
 ): OptimizationCriterion[] {
@@ -97,8 +97,8 @@ export default function OptimizerTools({
   const [scope, setScope] = useState<OptimizerCustomerScope>('all')
   const [candidatePolicy, setCandidatePolicy] =
     useState<OptimizationCandidatePolicy>('observed-only')
-  const [objective, setObjective] =
-    useState<OptimizationObjective>('minimum-cost')
+  const [primaryCriterion, setPrimaryCriterion] =
+    useState<OptimizationCriterion>('minimum-cost')
   const [secondaryOne, setSecondaryOne] =
     useState<OptionalCriterion>('none')
   const [secondaryTwo, setSecondaryTwo] =
@@ -110,8 +110,8 @@ export default function OptimizerTools({
   })
 
   const priorities = useMemo(
-    () => uniquePriorities(objective, secondaryOne, secondaryTwo),
-    [objective, secondaryOne, secondaryTwo],
+    () => uniquePriorities(primaryCriterion, secondaryOne, secondaryTwo),
+    [primaryCriterion, secondaryOne, secondaryTwo],
   )
 
   const customerIds = useMemo(
@@ -164,7 +164,11 @@ export default function OptimizerTools({
         satisfactionByVillage,
         formalCustomerIds,
         candidatePolicy,
-        objective,
+        objective:
+          primaryCriterion === 'minimum-machine-operations' ||
+          primaryCriterion === 'minimum-jar-switches'
+            ? 'minimum-cost'
+            : primaryCriterion,
         priorities,
         availableJuiceJarCount,
         constraints:
@@ -249,19 +253,18 @@ export default function OptimizerTools({
           <label>
             <span>主要目標</span>
             <select
-              value={objective}
+              value={primaryCriterion}
               onChange={(event) =>
-                setObjective(event.target.value as OptimizationObjective)
+                setPrimaryCriterion(
+                  event.target.value as OptimizationCriterion,
+                )
               }
             >
-              <option value="minimum-cost">最低原料成本</option>
-              <option value="minimum-waste">最少剩餘杯</option>
-              <option value="maximum-known-revenue">
-                最高已知銷售總額
-              </option>
-              <option value="maximum-known-gross-profit">
-                最高已知毛利
-              </option>
+              {secondaryCriterionOptions.map((option) => (
+                <option value={option.value} key={option.value}>
+                  {option.label}
+                </option>
+              ))}
             </select>
           </label>
 
