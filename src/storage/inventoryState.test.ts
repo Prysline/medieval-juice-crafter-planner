@@ -4,6 +4,7 @@ import {
   INVENTORY_STORAGE_KEY,
   normalizeInventoryState,
   readInventoryState,
+  resizeJuiceJarInventory,
   writeInventoryState,
 } from './inventoryState'
 
@@ -41,6 +42,8 @@ describe('inventory storage', () => {
         cleanCups: 4,
         usedCups: -1,
         juiceJars: [],
+        shelfCount: 2.8,
+        jarRackCount: -1,
       }),
     ).toEqual({
       ingredientUnits: {
@@ -51,6 +54,8 @@ describe('inventory storage', () => {
       cleanCups: 4,
       usedCups: 0,
       juiceJars: [],
+      shelfCount: 0,
+      jarRackCount: 0,
     })
   })
 
@@ -61,6 +66,8 @@ describe('inventory storage', () => {
         waterUnits: 0,
         cleanCups: 0,
         usedCups: 0,
+        shelfCount: 0,
+        jarRackCount: 0,
         juiceJars: [
           { id: 'empty', recipeId: 'stale', servings: 0 },
           { id: 'lemon', recipeId: 'lemon-juice', servings: 10 },
@@ -81,6 +88,8 @@ describe('inventory storage', () => {
       waterUnits: 5,
       cleanCups: 3,
       usedCups: 1,
+      shelfCount: 2,
+      jarRackCount: 1,
       juiceJars: [
         { id: 'jar-1', recipeId: 'lemon-juice', servings: 4 },
         { id: 'jar-1', recipeId: 'orange-juice', servings: 2 },
@@ -92,9 +101,39 @@ describe('inventory storage', () => {
       waterUnits: 5,
       cleanCups: 3,
       usedCups: 1,
+      shelfCount: 2,
+      jarRackCount: 1,
       juiceJars: [
         { id: 'jar-1', recipeId: 'lemon-juice', servings: 4 },
       ],
     })
+  })
+
+  it('resizes physical jar inventory without discarding filled jars', () => {
+    const base = normalizeInventoryState({
+      ingredientUnits: {},
+      waterUnits: 0,
+      cleanCups: 0,
+      usedCups: 0,
+      shelfCount: 0,
+      jarRackCount: 1,
+      juiceJars: [
+        { id: 'filled', recipeId: 'lemon-juice', servings: 4 },
+        { id: 'empty-a', recipeId: null, servings: 0 },
+      ],
+    })
+
+    const expanded = resizeJuiceJarInventory(base, 4)
+    expect(expanded.juiceJars).toHaveLength(4)
+    expect(expanded.juiceJars[0]).toEqual({
+      id: 'filled',
+      recipeId: 'lemon-juice',
+      servings: 4,
+    })
+
+    const reduced = resizeJuiceJarInventory(expanded, 0)
+    expect(reduced.juiceJars).toEqual([
+      { id: 'filled', recipeId: 'lemon-juice', servings: 4 },
+    ])
   })
 })
