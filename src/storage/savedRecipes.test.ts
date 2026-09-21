@@ -89,8 +89,8 @@ describe('saved recipe storage', () => {
     const storage = new MemoryStorage()
     const ambiguous: SavedRecipe = {
       id: 'ambiguous',
-      name: '紅蘿蔔肉桂',
-      ingredientIds: ['carrot', 'cinnamon'],
+      name: '檸檬肉桂薄荷',
+      ingredientIds: ['lemon', 'cinnamon', 'mint'],
       createdAt: '2026-09-21T00:00:00.000Z',
     }
 
