@@ -4,6 +4,7 @@ import {
   optimizerCustomerIds,
   optimizerCustomerLabel,
   optimizerMoney,
+  optimizerOperationQuantities,
   optimizerWaterFetchSlots,
   type OptimizerCustomerScope,
 } from './optimizerUi'
@@ -80,6 +81,14 @@ describe('optimizer UI demand selection', () => {
       }),
     ).toBe('烏爾里希（旅人）')
     expect(optimizerMoney(44)).toBe('44 金幣')
+  })
+
+  it('splits displayed machine operations by the confirmed five-per-operation capacity', () => {
+    expect(optimizerOperationQuantities(0)).toEqual([])
+    expect(optimizerOperationQuantities(1)).toEqual([1])
+    expect(optimizerOperationQuantities(5)).toEqual([5])
+    expect(optimizerOperationQuantities(7)).toEqual([5, 2])
+    expect(optimizerOperationQuantities(11)).toEqual([5, 5, 1])
   })
 
   it('calculates water fetch slot impact from the confirmed 10-per-slot capacity', () => {
