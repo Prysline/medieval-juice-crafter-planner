@@ -81,6 +81,32 @@ describe('inventory storage', () => {
     ])
   })
 
+  it('preserves a non-empty jar recipe identity even when the current UI cannot resolve it', () => {
+    const normalized = normalizeInventoryState({
+      ingredientUnits: {},
+      waterUnits: 0,
+      cleanCups: 0,
+      usedCups: 0,
+      shelfCount: 0,
+      jarRackCount: 1,
+      juiceJars: [
+        {
+          id: 'legacy-filled',
+          recipeId: 'computed:future-sequence',
+          servings: 6,
+        },
+      ],
+    })
+
+    expect(normalized.juiceJars).toEqual([
+      {
+        id: 'legacy-filled',
+        recipeId: 'computed:future-sequence',
+        servings: 6,
+      },
+    ])
+  })
+
   it('deduplicates jar ids and round-trips normalized state', () => {
     const storage = new MemoryStorage()
     writeInventoryState(storage, {
