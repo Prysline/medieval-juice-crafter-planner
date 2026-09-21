@@ -12,10 +12,15 @@ function demand(
     recipeId: string
     recipeName: string
     assignedServings: number
+    leftoverServings?: number
   }>,
 ): PreparationDemand {
   const assignedServings = recipes.reduce(
     (sum, recipe) => sum + recipe.assignedServings,
+    0,
+  )
+  const leftoverServings = recipes.reduce(
+    (sum, recipe) => sum + (recipe.leftoverServings ?? 0),
     0,
   )
 
@@ -23,23 +28,26 @@ function demand(
     ingredients: [],
     productionWaterUnits: 0,
     cleanCupUses: assignedServings,
-    producedServings: assignedServings,
+    producedServings: assignedServings + leftoverServings,
     assignedServings,
-    leftoverServings: 0,
-    recipes: recipes.map((recipe) => ({
+    leftoverServings,
+    recipes: recipes.map((recipe) => {
+      const recipeLeftovers = recipe.leftoverServings ?? 0
+      const producedServings =
+        recipe.assignedServings + recipeLeftovers
+      return ({
       ...recipe,
+      leftoverServings: recipeLeftovers,
       customerIds: Array.from(
         { length: recipe.assignedServings },
         (_, index) => `${recipe.recipeId}-customer-${index + 1}`,
       ),
       ingredientIds: [],
-      productionUnits: Math.ceil(
-        recipe.assignedServings / 2,
-      ),
-      producedServings: recipe.assignedServings,
-      leftoverServings: 0,
+      productionUnits: Math.ceil(producedServings / 2),
+      producedServings,
       ingredientUnitsPerJuiceUnit: [],
-    })),
+    })
+    }),
   }
 }
 
@@ -51,12 +59,14 @@ function buildPlan(
     cleanCups: salesDemand.assignedServings,
     usedCups: 0,
   },
+  stationaryJuiceJarCount = 0,
 ): MultiTripReplenishmentPlan {
   return buildMultiTripReplenishmentPlanWithCups(
     salesDemand,
     policy,
     carriedJuiceJarCount,
     cups,
+    stationaryJuiceJarCount,
   )
 }
 
@@ -106,6 +116,36 @@ function expectScheduleConsistency(
   expect(servedCustomerIds).toHaveLength(
     result.totalAssignedServings,
   )
+  expect(
+    result.leftoverJarContents.reduce(
+      (sum, item) => sum + item.servings,
+      0,
+    ),
+  ).toBe(result.totalLeftoverServings)
+  expect(
+    result.trips.every((trip) =>
+      trip.juiceJars.every(
+        (load) =>
+          load.servings + load.retainedLeftoverServings <= 10,
+      ),
+    ),
+  ).toBe(true)
+
+  for (const item of result.leftoverJarContents.filter(
+    (content) => content.location === 'sales-trip',
+  )) {
+    const trip = result.trips.find(
+      (candidate) => candidate.tripNumber === item.tripNumber,
+    )
+    const load = trip?.juiceJars.find(
+      (candidate) =>
+        candidate.physicalJarId === item.physicalJarId &&
+        candidate.recipeId === item.recipeId,
+    )
+    expect(load?.retainedLeftoverServings).toBeGreaterThanOrEqual(
+      item.servings,
+    )
+  }
 }
 
 describe('multi-trip replenishment', () => {
@@ -426,6 +466,201 @@ describe('multi-trip replenishment', () => {
     )
   })
 
+  it('keeps a recipe leftover in the final sales jar', () => {
+    const result = buildPlan(
+      demand([
+        {
+          recipeId: 'sweet',
+          recipeName: '甜味果汁',
+          assignedServings: 3,
+          leftoverServings: 1,
+        },
+      ]),
+      'retain-and-wash',
+      1,
+    )
+
+    expect(result.totalAssignedServings).toBe(3)
+    expect(result.totalLeftoverServings).toBe(1)
+    expect(result.trips[0].juiceJars[0]).toMatchObject({
+      physicalJarId: 1,
+      recipeId: 'sweet',
+      servings: 3,
+      retainedLeftoverServings: 1,
+    })
+    expect(result.leftoverJarContents).toEqual([
+      {
+        physicalJarId: 1,
+        recipeId: 'sweet',
+        recipeName: '甜味果汁',
+        servings: 1,
+        location: 'sales-trip',
+        tripNumber: 1,
+      },
+    ])
+    expectScheduleConsistency(result)
+  })
+
+  it('orders a leftover recipe last when that preserves it without an extra type switch', () => {
+    const result = buildPlan(
+      demand([
+        {
+          recipeId: 'a',
+          recipeName: 'A',
+          assignedServings: 1,
+          leftoverServings: 1,
+        },
+        {
+          recipeId: 'b',
+          recipeName: 'B',
+          assignedServings: 2,
+        },
+      ]),
+      'retain-and-wash',
+      1,
+    )
+
+    expect(result.jarTypeSwitches).toBe(1)
+    expect(
+      result.trips.flatMap((trip) =>
+        trip.juiceJars.map((load) => load.recipeId),
+      ),
+    ).toEqual(['b', 'a'])
+    const finalLoad = result.trips
+      .flatMap((trip) => trip.juiceJars)
+      .at(-1)
+    expect(finalLoad).toMatchObject({
+      physicalJarId: 1,
+      recipeId: 'a',
+      retainedLeftoverServings: 1,
+    })
+    expect(result.leftoverJarContents).toMatchObject([
+      {
+        physicalJarId: 1,
+        recipeId: 'a',
+        servings: 1,
+        location: 'sales-trip',
+      },
+    ])
+    expectScheduleConsistency(result)
+  })
+
+  it('uses rack-staged physical jars for leftover recipes that cannot all be terminal carried jars', () => {
+    const result = buildPlan(
+      demand([
+        {
+          recipeId: 'a',
+          recipeName: 'A',
+          assignedServings: 1,
+          leftoverServings: 1,
+        },
+        {
+          recipeId: 'b',
+          recipeName: 'B',
+          assignedServings: 1,
+          leftoverServings: 1,
+        },
+        {
+          recipeId: 'c',
+          recipeName: 'C',
+          assignedServings: 1,
+          leftoverServings: 1,
+        },
+      ]),
+      'retain-and-wash',
+      1,
+      { cleanCups: 3, usedCups: 0 },
+      2,
+    )
+
+    expect(result.jarTypeSwitches).toBe(2)
+    expect(result.totalLeftoverServings).toBe(3)
+    expect(result.leftoverJarContents).toEqual([
+      {
+        physicalJarId: 1,
+        recipeId: 'a',
+        recipeName: 'A',
+        servings: 1,
+        location: 'sales-trip',
+        tripNumber: 3,
+      },
+      {
+        physicalJarId: 2,
+        recipeId: 'b',
+        recipeName: 'B',
+        servings: 1,
+        location: 'jar-rack',
+        tripNumber: null,
+      },
+      {
+        physicalJarId: 3,
+        recipeId: 'c',
+        recipeName: 'C',
+        servings: 1,
+        location: 'jar-rack',
+        tripNumber: null,
+      },
+    ])
+    expectScheduleConsistency(result)
+  })
+
+  it('uses an otherwise unused carried jar to preserve leftover-only output', () => {
+    const result = buildPlan(
+      demand([
+        {
+          recipeId: 'a',
+          recipeName: 'A',
+          assignedServings: 2,
+        },
+        {
+          recipeId: 'b',
+          recipeName: 'B',
+          assignedServings: 0,
+          leftoverServings: 1,
+        },
+      ]),
+      'retain-and-wash',
+      2,
+    )
+
+    expect(result.physicalJarsUsed).toBe(1)
+    expect(result.leftoverJarContents).toContainEqual({
+      physicalJarId: 2,
+      recipeId: 'b',
+      recipeName: 'B',
+      servings: 1,
+      location: 'carried-reserve',
+      tripNumber: null,
+    })
+    expectScheduleConsistency(result)
+  })
+
+  it('rejects a plan instead of silently losing leftovers when no physical jar can preserve them', () => {
+    expect(() =>
+      buildPlan(
+        demand([
+          {
+            recipeId: 'a',
+            recipeName: 'A',
+            assignedServings: 1,
+            leftoverServings: 1,
+          },
+          {
+            recipeId: 'b',
+            recipeName: 'B',
+            assignedServings: 1,
+            leftoverServings: 1,
+          },
+        ]),
+        'retain-and-wash',
+        1,
+        { cleanCups: 2, usedCups: 0 },
+      ),
+    ).toThrow(
+      'Not enough physical juice jar capacity to preserve 1 leftover serving(s)',
+    )
+  })
+
   it.each<UsedCupTripPolicy>([
     'retain-and-wash',
     'allow-drop-if-full',
@@ -448,6 +683,9 @@ describe('multi-trip replenishment', () => {
         trips: [],
         tripCount: 0,
         totalAssignedServings: 0,
+        totalLeftoverServings: 0,
+        leftoverJarContents: [],
+        stationaryJuiceJarCount: 0,
         maxJuiceJarSlotsCarried: 0,
         cleanCupUnitsRequiredWithoutMiddayWashing: 0,
         reusableCleanCupPoolSize:
