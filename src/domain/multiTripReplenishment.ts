@@ -725,7 +725,7 @@ function allocateLeftoverJarContents(
         (remainingByRecipe.get(b.load.recipeId) ?? 0) -
           (remainingByRecipe.get(a.load.recipeId) ?? 0) ||
         b.load.servings - a.load.servings ||
-        a.load.physicalJarId - b.load.physicalJarId,
+        a.load.physicalJarId.localeCompare(b.load.physicalJarId),
     )
 
   for (const candidate of finalSalesCandidates) {
