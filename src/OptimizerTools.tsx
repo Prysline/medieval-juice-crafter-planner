@@ -5,6 +5,7 @@ import {
   optimizerCustomerIds,
   optimizerCustomerLabel,
   optimizerMoney,
+  optimizerOperationQuantities,
   optimizerWaterFetchSlots,
   type OptimizerCustomerScope,
 } from './domain/optimizerUi'
@@ -465,21 +466,20 @@ function PrioritySelect({
   )
 }
 
-
-function machineSlotLabel(equipment: string): string {
+function machineSlotLabels(equipment: string): string[] {
   if (equipment === '柑橘榨汁機' || equipment === '榨汁機') {
-    return 'input · output'
+    return ['input', 'output']
   }
   if (equipment === '調味器') {
-    return '果汁 input · 調味材料 input · output'
+    return ['果汁 input', '調味材料 input', 'output']
   }
   if (equipment === '果汁成品台') {
-    return '果汁 input · 水 input · output'
+    return ['果汁 input', '水 input', 'output']
   }
   if (equipment === '果汁調和器') {
-    return '果汁 A input · 果汁 B input · output'
+    return ['果汁 A input', '果汁 B input', 'output']
   }
-  return 'machine slots 依設備規則'
+  return ['machine slots 依設備規則']
 }
 
 function productionStepLabel(
@@ -712,7 +712,14 @@ function OptimizerResultPanel({
                       次操作
                     </span>
                   </div>
-                  <small>machine slots：{machineSlotLabel(equipment)}</small>
+                  <div
+                    className="optimizer-machine-slots"
+                    aria-label={equipment + ' machine slots'}
+                  >
+                    {machineSlotLabels(equipment).map((slot) => (
+                      <span key={slot}>{slot}</span>
+                    ))}
+                  </div>
                 </article>
 
                 {steps.map((step) => (
@@ -721,12 +728,16 @@ function OptimizerResultPanel({
                       <strong>{productionStepLabel(step)}</strong>
                       <span>{step.operationCount} 次操作</span>
                     </div>
-                    <p>
-                      處理 {step.quantity} 份
-                      {step.operationCount > 1
-                        ? '；依每次最多 5 份拆分'
-                        : ''}
-                    </p>
+                    <p>總處理量：{step.quantity} 份</p>
+                    <div className="optimizer-operation-splits">
+                      {optimizerOperationQuantities(step.quantity).map(
+                        (quantity, index) => (
+                          <span key={index}>
+                            操作 {index + 1}：{quantity} 份
+                          </span>
+                        ),
+                      )}
+                    </div>
                   </article>
                 ))}
               </div>
