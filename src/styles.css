@@ -1360,6 +1360,16 @@ footer {
   line-height: 1.45;
 }
 
+.optimizer-capacity-warning {
+  margin: 10px 0 0;
+  border-left: 4px solid #9a6a2f;
+  background: #fff4dd;
+  padding: 8px 10px;
+  color: #6d5432;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
 .optimizer-run-button {
   width: 100%;
   min-height: 44px;
