@@ -13,9 +13,9 @@
 - 顧客可查看最低原料成本 full-match 建議，並分開顯示已實測與允許無歧義預測的最低解。
 - 配方列表可反查目前已解鎖、且滿意度門檻已達的顧客。
 - 三原料配方保留調味順序；四原料以上的重複調味實測不進一般配方列表。
-- 三種以下有效序列會自動產生候選：既有實測配方優先，未實測組合只顯示預測特性，不推導售價。PR #35 已同步靜謐噴泉 4 筆新 observed recipes：香蕉▸肉桂（37）、橙子▸肉桂（32）、香蕉▸肉桂▸薄荷（58）、橙子▸肉桂▸薄荷（53）。
+- 三種以下有效序列會自動產生候選：既有實測配方優先，未實測組合只顯示預測特性，不推導售價。PR #35 已同步靜謐噴泉 4 筆新實測配方：香蕉▸肉桂（37）、橙子▸肉桂（32）、香蕉▸肉桂▸薄荷（58）、橙子▸肉桂▸薄荷（53）。
 - 配方仍顯示「1 份果汁基準單位」的原料成本與單杯原料成本；果汁成品台 1 份果汁可產出 2 杯，但實際一次機器操作可處理 1～5 份，不再把「2 杯」視為一次固定製作批次。
-- 「配方工具」已改為 ordered sequence builder：點原料直接 append，可重複調味、四原料以上、逐項刪除／清空；observed 精確序列優先，否則顯示 computed / ambiguity。
+- 「配方工具」已改為有序原料編排：點原料直接加入，可重複調味、四原料以上、逐項刪除／清空；精確原料順序已有實測資料時以實測結果優先，否則顯示推導結果或歧義。
 - 個人配方只保存自訂名稱、有序 ingredient IDs、備註與建立時間；effects、cost、equipment、matching 每次由目前 domain 重新計算。
 - 「批次規劃」已重構為 production optimizer：可依序指定主要／次要 lexicographic 目標，包含最低成本、最少浪費、最高已知銷售總額、最高已知毛利、最少機器操作與最少果汁罐換裝。Phase 1 結果資訊架構已完成：閱讀順序為 **規劃摘要 → 所需物資 → 製作步驟 → 果汁分配 → 販售排程**；水會以免費取得需求顯示。PR #33 後製作步驟以機器為獨立區塊，每次 1～5 份製作拆成各批 slot flow；原料／果汁／水／output 各自用膠囊顯示，`▸` 只代表配方內部順序，`→` 只代表加工／狀態轉換。
 - Core model correction 2B 已把 physical jar identity 接進多趟販售 schedule。Phase 2 capacity contract 也已完成：`mjc-inventory` 保存原料、水、clean / used cups、一般架子數、果汁罐架數與每個 physical jar；PR #39 / Phase 5B1 後批次規劃已有實際 Inventory editor，可逐罐設定 recipe identity / servings。`mjc-planner-settings` 改保存明確的 `carriedJuiceJarIds` 與 used-cup drop opt-in；舊 count 會依 inventory 穩定順序一次遷移。常駐攜帶罐會固定占背包 slot，ownership、carrying 與 jar-rack staging 不再混成同一個數字。
@@ -93,9 +93,9 @@ src/
 
 PR 2B generator 仍只**自動枚舉**「1 種果汁基底 + 0～2 種不重複調味材料」，避免候選爆炸；這不再是 simulator/evaluator 的能力上限。
 
-手動 simulator 使用 ordered sequence：重複調味與四原料以上都可評估；每遇到新的 juice-base 就開始下一杯飲料 segment。兩杯飲料經果汁調和器組合時，網站只做 `front.sequence + back.sequence`，不另造 Blender 專用配方格式。多 juice-base sequence 的 unlock 至少為 `juice-blender-unlocked`，equipment 會包含果汁調和器。
+手動配方模擬器使用有序原料順序：重複調味與四原料以上都可評估；每遇到新的需榨汁原料就開始下一個果汁段。兩杯果汁經果汁調和器組合時，網站只做 `front.sequence + back.sequence`，不另造果汁調和器專用配方格式。含多個需榨汁原料的序列至少需要實際程式進度 key `juice-blender-unlocked`，設備需求會包含果汁調和器。
 
-果汁調和器已確認 **1:1:1** 數量模型：果汁 A ×q + 果汁 B ×q → 調和果汁 ×q，q = 1～5；機器為 2 個 input + 1 個 output，共 **3 slots**。目前仍未確認的是可接受果汁類型的完整限制、調和後特性與售價規則。現行 simulator 已能做 sequence concatenation；Phase 3 已把 multi-base drink segments 與 Blender edge 接入 production graph。
+果汁調和器已確認 **1:1:1** 數量模型：果汁 A ×q + 果汁 B ×q → 調和果汁 ×q，q = 1～5；機器為 2 個輸入 + 1 個輸出，共 **3 個機器格位**。兩個輸入已確認只要是果汁類即可。直接實測也支持：完整原料順序串接後，成品特性沿用同名累加、`slotCount`、高值排序與最後貢獻位置優先；仍未知的是果汁調和器通用售價公式，以及同值且同最後貢獻位置時的次級排序規則。現行配方模擬器已能串接完整原料順序；Phase 3 已把多果汁段與果汁調和步驟接入製作圖。
 
 特性預測目前採用實測最支持的模型：
 
@@ -103,7 +103,7 @@ PR 2B generator 仍只**自動枚舉**「1 種果汁基底 + 0～2 種不重複�
 slotCount = min(5, 不重複原料種類數 + 1)
 ```
 
-同名特性先累加，再依總值取最高 slot；總值同分時，較晚加入原料所提供／最後貢獻的特性優先。若套用這層 tie-break 後，cutoff 仍有同分且最後貢獻位置相同的候選，才保留 ambiguity，不自行發明次級排序。computed 配方的售價仍維持未知。三原料以上的遊戲內預設名稱已確認為「最高特性 + 隨機詞彙」；完整 observed 名稱不是穩定 identity，因此 repo 以穩定 sequence name 作 canonical website name，截圖實測完整名稱另存 `observedDisplayName`，不實作隨機名稱 generator。
+同名特性先累加，再依總值取最高欄位；總值同分時，較晚加入原料所提供／最後貢獻的特性優先。若套用這層規則後，截斷位置仍有同分且最後貢獻位置相同的候選，才保留歧義，不自行發明次級排序。推導配方的售價仍維持未知。三原料以上的遊戲內預設名稱已確認為「最高特性 + 隨機詞彙」；完整實測名稱不是穩定識別資訊，因此 repo 以穩定原料順序名稱作網站名稱，截圖實測完整名稱另存實際欄位 `observedDisplayName`，不實作隨機名稱產生器。
 
 未確認的遊戲機制不會直接寫成正式配方或最佳化公式。
 
@@ -120,7 +120,7 @@ optimizer request 會帶入主線進度、分村滿意度、今日已供應顧�
 
 這只是產量換算，不代表一次機器操作。製作設備一次可處理 1～5 份，因此 production graph 會把共享前綴聚合後，再用 `ceil(quantity / 5)` 計算每層機器操作。例如 `AB ×1` 與 `ABC ×2` 會共享 `AB ×3`，而不是各自從頭製作。重複調味如 `A → AB → ABB` 則是兩層不同調味操作。
 
-optimizer model / production graph 現在已能接受 multi-base Blender candidate，並把每個 drink segment 分開榨汁／調味後以 1:1:1 Blender edge 合併，再進成品台；machine-operation objective 也會正確計入同一 edge 在單一配方中重複出現的 multiplicity。**但 V1 candidate generator 仍只自動枚舉「一個 juice-base + seasoning chain」**，因此這次完成的是 production-safe 執行能力，不代表自動候選枚舉已開始大量生成 Blender 組合。
+最佳化模型與製作圖現在已能接受含多個需榨汁原料的候選配方，並把每個果汁段分開榨汁／調味後以 1:1:1 的果汁調和步驟合併，再進果汁成品台；最少機器操作的比較也會正確計入同一調和步驟在單一配方中重複出現的次數。**但 V1 候選配方產生器仍只自動枚舉「一個需榨汁原料 + 調味序列」**，因此目前完成的是製作圖可執行能力，不代表自動候選搜尋已開始大量生成果汁調和配方。
 
 HiGHS solver 使用真正的 lexicographic repeated solve，不使用隱藏權重。可指定的 criterion 包含：
 
@@ -226,7 +226,7 @@ Phase 3 已完成：
 - stock offset 後會依 `juiceUnitsToPrepare` 重建 **net production plan**；UI 不再把 gross optimizer steps 冒充成實際仍需製作的步驟。
 - `productionLogistics.ts` 產生 deterministic feasible trace，分開追蹤一般架、背包、常駐果汁罐與 machine input/output slots；input 進機器後會釋放原 storage，operation 失敗時 material / action / fetch counters 會 transactionally rollback。
 - 水依當下背包 free slots 取得，可先回到 home storage 再分批製作；沒有 route / seller distance 資料的原料取得只記 acquisition action，不假裝成已知往返趟數。
-- Blender 已按 **1:1:1、q = 1～5** 接入 production graph；multi-base segments 會分開製作再調和。
+- 果汁調和器已按 **1:1:1、q = 1～5** 接入製作圖；多個果汁段會分開製作再調和。
 - finalizer 每次 operation 最大產出 10 份，必須有至少一個 **physical juice jar receiver** 接手；receiver 可來自常駐攜帶 jars 或 `jarRackCount × 5` staging 中實際存在的 non-carried jars，rack 空位本身不會憑空生成罐子。
 - 現行 `mjc-inventory` 尚未保存每件 production material 的精確位置，因此 Phase 3 把既有 raw / water 視為 home supply，依目前 shelf / backpack capacity 建 deterministic feasible placement；罐內既有內容與「第一次換裝」相容性仍 deferred。
 
@@ -237,9 +237,10 @@ Phase 4 已完成：
 3. 跨趟重用只會清洗實際持有的 used cups，並記錄清洗杯數／用水；`allow-drop-if-full` 只在 NPC 回傳 used cup 當下無空位時記錄掉落，掉落杯不會被當成後續可用 storage。
 4. PR #32 已把 optimizer `leftoverServings` 帶入販售結果：leftover 會保留在該 recipe 最後販售的同一 physical jar；若同一罐無法在不換掉 retained juice 的前提下保存，planner 會明確判定不可行，不會默默丟失或轉移到別罐。
 5. PR #33 完成 planner readability / copy consistency：`▸` 無半形空白、顧客／配方／配方工具／批次規劃共用配方名稱與金額 formatter、製作步驟以 machine group + slot-flow pills 呈現。
-6. PR #35 完成靜謐噴泉配方研究同步：新增 4 筆 observed recipes；confirmed effect tie-break 改為「同分時較晚加入原料優先」；相同 unique ingredient set 的調味順序／重複既有原料不提高售價已鎖進 research regression，但 computed sale price 仍不推導。
+6. PR #35 完成靜謐噴泉配方研究同步：新增 4 筆實測配方；已確認的特性同分規則改為「同分時較晚加入原料優先」；相同不重複原料集合的調味順序／重複既有原料不提高售價已鎖進研究回歸測試，但推導配方售價仍不推導。
 7. PR #37 完成 **Phase 5A persistent jar identity bridge**：sales schedule / leftover result 改用 persistent `mjc-inventory` jar IDs，並保存選中 carried jars 的初始 contents metadata；這沒有改變第一次換裝語意，也不寫回 inventory。
-8. PR #39 完成 **Phase 5B1 Inventory editor + explicit carried jars**：可編輯原料、水、clean / used cups、架子／罐架與逐罐 contents；`PlannerSettings` canonical state 改為 `carriedJuiceJarIds`，舊 count 會一次遷移。下一個 runtime target 是 **Phase 5B2：initial-content planning semantics**，處理預裝內容對第一次補裝／換裝、finalizer receiver、sales queue 與 stock consumption provenance 的影響。其後 **Phase 5C** 才做 Apply Plan transaction preview / atomic commit；Phase 6 做 profiles。route optimizer 仍等待 travel time / location / service-window / shop-hours 資料。
+8. PR #39 完成 **Phase 5B1｜庫存編輯器與明確常駐攜帶果汁罐選擇**：可編輯原料、水、乾淨／用過的杯子、架子／罐架與逐罐內容；`PlannerSettings` 的實際程式欄位改為 `carriedJuiceJarIds`，舊數量設定會一次遷移。
+9. **下一個最小切片是 Data-0｜果汁調和器實測資料同步**：把先前已整理進 Notion、但 repo 尚未同步的果汁調和器實測配方／成品特性／實測售價與多層果汁調和回歸測試補進程式；不在這一步擴張候選配方搜尋。Data-0 完成後才進 **Phase 5B2｜初始果汁罐內容規劃規則**，之後再做 **Phase 5C｜套用規劃與庫存交易**。路線最佳化仍等待跨村移動時間、位置資訊、完整顧客服務時段與商店營業時間資料。
 
 
 ## Schedule / route readiness boundary
