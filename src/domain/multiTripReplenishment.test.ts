@@ -177,10 +177,36 @@ function expectScheduleConsistency(
     result.trips.every((trip) =>
       trip.juiceJars.every(
         (load) =>
-          load.servings + load.retainedLeftoverServings <= 10,
+          load.servings + load.retainedLeftoverServings <= 10 &&
+          load.plannedFillServings <= 10,
       ),
     ),
   ).toBe(true)
+  expect(
+    result.productionJarFills.every(
+      (fill) =>
+        fill.servings >= 2 &&
+        fill.servings <= 10 &&
+        fill.servings % 2 === 0,
+    ),
+  ).toBe(true)
+  expect(
+    result.productionJarFills.reduce(
+      (sum, fill) => sum + fill.servings,
+      0,
+    ),
+  ).toBe(
+    result.trips.reduce(
+      (sum, trip) =>
+        sum +
+        trip.juiceJars.reduce(
+          (tripSum, load) =>
+            tripSum + load.plannedFillServings,
+          0,
+        ),
+      0,
+    ),
+  )
 
   for (const item of result.leftoverJarContents) {
     const trip = result.trips.find(
@@ -248,6 +274,15 @@ describe('multi-trip replenishment', () => {
       { recipeId: 'b', fillAction: 'type-switch' },
     ])
     expect(result.jarTypeSwitches).toBe(1)
+    expect(result.productionJarFills).toEqual([
+      expect.objectContaining({
+        physicalJarId: 'owned-a',
+        recipeId: 'b',
+        beforeTripNumber: 2,
+        servings: 2,
+        fillAction: 'type-switch',
+      }),
+    ])
     expectScheduleConsistency(result)
   })
 
@@ -588,6 +623,46 @@ describe('multi-trip replenishment', () => {
     expect(droppable.trips[0].droppedUsedCups).toBe(0)
   })
 
+  it('keeps one prepared jar load across cup-limited trips instead of refilling it', () => {
+    const result = buildPlan(
+      namedRecipes(['A'], 10),
+      'retain-and-wash',
+      1,
+      { cleanCups: 5, usedCups: 0 },
+    )
+
+    expect(result.tripCount).toBe(2)
+    expect(
+      result.trips.map((trip) => ({
+        servings: trip.juiceJars[0].servings,
+        fillAction: trip.juiceJars[0].fillAction,
+        plannedFillServings:
+          trip.juiceJars[0].plannedFillServings,
+      })),
+    ).toEqual([
+      {
+        servings: 5,
+        fillAction: 'initial-fill',
+        plannedFillServings: 10,
+      },
+      {
+        servings: 5,
+        fillAction: 'continue-loaded',
+        plannedFillServings: 0,
+      },
+    ])
+    expect(result.productionJarFills).toEqual([
+      expect.objectContaining({
+        physicalJarId: 'jar-1',
+        recipeId: 'a',
+        beforeTripNumber: 1,
+        servings: 10,
+        fillAction: 'initial-fill',
+      }),
+    ])
+    expectScheduleConsistency(result)
+  })
+
   it('washes and reuses a smaller physical cup pool across trips', () => {
     const result = buildPlan(
       namedRecipes(['A'], 15),
@@ -799,6 +874,7 @@ describe('multi-trip replenishment', () => {
         totalAssignedServings: 0,
         totalLeftoverServings: 0,
         leftoverJarContents: [],
+        productionJarFills: [],
         maxJuiceJarSlotsCarried: 0,
         cleanCupUnitsRequiredWithoutMiddayWashing: 0,
         reusableCleanCupPoolSize:
