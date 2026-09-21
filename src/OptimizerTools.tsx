@@ -780,7 +780,7 @@ function OptimizerResultPanel({
 
         <SalesTripPlanBlock plan={salesTripPlans.retainAndWash} />
 
-        <details>
+        <details className="optimizer-policy-comparison">
           <summary>
             比較替代策略：接受背包滿時 used cup 掉落（
             {salesTripPlans.allowDropIfFull.tripCount} 趟）
