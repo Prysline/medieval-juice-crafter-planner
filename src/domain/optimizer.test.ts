@@ -331,6 +331,95 @@ describe('production optimizer', () => {
     expect(constrained.jarTypeSwitches).toBe(0)
   })
 
+  it('uses initial jar recipe types when calculating zero-switch coverage', async () => {
+    const source = {
+      customers: [
+        customer('a', '酸味'),
+        customer('b', '清新口氣'),
+      ],
+      candidates: [
+        recipe('a-only', ['檸檬'], ['酸味']),
+        recipe('b-only', ['橙子'], ['清新口氣']),
+      ],
+    }
+
+    const result = await optimizeBatchPlan(
+      {
+        ...request(['a', 'b']),
+        initialCarriedJuiceJars: [
+          { recipeId: 'a-only', servings: 1 },
+          { recipeId: null, servings: 0 },
+        ],
+        priorities: ['minimum-cost', 'minimum-jar-switches'],
+      },
+      { source },
+    )
+
+    expect(result.recipePlans).toHaveLength(2)
+    expect(result.availableJuiceJarCount).toBe(2)
+    expect(result.jarTypeSwitches).toBe(0)
+  })
+
+  it('requires a prefilled jar to be consumed before it can switch without an empty jar', async () => {
+    const source = {
+      customers: [
+        customer('a', '酸味'),
+        customer('b', '清新口氣'),
+      ],
+      candidates: [
+        recipe('a-only', ['檸檬'], ['酸味']),
+        recipe('b-only', ['橙子'], ['清新口氣']),
+        recipe(
+          'a-shared',
+          ['檸檬', '糖'],
+          ['酸味', '清新口氣'],
+        ),
+      ],
+    }
+
+    const result = await optimizeBatchPlan(
+      {
+        ...request(['a', 'b']),
+        initialCarriedJuiceJars: [
+          { recipeId: 'a-shared', servings: 2 },
+        ],
+        constraints: { maxJarTypeSwitches: 0 },
+      },
+      { source },
+    )
+
+    expect(result.recipePlans).toHaveLength(1)
+    expect(result.recipePlans[0].recipeId).toBe('a-shared')
+    expect(result.jarTypeSwitches).toBe(0)
+  })
+
+  it('allows a fully consumed initial jar to become the source of a later type switch', async () => {
+    const source = {
+      customers: [
+        customer('a', '酸味'),
+        customer('b', '清新口氣'),
+      ],
+      candidates: [
+        recipe('a-only', ['檸檬'], ['酸味']),
+        recipe('b-only', ['橙子'], ['清新口氣']),
+      ],
+    }
+
+    const result = await optimizeBatchPlan(
+      {
+        ...request(['a', 'b']),
+        initialCarriedJuiceJars: [
+          { recipeId: 'a-only', servings: 1 },
+        ],
+        priorities: ['minimum-cost', 'minimum-jar-switches'],
+      },
+      { source },
+    )
+
+    expect(result.recipePlans).toHaveLength(2)
+    expect(result.jarTypeSwitches).toBe(1)
+  })
+
   it('uses shared production prefixes when reporting machine operations', async () => {
     const result = await optimizeBatchPlan(
       request(['a', 'b', 'c']),
