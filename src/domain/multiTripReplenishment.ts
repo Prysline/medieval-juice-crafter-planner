@@ -27,6 +27,11 @@ export interface MultiTripJuiceJarLoad {
   previousRecipeName: string | null
 }
 
+export interface CupInventoryInput {
+  cleanCups: number
+  usedCups: number
+}
+
 export interface MultiTripSalesTrip {
   tripNumber: number
   juiceJars: MultiTripJuiceJarLoad[]
@@ -38,6 +43,16 @@ export interface MultiTripSalesTrip {
   spareDepartureSlots: number
   reservedTransientUsedCupSlot: number
   usedCupDropMayOccur: boolean
+  droppedUsedCups: number
+  cupsWashedBeforeTrip: number
+  cupWashWaterUnits: number
+  cleanCupsBeforeTrip: number
+  usedCupsBeforeTrip: number
+  cleanCupsAfterTrip: number
+  usedCupsAfterTrip: number
+  physicalCupsAfterTrip: number
+  peakCupSlots: number
+  peakOccupiedSlots: number
   juiceJarSlotsCarried: number
 }
 
@@ -54,7 +69,16 @@ export interface MultiTripReplenishmentPlan {
   maxJuiceJarSlotsCarried: number
   cleanCupUnitsRequiredWithoutMiddayWashing: number
   reusableCleanCupPoolSize: number | null
+  initialCleanCups: number
+  initialUsedCups: number
+  initialPhysicalCupCount: number
+  finalCleanCups: number
+  finalUsedCups: number
+  finalPhysicalCupCount: number
+  droppedUsedCups: number
+  initialWashWaterUnits: number
   betweenTripWashWaterUnits: number
+  totalCupWashWaterUnits: number
   returnsHomeBetweenTrips: boolean
 }
 
@@ -308,47 +332,152 @@ function buildPhysicalJarQueues(
       )
 }
 
-function cleanCupStacksFor(servings: number): number {
-  return Math.ceil(servings / CLEAN_CUP_STACK_CAPACITY)
+function cleanCupStacksFor(cups: number): number {
+  return Math.ceil(Math.max(0, cups) / CLEAN_CUP_STACK_CAPACITY)
 }
 
-function effectiveDepartureSlotLimit(
-  policy: UsedCupTripPolicy,
-): number {
-  return policy === 'retain-and-wash'
-    ? BACKPACK_SLOT_CAPACITY - 1
-    : BACKPACK_SLOT_CAPACITY
+interface CupState {
+  cleanCups: number
+  usedCups: number
 }
 
-function canAddJar(
-  trip: MutableTrip,
-  jar: MultiTripJuiceJarLoad,
+interface CupTripTransition {
+  cleanCupsBeforeTrip: number
+  usedCupsBeforeTrip: number
+  cupsWashedBeforeTrip: number
+  cleanCupsCarried: number
+  departureCupSlots: number
+  peakCupSlots: number
+  droppedUsedCups: number
+  returnedUsedCups: number
+  cleanCupsAfterTrip: number
+  usedCupsAfterTrip: number
+}
+
+interface MutableTrip {
+  juiceJars: MultiTripJuiceJarLoad[]
+  totalServings: number
+  cupTransition: CupTripTransition
+}
+
+function normalizedCupCount(value: number): number {
+  return Number.isFinite(value)
+    ? Math.max(0, Math.floor(value))
+    : 0
+}
+
+function simulateCupTrip(
+  state: CupState,
+  servings: number,
   policy: UsedCupTripPolicy,
-  maxConcurrentJars: number,
-): boolean {
-  const loadedJarCount = trip.juiceJars.length + 1
-  if (loadedJarCount > maxConcurrentJars) return false
+  fixedJarSlots: number,
+): CupTripTransition | null {
+  const normalizedServings = Math.max(0, Math.floor(servings))
+  const cleanCupsBeforeTrip = normalizedCupCount(state.cleanCups)
+  const usedCupsBeforeTrip = normalizedCupCount(state.usedCups)
 
-  const servings = trip.totalServings + jar.servings
-  const cupStacks = cleanCupStacksFor(servings)
-  const departureSlots = maxConcurrentJars + cupStacks
+  if (normalizedServings === 0) {
+    return {
+      cleanCupsBeforeTrip,
+      usedCupsBeforeTrip,
+      cupsWashedBeforeTrip: 0,
+      cleanCupsCarried: 0,
+      departureCupSlots: 0,
+      peakCupSlots: 0,
+      droppedUsedCups: 0,
+      returnedUsedCups: 0,
+      cleanCupsAfterTrip: cleanCupsBeforeTrip,
+      usedCupsAfterTrip: usedCupsBeforeTrip,
+    }
+  }
 
-  return (
-    departureSlots <= effectiveDepartureSlotLimit(policy)
+  const cupsWashedBeforeTrip = Math.max(
+    0,
+    normalizedServings - cleanCupsBeforeTrip,
   )
+  if (cupsWashedBeforeTrip > usedCupsBeforeTrip) return null
+
+  const cleanAfterWash =
+    cleanCupsBeforeTrip + cupsWashedBeforeTrip
+  const usedAfterWash =
+    usedCupsBeforeTrip - cupsWashedBeforeTrip
+  const departureCupSlots = cleanCupStacksFor(normalizedServings)
+
+  if (
+    fixedJarSlots + departureCupSlots >
+    BACKPACK_SLOT_CAPACITY
+  ) {
+    return null
+  }
+
+  const cleanCupsLeftHome =
+    cleanAfterWash - normalizedServings
+  let carriedCleanCups = normalizedServings
+  let carriedUsedCups = 0
+  let droppedUsedCups = 0
+  let peakCupSlots = departureCupSlots
+
+  for (let served = 0; served < normalizedServings; served += 1) {
+    carriedCleanCups -= 1
+    const returnedCupCount = carriedUsedCups + 1
+    const cupSlotsIfReturned =
+      cleanCupStacksFor(carriedCleanCups) +
+      cleanCupStacksFor(returnedCupCount)
+
+    if (
+      fixedJarSlots + cupSlotsIfReturned <=
+      BACKPACK_SLOT_CAPACITY
+    ) {
+      carriedUsedCups = returnedCupCount
+    } else if (policy === 'allow-drop-if-full') {
+      droppedUsedCups += 1
+    } else {
+      return null
+    }
+
+    peakCupSlots = Math.max(
+      peakCupSlots,
+      cleanCupStacksFor(carriedCleanCups) +
+        cleanCupStacksFor(carriedUsedCups),
+    )
+  }
+
+  return {
+    cleanCupsBeforeTrip,
+    usedCupsBeforeTrip,
+    cupsWashedBeforeTrip,
+    cleanCupsCarried: normalizedServings,
+    departureCupSlots,
+    peakCupSlots,
+    droppedUsedCups,
+    returnedUsedCups: carriedUsedCups,
+    cleanCupsAfterTrip: cleanCupsLeftHome,
+    usedCupsAfterTrip: usedAfterWash + carriedUsedCups,
+  }
 }
 
 function buildTrips(
   queues: JarQueue[],
   policy: UsedCupTripPolicy,
   carriedJuiceJarCount: number,
-): MutableTrip[] {
+  initialCupState: CupState,
+): {
+  trips: MutableTrip[]
+  finalCupState: CupState
+} {
   const pending = queues.map((queue) => ({
     physicalJarId: queue.physicalJarId,
-    loads: [...queue.loads],
+    loads: queue.loads.map((load) => ({
+      ...load,
+      customerIds: [...load.customerIds],
+    })),
   }))
   const trips: MutableTrip[] = []
   const maxConcurrentJars = carriedJuiceJarCount
+  let cupState: CupState = {
+    cleanCups: normalizedCupCount(initialCupState.cleanCups),
+    usedCups: normalizedCupCount(initialCupState.usedCups),
+  }
 
   while (pending.some((queue) => queue.loads.length > 0)) {
     const candidates = pending
@@ -366,43 +495,108 @@ function buildTrips(
           a.physicalJarId - b.physicalJarId,
       )
 
-    const trip: MutableTrip = {
-      juiceJars: [],
+    const trip = {
+      juiceJars: [] as MultiTripJuiceJarLoad[],
       totalServings: 0,
     }
-    const selectedJarIds = new Set<number>()
+    const selectedServingsByJarId = new Map<number, number>()
 
     for (const jar of candidates) {
-      if (
-        !canAddJar(
-          trip,
-          jar,
+      let servingsToTake = 0
+
+      for (
+        let candidateServings = jar.servings;
+        candidateServings >= 1;
+        candidateServings -= 1
+      ) {
+        const transition = simulateCupTrip(
+          cupState,
+          trip.totalServings + candidateServings,
           policy,
           maxConcurrentJars,
         )
-      ) {
-        continue
+        if (transition) {
+          servingsToTake = candidateServings
+          break
+        }
       }
-      trip.juiceJars.push(jar)
-      trip.totalServings += jar.servings
-      selectedJarIds.add(jar.physicalJarId)
-    }
 
-    if (trip.juiceJars.length === 0) {
-      throw new Error(
-        `A single jar cannot fit the ${policy} trip policy`,
+      if (servingsToTake === 0) continue
+
+      trip.juiceJars.push({
+        ...jar,
+        servings: servingsToTake,
+        customerIds: jar.customerIds.slice(0, servingsToTake),
+      })
+      trip.totalServings += servingsToTake
+      selectedServingsByJarId.set(
+        jar.physicalJarId,
+        servingsToTake,
       )
     }
 
-    for (const queue of pending) {
-      if (selectedJarIds.has(queue.physicalJarId)) {
-        queue.loads.shift()
+    if (trip.juiceJars.length === 0) {
+      if (cupState.cleanCups + cupState.usedCups < 1) {
+        throw new Error(
+          'Sales planning requires at least one physical cup',
+        )
       }
+      throw new Error(
+        `No remaining sales load can fit the ${policy} trip policy with the current cups and backpack slots`,
+      )
     }
-    trips.push(trip)
+
+    const cupTransition = simulateCupTrip(
+      cupState,
+      trip.totalServings,
+      policy,
+      maxConcurrentJars,
+    )
+    if (!cupTransition) {
+      throw new Error(
+        'Cup lifecycle simulation became inconsistent with the selected trip',
+      )
+    }
+
+    cupState = {
+      cleanCups: cupTransition.cleanCupsAfterTrip,
+      usedCups: cupTransition.usedCupsAfterTrip,
+    }
+
+    for (const queue of pending) {
+      const served =
+        selectedServingsByJarId.get(queue.physicalJarId) ?? 0
+      if (served === 0) continue
+
+      const head = queue.loads[0]
+      if (!head || served > head.servings) {
+        throw new Error(
+          'Physical jar queue became inconsistent while splitting a sales load',
+        )
+      }
+
+      if (served === head.servings) {
+        queue.loads.shift()
+        continue
+      }
+
+      head.servings -= served
+      head.customerIds = head.customerIds.slice(served)
+      head.fillAction = 'refill-same-type'
+      head.previousRecipeId = head.recipeId
+      head.previousRecipeName = head.recipeName
+    }
+
+    trips.push({
+      ...trip,
+      cupTransition,
+    })
   }
 
-  return trips
+  return {
+    trips,
+    finalCupState: cupState,
+  }
 }
 
 export function countJarTypeSwitchesFromSchedule(
@@ -455,32 +649,47 @@ export function buildMultiTripReplenishmentPlan(
   demand: PreparationDemand,
   policy: UsedCupTripPolicy,
   carriedJuiceJarCount: number,
+  cups: CupInventoryInput,
 ): MultiTripReplenishmentPlan {
   const normalizedJarCount =
     normalizedCarriedJuiceJarCount(
       carriedJuiceJarCount,
     )
+  const initialCupState: CupState = {
+    cleanCups: normalizedCupCount(cups.cleanCups),
+    usedCups: normalizedCupCount(cups.usedCups),
+  }
   const recipes = recipeJarDemands(demand)
+
   if (recipes.length > 0 && normalizedJarCount < 1) {
     throw new Error(
       'Sales planning requires at least one carried physical juice jar',
     )
   }
+  if (
+    recipes.length > 0 &&
+    initialCupState.cleanCups + initialCupState.usedCups < 1
+  ) {
+    throw new Error(
+      'Sales planning requires at least one physical cup',
+    )
+  }
+
   const queues = buildPhysicalJarQueues(
     recipes,
     normalizedJarCount,
   )
-  const mutableTrips = buildTrips(
+  const { trips: mutableTrips, finalCupState } = buildTrips(
     queues,
     policy,
     normalizedJarCount,
+    initialCupState,
   )
-  const slotLimit = effectiveDepartureSlotLimit(policy)
   const trips: MultiTripSalesTrip[] = mutableTrips.map(
     (trip, index) => {
-      const cleanCupStacks = cleanCupStacksFor(
-        trip.totalServings,
-      )
+      const transition = trip.cupTransition
+      const cleanCupStacks =
+        transition.departureCupSlots
       const departureSlots =
         normalizedJarCount + cleanCupStacks
 
@@ -489,20 +698,37 @@ export function buildMultiTripReplenishmentPlan(
         juiceJars: trip.juiceJars,
         totalServings: trip.totalServings,
         cleanCupStacks,
-        cleanCupsCarried: trip.totalServings,
+        cleanCupsCarried: transition.cleanCupsCarried,
         departureSlots,
-        effectiveDepartureSlotLimit: slotLimit,
+        effectiveDepartureSlotLimit:
+          BACKPACK_SLOT_CAPACITY,
         spareDepartureSlots:
           BACKPACK_SLOT_CAPACITY - departureSlots,
-        reservedTransientUsedCupSlot:
-          policy === 'retain-and-wash' &&
-          trip.totalServings > 0
-            ? 1
-            : 0,
+        reservedTransientUsedCupSlot: Math.max(
+          0,
+          transition.peakCupSlots - cleanCupStacks,
+        ),
         usedCupDropMayOccur:
-          policy === 'allow-drop-if-full' &&
-          trip.totalServings > 0 &&
-          departureSlots === BACKPACK_SLOT_CAPACITY,
+          transition.droppedUsedCups > 0,
+        droppedUsedCups: transition.droppedUsedCups,
+        cupsWashedBeforeTrip:
+          transition.cupsWashedBeforeTrip,
+        cupWashWaterUnits:
+          transition.cupsWashedBeforeTrip,
+        cleanCupsBeforeTrip:
+          transition.cleanCupsBeforeTrip,
+        usedCupsBeforeTrip:
+          transition.usedCupsBeforeTrip,
+        cleanCupsAfterTrip:
+          transition.cleanCupsAfterTrip,
+        usedCupsAfterTrip:
+          transition.usedCupsAfterTrip,
+        physicalCupsAfterTrip:
+          transition.cleanCupsAfterTrip +
+          transition.usedCupsAfterTrip,
+        peakCupSlots: transition.peakCupSlots,
+        peakOccupiedSlots:
+          normalizedJarCount + transition.peakCupSlots,
         juiceJarSlotsCarried: normalizedJarCount,
       }
     },
@@ -524,18 +750,54 @@ export function buildMultiTripReplenishmentPlan(
     (sum, trip) => sum + trip.totalServings,
     0,
   )
-  const physicalJarsUsed = queues.filter(
-    (queue) => queue.loads.length > 0,
-  ).length
-  const totalJarLoads = queues.reduce(
-    (sum, queue) => sum + queue.loads.length,
+  if (totalAssignedServings !== demand.assignedServings) {
+    throw new Error(
+      'Physical cup lifecycle did not schedule every assigned serving',
+    )
+  }
+
+  const physicalJarIdsUsed = new Set(
+    trips.flatMap((trip) =>
+      trip.juiceJars.map((load) => load.physicalJarId),
+    ),
+  )
+  const totalJarLoads = trips.reduce(
+    (sum, trip) => sum + trip.juiceJars.length,
     0,
   )
+  const droppedUsedCups = trips.reduce(
+    (sum, trip) => sum + trip.droppedUsedCups,
+    0,
+  )
+  const initialPhysicalCupCount =
+    initialCupState.cleanCups + initialCupState.usedCups
+  const finalPhysicalCupCount =
+    finalCupState.cleanCups + finalCupState.usedCups
+
+  if (
+    finalPhysicalCupCount !==
+    initialPhysicalCupCount - droppedUsedCups
+  ) {
+    throw new Error(
+      'Cup lifecycle did not conserve physical cup ownership',
+    )
+  }
+
+  const initialWashWaterUnits =
+    trips[0]?.cupWashWaterUnits ?? 0
+  const betweenTripWashWaterUnits = trips
+    .slice(1)
+    .reduce(
+      (sum, trip) => sum + trip.cupWashWaterUnits,
+      0,
+    )
+  const totalCupWashWaterUnits =
+    initialWashWaterUnits + betweenTripWashWaterUnits
 
   return {
     policy,
     carriedJuiceJarCount: normalizedJarCount,
-    physicalJarsUsed,
+    physicalJarsUsed: physicalJarIdsUsed.size,
     totalJarLoads,
     distinctFinalJuiceTypes: recipes.length,
     jarTypeSwitches,
@@ -557,16 +819,16 @@ export function buildMultiTripReplenishmentPlan(
             0,
           )
         : null,
-    betweenTripWashWaterUnits:
-      policy === 'retain-and-wash'
-        ? trips
-            .slice(0, -1)
-            .reduce(
-              (sum, trip) =>
-                sum + trip.totalServings,
-              0,
-            )
-        : 0,
+    initialCleanCups: initialCupState.cleanCups,
+    initialUsedCups: initialCupState.usedCups,
+    initialPhysicalCupCount,
+    finalCleanCups: finalCupState.cleanCups,
+    finalUsedCups: finalCupState.usedCups,
+    finalPhysicalCupCount,
+    droppedUsedCups,
+    initialWashWaterUnits,
+    betweenTripWashWaterUnits,
+    totalCupWashWaterUnits,
     returnsHomeBetweenTrips: trips.length > 1,
   }
 }
