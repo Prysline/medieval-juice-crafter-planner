@@ -5,12 +5,21 @@ import { highsSolverAdapter } from './optimizerHighsSolver'
 import type { BatchOptimizerSolver } from './optimizerSolver'
 import {
   buildOptimizationModel,
+  normalizedAvailableJuiceJarCount,
+  normalizedOptimizationPriorities,
   type OptimizationRequest,
   type OptimizationSource,
 } from './optimizerModel'
+import {
+  buildProductionPlan,
+  type MachineOperationSummary,
+  type ProductionStep,
+} from './productionPlan'
 
 export type {
   OptimizationCandidatePolicy,
+  OptimizationCriterion,
+  OptimizationConstraints,
   OptimizationObjective,
   OptimizationRequest,
 } from './optimizerModel'
@@ -20,14 +29,18 @@ export interface CustomerAssignment {
   recipeId: string
 }
 
-export interface RecipeBatchPlan {
+export interface RecipeProductionPlan {
   recipeId: string
   recipeName: string
-  batchNumber: number
   customerIds: string[]
-  /** Ordered ingredient ids used by one batch; preserves future sequence identity. */
+  /** One juice unit becomes two sellable servings at the finalizer. */
+  juiceUnits: number
+  producedServings: number
+  assignedServings: number
+  leftoverServings: number
   ingredientIds: string[]
-  batchIngredientCost: number
+  juiceUnitIngredientCost: number
+  totalIngredientCost: number
 }
 
 export interface IngredientPurchase {
@@ -40,7 +53,11 @@ export interface IngredientPurchase {
 
 export interface OptimizationResult {
   assignments: CustomerAssignment[]
-  batches: RecipeBatchPlan[]
+  recipePlans: RecipeProductionPlan[]
+  productionSteps: ProductionStep[]
+  machineOperations: MachineOperationSummary
+  jarTypeSwitches: number
+  availableJuiceJarCount: number
   shoppingList: IngredientPurchase[]
   unresolvedCustomers: string[]
   totalIngredientCost: number
@@ -58,11 +75,11 @@ const ingredientByName = new Map(
   ingredients.map((ingredient) => [ingredient.name, ingredient]),
 )
 
-function normalizeBatchPlans(
+function normalizeRecipePlans(
   model: ReturnType<typeof buildOptimizationModel>,
   assignments: CustomerAssignment[],
-  batchCountByRecipeId: Record<string, number>,
-): RecipeBatchPlan[] {
+  productionUnitsByRecipeId: Record<string, number>,
+): RecipeProductionPlan[] {
   const assignedByRecipe = new Map<string, string[]>()
 
   for (const assignment of assignments) {
@@ -72,45 +89,46 @@ function normalizeBatchPlans(
   }
 
   return model.recipes.flatMap((recipe) => {
-    const batchCount = batchCountByRecipeId[recipe.candidate.id] ?? 0
-    if (batchCount <= 0) return []
+    const juiceUnits =
+      productionUnitsByRecipeId[recipe.candidate.id] ?? 0
+    if (juiceUnits <= 0) return []
 
     const customerIds = assignedByRecipe.get(recipe.candidate.id) ?? []
-    const ingredientIds = recipe.candidate.ingredients.map((ingredientName) => {
-      const ingredient = ingredientByName.get(ingredientName)
-      if (!ingredient) {
-        throw new Error(`Missing ingredient id for batch plan: ${ingredientName}`)
-      }
-      return ingredient.id
-    })
+    const producedServings = juiceUnits * 2
 
-    return Array.from({ length: batchCount }, (_, batchIndex) => ({
+    return [{
       recipeId: recipe.candidate.id,
       recipeName: recipe.candidate.name,
-      batchNumber: batchIndex + 1,
-      customerIds: customerIds.slice(batchIndex * 2, batchIndex * 2 + 2),
-      ingredientIds,
-      batchIngredientCost: recipe.batchIngredientCost,
-    }))
+      customerIds,
+      juiceUnits,
+      producedServings,
+      assignedServings: customerIds.length,
+      leftoverServings: producedServings - customerIds.length,
+      ingredientIds: recipe.productionPath.ingredientIds,
+      juiceUnitIngredientCost: recipe.juiceUnitIngredientCost,
+      totalIngredientCost:
+        recipe.juiceUnitIngredientCost * juiceUnits,
+    }]
   })
 }
 
 function buildShoppingList(
   model: ReturnType<typeof buildOptimizationModel>,
-  batchCountByRecipeId: Record<string, number>,
+  productionUnitsByRecipeId: Record<string, number>,
 ): IngredientPurchase[] {
   const quantityByIngredientId = new Map<string, number>()
 
   for (const recipe of model.recipes) {
-    const batchCount = batchCountByRecipeId[recipe.candidate.id] ?? 0
-    if (batchCount <= 0) continue
+    const juiceUnits =
+      productionUnitsByRecipeId[recipe.candidate.id] ?? 0
+    if (juiceUnits <= 0) continue
 
     for (const ingredientName of recipe.candidate.ingredients) {
       const ingredient = ingredientByName.get(ingredientName)
       if (!ingredient) continue
       quantityByIngredientId.set(
         ingredient.id,
-        (quantityByIngredientId.get(ingredient.id) ?? 0) + batchCount,
+        (quantityByIngredientId.get(ingredient.id) ?? 0) + juiceUnits,
       )
     }
   }
@@ -146,18 +164,31 @@ export async function optimizeBatchPlan(
   }
   const model = buildOptimizationModel(request, source)
   const solver = options.solver ?? highsSolverAdapter
-  const solution = await solver.solve(model, request.objective)
-  const batches = normalizeBatchPlans(
+  const priorities = normalizedOptimizationPriorities(request)
+  const solution = await solver.solve(model, priorities)
+  const recipePlans = normalizeRecipePlans(
     model,
     solution.assignments,
-    solution.batchCountByRecipeId,
+    solution.productionUnitsByRecipeId,
   )
   const shoppingList = buildShoppingList(
     model,
-    solution.batchCountByRecipeId,
+    solution.productionUnitsByRecipeId,
+  )
+  const productionPlan = buildProductionPlan(
+    recipePlans.map((plan) => ({
+      recipeId: plan.recipeId,
+      recipeName: plan.recipeName,
+      ingredientIds: plan.ingredientIds,
+      juiceUnits: plan.juiceUnits,
+      assignedServings: plan.assignedServings,
+    })),
   )
   const assignedServings = solution.assignments.length
-  const producedServings = solution.metrics.totalBatches * 2
+  const producedServings = recipePlans.reduce(
+    (total, plan) => total + plan.producedServings,
+    0,
+  )
   const formalCustomerIds = new Set(request.formalCustomerIds)
   const candidateById = new Map(
     model.recipes.map((recipe) => [
@@ -185,17 +216,27 @@ export async function optimizeBatchPlan(
 
     knownSalesRevenue += candidate.salePrice
   }
-  const knownGrossProfit =
-    knownSalesRevenue - solution.metrics.totalIngredientCost
+
+  if (
+    productionPlan.machineOperations.total !==
+    solution.metrics.machineOperations
+  ) {
+    throw new Error('Production graph and solver operation count diverged')
+  }
 
   return {
     assignments: solution.assignments,
-    batches,
+    recipePlans,
+    productionSteps: productionPlan.steps,
+    machineOperations: productionPlan.machineOperations,
+    jarTypeSwitches: solution.metrics.jarTypeSwitches,
+    availableJuiceJarCount: normalizedAvailableJuiceJarCount(request),
     shoppingList,
     unresolvedCustomers: model.unresolvedCustomerIds,
     totalIngredientCost: solution.metrics.totalIngredientCost,
     knownSalesRevenue,
-    knownGrossProfit,
+    knownGrossProfit:
+      knownSalesRevenue - solution.metrics.totalIngredientCost,
     formalSalesCount,
     potentialTrialCount,
     unknownFormalSalePriceCount,
