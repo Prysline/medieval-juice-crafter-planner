@@ -93,6 +93,14 @@ describe('planner settings storage', () => {
       carriedJuiceJarIds: ['owned-a', 'owned-b'],
       allowUsedCupDropIfFull: true,
     })
+    expect(
+      JSON.parse(
+        storage.getItem(PLANNER_SETTINGS_STORAGE_KEY) ?? '{}',
+      ),
+    ).toEqual({
+      carriedJuiceJarIds: ['owned-a', 'owned-b'],
+      allowUsedCupDropIfFull: true,
+    })
   })
 
   it('round-trips canonical ID settings', () => {
