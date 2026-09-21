@@ -204,7 +204,7 @@ describe('multi-trip replenishment', () => {
           (load) => load.physicalJarId,
         ),
       ),
-    ).toEqual([1, 1, 1, 1])
+    ).toEqual(['jar-1', 'jar-1', 'jar-1', 'jar-1'])
     expect(
       result.trips.flatMap((trip) =>
         trip.juiceJars.flatMap((load) => load.customerIds),
@@ -622,6 +622,18 @@ describe('multi-trip replenishment', () => {
       expect(result).toEqual({
         policy,
         carriedJuiceJarCount: 2,
+        carriedJuiceJars: [
+          {
+            physicalJarId: 'jar-1',
+            initialRecipeId: null,
+            initialServings: 0,
+          },
+          {
+            physicalJarId: 'jar-2',
+            initialRecipeId: null,
+            initialServings: 0,
+          },
+        ],
         physicalJarsUsed: 0,
         totalJarLoads: 0,
         distinctFinalJuiceTypes: 0,
