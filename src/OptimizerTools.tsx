@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { customers } from './data/customers'
-import { optimizerCustomerIds, type OptimizerCustomerScope } from './domain/optimizerUi'
+import {
+  optimizerCustomerIds,
+  optimizerCustomerLabel,
+  optimizerMoney,
+  type OptimizerCustomerScope,
+} from './domain/optimizerUi'
 import type {
   OptimizationCandidatePolicy,
   OptimizationObjective,
@@ -28,8 +33,9 @@ const customerById = new Map(
   customers.map((customer) => [customer.id, customer]),
 )
 
-function customerName(customerId: string): string {
-  return customerById.get(customerId)?.name ?? customerId
+function customerLabel(customerId: string): string {
+  const customer = customerById.get(customerId)
+  return customer ? optimizerCustomerLabel(customer) : customerId
 }
 
 export default function OptimizerTools({
@@ -230,7 +236,10 @@ function OptimizerResultPanel({
   return (
     <div className="optimizer-results">
       <div className="optimizer-metrics" aria-label="最佳化摘要">
-        <MetricCard label="原料總成本" value={String(result.totalIngredientCost)} />
+        <MetricCard
+          label="原料總成本"
+          value={optimizerMoney(result.totalIngredientCost)}
+        />
         <MetricCard label="製作批數" value={String(result.batches.length)} />
         <MetricCard
           label="已分配 / 產出"
@@ -268,11 +277,15 @@ function OptimizerResultPanel({
                   <strong>
                     {batch.recipeName} · 第 {batch.batchNumber} 批
                   </strong>
-                  <span>{batch.batchIngredientCost} 原料成本</span>
+                  <span>
+                    原料成本：{optimizerMoney(batch.batchIngredientCost)}／批
+                  </span>
                 </div>
                 <p>
                   {batch.customerIds.length > 0
-                    ? batch.customerIds.map(customerName).join('、')
+                    ? `分配顧客：${batch.customerIds
+                        .map(customerLabel)
+                        .join('、')}`
                     : '此批目前沒有分配顧客'}
                 </p>
               </article>
@@ -293,9 +306,11 @@ function OptimizerResultPanel({
             {result.shoppingList.map((item) => (
               <div className="optimizer-shopping-row" key={item.ingredientId}>
                 <strong>{item.name}</strong>
-                <span>
-                  ×{item.quantity} · {item.unitPrice}/個 · 小計 {item.totalCost}
-                </span>
+                <div className="optimizer-shopping-values">
+                  <span>數量：{item.quantity} 單位</span>
+                  <span>單價：{optimizerMoney(item.unitPrice)}／單位</span>
+                  <span>小計：{optimizerMoney(item.totalCost)}</span>
+                </div>
               </div>
             ))}
           </div>
@@ -322,7 +337,7 @@ function OptimizerResultPanel({
                 className="optimizer-assignment-row"
                 key={assignment.customerId}
               >
-                <strong>{customerName(assignment.customerId)}</strong>
+                <strong>{customerLabel(assignment.customerId)}</strong>
                 <span>{batch?.recipeName ?? assignment.recipeId}</span>
               </div>
             )
@@ -336,7 +351,7 @@ function OptimizerResultPanel({
             目前沒有可靠 full match：{result.unresolvedCustomers.length} 人
           </strong>
           <p>
-            {result.unresolvedCustomers.map(customerName).join('、')}
+            {result.unresolvedCustomers.map(customerLabel).join('、')}
           </p>
         </section>
       )}

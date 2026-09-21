@@ -34,3 +34,14 @@ export function optimizerCustomerIds(
     })
     .map((customer) => customer.id)
 }
+
+
+export function optimizerCustomerLabel(
+  customer: Pick<Customer, 'name' | 'occupation'>,
+): string {
+  return `${customer.name}（${customer.occupation}）`
+}
+
+export function optimizerMoney(value: number): string {
+  return `${value} 金幣`
+}
