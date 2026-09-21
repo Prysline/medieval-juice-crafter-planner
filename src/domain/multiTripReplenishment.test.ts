@@ -314,11 +314,11 @@ describe('multi-trip replenishment', () => {
       cleanCupStacks: 2,
       cleanCupsCarried: 18,
       departureSlots: 5,
-      effectiveDepartureSlotLimit: 9,
-      reservedTransientUsedCupSlot: 0,
+      effectiveDepartureSlotLimit: 10,
+      reservedTransientUsedCupSlot: 1,
       usedCupDropMayOccur: false,
       droppedUsedCups: 0,
-      peakOccupiedSlots: 5,
+      peakOccupiedSlots: 6,
       juiceJarSlotsCarried: 3,
     })
     expect(result.jarTypeSwitches).toBe(0)
