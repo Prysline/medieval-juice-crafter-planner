@@ -71,6 +71,7 @@ src/
     preparationShortfall.ts # 既有成品／raw inventory → 實際新製作與缺口
     purchaseSources.ts # 已知購買來源、最低價／同價保留 decision
     singleTripPacking.ts # 販售趟 finished-drink jars + clean cups 最小必要 slot / overflow
+    multiTripReplenishment.ts # 多趟販售、杯具 policy、jar-rack staging
   storage/
     plannerState.ts    # localStorage 讀寫、正式顧客與 legacy migration
     savedRecipes.ts    # 個人配方 schema validation / CRUD
@@ -145,3 +146,17 @@ D2 的 single-trip packing 目前只處理**販售趟**：把已分配給顧客�
 D3 是 **post-optimizer stock offset**：先用 `mjc-inventory` 中同 recipe 的既有成品抵掉 assigned servings，再重算真正需要新做的批數、原料與 production water；接著用 raw ingredient / water / clean cups inventory 抵扣缺口。D3 不重新求解或改寫 Slice B 的 recipe assignment。
 
 購買來源只使用目前資料中明確的 seller / shop 價格：若只有一個最低價來源可唯一選擇；同價則保留所有 source records，不加入路線或距離 tie-break。`Ingredient.seller` 與 `shops.ts` 若名稱相同，目前也不自行推定為同一實體商店，等後續 location identity 更完整再處理。
+
+
+## Multi-trip replenishment boundary
+
+D4 只處理從家出發、賣完回家的**販售趟**。它不加入顧客 schedule、跨村時間或 route objective，也不重新修改 optimizer recipe assignment。
+
+used-cup handling 必須明確選 policy：
+
+- `retain-and-wash`：每趟 departure load 只允許使用 9 / 10 slots，預留 1 slot 給第一個 used-cup stack；每趟（最後一趟除外）回家後把該趟 used cups 全部洗回 clean cups，再供下一趟重用。這個「預留 1 slot」是網站 packing policy，不是額外宣稱遊戲 UI 規則。
+- `allow-drop-if-full`：departure 可使用完整 10 slots；若 10 slots 全滿，網站只標示 used cups **可能掉落**，不假裝它們一定能回收，也不假設跨趟重用。
+
+每趟最多 staging 5 個果汁罐，對應已確認的果汁罐架 5 slots；規劃採「一次 staging 一趟」的模型。若未來確認遊戲允許不經罐架同時準備更多罐，這項 constraint 再另行調整。
+
+目前 jar grouping 使用 deterministic capacity-first first-fit-decreasing；它目標是產生可行、可解釋的多趟 load，**不宣稱已做最少趟數的全域最佳化**。
