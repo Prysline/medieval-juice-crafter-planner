@@ -139,7 +139,10 @@ export interface RecipeCandidate {
   ingredients: string[]
   /** observed 為實測成品特性；computed ambiguous 時只放一定會入選的特性。 */
   effects: EffectValue[]
-  /** cutoff 同分且 slot 不足時列出所有候選，不自行選 tie-break。 */
+  /**
+   * 套用「較晚加入原料優先」後，若 cutoff 仍同分且最後貢獻位置相同，
+   * 列出剩餘候選，不自行發明次級 tie-break。
+   */
   effectAmbiguity?: RecipeEffectAmbiguity
   equipment: string[]
   observedRecipeId?: Recipe['id']
