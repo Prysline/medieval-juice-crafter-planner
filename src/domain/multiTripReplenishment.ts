@@ -99,11 +99,6 @@ interface JarQueue {
   loads: MultiTripJuiceJarLoad[]
 }
 
-interface MutableTrip {
-  juiceJars: MultiTripJuiceJarLoad[]
-  totalServings: number
-}
-
 function normalizedCarriedJuiceJarCount(value: number): number {
   return Number.isFinite(value)
     ? Math.min(
