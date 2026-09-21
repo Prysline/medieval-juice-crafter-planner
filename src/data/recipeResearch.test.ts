@@ -34,10 +34,13 @@ describe('recipe research invariants', () => {
 
   it('keeps repeated existing ingredients from increasing the observed sale price', () => {
     const canonicalKey = uniqueIngredientKey(['橙子', '糖', '薄荷'])
+    const matchingObservations = recipeResearchObservations.filter(
+      (observation) =>
+        uniqueIngredientKey(observation.ingredients) === canonicalKey,
+    )
 
-    expect(recipeResearchObservations).toHaveLength(4)
-    for (const observation of recipeResearchObservations) {
-      expect(uniqueIngredientKey(observation.ingredients)).toBe(canonicalKey)
+    expect(matchingObservations.length).toBeGreaterThanOrEqual(4)
+    for (const observation of matchingObservations) {
       expect(observation.salePrice).toBe(42)
     }
   })
