@@ -133,10 +133,7 @@ export function writeInventoryState(
 }
 
 
-function nextJuiceJarId(
-  jars: JuiceJarInventoryItem[],
-  reserved: Set<string>,
-): string {
+function nextJuiceJarId(reserved: Set<string>): string {
   let index = 1
   while (reserved.has(`jar-${index}`)) index += 1
   return `jar-${index}`
@@ -167,7 +164,7 @@ export function resizeJuiceJarInventory(
 
   const reserved = new Set(jars.map((jar) => jar.id))
   while (jars.length < finalCount) {
-    const id = nextJuiceJarId(jars, reserved)
+    const id = nextJuiceJarId(reserved)
     reserved.add(id)
     jars.push({ id, recipeId: null, servings: 0 })
   }
