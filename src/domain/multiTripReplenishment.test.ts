@@ -35,18 +35,18 @@ function demand(
       const recipeLeftovers = recipe.leftoverServings ?? 0
       const producedServings =
         recipe.assignedServings + recipeLeftovers
-      return ({
-      ...recipe,
-      leftoverServings: recipeLeftovers,
-      customerIds: Array.from(
-        { length: recipe.assignedServings },
-        (_, index) => `${recipe.recipeId}-customer-${index + 1}`,
-      ),
-      ingredientIds: [],
-      productionUnits: Math.ceil(producedServings / 2),
-      producedServings,
-      ingredientUnitsPerJuiceUnit: [],
-    })
+      return {
+        ...recipe,
+        leftoverServings: recipeLeftovers,
+        customerIds: Array.from(
+          { length: recipe.assignedServings },
+          (_, index) => `${recipe.recipeId}-customer-${index + 1}`,
+        ),
+        ingredientIds: [],
+        productionUnits: Math.ceil(producedServings / 2),
+        producedServings,
+        ingredientUnitsPerJuiceUnit: [],
+      }
     }),
   }
 }
@@ -59,14 +59,12 @@ function buildPlan(
     cleanCups: salesDemand.assignedServings,
     usedCups: 0,
   },
-  stationaryJuiceJarCount = 0,
 ): MultiTripReplenishmentPlan {
   return buildMultiTripReplenishmentPlanWithCups(
     salesDemand,
     policy,
     carriedJuiceJarCount,
     cups,
-    stationaryJuiceJarCount,
   )
 }
 
@@ -545,96 +543,6 @@ describe('multi-trip replenishment', () => {
     expectScheduleConsistency(result)
   })
 
-  it('uses rack-staged physical jars for leftover recipes that cannot all be terminal carried jars', () => {
-    const result = buildPlan(
-      demand([
-        {
-          recipeId: 'a',
-          recipeName: 'A',
-          assignedServings: 1,
-          leftoverServings: 1,
-        },
-        {
-          recipeId: 'b',
-          recipeName: 'B',
-          assignedServings: 1,
-          leftoverServings: 1,
-        },
-        {
-          recipeId: 'c',
-          recipeName: 'C',
-          assignedServings: 1,
-          leftoverServings: 1,
-        },
-      ]),
-      'retain-and-wash',
-      1,
-      { cleanCups: 3, usedCups: 0 },
-      2,
-    )
-
-    expect(result.jarTypeSwitches).toBe(2)
-    expect(result.totalLeftoverServings).toBe(3)
-    expect(result.leftoverJarContents).toEqual([
-      {
-        physicalJarId: 1,
-        recipeId: 'a',
-        recipeName: 'A',
-        servings: 1,
-        location: 'sales-trip',
-        tripNumber: 3,
-      },
-      {
-        physicalJarId: 2,
-        recipeId: 'b',
-        recipeName: 'B',
-        servings: 1,
-        location: 'jar-rack',
-        tripNumber: null,
-      },
-      {
-        physicalJarId: 3,
-        recipeId: 'c',
-        recipeName: 'C',
-        servings: 1,
-        location: 'jar-rack',
-        tripNumber: null,
-      },
-    ])
-    expectScheduleConsistency(result)
-  })
-
-  it('uses an otherwise unused carried jar to preserve leftover-only output', () => {
-    const result = buildPlan(
-      demand([
-        {
-          recipeId: 'a',
-          recipeName: 'A',
-          assignedServings: 2,
-        },
-        {
-          recipeId: 'b',
-          recipeName: 'B',
-          assignedServings: 0,
-          leftoverServings: 2,
-        },
-      ]),
-      'retain-and-wash',
-      2,
-    )
-
-    expect(result.physicalJarsUsed).toBe(1)
-    expect(result.leftoverJarContents).toContainEqual({
-      physicalJarId: 2,
-      recipeId: 'b',
-      recipeName: 'B',
-      servings: 2,
-      location: 'carried-reserve',
-      tripNumber: null,
-    })
-    expectScheduleConsistency(result)
-  })
-
   it('rejects a plan instead of silently losing leftovers when no physical jar can preserve them', () => {
     expect(() =>
       buildPlan(
@@ -657,7 +565,7 @@ describe('multi-trip replenishment', () => {
         { cleanCups: 2, usedCups: 0 },
       ),
     ).toThrow(
-      'Not enough physical juice jar capacity to preserve 1 leftover serving(s)',
+      'Not enough terminal sales-jar capacity to preserve 1 leftover serving(s) without switching away from retained juice',
     )
   })
 
@@ -685,7 +593,6 @@ describe('multi-trip replenishment', () => {
         totalAssignedServings: 0,
         totalLeftoverServings: 0,
         leftoverJarContents: [],
-        stationaryJuiceJarCount: 0,
         maxJuiceJarSlotsCarried: 0,
         cleanCupUnitsRequiredWithoutMiddayWashing: 0,
         reusableCleanCupPoolSize:
