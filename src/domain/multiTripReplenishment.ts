@@ -20,11 +20,27 @@ export interface MultiTripJuiceJarLoad {
   recipeId: string
   recipeName: string
   customerIds: string[]
+  /** Servings assigned to customers on this trip. */
   servings: number
+  /** Produced servings that remain in this jar after the assigned sales. */
+  retainedLeftoverServings: number
   slotCost: 1
   fillAction: JuiceJarFillAction
   previousRecipeId: string | null
   previousRecipeName: string | null
+}
+
+export interface MultiTripLeftoverJarContent {
+  /**
+   * Plan-local physical jar identity. Leftovers stay in this same whole jar;
+   * cross-jar liquid transfer and persistence to inventory IDs are deferred.
+   */
+  physicalJarId: number
+  recipeId: string
+  recipeName: string
+  servings: number
+  /** The trip whose sales load leaves these servings behind. */
+  tripNumber: number
 }
 
 export interface CupInventoryInput {
@@ -66,6 +82,8 @@ export interface MultiTripReplenishmentPlan {
   trips: MultiTripSalesTrip[]
   tripCount: number
   totalAssignedServings: number
+  totalLeftoverServings: number
+  leftoverJarContents: MultiTripLeftoverJarContent[]
   maxJuiceJarSlotsCarried: number
   cleanCupUnitsRequiredWithoutMiddayWashing: number
   reusableCleanCupPoolSize: number | null
@@ -91,6 +109,7 @@ interface RecipeJarDemand {
   recipeId: string
   recipeName: string
   servings: number
+  leftoverServings: number
   chunks: RecipeJarChunk[]
 }
 
@@ -146,6 +165,10 @@ function recipeJarDemands(
       recipeId: recipe.recipeId,
       recipeName: recipe.recipeName,
       servings: Math.max(0, Math.floor(recipe.assignedServings)),
+      leftoverServings: Math.max(
+        0,
+        Math.floor(recipe.leftoverServings),
+      ),
       chunks: splitCustomerServings(
         recipe.customerIds,
         recipe.assignedServings,
@@ -182,12 +205,22 @@ function appendRecipeChunks(
       recipeName: recipe.recipeName,
       customerIds: [...chunk.customerIds],
       servings: chunk.servings,
+      retainedLeftoverServings: 0,
       slotCost: JUICE_JAR_SLOT_COST,
       fillAction,
       previousRecipeId,
       previousRecipeName,
     })
   }
+}
+
+function queueLoadSort(a: JarQueue, b: JarQueue): number {
+  return (
+    a.loads.length - b.loads.length ||
+    a.loads.reduce((sum, load) => sum + load.servings, 0) -
+      b.loads.reduce((sum, load) => sum + load.servings, 0) ||
+    a.physicalJarId - b.physicalJarId
+  )
 }
 
 function buildJarQueuesWithSwitches(
@@ -202,26 +235,39 @@ function buildJarQueuesWithSwitches(
     }),
   )
 
-  recipes.forEach((recipe, index) => {
-    const target =
-      index < carriedJuiceJarCount
-        ? queues[index]
-        : [...queues].sort(
-            (a, b) =>
-              a.loads.length - b.loads.length ||
-              a.loads.reduce(
-                (sum, load) => sum + load.servings,
-                0,
-              ) -
-                b.loads.reduce(
-                  (sum, load) => sum + load.servings,
-                  0,
-                ) ||
-              a.physicalJarId - b.physicalJarId,
-          )[0]
+  const terminalRecipes = [...recipes]
+    .filter((recipe) => recipe.leftoverServings > 0)
+    .sort(
+      (a, b) =>
+        b.leftoverServings - a.leftoverServings ||
+        b.chunks.length - a.chunks.length ||
+        b.servings - a.servings ||
+        a.recipeName.localeCompare(b.recipeName, 'zh-Hant') ||
+        a.recipeId.localeCompare(b.recipeId),
+    )
+    .slice(0, carriedJuiceJarCount)
+  const terminalRecipeIds = new Set(
+    terminalRecipes.map((recipe) => recipe.recipeId),
+  )
 
+  for (const recipe of recipes.filter(
+    (item) => !terminalRecipeIds.has(item.recipeId),
+  )) {
+    const target = [...queues].sort(queueLoadSort)[0]
     appendRecipeChunks(target, recipe, recipe.chunks)
-  })
+  }
+
+  const availableTerminalQueues = [...queues]
+  for (const recipe of terminalRecipes) {
+    availableTerminalQueues.sort(queueLoadSort)
+    const target = availableTerminalQueues.shift()
+    if (!target) {
+      throw new Error(
+        'Leftover terminal jar allocation exceeded carried jar capacity',
+      )
+    }
+    appendRecipeChunks(target, recipe, recipe.chunks)
+  }
 
   return queues
 }
@@ -594,6 +640,130 @@ function buildTrips(
   }
 }
 
+function allocateLeftoverJarContents(
+  demand: PreparationDemand,
+  trips: MultiTripSalesTrip[],
+): MultiTripLeftoverJarContent[] {
+  const expectedTotal = demand.recipes.reduce(
+    (sum, recipe) =>
+      sum + Math.max(0, Math.floor(recipe.leftoverServings)),
+    0,
+  )
+  const normalizedDemandTotal = Math.max(
+    0,
+    Math.floor(demand.leftoverServings),
+  )
+  if (expectedTotal !== normalizedDemandTotal) {
+    throw new Error(
+      'Recipe leftover servings do not match total preparation leftovers',
+    )
+  }
+  if (expectedTotal === 0) return []
+
+  const lastSalesLoadByJar = new Map<
+    number,
+    {
+      trip: MultiTripSalesTrip
+      load: MultiTripJuiceJarLoad
+    }
+  >()
+  for (const trip of trips) {
+    for (const load of trip.juiceJars) {
+      lastSalesLoadByJar.set(load.physicalJarId, { trip, load })
+    }
+  }
+
+  const contents: MultiTripLeftoverJarContent[] = []
+  const remainingByRecipe = new Map(
+    demand.recipes
+      .map((recipe) => [
+        recipe.recipeId,
+        Math.max(0, Math.floor(recipe.leftoverServings)),
+      ] as const)
+      .filter(([, servings]) => servings > 0),
+  )
+
+  const finalSalesCandidates = [...lastSalesLoadByJar.values()]
+    .filter(({ load }) => {
+      const remaining = remainingByRecipe.get(load.recipeId) ?? 0
+      return (
+        remaining > 0 &&
+        load.servings + load.retainedLeftoverServings <
+          JUICE_JAR_CAPACITY
+      )
+    })
+    .sort(
+      (a, b) =>
+        (remainingByRecipe.get(b.load.recipeId) ?? 0) -
+          (remainingByRecipe.get(a.load.recipeId) ?? 0) ||
+        b.load.servings - a.load.servings ||
+        a.load.physicalJarId - b.load.physicalJarId,
+    )
+
+  for (const candidate of finalSalesCandidates) {
+    const recipeId = candidate.load.recipeId
+    const remaining = remainingByRecipe.get(recipeId) ?? 0
+    if (remaining <= 0) continue
+
+    const freeCapacity =
+      JUICE_JAR_CAPACITY -
+      candidate.load.servings -
+      candidate.load.retainedLeftoverServings
+    const retained = Math.min(remaining, freeCapacity)
+    if (retained <= 0) continue
+
+    candidate.load.retainedLeftoverServings += retained
+    remainingByRecipe.set(recipeId, remaining - retained)
+    contents.push({
+      physicalJarId: candidate.load.physicalJarId,
+      recipeId,
+      recipeName: candidate.load.recipeName,
+      servings: retained,
+      tripNumber: candidate.trip.tripNumber,
+    })
+  }
+
+  const unallocated = [...remainingByRecipe.values()].reduce(
+    (sum, servings) => sum + servings,
+    0,
+  )
+  if (unallocated > 0) {
+    throw new Error(
+      `Not enough terminal sales-jar capacity to preserve ${unallocated} leftover serving(s) without switching away from retained juice`,
+    )
+  }
+
+  const allocated = contents.reduce(
+    (sum, item) => sum + item.servings,
+    0,
+  )
+  if (allocated !== expectedTotal) {
+    throw new Error(
+      'Leftover jar allocation did not preserve every produced serving',
+    )
+  }
+
+  for (const trip of trips) {
+    for (const load of trip.juiceJars) {
+      if (
+        load.servings + load.retainedLeftoverServings >
+        JUICE_JAR_CAPACITY
+      ) {
+        throw new Error(
+          `Physical jar ${load.physicalJarId} exceeds juice capacity in trip ${trip.tripNumber}`,
+        )
+      }
+    }
+  }
+
+  return contents.sort(
+    (a, b) =>
+      a.physicalJarId - b.physicalJarId ||
+      a.recipeName.localeCompare(b.recipeName, 'zh-Hant') ||
+      a.recipeId.localeCompare(b.recipeId),
+  )
+}
+
 export function countJarTypeSwitchesFromSchedule(
   trips: MultiTripSalesTrip[],
 ): number {
@@ -728,6 +898,14 @@ export function buildMultiTripReplenishmentPlan(
       }
     },
   )
+  const leftoverJarContents = allocateLeftoverJarContents(
+    demand,
+    trips,
+  )
+  const totalLeftoverServings = leftoverJarContents.reduce(
+    (sum, item) => sum + item.servings,
+    0,
+  )
   const jarTypeSwitches =
     countJarTypeSwitchesFromSchedule(trips)
   const expectedMinimumSwitches = Math.max(
@@ -799,6 +977,8 @@ export function buildMultiTripReplenishmentPlan(
     trips,
     tripCount: trips.length,
     totalAssignedServings,
+    totalLeftoverServings,
+    leftoverJarContents,
     maxJuiceJarSlotsCarried: trips.reduce(
       (max, trip) =>
         Math.max(max, trip.juiceJarSlotsCarried),

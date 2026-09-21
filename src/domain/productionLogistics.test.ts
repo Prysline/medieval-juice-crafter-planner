@@ -235,6 +235,33 @@ describe('production logistics', () => {
     })
   })
 
+  it('does not use general shelf slots as juice-jar storage', () => {
+    const result = buildProductionLogisticsPlan(
+      shortfall(['lemon'], 1),
+      inventory({
+        ingredientUnits: { lemon: 1 },
+        waterUnits: 1,
+        shelfCount: 10,
+        jarRackCount: 0,
+      }),
+      settings({ carriedJuiceJarCount: 0 }),
+    )
+
+    expect(result.feasible).toBe(false)
+    expect(result.initialSnapshot).toMatchObject({
+      shelfSlotsAvailable: 90,
+      carriedOutputJarSlots: 0,
+      rackOutputJarSlots: 0,
+      outputJarReceiverSlots: 0,
+    })
+    expect(result.issues.join(' ')).toContain(
+      'finalizer output 沒有可接手的 physical juice jar',
+    )
+    expect(
+      result.actions.some((action) => action.kind === 'handoff-finished'),
+    ).toBe(false)
+  })
+
   it('does not treat empty jar-rack slots as physical jars', () => {
     const result = buildProductionLogisticsPlan(
       shortfall(['lemon'], 1),

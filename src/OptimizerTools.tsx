@@ -1149,7 +1149,7 @@ function SalesTripPlanBlock({
           </span>
         </div>
         <p>
-          實際使用 {plan.physicalJarsUsed} / {plan.carriedJuiceJarCount}{' '}
+          販售排程使用 {plan.physicalJarsUsed} / {plan.carriedJuiceJarCount}{' '}
           個常駐攜帶果汁罐；單趟最多帶出 {plan.maxJuiceJarSlotsCarried} 個。
         </p>
         <p>
@@ -1158,7 +1158,18 @@ function SalesTripPlanBlock({
           {' · '}結束實體杯 {plan.finalPhysicalCupCount}
           {plan.droppedUsedCups > 0 ? ' · 掉落 ' + plan.droppedUsedCups : ''}
         </p>
-        <small>{tripPolicyNote(plan)}</small>
+        <p>
+          販售後保留成品 {plan.totalLeftoverServings} 杯
+          {plan.totalLeftoverServings > 0
+            ? ' · 分布於 ' + plan.leftoverJarContents.length + ' 個 physical jar 記錄'
+            : ''}
+        </p>
+        <small>
+          {tripPolicyNote(plan)}
+          {plan.totalLeftoverServings > 0
+            ? ' 剩餘成品只會留在該 recipe 最後販售的同一 physical jar；目前只保存於本次 planner result，跨日寫回 inventory 仍待 Apply Plan。'
+            : ''}
+        </small>
       </article>
 
       {plan.trips.map((trip) => (
@@ -1198,8 +1209,12 @@ function SalesTripPlanBlock({
               }
             >
               <p>
-                果汁罐 {load.physicalJarId}：{load.recipeName} ×{load.servings}{' '}
-                杯 · {jarFillActionLabel(load)}
+                果汁罐 {load.physicalJarId}：{load.recipeName} · 販售 {load.servings}{' '}
+                杯
+                {load.retainedLeftoverServings > 0
+                  ? ' · 販售後保留 ' + load.retainedLeftoverServings + ' 杯'
+                  : ''}
+                {' · '}{jarFillActionLabel(load)}
               </p>
               <p>
                 完整符合顧客：{load.customerIds.map(customerLabel).join('、')}

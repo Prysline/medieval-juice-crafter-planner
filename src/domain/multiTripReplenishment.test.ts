@@ -12,10 +12,15 @@ function demand(
     recipeId: string
     recipeName: string
     assignedServings: number
+    leftoverServings?: number
   }>,
 ): PreparationDemand {
   const assignedServings = recipes.reduce(
     (sum, recipe) => sum + recipe.assignedServings,
+    0,
+  )
+  const leftoverServings = recipes.reduce(
+    (sum, recipe) => sum + (recipe.leftoverServings ?? 0),
     0,
   )
 
@@ -23,23 +28,26 @@ function demand(
     ingredients: [],
     productionWaterUnits: 0,
     cleanCupUses: assignedServings,
-    producedServings: assignedServings,
+    producedServings: assignedServings + leftoverServings,
     assignedServings,
-    leftoverServings: 0,
-    recipes: recipes.map((recipe) => ({
-      ...recipe,
-      customerIds: Array.from(
-        { length: recipe.assignedServings },
-        (_, index) => `${recipe.recipeId}-customer-${index + 1}`,
-      ),
-      ingredientIds: [],
-      productionUnits: Math.ceil(
-        recipe.assignedServings / 2,
-      ),
-      producedServings: recipe.assignedServings,
-      leftoverServings: 0,
-      ingredientUnitsPerJuiceUnit: [],
-    })),
+    leftoverServings,
+    recipes: recipes.map((recipe) => {
+      const recipeLeftovers = recipe.leftoverServings ?? 0
+      const producedServings =
+        recipe.assignedServings + recipeLeftovers
+      return {
+        ...recipe,
+        leftoverServings: recipeLeftovers,
+        customerIds: Array.from(
+          { length: recipe.assignedServings },
+          (_, index) => `${recipe.recipeId}-customer-${index + 1}`,
+        ),
+        ingredientIds: [],
+        productionUnits: Math.ceil(producedServings / 2),
+        producedServings,
+        ingredientUnitsPerJuiceUnit: [],
+      }
+    }),
   }
 }
 
@@ -106,6 +114,34 @@ function expectScheduleConsistency(
   expect(servedCustomerIds).toHaveLength(
     result.totalAssignedServings,
   )
+  expect(
+    result.leftoverJarContents.reduce(
+      (sum, item) => sum + item.servings,
+      0,
+    ),
+  ).toBe(result.totalLeftoverServings)
+  expect(
+    result.trips.every((trip) =>
+      trip.juiceJars.every(
+        (load) =>
+          load.servings + load.retainedLeftoverServings <= 10,
+      ),
+    ),
+  ).toBe(true)
+
+  for (const item of result.leftoverJarContents) {
+    const trip = result.trips.find(
+      (candidate) => candidate.tripNumber === item.tripNumber,
+    )
+    const load = trip?.juiceJars.find(
+      (candidate) =>
+        candidate.physicalJarId === item.physicalJarId &&
+        candidate.recipeId === item.recipeId,
+    )
+    expect(load?.retainedLeftoverServings).toBeGreaterThanOrEqual(
+      item.servings,
+    )
+  }
 }
 
 describe('multi-trip replenishment', () => {
@@ -426,6 +462,109 @@ describe('multi-trip replenishment', () => {
     )
   })
 
+  it('keeps a recipe leftover in the final sales jar', () => {
+    const result = buildPlan(
+      demand([
+        {
+          recipeId: 'sweet',
+          recipeName: '甜味果汁',
+          assignedServings: 3,
+          leftoverServings: 1,
+        },
+      ]),
+      'retain-and-wash',
+      1,
+    )
+
+    expect(result.totalAssignedServings).toBe(3)
+    expect(result.totalLeftoverServings).toBe(1)
+    expect(result.trips[0].juiceJars[0]).toMatchObject({
+      physicalJarId: 1,
+      recipeId: 'sweet',
+      servings: 3,
+      retainedLeftoverServings: 1,
+    })
+    expect(result.leftoverJarContents).toEqual([
+      {
+        physicalJarId: 1,
+        recipeId: 'sweet',
+        recipeName: '甜味果汁',
+        servings: 1,
+        tripNumber: 1,
+      },
+    ])
+    expectScheduleConsistency(result)
+  })
+
+  it('orders a leftover recipe last when that preserves it without an extra type switch', () => {
+    const result = buildPlan(
+      demand([
+        {
+          recipeId: 'a',
+          recipeName: 'A',
+          assignedServings: 1,
+          leftoverServings: 1,
+        },
+        {
+          recipeId: 'b',
+          recipeName: 'B',
+          assignedServings: 2,
+        },
+      ]),
+      'retain-and-wash',
+      1,
+    )
+
+    expect(result.jarTypeSwitches).toBe(1)
+    expect(
+      result.trips.flatMap((trip) =>
+        trip.juiceJars.map((load) => load.recipeId),
+      ),
+    ).toEqual(['b', 'a'])
+    const finalLoad = result.trips
+      .flatMap((trip) => trip.juiceJars)
+      .at(-1)
+    expect(finalLoad).toMatchObject({
+      physicalJarId: 1,
+      recipeId: 'a',
+      retainedLeftoverServings: 1,
+    })
+    expect(result.leftoverJarContents).toMatchObject([
+      {
+        physicalJarId: 1,
+        recipeId: 'a',
+        servings: 1,
+      },
+    ])
+    expectScheduleConsistency(result)
+  })
+
+  it('rejects a plan instead of silently losing leftovers when no physical jar can preserve them', () => {
+    expect(() =>
+      buildPlan(
+        demand([
+          {
+            recipeId: 'a',
+            recipeName: 'A',
+            assignedServings: 1,
+            leftoverServings: 1,
+          },
+          {
+            recipeId: 'b',
+            recipeName: 'B',
+            assignedServings: 1,
+            leftoverServings: 1,
+          },
+        ]),
+        'retain-and-wash',
+        1,
+        { cleanCups: 2, usedCups: 0 },
+      ),
+    ).toThrow(
+      'Not enough terminal sales-jar capacity to preserve 1 leftover serving(s) without switching away from retained juice',
+    )
+  })
+
   it.each<UsedCupTripPolicy>([
     'retain-and-wash',
     'allow-drop-if-full',
@@ -448,6 +587,8 @@ describe('multi-trip replenishment', () => {
         trips: [],
         tripCount: 0,
         totalAssignedServings: 0,
+        totalLeftoverServings: 0,
+        leftoverJarContents: [],
         maxJuiceJarSlotsCarried: 0,
         cleanCupUnitsRequiredWithoutMiddayWashing: 0,
         reusableCleanCupPoolSize:
