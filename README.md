@@ -19,7 +19,7 @@
 - 個人配方只保存自訂名稱、有序 ingredient IDs、備註與建立時間；effects、cost、equipment、matching 每次由目前 domain 重新計算。
 - 「批次規劃」已重構為 production optimizer：可依序指定主要／次要 lexicographic 目標，包含最低成本、最少浪費、最高已知銷售總額、最高已知毛利、最少機器操作與最少果汁罐換裝。Phase 1 結果資訊架構已完成：閱讀順序為 **規劃摘要 → 所需物資 → 製作步驟 → 果汁分配 → 販售排程**；水會以免費取得需求顯示。PR #33 後製作步驟以機器為獨立區塊，每次 1～5 份製作拆成各批 slot flow；原料／果汁／水／output 各自用膠囊顯示，`▸` 只代表配方內部順序，`→` 只代表加工／狀態轉換。
 - Core model correction 2B 已把 physical jar identity 接進多趟販售 schedule。Phase 2 capacity contract 也已完成：`mjc-inventory` 會保存一般架子數、果汁罐架數與每個 physical jar；`mjc-planner-settings` 另保存常駐攜帶果汁罐數與「接受背包滿時 used cup 可能掉落」opt-in。常駐攜帶罐會固定占背包 slot，ownership、carrying 與 jar-rack staging 不再混成同一個數字。
-- Inventory / packing D1～D4 與 Phase 4 cup lifecycle 已建立：`PreparationDemand` 消費 production-unit optimizer 結果，已有 stock offset、single-trip packing 與 physical-jar-aware multi-trip replenishment；販售排程現在會用玩家實際持有的 clean / used cups，逐杯追蹤 clean → used stack transition，不再固定預留 1 slot。PR #32 另把 optimizer `leftoverServings` 帶入 plan-local physical jar 結果：剩餘成品只能留在該 recipe 最後販售的同一果汁罐，不允許跨罐倒果汁；果汁罐只能整罐移動，居家放置只使用果汁罐架，不把一般架當果汁罐 storage。
+- Inventory / packing D1～D4 與 Phase 4 cup lifecycle 已建立：`PreparationDemand` 消費 production-unit optimizer 結果，已有 stock offset、single-trip packing 與 physical-jar-aware multi-trip replenishment；販售排程現在會用玩家實際持有的 clean / used cups，逐杯追蹤 clean → used stack transition，不再固定預留 1 slot。PR #32 先把 optimizer `leftoverServings` 保留在同一實體罐；PR #37 再把 sales schedule 的 plan-local 罐號改成 persistent `mjc-inventory` jar ID，並攜帶該罐規劃前的 `recipeId / servings` metadata。剩餘成品仍只能留在同一 physical jar，不允許跨罐倒果汁；果汁罐只能整罐移動，居家放置只使用果汁罐架，不把一般架當果汁罐 storage。
 - 特性同分時會先套用已確認的順序規則：**較晚加入原料所提供／最後貢獻的特性排序較高**；只有套用此規則後，cutoff 候選仍同分且最後貢獻位置相同時才保留 ambiguous，且 ambiguous computed candidate 不參與完全匹配推薦。
 - 舊版 `mjc-stage` / `mjc-satisfaction` localStorage 會保守遷移到新版進度資料。
 
@@ -75,7 +75,7 @@ src/
     productionLogistics.ts # stock-offset net production → backpack / shelf / machine / water / jar receiver trace
     purchaseSources.ts # 已知購買來源、最低價／同價保留 decision
     singleTripPacking.ts # 販售趟 finished-drink jars + clean cups 最小必要 slot / overflow
-    multiTripReplenishment.ts # physical jar schedule、多趟販售、常駐攜帶 jar slot 與杯具 policy
+    multiTripReplenishment.ts # persistent jar ID schedule、多趟販售、常駐攜帶 jar slot、leftover 與杯具 policy
     scheduleRouteReadiness.ts # 作息觀察 normalization 與 route-data blockers
   storage/
     plannerState.ts    # localStorage 讀寫、正式顧客與 legacy migration
@@ -208,7 +208,7 @@ used-cup handling 必須明確選 policy：
 
 Phase 2 也把「physical jar ownership」「常駐攜帶數」「jar-rack staging」拆開。常駐攜帶 `X` 個果汁罐時，**每一趟都固定占 X 個背包 slots**，即使某趟只有部分罐實際裝果汁；因此多帶空罐可能減少換裝，卻同時壓縮杯具／其他搬運空間。jar rack staging capacity 則獨立為 `jarRackCount × 5`。
 
-Core model correction 2B 已把 physical jar identity 接進 D4 schedule。每個 load 都記錄實際果汁罐編號、optimizer 已通過 full-match gate 的顧客 IDs，以及「首次裝填／補裝同種／換裝」狀態；同一 physical jar 在同一趟只會出現一次。當果汁種類多於**常駐攜帶罐數**時，新增果汁種類會串到既有 jar queue 上，讓 schedule 實際實現 `max(0, 果汁種類數 - 常駐攜帶罐數)` 的最低換裝數；當攜帶罐數足夠時，額外空罐可平行承擔同一種果汁的多個容量 10 load，而不製造假換裝。
+Core model correction 2B 已把 physical jar identity 接進 D4 schedule；Phase 5A / PR #37 再把原本的 plan-local 編號橋接到 persistent `InventoryState.juiceJars[].id`。在逐罐 UI 尚未實作前，常駐攜帶罐依 inventory 穩定順序取 effective count，兩種 used-cup policy 使用同一組 persistent jar identities；每個 plan 也保存這些罐規劃前的 `recipeId / servings` metadata。每個 load 仍記錄 optimizer 已通過 full-match gate 的顧客 IDs，以及「首次裝填／補裝同種／換裝」狀態；同一 physical jar 在同一趟只會出現一次。**5A 尚未讓初始罐內容影響第一次換裝計算**，這會留到 Phase 5B 與逐罐 carried selection 一起處理。
 
 販售 schedule 不重新計算喜好匹配，而是直接沿用 optimizer 的 customer → recipe full-match assignment，再依果汁罐容量把顧客切進對應 jar load；因此 UI 可以直接說明每一罐要服務哪些「完整符合」顧客。若 preparation demand 的 assigned servings 與 customer IDs 數量不一致，schedule 會拒絕產生。
 
@@ -235,10 +235,11 @@ Phase 4 已完成：
 1. 玩家實際持有的 `cleanCups + usedCups` 已成為販售排程的 hard physical constraint；沒有實體杯就不會產生正需求販售排程。
 2. 每趟逐杯追蹤 clean → used stack transition；`retain-and-wash` 不再固定預留 1 slot，而是依實際趟中峰值判斷是否需要拆趟。
 3. 跨趟重用只會清洗實際持有的 used cups，並記錄清洗杯數／用水；`allow-drop-if-full` 只在 NPC 回傳 used cup 當下無空位時記錄掉落，掉落杯不會被當成後續可用 storage。
-4. PR #32 已把 optimizer `leftoverServings` 帶入販售結果：leftover 會保留在該 recipe 最後販售的同一 plan-local physical jar；若同一罐無法在不換掉 retained juice 的前提下保存，planner 會明確判定不可行，不會默默丟失或轉移到別罐。這仍不是跨日 persistence。
+4. PR #32 已把 optimizer `leftoverServings` 帶入販售結果：leftover 會保留在該 recipe 最後販售的同一 physical jar；若同一罐無法在不換掉 retained juice 的前提下保存，planner 會明確判定不可行，不會默默丟失或轉移到別罐。
 5. PR #33 完成 planner readability / copy consistency：`▸` 無半形空白、顧客／配方／配方工具／批次規劃共用配方名稱與金額 formatter、製作步驟以 machine group + slot-flow pills 呈現。
 6. PR #35 完成靜謐噴泉配方研究同步：新增 4 筆 observed recipes；confirmed effect tie-break 改為「同分時較晚加入原料優先」；相同 unique ingredient set 的調味順序／重複既有原料不提高售價已鎖進 research regression，但 computed sale price 仍不推導。
-7. 下一個較大的 runtime 邊界仍是 Phase 5：完整 inventory UI、persistent jar contents 與 Apply Plan transaction；Phase 6 做 profiles。route optimizer 仍等待 travel time / location / service-window / shop-hours 資料。
+7. PR #37 完成 **Phase 5A persistent jar identity bridge**：sales schedule / leftover result 改用 persistent `mjc-inventory` jar IDs，並保存選中 carried jars 的初始 contents metadata；這沒有改變第一次換裝語意，也不寫回 inventory。
+8. 下一個 runtime target 是 **Phase 5B：Inventory UI + initial-content semantics**，包含逐罐檢視／編輯與明確選擇 carried jar identities，以及 initial pre-filled contents 對補裝／換裝／receiver 的影響。其後 **Phase 5C** 才做 Apply Plan transaction preview / atomic commit；Phase 6 做 profiles。route optimizer 仍等待 travel time / location / service-window / shop-hours 資料。
 
 
 ## Schedule / route readiness boundary
