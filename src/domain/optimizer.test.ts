@@ -253,6 +253,41 @@ describe('production optimizer', () => {
     expect(result.knownGrossProfit).toBe(-9)
   })
 
+  it('can prioritize fewer machine operations over lower ingredient cost', async () => {
+    const source = {
+      customers: [
+        customer('a', 'AB'),
+        customer('b', 'AB'),
+        customer('c', 'ABC'),
+      ],
+      candidates: [
+        recipe('ab', ['檸檬', '糖'], ['AB']),
+        recipe('abc', ['檸檬', '糖', '薄荷'], ['AB', 'ABC']),
+      ],
+    }
+
+    const cheapest = await optimizeBatchPlan(
+      request(['a', 'b', 'c'], 'minimum-cost'),
+      { source },
+    )
+    const fewerOperations = await optimizeBatchPlan(
+      {
+        ...request(['a', 'b', 'c'], 'minimum-cost'),
+        priorities: ['minimum-machine-operations', 'minimum-cost'],
+      },
+      { source },
+    )
+
+    expect(cheapest.totalIngredientCost).toBe(46)
+    expect(cheapest.recipePlans).toHaveLength(2)
+    expect(cheapest.machineOperations.total).toBe(5)
+
+    expect(fewerOperations.totalIngredientCost).toBe(60)
+    expect(fewerOperations.recipePlans).toHaveLength(1)
+    expect(fewerOperations.recipePlans[0].recipeId).toBe('abc')
+    expect(fewerOperations.machineOperations.total).toBe(4)
+  })
+
   it('enforces the maximum jar-switch constraint against recipe variety', async () => {
     const source = {
       customers: [
