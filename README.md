@@ -17,8 +17,8 @@
 - 配方仍顯示「1 份果汁基準單位」的原料成本與單杯原料成本；果汁成品台 1 份果汁可產出 2 杯，但實際一次機器操作可處理 1～5 份，不再把「2 杯」視為一次固定製作批次。
 - 「配方工具」已改為 ordered sequence builder：點原料直接 append，可重複調味、四原料以上、逐項刪除／清空；observed 精確序列優先，否則顯示 computed / ambiguity。
 - 個人配方只保存自訂名稱、有序 ingredient IDs、備註與建立時間；effects、cost、equipment、matching 每次由目前 domain 重新計算。
-- 「批次規劃」已重構為 production optimizer：可依序指定主要／次要 lexicographic 目標，包含最低成本、最少浪費、最高已知銷售總額、最高已知毛利、最少機器操作與最少果汁罐換裝；結果按最終果汁分組顧客，並顯示共享中間半成品、1～5 份 stack 操作、原料清單、收入／毛利與 unresolved 顧客。
-- Core model correction 2B 已把可用 physical jar 數接進多趟販售 schedule；UI 會分開顯示「保留杯具並回家清洗」與「接受背包滿時 used cup 可能掉落」兩種 policy 的販售趟數與逐罐排程。現行 `retain-and-wash` 的固定 1-slot 預留仍是 approximation，後續會改成實際 clean / used cup lifecycle。
+- 「批次規劃」已重構為 production optimizer：可依序指定主要／次要 lexicographic 目標，包含最低成本、最少浪費、最高已知銷售總額、最高已知毛利、最少機器操作與最少果汁罐換裝。Phase 1 結果資訊架構已完成：閱讀順序為 **規劃摘要 → 所需物資 → 製作步驟 → 果汁分配 → 販售排程**；水會以免費取得需求顯示，製作步驟按機器分組並拆出 machine slots / 每次 1～5 份操作。
+- Core model correction 2B 已把可用 physical jar 數接進多趟販售 schedule；Phase 1 UI 預設顯示「保留杯具並回家清洗」，「接受背包滿時 used cup 可能掉落」改為可展開比較，不再重複並排兩套排程。現行 `retain-and-wash` 的固定 1-slot 預留仍是 approximation，後續會改成實際 clean / used cup lifecycle。
 - Inventory / packing D1～D4 已建立：`mjc-inventory` 保存原料、水、杯具與果汁罐狀態；`PreparationDemand` 消費 production-unit optimizer 結果，並已有 stock offset、single-trip packing 與 multi-trip replenishment。
 - 預測若在 effect cutoff 出現未確認同分 tie，會明確標示 ambiguous，且不參與完全匹配推薦。
 - 舊版 `mjc-stage` / `mjc-satisfaction` localStorage 會保守遷移到新版進度資料。
@@ -213,16 +213,22 @@ trip grouping 仍是 deterministic capacity-first feasible planning；它目標�
 
 ## Next planner corrections
 
-下一輪 active plan 不先做 route optimizer，而是先把目前 quantity-level planner 補成可執行的 physical logistics：
+Phase 1｜Planner result information architecture 已於 PR #22 完成：
 
-1. 結果閱讀順序改成 **規劃摘要 → 所需物資 → 製作步驟 → 果汁分配 → 販售排程**；水即使免費也要出現在所需物資，而不是因不需購買就消失。
-2. 製作步驟按機器分組；配方內部順序使用 `▸`，實際加工／轉換使用 `→`。
-3. `mjc-inventory` 補一般架子數、果汁罐架數、實際杯具／果汁罐持有狀態，以及「物品欄常駐 X 個果汁罐」planner setting。
-4. 建立 **背包 ↔ 一般架子 ↔ machine input/output slots** 的 production-logistics 可行性模型；三者不能簡單相加成總 slot。
-5. 把取水納入搬運：水源有距離、取得量受當下背包空間限制，可搬回一般架子後再製作。
-6. 用實際 clean / used cup stack transition 取代固定「預留 1 slot」approximation；「接受背包滿時 used cup 掉落」預設應為 opt-in。
-7. Blender 1:1:1 quantity model 接入 production graph。
-8. 後續再加入 inventory UI、套用規劃 transaction preview，以及多 profile 保存主線進度／顧客／倉儲狀態。
+- 結果順序已改為 **規劃摘要 → 所需物資 → 製作步驟 → 果汁分配 → 販售排程**。
+- 水即使免費也會顯示需求／現有／需取得與背包 slot impact。
+- 製作步驟已按機器分組；配方內部順序使用 `▸`，實際加工／轉換使用 `→`；machine slots 與每次實際 1～5 份操作拆開顯示。
+- used-cup policy 改為主要策略 + 可展開替代比較，並明確標示現行 approximation。
+- Blender 1:1:1、q = 1～5 已確認；目前缺的是 automatic production graph 的 blending edge，不再把 quantity model 視為未知。
+
+接下來仍不先做 route optimizer，而是依序處理：
+
+1. `mjc-inventory` 補一般架子數、果汁罐架數、實際杯具／果汁罐持有狀態，以及「物品欄常駐 X 個果汁罐」planner setting。
+2. 建立 **背包 ↔ 一般架子 ↔ machine input/output slots** 的 production-logistics 可行性模型；三者不能簡單相加成總 slot。
+3. 把取水納入搬運：水源有距離、取得量受當下背包空間限制，可搬回一般架子後再製作。
+4. 用實際 clean / used cup stack transition 取代固定「預留 1 slot」approximation；「接受背包滿時 used cup 掉落」預設應為 opt-in。
+5. 把 Blender 1:1:1 quantity model 正式接入 production graph。
+6. 後續再加入 inventory UI、套用規劃 transaction preview，以及多 profile 保存主線進度／顧客／倉儲狀態。
 
 
 ## Schedule / route readiness boundary
