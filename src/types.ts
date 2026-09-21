@@ -183,3 +183,20 @@ export interface RecipeSequenceEvaluationFailure {
 export type RecipeSequenceEvaluation =
   | RecipeSequenceEvaluationSuccess
   | RecipeSequenceEvaluationFailure
+
+
+export interface JuiceJarInventoryItem {
+  id: string
+  /** null 代表空罐；非空罐只保存單一 recipe identity。 */
+  recipeId: string | null
+  servings: number
+}
+
+export interface InventoryState {
+  /** 只保存數量，不在 D1 假設一般原料 stack size。 */
+  ingredientUnits: Record<string, number>
+  waterUnits: number
+  cleanCups: number
+  usedCups: number
+  juiceJars: JuiceJarInventoryItem[]
+}
