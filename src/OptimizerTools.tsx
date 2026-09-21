@@ -432,6 +432,9 @@ export default function OptimizerTools({
       const preparationShortfall = buildPreparationShortfall(
         preparationDemand,
         inventoryState,
+        {
+          finishedJuiceJarIds: carriedJuiceJars.map((jar) => jar.id),
+        },
       )
       const productionLogistics = buildProductionLogisticsPlan(
         preparationShortfall,
