@@ -33,7 +33,10 @@ export interface MultiTripJuiceJarLoad {
 export type LeftoverJarLocation = 'sales-trip'
 
 export interface MultiTripLeftoverJarContent {
-  /** Plan-local physical jar identity; persistence to inventory IDs is deferred. */
+  /**
+   * Plan-local physical jar identity. Leftovers stay in this same whole jar;
+   * cross-jar liquid transfer and persistence to inventory IDs are deferred.
+   */
   physicalJarId: number
   recipeId: string
   recipeName: string
