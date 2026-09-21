@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { InventoryState } from '../types'
 import {
   DEFAULT_PLANNER_SETTINGS,
   PLANNER_SETTINGS_STORAGE_KEY,
@@ -19,8 +20,24 @@ class MemoryStorage {
   }
 }
 
+function inventory(ids: string[]): InventoryState {
+  return {
+    ingredientUnits: {},
+    waterUnits: 0,
+    cleanCups: 0,
+    usedCups: 0,
+    juiceJars: ids.map((id) => ({
+      id,
+      recipeId: null,
+      servings: 0,
+    })),
+    shelfCount: 0,
+    jarRackCount: 0,
+  }
+}
+
 describe('planner settings storage', () => {
-  it('defaults to zero carried jars and drop opt-in disabled', () => {
+  it('defaults to no carried jars and drop opt-in disabled', () => {
     const storage = new MemoryStorage()
     expect(readPlannerSettings(storage)).toEqual(
       DEFAULT_PLANNER_SETTINGS,
@@ -32,34 +49,69 @@ describe('planner settings storage', () => {
     )
   })
 
-  it('normalizes counts and only enables drop policy explicitly', () => {
+  it('normalizes unique persistent jar IDs and explicit drop policy', () => {
     expect(
       normalizePlannerSettings({
-        carriedJuiceJarCount: 3.8,
+        carriedJuiceJarIds: [
+          ' jar-2 ',
+          'jar-2',
+          '',
+          3,
+          'jar-1',
+        ],
         allowUsedCupDropIfFull: true,
       }),
     ).toEqual({
-      carriedJuiceJarCount: 3,
+      carriedJuiceJarIds: ['jar-2', 'jar-1'],
       allowUsedCupDropIfFull: true,
     })
 
     expect(
       normalizePlannerSettings({
-        carriedJuiceJarCount: -4,
+        carriedJuiceJarIds: 'jar-1',
         allowUsedCupDropIfFull: 'yes',
       }),
     ).toEqual(DEFAULT_PLANNER_SETTINGS)
   })
 
-  it('round-trips normalized settings', () => {
+  it('migrates legacy carried count using stable inventory order', () => {
+    const storage = new MemoryStorage()
+    storage.setItem(
+      PLANNER_SETTINGS_STORAGE_KEY,
+      JSON.stringify({
+        carriedJuiceJarCount: 2.9,
+        allowUsedCupDropIfFull: true,
+      }),
+    )
+
+    expect(
+      readPlannerSettings(
+        storage,
+        inventory(['owned-a', 'owned-b', 'owned-c']),
+      ),
+    ).toEqual({
+      carriedJuiceJarIds: ['owned-a', 'owned-b'],
+      allowUsedCupDropIfFull: true,
+    })
+    expect(
+      JSON.parse(
+        storage.getItem(PLANNER_SETTINGS_STORAGE_KEY) ?? '{}',
+      ),
+    ).toEqual({
+      carriedJuiceJarIds: ['owned-a', 'owned-b'],
+      allowUsedCupDropIfFull: true,
+    })
+  })
+
+  it('round-trips canonical ID settings', () => {
     const storage = new MemoryStorage()
     writePlannerSettings(storage, {
-      carriedJuiceJarCount: 2.9,
+      carriedJuiceJarIds: ['jar-2', 'jar-1', 'jar-2'],
       allowUsedCupDropIfFull: true,
     })
 
     expect(readPlannerSettings(storage)).toEqual({
-      carriedJuiceJarCount: 2,
+      carriedJuiceJarIds: ['jar-2', 'jar-1'],
       allowUsedCupDropIfFull: true,
     })
   })

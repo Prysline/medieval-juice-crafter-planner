@@ -29,18 +29,11 @@ export function selectCarriedJuiceJars(
   inventory: InventoryState,
   settings: PlannerSettings,
 ): JuiceJarInventoryItem[] {
-  const requestedCarriedJuiceJarCount = Math.max(
-    0,
-    Math.floor(settings.carriedJuiceJarCount),
-  )
-  const effectiveCarriedJuiceJarCount = Math.min(
-    requestedCarriedJuiceJarCount,
-    inventory.juiceJars.length,
-    BACKPACK_SLOT_CAPACITY,
-  )
+  const selectedIds = new Set(settings.carriedJuiceJarIds)
 
   return inventory.juiceJars
-    .slice(0, effectiveCarriedJuiceJarCount)
+    .filter((jar) => selectedIds.has(jar.id))
+    .slice(0, BACKPACK_SLOT_CAPACITY)
     .map((jar) => ({ ...jar }))
 }
 
@@ -49,10 +42,8 @@ export function buildInventoryCapacitySummary(
   settings: PlannerSettings,
 ): InventoryCapacitySummary {
   const physicalJuiceJarCount = inventory.juiceJars.length
-  const requestedCarriedJuiceJarCount = Math.max(
-    0,
-    Math.floor(settings.carriedJuiceJarCount),
-  )
+  const requestedCarriedJuiceJarCount =
+    new Set(settings.carriedJuiceJarIds).size
   const carriedJuiceJars = selectCarriedJuiceJars(
     inventory,
     settings,
@@ -78,6 +69,6 @@ export function buildInventoryCapacitySummary(
     backpackSlotsRemainingAfterCarriedJars:
       BACKPACK_SLOT_CAPACITY - carriedJarSlotCost,
     carriedJarRequestExceedsOwned:
-      requestedCarriedJuiceJarCount > physicalJuiceJarCount,
+      effectiveCarriedJuiceJarCount < requestedCarriedJuiceJarCount,
   }
 }

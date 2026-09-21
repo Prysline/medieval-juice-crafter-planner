@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { customers } from './data/customers'
 import { ingredients } from './data/ingredients'
 import { recipes } from './data/recipes'
+import { generateRecipeCandidates } from './domain/recipeGenerator'
 import {
   optimizerCustomerIds,
   optimizerCustomerLabel,
@@ -192,7 +193,7 @@ export default function OptimizerTools({
     readInventoryState(window.localStorage),
   )
   const [plannerSettings, setPlannerSettings] = useState<PlannerSettings>(() =>
-    readPlannerSettings(window.localStorage),
+    readPlannerSettings(window.localStorage, inventoryState),
   )
   const [maxJarTypeSwitches, setMaxJarTypeSwitches] = useState('')
   const [runState, setRunState] = useState<OptimizerRunState>({
@@ -202,6 +203,16 @@ export default function OptimizerTools({
   const priorities = useMemo(
     () => uniquePriorities(primaryCriterion, secondaryOne, secondaryTwo),
     [primaryCriterion, secondaryOne, secondaryTwo],
+  )
+
+  const inventoryRecipeCandidates = useMemo(
+    () =>
+      generateRecipeCandidates(currentProgress).sort(
+        (a, b) =>
+          a.name.localeCompare(b.name, 'zh-Hant') ||
+          a.id.localeCompare(b.id),
+      ),
+    [currentProgress],
   )
 
   const carriedJuiceJars = useMemo(
@@ -228,15 +239,109 @@ export default function OptimizerTools({
     const nextInventory = resizeJuiceJarInventory(inventoryState, count)
     persistInventory(nextInventory)
 
+    const ownedIds = new Set(
+      nextInventory.juiceJars.map((jar) => jar.id),
+    )
+    const nextCarriedIds = plannerSettings.carriedJuiceJarIds.filter(
+      (id) => ownedIds.has(id),
+    )
     if (
-      plannerSettings.carriedJuiceJarCount >
-      nextInventory.juiceJars.length
+      nextCarriedIds.length !==
+      plannerSettings.carriedJuiceJarIds.length
     ) {
       persistPlannerSettings({
         ...plannerSettings,
-        carriedJuiceJarCount: nextInventory.juiceJars.length,
+        carriedJuiceJarIds: nextCarriedIds,
       })
     }
+  }
+
+  function setIngredientInventory(
+    ingredientId: string,
+    quantity: number,
+  ) {
+    const nextUnits = { ...inventoryState.ingredientUnits }
+    const normalized = Math.max(0, Math.floor(quantity))
+    if (normalized === 0) {
+      delete nextUnits[ingredientId]
+    } else {
+      nextUnits[ingredientId] = normalized
+    }
+    persistInventory({
+      ...inventoryState,
+      ingredientUnits: nextUnits,
+    })
+  }
+
+  function updateJuiceJar(
+    jarId: string,
+    update: (jar: InventoryState['juiceJars'][number]) =>
+      InventoryState['juiceJars'][number],
+  ) {
+    persistInventory({
+      ...inventoryState,
+      juiceJars: inventoryState.juiceJars.map((jar) =>
+        jar.id === jarId ? update(jar) : jar,
+      ),
+    })
+  }
+
+  function setJuiceJarRecipe(
+    jarId: string,
+    recipeId: string,
+  ) {
+    updateJuiceJar(jarId, (jar) =>
+      recipeId
+        ? {
+            ...jar,
+            recipeId,
+            servings: Math.max(1, jar.servings),
+          }
+        : {
+            ...jar,
+            recipeId: null,
+            servings: 0,
+          },
+    )
+  }
+
+  function setJuiceJarServings(
+    jarId: string,
+    servings: number,
+  ) {
+    const normalized = Math.min(
+      10,
+      Math.max(0, Math.floor(servings)),
+    )
+    updateJuiceJar(jarId, (jar) =>
+      normalized === 0
+        ? { ...jar, recipeId: null, servings: 0 }
+        : { ...jar, servings: normalized },
+    )
+  }
+
+  function toggleCarriedJuiceJar(
+    jarId: string,
+    checked: boolean,
+  ) {
+    const selected = new Set(
+      plannerSettings.carriedJuiceJarIds.filter((id) =>
+        inventoryState.juiceJars.some((jar) => jar.id === id),
+      ),
+    )
+    if (checked) {
+      if (selected.size >= 10) return
+      selected.add(jarId)
+    } else {
+      selected.delete(jarId)
+    }
+
+    persistPlannerSettings({
+      ...plannerSettings,
+      carriedJuiceJarIds: inventoryState.juiceJars
+        .filter((jar) => selected.has(jar.id))
+        .map((jar) => jar.id),
+    })
   }
 
   const customerIds = useMemo(
@@ -490,82 +595,6 @@ export default function OptimizerTools({
             onChange={setSecondaryTwo}
           />
 
-          <label>
-            <span>實際持有果汁罐</span>
-            <input
-              type="number"
-              inputMode="numeric"
-              min={0}
-              value={inventoryState.juiceJars.length}
-              onChange={(event) =>
-                setPhysicalJuiceJarCount(
-                  Math.max(0, Math.floor(Number(event.target.value) || 0)),
-                )
-              }
-            />
-          </label>
-
-          <label>
-            <span>常駐攜帶果汁罐</span>
-            <input
-              type="number"
-              inputMode="numeric"
-              min={0}
-              max={inventoryState.juiceJars.length}
-              value={plannerSettings.carriedJuiceJarCount}
-              onChange={(event) =>
-                persistPlannerSettings({
-                  ...plannerSettings,
-                  carriedJuiceJarCount: Math.min(
-                    inventoryState.juiceJars.length,
-                    Math.max(
-                      0,
-                      Math.floor(Number(event.target.value) || 0),
-                    ),
-                  ),
-                })
-              }
-            />
-          </label>
-
-          <label>
-            <span>一般架子數</span>
-            <input
-              type="number"
-              inputMode="numeric"
-              min={0}
-              value={inventoryState.shelfCount}
-              onChange={(event) =>
-                persistInventory({
-                  ...inventoryState,
-                  shelfCount: Math.max(
-                    0,
-                    Math.floor(Number(event.target.value) || 0),
-                  ),
-                })
-              }
-            />
-          </label>
-
-          <label>
-            <span>果汁罐架數</span>
-            <input
-              type="number"
-              inputMode="numeric"
-              min={0}
-              value={inventoryState.jarRackCount}
-              onChange={(event) =>
-                persistInventory({
-                  ...inventoryState,
-                  jarRackCount: Math.max(
-                    0,
-                    Math.floor(Number(event.target.value) || 0),
-                  ),
-                })
-              }
-            />
-          </label>
-
           <label className="optimizer-checkbox-control">
             <input
               type="checkbox"
@@ -592,6 +621,238 @@ export default function OptimizerTools({
             />
           </label>
         </div>
+
+        <section className="optimizer-inventory-editor">
+          <div className="section-title">
+            <strong>實際庫存</strong>
+            <span>直接保存到 mjc-inventory；果汁罐攜帶選擇保存到 planner settings</span>
+          </div>
+
+          <div className="optimizer-inventory-grid">
+            <label>
+              <span>水</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={0}
+                value={inventoryState.waterUnits}
+                onChange={(event) =>
+                  persistInventory({
+                    ...inventoryState,
+                    waterUnits: Math.max(
+                      0,
+                      Math.floor(Number(event.target.value) || 0),
+                    ),
+                  })
+                }
+              />
+            </label>
+            <label>
+              <span>乾淨杯</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={0}
+                value={inventoryState.cleanCups}
+                onChange={(event) =>
+                  persistInventory({
+                    ...inventoryState,
+                    cleanCups: Math.max(
+                      0,
+                      Math.floor(Number(event.target.value) || 0),
+                    ),
+                  })
+                }
+              />
+            </label>
+            <label>
+              <span>用過的杯子</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={0}
+                value={inventoryState.usedCups}
+                onChange={(event) =>
+                  persistInventory({
+                    ...inventoryState,
+                    usedCups: Math.max(
+                      0,
+                      Math.floor(Number(event.target.value) || 0),
+                    ),
+                  })
+                }
+              />
+            </label>
+            <label>
+              <span>一般架子</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={0}
+                value={inventoryState.shelfCount}
+                onChange={(event) =>
+                  persistInventory({
+                    ...inventoryState,
+                    shelfCount: Math.max(
+                      0,
+                      Math.floor(Number(event.target.value) || 0),
+                    ),
+                  })
+                }
+              />
+            </label>
+            <label>
+              <span>果汁罐架</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={0}
+                value={inventoryState.jarRackCount}
+                onChange={(event) =>
+                  persistInventory({
+                    ...inventoryState,
+                    jarRackCount: Math.max(
+                      0,
+                      Math.floor(Number(event.target.value) || 0),
+                    ),
+                  })
+                }
+              />
+            </label>
+            <label>
+              <span>實際持有果汁罐</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={0}
+                value={inventoryState.juiceJars.length}
+                onChange={(event) =>
+                  setPhysicalJuiceJarCount(
+                    Math.max(
+                      0,
+                      Math.floor(Number(event.target.value) || 0),
+                    ),
+                  )
+                }
+              />
+            </label>
+          </div>
+
+          <div className="optimizer-inventory-subsection">
+            <strong>原料庫存</strong>
+            <div className="optimizer-ingredient-inventory">
+              {ingredients.map((ingredient) => (
+                <label key={ingredient.id}>
+                  <span>{ingredient.name}</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    value={inventoryState.ingredientUnits[ingredient.id] ?? 0}
+                    onChange={(event) =>
+                      setIngredientInventory(
+                        ingredient.id,
+                        Number(event.target.value) || 0,
+                      )
+                    }
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="optimizer-inventory-subsection">
+            <div className="optimizer-inventory-subheading">
+              <strong>果汁罐</strong>
+              <span>
+                常駐攜帶 {capacitySummary.effectiveCarriedJuiceJarCount} / 10
+              </span>
+            </div>
+            {inventoryState.juiceJars.length === 0 ? (
+              <p className="optimizer-inventory-empty">
+                目前沒有 physical juice jar。
+              </p>
+            ) : (
+              <div className="optimizer-jar-inventory">
+                {inventoryState.juiceJars.map((jar) => {
+                  const carried =
+                    capacitySummary.carriedJuiceJarIds.includes(jar.id)
+                  const knownCurrentRecipe =
+                    inventoryRecipeCandidates.some(
+                      (candidate) => candidate.id === jar.recipeId,
+                    )
+
+                  return (
+                    <article className="optimizer-jar-card" key={jar.id}>
+                      <div className="optimizer-jar-heading">
+                        <strong>{jar.id}</strong>
+                        <label className="optimizer-jar-carry-toggle">
+                          <input
+                            type="checkbox"
+                            checked={carried}
+                            disabled={
+                              !carried &&
+                              capacitySummary.effectiveCarriedJuiceJarCount >=
+                                10
+                            }
+                            onChange={(event) =>
+                              toggleCarriedJuiceJar(
+                                jar.id,
+                                event.target.checked,
+                              )
+                            }
+                          />
+                          <span>常駐攜帶</span>
+                        </label>
+                      </div>
+                      <label>
+                        <span>內容</span>
+                        <select
+                          value={jar.recipeId ?? ''}
+                          onChange={(event) =>
+                            setJuiceJarRecipe(jar.id, event.target.value)
+                          }
+                        >
+                          <option value="">空罐</option>
+                          {jar.recipeId && !knownCurrentRecipe ? (
+                            <option value={jar.recipeId}>
+                              既有內容：{jar.recipeId}
+                            </option>
+                          ) : null}
+                          {inventoryRecipeCandidates.map((candidate) => (
+                            <option value={candidate.id} key={candidate.id}>
+                              {formatRecipeDisplayName(candidate.name)}
+                              {candidate.source === 'computed'
+                                ? '（預測配方）'
+                                : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        <span>杯數</span>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          min={jar.recipeId ? 1 : 0}
+                          max={10}
+                          disabled={!jar.recipeId}
+                          value={jar.servings}
+                          onChange={(event) =>
+                            setJuiceJarServings(
+                              jar.id,
+                              Number(event.target.value) || 0,
+                            )
+                          }
+                        />
+                      </label>
+                    </article>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </section>
 
         <div className="optimizer-demand-summary">
           <strong>本次需求：{customerIds.length} 人</strong>
