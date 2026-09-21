@@ -19,7 +19,19 @@ import type {
   MultiTripReplenishmentPlan,
 } from './domain/multiTripReplenishment'
 import type { PreparationShortfall } from './domain/preparationShortfall'
+import { buildInventoryCapacitySummary } from './domain/inventoryCapacity'
+import {
+  readInventoryState,
+  resizeJuiceJarInventory,
+  writeInventoryState,
+} from './storage/inventoryState'
+import {
+  readPlannerSettings,
+  writePlannerSettings,
+} from './storage/plannerSettings'
 import type {
+  InventoryState,
+  PlannerSettings,
   ProgressMilestoneId,
   SatisfactionByVillage,
 } from './types'
@@ -143,7 +155,12 @@ export default function OptimizerTools({
     useState<OptionalCriterion>('none')
   const [secondaryTwo, setSecondaryTwo] =
     useState<OptionalCriterion>('none')
-  const [availableJuiceJarCount, setAvailableJuiceJarCount] = useState(1)
+  const [inventoryState, setInventoryState] = useState<InventoryState>(() =>
+    readInventoryState(window.localStorage),
+  )
+  const [plannerSettings, setPlannerSettings] = useState<PlannerSettings>(() =>
+    readPlannerSettings(window.localStorage),
+  )
   const [maxJarTypeSwitches, setMaxJarTypeSwitches] = useState('')
   const [runState, setRunState] = useState<OptimizerRunState>({
     status: 'idle',
@@ -153,6 +170,36 @@ export default function OptimizerTools({
     () => uniquePriorities(primaryCriterion, secondaryOne, secondaryTwo),
     [primaryCriterion, secondaryOne, secondaryTwo],
   )
+
+  const capacitySummary = useMemo(
+    () => buildInventoryCapacitySummary(inventoryState, plannerSettings),
+    [inventoryState, plannerSettings],
+  )
+
+  function persistInventory(next: InventoryState) {
+    setInventoryState(next)
+    writeInventoryState(window.localStorage, next)
+  }
+
+  function persistPlannerSettings(next: PlannerSettings) {
+    setPlannerSettings(next)
+    writePlannerSettings(window.localStorage, next)
+  }
+
+  function setPhysicalJuiceJarCount(count: number) {
+    const nextInventory = resizeJuiceJarInventory(inventoryState, count)
+    persistInventory(nextInventory)
+
+    if (
+      plannerSettings.carriedJuiceJarCount >
+      nextInventory.juiceJars.length
+    ) {
+      persistPlannerSettings({
+        ...plannerSettings,
+        carriedJuiceJarCount: nextInventory.juiceJars.length,
+      })
+    }
+  }
 
   const customerIds = useMemo(
     () =>
@@ -183,7 +230,8 @@ export default function OptimizerTools({
     scope,
     candidatePolicy,
     priorities,
-    availableJuiceJarCount,
+    inventoryState,
+    plannerSettings,
     maxJarTypeSwitches,
   ])
 
@@ -196,18 +244,22 @@ export default function OptimizerTools({
         { buildPreparationDemand },
         { buildPreparationShortfall },
         { buildMultiTripReplenishmentPlan },
-        { readInventoryState },
       ] = await Promise.all([
         import('./domain/optimizer'),
         import('./domain/preparationDemand'),
         import('./domain/preparationShortfall'),
         import('./domain/multiTripReplenishment'),
-        import('./storage/inventoryState'),
       ])
       const parsedMaxSwitches =
         maxJarTypeSwitches.trim() === ''
           ? undefined
           : Math.max(0, Math.floor(Number(maxJarTypeSwitches)))
+
+      if (capacitySummary.effectiveCarriedJuiceJarCount < 1) {
+        throw new Error(
+          '請先設定至少 1 個實際持有且常駐攜帶的果汁罐。',
+        )
+      }
 
       const result = await optimizeBatchPlan({
         customerIds,
@@ -222,7 +274,8 @@ export default function OptimizerTools({
             ? 'minimum-cost'
             : primaryCriterion,
         priorities,
-        availableJuiceJarCount,
+        availableJuiceJarCount:
+          capacitySummary.effectiveCarriedJuiceJarCount,
         constraints:
           parsedMaxSwitches === undefined ||
           !Number.isFinite(parsedMaxSwitches)
@@ -231,7 +284,6 @@ export default function OptimizerTools({
       })
 
       const preparationDemand = buildPreparationDemand(result)
-      const inventoryState = readInventoryState(window.localStorage)
       const preparationShortfall = buildPreparationShortfall(
         preparationDemand,
         inventoryState,
@@ -364,18 +416,93 @@ export default function OptimizerTools({
           />
 
           <label>
-            <span>可用果汁罐</span>
+            <span>實際持有果汁罐</span>
             <input
               type="number"
               inputMode="numeric"
-              min={1}
-              value={availableJuiceJarCount}
+              min={0}
+              value={inventoryState.juiceJars.length}
               onChange={(event) =>
-                setAvailableJuiceJarCount(
-                  Math.max(1, Math.floor(Number(event.target.value) || 1)),
+                setPhysicalJuiceJarCount(
+                  Math.max(0, Math.floor(Number(event.target.value) || 0)),
                 )
               }
             />
+          </label>
+
+          <label>
+            <span>常駐攜帶果汁罐</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={0}
+              max={inventoryState.juiceJars.length}
+              value={plannerSettings.carriedJuiceJarCount}
+              onChange={(event) =>
+                persistPlannerSettings({
+                  ...plannerSettings,
+                  carriedJuiceJarCount: Math.min(
+                    inventoryState.juiceJars.length,
+                    Math.max(
+                      0,
+                      Math.floor(Number(event.target.value) || 0),
+                    ),
+                  ),
+                })
+              }
+            />
+          </label>
+
+          <label>
+            <span>一般架子數</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={0}
+              value={inventoryState.shelfCount}
+              onChange={(event) =>
+                persistInventory({
+                  ...inventoryState,
+                  shelfCount: Math.max(
+                    0,
+                    Math.floor(Number(event.target.value) || 0),
+                  ),
+                })
+              }
+            />
+          </label>
+
+          <label>
+            <span>果汁罐架數</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={0}
+              value={inventoryState.jarRackCount}
+              onChange={(event) =>
+                persistInventory({
+                  ...inventoryState,
+                  jarRackCount: Math.max(
+                    0,
+                    Math.floor(Number(event.target.value) || 0),
+                  ),
+                })
+              }
+            />
+          </label>
+
+          <label className="optimizer-checkbox-control">
+            <input
+              type="checkbox"
+              checked={plannerSettings.allowUsedCupDropIfFull}
+              onChange={(event) =>
+                persistPlannerSettings({
+                  ...plannerSettings,
+                  allowUsedCupDropIfFull: event.target.checked,
+                })
+              }
+            />
+            <span>接受背包滿時 used cup 可能掉落</span>
           </label>
 
           <label>
@@ -395,17 +522,32 @@ export default function OptimizerTools({
           <strong>本次需求：{customerIds.length} 人</strong>
           <span>最佳化順序：{priorities.map(criterionLabel).join(' → ')}</span>
           <span>
-            果汁罐：{availableJuiceJarCount} 個
+            果汁罐：持有 {capacitySummary.physicalJuiceJarCount} · 常駐攜帶{' '}
+            {capacitySummary.effectiveCarriedJuiceJarCount}
             {maxJarTypeSwitches.trim() !== ''
               ? ' · 最多換裝 ' + maxJarTypeSwitches + ' 次'
               : ' · 換裝不限'}
+          </span>
+          <span>
+            一般架子 {inventoryState.shelfCount} 架 /{' '}
+            {capacitySummary.shelfSlotCapacity} slots · 果汁罐架{' '}
+            {inventoryState.jarRackCount} 架 /{' '}
+            {capacitySummary.jarRackStagingCapacity} slots
+          </span>
+          <span>
+            常駐果汁罐占 {capacitySummary.carriedJarSlotCost} / 10 背包 slots；
+            其他搬運剩 {capacitySummary.backpackSlotsRemainingAfterCarriedJars} 格
           </span>
         </div>
 
         <button
           type="button"
           className="optimizer-run-button"
-          disabled={customerIds.length === 0 || runState.status === 'loading'}
+          disabled={
+            customerIds.length === 0 ||
+            runState.status === 'loading' ||
+            capacitySummary.effectiveCarriedJuiceJarCount < 1
+          }
           onClick={runOptimizer}
         >
           {runState.status === 'loading'
@@ -431,6 +573,7 @@ export default function OptimizerTools({
           preparationShortfall={runState.preparationShortfall}
           priorities={priorities}
           salesTripPlans={runState.salesTripPlans}
+          allowUsedCupDropIfFull={plannerSettings.allowUsedCupDropIfFull}
         />
       )}
     </section>
@@ -505,12 +648,20 @@ function OptimizerResultPanel({
   preparationShortfall,
   priorities,
   salesTripPlans,
+  allowUsedCupDropIfFull,
 }: {
   result: OptimizationResult
   preparationShortfall: PreparationShortfall
   priorities: OptimizationCriterion[]
   salesTripPlans: SalesTripPlans
+  allowUsedCupDropIfFull: boolean
 }) {
+  const selectedSalesTripPlan = allowUsedCupDropIfFull
+    ? salesTripPlans.allowDropIfFull
+    : salesTripPlans.retainAndWash
+  const alternateSalesTripPlan = allowUsedCupDropIfFull
+    ? salesTripPlans.retainAndWash
+    : salesTripPlans.allowDropIfFull
   const purchaseItemByIngredientId = new Map(
     result.shoppingList.map((item) => [item.ingredientId, item]),
   )
@@ -554,7 +705,7 @@ function OptimizerResultPanel({
         />
         <MetricCard
           label="販售趟數（目前策略）"
-          value={salesTripPlans.retainAndWash.tripCount + ' 趟'}
+          value={selectedSalesTripPlan.tripCount + ' 趟'}
         />
         <MetricCard
           label="已分配 / 產出"
@@ -576,7 +727,7 @@ function OptimizerResultPanel({
           可用果汁罐 {result.availableJuiceJarCount} 個；同罐改裝成另一種果汁才計入換裝。
         </span>
         <span>
-          販售摘要目前採「保留杯具並回家清洗」approximation；替代 used-cup policy 可在販售排程展開比較。
+          販售摘要目前採「{tripPolicyLabel(selectedSalesTripPlan)}」approximation；替代 used-cup policy 可在販售排程展開比較。
         </span>
         {(result.potentialTrialCount > 0 ||
           result.unknownFormalSalePriceCount > 0) && (
@@ -786,17 +937,17 @@ function OptimizerResultPanel({
       <section className="optimizer-result-section">
         <div className="section-title">
           <strong>販售排程</strong>
-          <span>目前策略：保留杯具並回家清洗</span>
+          <span>目前策略：{tripPolicyLabel(selectedSalesTripPlan)}</span>
         </div>
 
-        <SalesTripPlanBlock plan={salesTripPlans.retainAndWash} />
+        <SalesTripPlanBlock plan={selectedSalesTripPlan} />
 
         <details className="optimizer-policy-comparison">
           <summary>
-            比較替代策略：接受背包滿時 used cup 掉落（
-            {salesTripPlans.allowDropIfFull.tripCount} 趟）
+            比較替代策略：{tripPolicyLabel(alternateSalesTripPlan)}（
+            {alternateSalesTripPlan.tripCount} 趟）
           </summary>
-          <SalesTripPlanBlock plan={salesTripPlans.allowDropIfFull} />
+          <SalesTripPlanBlock plan={alternateSalesTripPlan} />
         </details>
 
         <small className="optimizer-boundary-note">
@@ -831,8 +982,8 @@ function SalesTripPlanBlock({
           </span>
         </div>
         <p>
-          實際使用 {plan.physicalJarsUsed} / {plan.availableJuiceJarCount}{' '}
-          個果汁罐；單趟最多使用 {plan.maxJarRackSlotsUsed} 個。
+          實際使用 {plan.physicalJarsUsed} / {plan.carriedJuiceJarCount}{' '}
+          個常駐攜帶果汁罐；單趟最多帶出 {plan.maxJuiceJarSlotsCarried} 個。
         </p>
         <small>{tripPolicyNote(plan)}</small>
       </article>
