@@ -3,8 +3,9 @@ import type { Recipe } from '../types'
 /**
  * 一般網站顯示的已確認配方。
  *
- * 目前固定條目最多收錄三種原料。四原料以上的重複調味組合會快速膨脹，
- * 且目前只觀察到特性變化、沒有售價收益，因此改放 recipeResearch.ts 研究。
+ * 只要有直接實測，而且需要 evaluator 依完整原料順序精確覆蓋推導結果，
+ * 就收進正式配方資料；不以原料數量限制正式資料。
+ * recipeResearch.ts 只保存研究用觀察，不取代正式配方資料。
  */
 export const recipes: Recipe[] = [
   {
@@ -328,5 +329,80 @@ export const recipes: Recipe[] = [
       { name: '補充精力', value: 3 },
     ],
     equipment: ['榨汁機', '調味器', '果汁成品台'],
+  },
+
+  {
+    id: 'lemon-orange-blend',
+    name: '檸檬 - 橙子（調製飲品）',
+    observedDisplayName: '檸檬－橙子（調製飲品）',
+    unlockedAt: 'juice-blender-unlocked',
+    salePrice: 24,
+    ingredients: ['檸檬', '橙子'],
+    effects: [
+      { name: '增強免疫', value: 7 },
+      { name: '酸味', value: 4 },
+      { name: '煥亮肌膚', value: 2 },
+    ],
+    equipment: ['柑橘榨汁機', '果汁調和器', '果汁成品台'],
+  },
+  {
+    id: 'lemon-carrot-mint-sugar-blend',
+    name: '甜味（檸檬 → 紅蘿蔔 → 薄荷 → 糖）',
+    observedDisplayName: '甜味 敬意',
+    unlockedAt: 'juice-blender-unlocked',
+    salePrice: 56,
+    ingredients: ['檸檬', '紅蘿蔔', '薄荷', '糖'],
+    effects: [
+      { name: '甜味', value: 5 },
+      { name: '清新口氣', value: 4 },
+      { name: '改善視力', value: 4 },
+      { name: '增強免疫', value: 4 },
+      { name: '酸味', value: 4 },
+    ],
+    equipment: [
+      '柑橘榨汁機',
+      '榨汁機',
+      '調味器',
+      '果汁調和器',
+      '果汁成品台',
+    ],
+  },
+  {
+    id: 'lemon-carrot-mint-sugar-pear-blend',
+    name: '甜味（檸檬 → 紅蘿蔔 → 薄荷 → 糖 → 梨）',
+    observedDisplayName: '甜味 衝擊',
+    unlockedAt: 'juice-blender-unlocked',
+    salePrice: 80,
+    ingredients: ['檸檬', '紅蘿蔔', '薄荷', '糖', '梨'],
+    effects: [
+      { name: '甜味', value: 5 },
+      { name: '促進消化', value: 4 },
+      { name: '保護心臟', value: 4 },
+      { name: '清新口氣', value: 4 },
+      { name: '改善視力', value: 4 },
+    ],
+    equipment: [
+      '柑橘榨汁機',
+      '榨汁機',
+      '調味器',
+      '果汁調和器',
+      '果汁成品台',
+    ],
+  },
+  {
+    id: 'lemon-sugar-mint-orange-mint-sugar-blend',
+    name: '甜味（檸檬 → 糖 → 薄荷 → 橙子 → 薄荷 → 糖）',
+    observedDisplayName: '甜味 非凡',
+    unlockedAt: 'juice-blender-unlocked',
+    salePrice: 57,
+    ingredients: ['檸檬', '糖', '薄荷', '橙子', '薄荷', '糖'],
+    effects: [
+      { name: '甜味', value: 10 },
+      { name: '清新口氣', value: 8 },
+      { name: '增強免疫', value: 7 },
+      { name: '補充精力', value: 6 },
+      { name: '舒緩腸胃', value: 6 },
+    ],
+    equipment: ['柑橘榨汁機', '調味器', '果汁調和器', '果汁成品台'],
   },
 ]
