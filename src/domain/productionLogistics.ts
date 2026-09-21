@@ -27,6 +27,9 @@ export interface ProductionStorageSnapshot {
   backpackSlotsUsed: number
   backpackSlotsAvailable: number
   carriedJarSlots: number
+  outputJarReceiverSlots: number
+  carriedOutputJarSlots: number
+  rackOutputJarSlots: number
   machineSlotsUsed: number
   machineSlotsAvailable: number
 }
@@ -45,6 +48,8 @@ export interface ProductionLogisticsAction {
   label: string
   equipment?: ProductionStep['equipment']
   quantity: number
+  /** Finalizer output receiver; jar contents/type compatibility remains deferred. */
+  outputJarReceiver?: 'carried-jar' | 'jar-rack'
   snapshot: ProductionStorageSnapshot
 }
 
@@ -177,6 +182,17 @@ function storageSnapshot(
     capacity.shelfSlotCapacity,
   )
   const backpackSlotsUsed = Math.max(0, totalSlots - shelfSlotsUsed)
+  const carriedOutputJarSlots =
+    capacity.effectiveCarriedJuiceJarCount
+  const nonCarriedPhysicalJars = Math.max(
+    0,
+    capacity.physicalJuiceJarCount -
+      capacity.effectiveCarriedJuiceJarCount,
+  )
+  const rackOutputJarSlots = Math.min(
+    nonCarriedPhysicalJars,
+    capacity.jarRackStagingCapacity,
+  )
 
   return {
     shelfSlotsUsed,
@@ -185,6 +201,10 @@ function storageSnapshot(
     backpackSlotsAvailable:
       capacity.backpackSlotsRemainingAfterCarriedJars,
     carriedJarSlots: capacity.carriedJarSlotCost,
+    outputJarReceiverSlots:
+      carriedOutputJarSlots + rackOutputJarSlots,
+    carriedOutputJarSlots,
+    rackOutputJarSlots,
     machineSlotsUsed,
     machineSlotsAvailable,
   }
@@ -364,6 +384,7 @@ export function buildProductionLogisticsPlan(
     quantity: number,
     snapshot: ProductionStorageSnapshot,
     equipment?: ProductionStep['equipment'],
+    outputJarReceiver?: 'carried-jar' | 'jar-rack',
   ) {
     actions.push({
       index: actions.length + 1,
@@ -371,6 +392,7 @@ export function buildProductionLogisticsPlan(
       label,
       equipment,
       quantity,
+      outputJarReceiver,
       snapshot,
     })
   }
@@ -591,12 +613,28 @@ export function buildProductionLogisticsPlan(
 
       if (step.kind === 'finalizing') {
         const snapshot = storageSnapshot(materials, inventory, settings)
+        const outputJarReceiver =
+          snapshot.carriedOutputJarSlots > 0
+            ? 'carried-jar'
+            : snapshot.rackOutputJarSlots > 0
+              ? 'jar-rack'
+              : null
+
+        if (!outputJarReceiver) {
+          materials.clear()
+          for (const [key, value] of materialsBefore) {
+            materials.set(key, value)
+          }
+          continue
+        }
+
         pushAction(
           'handoff-finished',
-          `成品 ×${quantity * 2} 交給果汁罐裝載排程`,
+          `成品 ×${quantity * 2} → physical juice jar → 販售補裝排程`,
           quantity * 2,
           snapshot,
           step.equipment,
+          outputJarReceiver,
         )
       } else {
         addMaterial(
@@ -632,8 +670,22 @@ export function buildProductionLogisticsPlan(
     }
 
     if (!executed) {
+      const receiverSnapshot = storageSnapshot(
+        materials,
+        inventory,
+        settings,
+      )
+      const finalizerReadyWithoutReceiver = pending.some(
+        (operation) =>
+          operation.step.kind === 'finalizing' &&
+          canRunWithCurrentIntermediateStock(operation, materials),
+      )
+
       issues.push(
-        '目前 backpack / shelf capacity 無法在不使用地面 storage 的前提下完成下一個 production operation。',
+        finalizerReadyWithoutReceiver &&
+          receiverSnapshot.outputJarReceiverSlots < 1
+          ? 'finalizer output 沒有可接手的 physical juice jar：常駐攜帶 jars 與 jar-rack staging 都沒有可用的實體罐 receiver slot。'
+          : '目前 backpack / shelf capacity 無法在不使用地面 storage 的前提下完成下一個 production operation。',
       )
     }
   }
