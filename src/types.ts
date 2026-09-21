@@ -131,6 +131,8 @@ export interface RecipeCandidate {
   id: string
   /** observed 沿用攻略穩定名稱；computed 使用描述性名稱，不宣稱為遊戲內正式名稱。 */
   name: string
+  /** observed 配方可帶出一次實測到的遊戲顯示名；不作為穩定 identity。 */
+  observedDisplayName?: string
   source: RecipeCandidateSource
   unlockedAt: ProgressMilestoneId
   /** computed 售價尚未確認，必須維持 null。 */

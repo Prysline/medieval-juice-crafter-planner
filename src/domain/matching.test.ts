@@ -110,8 +110,16 @@ describe('customer recipe matching', () => {
     ).toBe(true)
   })
 
-  it('keeps the normal recipe database capped at three ingredients for now', () => {
-    expect(Math.max(...recipes.map((recipe) => recipe.ingredients.length))).toBe(3)
+  it('allows directly observed long recipes in the formal recipe database', () => {
+    const observedBlend = recipes.find(
+      (recipe) => recipe.id === 'lemon-sugar-mint-orange-mint-sugar-blend',
+    )
+
+    expect(observedBlend).toMatchObject({
+      observedDisplayName: '甜味 非凡',
+      salePrice: 57,
+      ingredients: ['檸檬', '糖', '薄荷', '橙子', '薄荷', '糖'],
+    })
   })
 
   it('keeps longer repeated-seasoning observations in research data', () => {

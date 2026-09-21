@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   combineRecipeSequences,
   evaluateRecipeSequence,
+  predictRecipeEffects,
 } from './recipeEvaluator'
+import { ingredients } from '../data/ingredients'
 
 describe('recipe sequence evaluator', () => {
   it('returns observed data for an observed sequence', () => {
@@ -219,5 +221,125 @@ describe('recipe sequence evaluator', () => {
 
     expect(result.availableAtCurrentProgress).toBe(false)
     expect(result.candidate.unlockedAt).toBe('tranquil-fountain-unlocked')
+  })
+
+
+  const blenderObservations = [
+    {
+      ingredientIds: ['lemon', 'orange'],
+      id: 'lemon-orange-blend',
+      observedDisplayName: '檸檬－橙子（調製飲品）',
+      salePrice: 24,
+      effects: [
+        { name: '增強免疫', value: 7 },
+        { name: '酸味', value: 4 },
+        { name: '煥亮肌膚', value: 2 },
+      ],
+    },
+    {
+      ingredientIds: ['lemon', 'carrot', 'mint', 'sugar'],
+      id: 'lemon-carrot-mint-sugar-blend',
+      observedDisplayName: '甜味 敬意',
+      salePrice: 56,
+      effects: [
+        { name: '甜味', value: 5 },
+        { name: '清新口氣', value: 4 },
+        { name: '改善視力', value: 4 },
+        { name: '增強免疫', value: 4 },
+        { name: '酸味', value: 4 },
+      ],
+    },
+    {
+      ingredientIds: ['lemon', 'carrot', 'mint', 'sugar', 'pear'],
+      id: 'lemon-carrot-mint-sugar-pear-blend',
+      observedDisplayName: '甜味 衝擊',
+      salePrice: 80,
+      effects: [
+        { name: '甜味', value: 5 },
+        { name: '促進消化', value: 4 },
+        { name: '保護心臟', value: 4 },
+        { name: '清新口氣', value: 4 },
+        { name: '改善視力', value: 4 },
+      ],
+    },
+    {
+      ingredientIds: ['lemon', 'sugar', 'mint', 'orange', 'mint', 'sugar'],
+      id: 'lemon-sugar-mint-orange-mint-sugar-blend',
+      observedDisplayName: '甜味 非凡',
+      salePrice: 57,
+      effects: [
+        { name: '甜味', value: 10 },
+        { name: '清新口氣', value: 8 },
+        { name: '增強免疫', value: 7 },
+        { name: '補充精力', value: 6 },
+        { name: '舒緩腸胃', value: 6 },
+      ],
+    },
+  ] as const
+
+  for (const observation of blenderObservations) {
+    it(`uses the exact observed blender overlay for ${observation.ingredientIds.join(' > ')}`, () => {
+      const result = evaluateRecipeSequence(
+        [...observation.ingredientIds],
+        'juice-blender-unlocked',
+      )
+
+      expect(result.valid).toBe(true)
+      if (!result.valid) return
+
+      expect(result.candidate).toMatchObject({
+        id: observation.id,
+        source: 'observed',
+        observedDisplayName: observation.observedDisplayName,
+        salePrice: observation.salePrice,
+        effects: observation.effects,
+      })
+      expect(result.usesBlender).toBe(true)
+      expect(result.availableAtCurrentProgress).toBe(true)
+    })
+  }
+
+  it('keeps observed blender effects compatible with the general ordered-sequence model', () => {
+    const ingredientById = new Map(
+      ingredients.map((ingredient) => [ingredient.id, ingredient]),
+    )
+
+    for (const observation of blenderObservations) {
+      const sequence = observation.ingredientIds.map((ingredientId) => {
+        const ingredient = ingredientById.get(ingredientId)
+        if (!ingredient) {
+          throw new Error(`Missing ingredient fixture: ${ingredientId}`)
+        }
+        return ingredient
+      })
+      const prediction = predictRecipeEffects(sequence)
+
+      expect(observation.effects).toEqual(
+        expect.arrayContaining(prediction.effects),
+      )
+
+      if (!prediction.effectAmbiguity) {
+        expect(prediction.effects).toEqual(observation.effects)
+        continue
+      }
+
+      const unresolvedObserved = observation.effects.filter(
+        (observedEffect) =>
+          !prediction.effects.some(
+            (predictedEffect) =>
+              predictedEffect.name === observedEffect.name &&
+              predictedEffect.value === observedEffect.value,
+          ),
+      )
+
+      expect(unresolvedObserved).toHaveLength(
+        prediction.effectAmbiguity.remainingSlots,
+      )
+      for (const observedEffect of unresolvedObserved) {
+        expect(prediction.effectAmbiguity.candidates).toContainEqual(
+          observedEffect,
+        )
+      }
+    }
   })
 })

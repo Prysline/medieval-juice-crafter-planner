@@ -179,4 +179,41 @@ describe('production plan', () => {
       operationCount: 1,
     })
   })
+
+
+  it('feeds an already blended drink into a second blender step', () => {
+    const result = buildProductionPlan([
+      {
+        recipeId: 'three-base-blend',
+        recipeName: 'Three Base Blend',
+        ingredientIds: ['lemon', 'carrot', 'mint', 'sugar', 'pear'],
+        juiceUnits: 2,
+        assignedServings: 4,
+      },
+    ])
+
+    expect(result.steps).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: 'blend:lemon+carrot>mint>sugar',
+          kind: 'blending',
+          fromIngredientIds: ['lemon'],
+          secondaryFromIngredientIds: ['carrot', 'mint', 'sugar'],
+          toIngredientIds: ['lemon', 'carrot', 'mint', 'sugar'],
+          quantity: 2,
+          operationCount: 1,
+        }),
+        expect.objectContaining({
+          key: 'blend:lemon>carrot>mint>sugar+pear',
+          kind: 'blending',
+          fromIngredientIds: ['lemon', 'carrot', 'mint', 'sugar'],
+          secondaryFromIngredientIds: ['pear'],
+          toIngredientIds: ['lemon', 'carrot', 'mint', 'sugar', 'pear'],
+          quantity: 2,
+          operationCount: 1,
+        }),
+      ]),
+    )
+    expect(result.machineOperations.blending).toBe(2)
+  })
 })
