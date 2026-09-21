@@ -45,6 +45,8 @@ export interface Recipe {
   id: string
   /** 網站使用的穩定名稱；順序敏感配方會把原料順序寫進名稱。 */
   name: string
+  /** 截圖直接觀察到的遊戲內顯示名；不拿來推導未確認的名稱生成規則。 */
+  observedDisplayName?: string
   unlockedAt: ProgressMilestoneId
   salePrice: number
   /** 原料順序具有語意；不同調味順序可能產生不同特性。 */
