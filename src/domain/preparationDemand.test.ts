@@ -8,24 +8,42 @@ const result: OptimizationResult = {
     { customerId: 'b', recipeId: 'lemon' },
     { customerId: 'c', recipeId: 'orange' },
   ],
-  batches: [
+  recipePlans: [
     {
       recipeId: 'lemon',
       recipeName: '檸檬汁',
-      batchNumber: 1,
       customerIds: ['a', 'b'],
+      juiceUnits: 1,
+      producedServings: 2,
+      assignedServings: 2,
+      leftoverServings: 0,
       ingredientIds: ['lemon'],
-      batchIngredientCost: 9,
+      juiceUnitIngredientCost: 9,
+      totalIngredientCost: 9,
     },
     {
       recipeId: 'orange',
       recipeName: '橙汁',
-      batchNumber: 1,
       customerIds: ['c'],
+      juiceUnits: 1,
+      producedServings: 2,
+      assignedServings: 1,
+      leftoverServings: 1,
       ingredientIds: ['orange'],
-      batchIngredientCost: 11,
+      juiceUnitIngredientCost: 11,
+      totalIngredientCost: 11,
     },
   ],
+  productionSteps: [],
+  machineOperations: {
+    total: 4,
+    juicing: 2,
+    seasoning: 0,
+    finalizing: 2,
+    blending: 0,
+  },
+  jarTypeSwitches: 1,
+  availableJuiceJarCount: 1,
   shoppingList: [
     {
       ingredientId: 'lemon',
@@ -70,23 +88,23 @@ describe('preparation demand adapter', () => {
         {
           recipeId: 'lemon',
           recipeName: '檸檬汁',
-          batches: 1,
+          productionUnits: 1,
           producedServings: 2,
           assignedServings: 2,
           leftoverServings: 0,
-          ingredientUnitsPerBatch: [
-            { ingredientId: 'lemon', quantityPerBatch: 1 },
+          ingredientUnitsPerJuiceUnit: [
+            { ingredientId: 'lemon', quantityPerJuiceUnit: 1 },
           ],
         },
         {
           recipeId: 'orange',
           recipeName: '橙汁',
-          batches: 1,
+          productionUnits: 1,
           producedServings: 2,
           assignedServings: 1,
           leftoverServings: 1,
-          ingredientUnitsPerBatch: [
-            { ingredientId: 'orange', quantityPerBatch: 1 },
+          ingredientUnitsPerJuiceUnit: [
+            { ingredientId: 'orange', quantityPerJuiceUnit: 1 },
           ],
         },
       ],
@@ -98,8 +116,11 @@ describe('preparation demand adapter', () => {
     expect(demand.cleanCupUses).toBe(result.assignedServings)
   })
 
-  it('requires one production water unit per selected batch', () => {
+  it('requires one water unit per juice unit rather than per machine operation', () => {
     const demand = buildPreparationDemand(result)
-    expect(demand.productionWaterUnits).toBe(result.batches.length)
+    expect(demand.productionWaterUnits).toBe(2)
+    expect(demand.productionWaterUnits).not.toBe(
+      result.machineOperations.total,
+    )
   })
 })
