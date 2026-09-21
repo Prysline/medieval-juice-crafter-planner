@@ -78,6 +78,12 @@ function sequenceKey(ids: string[]): string {
   return ids.join('>')
 }
 
+function sequenceLabel(ids: string[]): string {
+  return ids
+    .map((id) => ingredientById.get(id)?.name ?? id)
+    .join(' ▸ ')
+}
+
 function rawKey(ingredientId: string): string {
   return `raw:${ingredientId}`
 }
@@ -288,12 +294,12 @@ function actionLabel(
       ingredientById.get(step.addedIngredientId ?? '')?.name ??
       step.addedIngredientId ??
       '調味材料'
-    return `${sequenceKey(step.fromIngredientIds)} + ${seasoning} ×${quantity} → ${sequenceKey(step.toIngredientIds)}`
+    return `${sequenceLabel(step.fromIngredientIds)} + ${seasoning} ×${quantity} → ${sequenceLabel(step.toIngredientIds)}`
   }
   if (step.kind === 'blending') {
-    return `${sequenceKey(step.fromIngredientIds)} + ${sequenceKey(step.secondaryFromIngredientIds ?? [])} → ${sequenceKey(step.toIngredientIds)} ×${quantity}`
+    return `${sequenceLabel(step.fromIngredientIds)} + ${sequenceLabel(step.secondaryFromIngredientIds ?? [])} → ${sequenceLabel(step.toIngredientIds)} ×${quantity}`
   }
-  return `${sequenceKey(step.fromIngredientIds)} + 水 ×${quantity} → 成品 ×${quantity * 2}`
+  return `${sequenceLabel(step.fromIngredientIds)} + 水 ×${quantity} → 成品 ×${quantity * 2}`
 }
 
 export function buildNetProductionPlan(
@@ -657,7 +663,7 @@ export function buildProductionLogisticsPlan(
         }
         pushAction(
           'unload-intermediate',
-          `${sequenceKey(step.toIngredientIds)} ×${quantity} → 一般 storage`,
+          `${sequenceLabel(step.toIngredientIds)} ×${quantity} → 一般暫存`,
           quantity,
           snapshot,
           step.equipment,
