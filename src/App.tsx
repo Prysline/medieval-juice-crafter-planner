@@ -33,6 +33,12 @@ import {
   type RecipeIngredientCost,
 } from './domain/recipeCost'
 import {
+  formatMoney,
+  formatRecipeDisplayName,
+  formatRecipeIngredientCost,
+  formatRecipeSequence,
+} from './domain/displayFormat'
+import {
   readCurrentProgress,
   readFormalCustomerIds,
   readSatisfactionByVillage,
@@ -669,7 +675,7 @@ function CustomerRow({
             <span className="muted">喜好未知</span>
           ) : bestMatch ? (
             <>
-              <span>{bestMatch.name}</span>
+              <span>{formatRecipeDisplayName(bestMatch.name)}</span>
               <RecommendationCompact
                 recommendation={recommendations.allowComputed}
               />
@@ -683,7 +689,7 @@ function CustomerRow({
           {bestMatch
             ? bestMatch.salePrice === null
               ? '未知'
-              : bestMatch.salePrice
+              : formatMoney(bestMatch.salePrice)
             : '—'}
         </div>
 
@@ -743,9 +749,11 @@ function CustomerRow({
             <ol>
               {matches.map((recipe) => (
                 <li key={recipe.id}>
-                  <span>{recipe.name}</span>
+                  <span>{formatRecipeDisplayName(recipe.name)}</span>
                   <strong>
-                    {recipe.salePrice === null ? '售價未知' : `售價 ${recipe.salePrice}`}
+                    {recipe.salePrice === null
+                      ? '售價未知'
+                      : '售價 ' + formatMoney(recipe.salePrice)}
                   </strong>
                 </li>
               ))}
@@ -835,12 +843,14 @@ function RecommendationCompact({
         : '實測'
   const recipeLabel =
     recommendation.candidates.length === 1
-      ? recommendation.candidates[0].candidate.name
+      ? formatRecipeDisplayName(
+          recommendation.candidates[0].candidate.name,
+        )
       : `${recommendation.candidates.length} 種同價最低`
 
   return (
     <span className="recommendation-compact">
-      最低成本：{recipeLabel} · {recommendation.batchIngredientCost}/批 ·{' '}
+      最低成本：{recipeLabel} · {formatMoney(recommendation.batchIngredientCost)}／批 ·{' '}
       {sourceLabel}
     </span>
   )
@@ -894,31 +904,27 @@ function RecommendationLine({
       <div>
         <strong>
           {recommendation.candidates
-            .map(({ candidate }) => candidate.name)
+            .map(({ candidate }) =>
+              formatRecipeDisplayName(candidate.name),
+            )
             .join('、')}
         </strong>
         <small>
-          {recommendation.batchIngredientCost} / 批 ·{' '}
-          {formatCost(recommendation.unitIngredientCost)} / 杯
+          {formatRecipeIngredientCost(
+            recommendation.batchIngredientCost,
+            recommendation.unitIngredientCost,
+          )}
         </small>
       </div>
     </div>
   )
 }
 
-function formatCost(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toFixed(1)
-}
-
 function formatRecipeCost(cost: RecipeIngredientCost): string {
-  if (
-    cost.batchIngredientCost === null ||
-    cost.unitIngredientCost === null
-  ) {
-    return '未知'
-  }
-
-  return `${cost.batchIngredientCost}/批 · ${formatCost(cost.unitIngredientCost)}/杯`
+  return formatRecipeIngredientCost(
+    cost.batchIngredientCost,
+    cost.unitIngredientCost,
+  )
 }
 
 function RecipeRow({
@@ -941,14 +947,14 @@ function RecipeRow({
     <details className="table-row">
       <summary className="recipe-columns">
         <div className="primary-cell">
-          <strong>{recipe.name}</strong>
+          <strong>{formatRecipeDisplayName(recipe.name)}</strong>
           <span className="cell-secondary">
             {progressMilestoneLabels[recipe.unlockedAt]} ·{' '}
             {recipe.source === 'observed' ? '實測' : '預測'}
           </span>
         </div>
 
-        <div>{recipe.ingredients.join(' → ')}</div>
+        <div>{formatRecipeSequence(recipe.ingredients)}</div>
 
         <div className="effects-cell">
           {recipe.effects.map(formatEffect).join('・')}
@@ -962,7 +968,7 @@ function RecipeRow({
         <div className="cost-cell">{formatRecipeCost(cost)}</div>
 
         <div className="price-cell align-end">
-          {recipe.salePrice === null ? '未知' : recipe.salePrice}
+          {formatMoney(recipe.salePrice)}
         </div>
       </summary>
 
