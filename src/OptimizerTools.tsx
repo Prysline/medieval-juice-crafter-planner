@@ -22,11 +22,13 @@ import {
 } from './domain/displayFormat'
 import type {
   MultiTripJuiceJarLoad,
+  MultiTripProductionJarFill,
   MultiTripReplenishmentPlan,
   UsedCupTripPolicy,
 } from './domain/multiTripReplenishment'
 import type { PreparationShortfall } from './domain/preparationShortfall'
 import type { ProductionLogisticsPlan } from './domain/productionLogistics'
+import type { PlanApplicationTransactionDraft } from './domain/planApplicationTransaction'
 import {
   buildInventoryCapacitySummary,
   selectCarriedJuiceJars,
@@ -70,6 +72,7 @@ type OptimizerRunState =
       preparationShortfall: PreparationShortfall
       productionLogistics: ProductionLogisticsPlan
       salesTripPlans: SalesTripPlans
+      transactionDraft: PlanApplicationTransactionDraft | null
     }
   | { status: 'error'; message: string }
 
@@ -390,12 +393,14 @@ export default function OptimizerTools({
         { buildPreparationShortfall },
         { buildProductionLogisticsPlan },
         { buildMultiTripReplenishmentPlan },
+        { buildPlanApplicationTransactionDraft },
       ] = await Promise.all([
         import('./domain/optimizer'),
         import('./domain/preparationDemand'),
         import('./domain/preparationShortfall'),
         import('./domain/productionLogistics'),
         import('./domain/multiTripReplenishment'),
+        import('./domain/planApplicationTransaction'),
       ])
       const parsedMaxSwitches =
         maxJarTypeSwitches.trim() === ''
@@ -498,6 +503,26 @@ export default function OptimizerTools({
         alternatePolicy,
         alternateError,
       }
+      const transactionDraft = productionLogistics.feasible
+        ? buildPlanApplicationTransactionDraft({
+            basis: {
+              inventory: inventoryState,
+              currentProgress,
+              satisfactionByVillage,
+              formalCustomerIds,
+              suppliedCustomerIds,
+              plannerSettings: {
+                ...plannerSettings,
+                carriedJuiceJarIds:
+                  capacitySummary.carriedJuiceJarIds,
+              },
+            },
+            result,
+            preparationShortfall,
+            productionLogistics,
+            salesPlan: selectedSalesTripPlan,
+          })
+        : null
 
       setRunState({
         status: 'success',
@@ -505,6 +530,7 @@ export default function OptimizerTools({
         preparationShortfall,
         productionLogistics,
         salesTripPlans,
+        transactionDraft,
       })
     } catch (error) {
       setRunState({
@@ -930,6 +956,7 @@ export default function OptimizerTools({
           productionLogistics={runState.productionLogistics}
           priorities={priorities}
           salesTripPlans={runState.salesTripPlans}
+          transactionDraft={runState.transactionDraft}
         />
       )}
     </section>
@@ -1102,18 +1129,266 @@ function productionStepLabel(
   return sequenceLabel(step.fromIngredientIds) + ' + 水 → 販售成品'
 }
 
+
+function transactionRecipeLabel(
+  recipeId: string | null,
+  fills: readonly MultiTripProductionJarFill[],
+): string {
+  if (!recipeId) return '空罐'
+  const fill = fills.find((item) => item.recipeId === recipeId)
+  return formatRecipeDisplayName(
+    fill?.recipeName ?? recipeNameById.get(recipeId) ?? recipeId,
+  )
+}
+
+function transactionJarContentLabel(
+  jar: {
+    recipeId: string | null
+    servings: number
+  },
+  fills: readonly MultiTripProductionJarFill[],
+): string {
+  if (!jar.recipeId || jar.servings <= 0) return '空罐'
+  return (
+    transactionRecipeLabel(jar.recipeId, fills) +
+    ' · ' +
+    jar.servings +
+    ' 杯'
+  )
+}
+
+function transactionJarChangeLabel(
+  change: PlanApplicationTransactionDraft['changes']['juiceJars'][number],
+): string {
+  const beforeFilled =
+    Boolean(change.before.recipeId) && change.before.servings > 0
+  const afterFilled =
+    Boolean(change.after.recipeId) && change.after.servings > 0
+
+  if (!beforeFilled && afterFilled) return '裝入成品'
+  if (beforeFilled && !afterFilled) return '清空'
+  if (change.before.recipeId !== change.after.recipeId) return '換裝'
+  if (change.after.servings > change.before.servings) return '補裝同種'
+  if (change.after.servings < change.before.servings) return '販售後保留'
+  return '內容更新'
+}
+
+function transactionFillActionLabel(
+  fill: MultiTripProductionJarFill,
+): string {
+  if (fill.fillAction === 'initial-fill') return '首次裝填'
+  if (fill.fillAction === 'refill-same-type') return '補裝同種'
+  return '換裝'
+}
+
+export function PlanApplicationPreview({
+  draft,
+  productionJarFills,
+}: {
+  draft: PlanApplicationTransactionDraft
+  productionJarFills: readonly MultiTripProductionJarFill[]
+}) {
+  const changes = draft.changes
+
+  return (
+    <section
+      className="optimizer-result-section optimizer-transaction-preview"
+      aria-label="套用規劃預覽"
+    >
+      <div className="section-title">
+        <strong>套用規劃預覽</strong>
+        <span>只預覽，不會修改庫存</span>
+      </div>
+
+      <p className="optimizer-transaction-note">
+        以下是目前規劃若日後正式套用時的變更前 → 變更後。這一步尚未寫入
+        localStorage，也沒有「確認套用」按鈕；過期檢查與一次性寫入留給
+        Phase 5C-3～5。
+      </p>
+
+      <div className="optimizer-transaction-grid">
+        <article className="optimizer-transaction-card">
+          <div className="optimizer-transaction-card-heading">
+            <strong>原料</strong>
+            <span>{changes.ingredients.length} 種</span>
+          </div>
+          {changes.ingredients.length === 0 ? (
+            <p>沒有原料庫存變更。</p>
+          ) : (
+            <div className="optimizer-transaction-list">
+              {changes.ingredients.map((change) => (
+                <div
+                  className="optimizer-transaction-row"
+                  key={change.ingredientId}
+                >
+                  <strong>{ingredientLabel(change.ingredientId)}</strong>
+                  <span>
+                    {change.beforeUnits} → {change.afterUnits} 單位
+                  </span>
+                  <small>
+                    使用既有 {change.consumedFromInventory} 單位
+                    {change.acquiredAndConsumedUnits > 0
+                      ? ' · 另取得並於當日使用 ' +
+                        change.acquiredAndConsumedUnits +
+                        ' 單位'
+                      : ''}
+                  </small>
+                </div>
+              ))}
+            </div>
+          )}
+        </article>
+
+        <article className="optimizer-transaction-card">
+          <div className="optimizer-transaction-card-heading">
+            <strong>水</strong>
+            <span>
+              {changes.water.beforeUnits} → {changes.water.afterUnits}
+            </span>
+          </div>
+          <div className="optimizer-transaction-list">
+            <div className="optimizer-transaction-row">
+              <strong>庫存水量</strong>
+              <span>
+                {changes.water.beforeUnits} → {changes.water.afterUnits} 單位
+              </span>
+              <small>
+                製作 {changes.water.productionUnitsRequired} · 洗杯{' '}
+                {changes.water.cupWashUnitsRequired} · 使用既有{' '}
+                {changes.water.consumedFromInventory}
+                {changes.water.externalUnitsRequired > 0
+                  ? ' · 另需取得 ' +
+                    changes.water.externalUnitsRequired +
+                    ' 單位'
+                  : ''}
+              </small>
+            </div>
+          </div>
+        </article>
+
+        <article className="optimizer-transaction-card">
+          <div className="optimizer-transaction-card-heading">
+            <strong>杯具</strong>
+            <span>
+              實體杯 {changes.cups.physicalBefore} →{' '}
+              {changes.cups.physicalAfter}
+            </span>
+          </div>
+          <div className="optimizer-transaction-list">
+            <div className="optimizer-transaction-row">
+              <strong>乾淨杯</strong>
+              <span>
+                {changes.cups.cleanBefore} → {changes.cups.cleanAfter}
+              </span>
+            </div>
+            <div className="optimizer-transaction-row">
+              <strong>用過的杯子</strong>
+              <span>
+                {changes.cups.usedBefore} → {changes.cups.usedAfter}
+              </span>
+              {changes.cups.droppedUsedCups > 0 && (
+                <small>
+                  本次規劃會掉落 {changes.cups.droppedUsedCups} 個用過的杯子。
+                </small>
+              )}
+            </div>
+          </div>
+        </article>
+
+        <article className="optimizer-transaction-card">
+          <div className="optimizer-transaction-card-heading">
+            <strong>今日供應顧客</strong>
+            <span>
+              {draft.before.suppliedCustomerIds.length} →{' '}
+              {draft.after.suppliedCustomerIds.length} 人
+            </span>
+          </div>
+          {changes.newlySuppliedCustomerIds.length === 0 ? (
+            <p>沒有新增今日供應顧客。</p>
+          ) : (
+            <p>
+              新增：
+              {changes.newlySuppliedCustomerIds
+                .map(customerLabel)
+                .join('、')}
+            </p>
+          )}
+        </article>
+      </div>
+
+      <article className="optimizer-transaction-card optimizer-transaction-jars">
+        <div className="optimizer-transaction-card-heading">
+          <strong>實體果汁罐</strong>
+          <span>{changes.juiceJars.length} 個期末內容變更</span>
+        </div>
+
+        {changes.juiceJars.length === 0 ? (
+          <p>期末沒有果汁罐內容變更。</p>
+        ) : (
+          <div className="optimizer-transaction-list">
+            {changes.juiceJars.map((change) => (
+              <div
+                className="optimizer-transaction-row"
+                key={change.physicalJarId}
+              >
+                <strong>果汁罐 {change.physicalJarId}</strong>
+                <span>{transactionJarChangeLabel(change)}</span>
+                <small>
+                  {transactionJarContentLabel(
+                    change.before,
+                    productionJarFills,
+                  )}
+                  {' → '}
+                  {transactionJarContentLabel(
+                    change.after,
+                    productionJarFills,
+                  )}
+                </small>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {productionJarFills.length > 0 && (
+          <div className="optimizer-transaction-fill-events">
+            <strong>本日成品裝罐事件</strong>
+            {productionJarFills.map((fill, index) => (
+              <p
+                key={
+                  fill.physicalJarId +
+                  '-' +
+                  fill.beforeTripNumber +
+                  '-' +
+                  index
+                }
+              >
+                果汁罐 {fill.physicalJarId} ·{' '}
+                {transactionFillActionLabel(fill)} ·{' '}
+                {formatRecipeDisplayName(fill.recipeName)} ×
+                {fill.servings} 杯 · 第 {fill.beforeTripNumber} 趟販售前
+              </p>
+            ))}
+          </div>
+        )}
+      </article>
+    </section>
+  )
+}
+
 function OptimizerResultPanel({
   result,
   preparationShortfall,
   productionLogistics,
   priorities,
   salesTripPlans,
+  transactionDraft,
 }: {
   result: OptimizationResult
   preparationShortfall: PreparationShortfall
   productionLogistics: ProductionLogisticsPlan
   priorities: OptimizationCriterion[]
   salesTripPlans: SalesTripPlans
+  transactionDraft: PlanApplicationTransactionDraft | null
 }) {
   const selectedSalesTripPlan = salesTripPlans.selected
   const alternateSalesTripPlan = salesTripPlans.alternate
@@ -1210,6 +1485,26 @@ function OptimizerResultPanel({
           </small>
         )}
       </div>
+
+      {transactionDraft ? (
+        <PlanApplicationPreview
+          draft={transactionDraft}
+          productionJarFills={selectedSalesTripPlan.productionJarFills}
+        />
+      ) : (
+        <section
+          className="optimizer-result-section optimizer-transaction-preview"
+          aria-label="套用規劃預覽"
+        >
+          <div className="section-title">
+            <strong>套用規劃預覽</strong>
+            <span>目前無法建立</span>
+          </div>
+          <p className="optimizer-transaction-warning">
+            目前製作物流不可行，因此不建立交易草稿，也不會修改庫存。請先處理下方製作物流警告後重新產生規劃。
+          </p>
+        </section>
+      )}
 
       <section className="optimizer-result-section">
         <div className="section-title">
