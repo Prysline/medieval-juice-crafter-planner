@@ -1,19 +1,24 @@
 import { Model, sum } from '@bubblyworld/highs-ts'
+import { PROCESSING_STACK_CAPACITY } from './inventoryRules'
 import type {
   BatchOptimizerSolver,
   BatchSolverSolution,
 } from './optimizerSolver'
-import type {
-  BatchOptimizationModel,
-  OptimizationObjective,
+import {
+  normalizedAvailableJuiceJarCount,
+  type BatchOptimizationModel,
+  type OptimizationCriterion,
 } from './optimizerModel'
 
 type ObjectiveKey =
   | 'cost'
-  | 'batches'
+  | 'productionUnits'
   | 'kinds'
   | 'negativeKnownRevenue'
   | 'negativeKnownGrossProfit'
+  | 'machineOperations'
+  | 'jarSwitches'
+
 type IntVariable = ReturnType<Model['intVar']>
 type BoolVariable = ReturnType<Model['boolVar']>
 
@@ -32,22 +37,32 @@ function requiredFiniteNumber(
   return value
 }
 
+function criterionKey(
+  criterion: OptimizationCriterion,
+): ObjectiveKey {
+  if (criterion === 'minimum-cost') return 'cost'
+  if (criterion === 'minimum-waste') return 'productionUnits'
+  if (criterion === 'maximum-known-revenue') return 'negativeKnownRevenue'
+  if (criterion === 'maximum-known-gross-profit') {
+    return 'negativeKnownGrossProfit'
+  }
+  if (criterion === 'minimum-machine-operations') {
+    return 'machineOperations'
+  }
+  return 'jarSwitches'
+}
+
 function objectiveOrder(
-  objective: OptimizationObjective,
+  priorities: OptimizationCriterion[],
 ): ObjectiveKey[] {
-  if (objective === 'minimum-cost') {
-    return ['cost', 'batches', 'kinds']
-  }
-
-  if (objective === 'minimum-waste') {
-    return ['batches', 'cost', 'kinds']
-  }
-
-  if (objective === 'maximum-known-revenue') {
-    return ['negativeKnownRevenue', 'cost', 'batches', 'kinds']
-  }
-
-  return ['negativeKnownGrossProfit', 'cost', 'batches', 'kinds']
+  const explicit = priorities.map(criterionKey)
+  const fallback: ObjectiveKey[] = [
+    'cost',
+    'productionUnits',
+    'machineOperations',
+    'kinds',
+  ]
+  return [...new Set([...explicit, ...fallback])]
 }
 
 function buildHighsStage(
@@ -56,23 +71,35 @@ function buildHighsStage(
   fixes: ObjectiveFix[],
 ) {
   const model = new Model()
-  const maxBatches = Math.max(
+  const maxJuiceUnitsPerRecipe = Math.max(
     1,
     Math.ceil(domain.serviceableCustomerIds.length / 2),
+  )
+  const maxTotalJuiceUnits = Math.max(
+    1,
+    domain.serviceableCustomerIds.length,
   )
   const xByRecipeId = new Map<string, IntVariable>()
   const zByRecipeId = new Map<string, BoolVariable>()
   const yByCustomerRecipe = new Map<string, BoolVariable>()
 
   domain.recipes.forEach((recipe, recipeIndex) => {
-    const x = model.intVar(0, maxBatches, `x_${recipeIndex}`)
+    const x = model.intVar(
+      0,
+      maxJuiceUnitsPerRecipe,
+      `x_${recipeIndex}`,
+    )
     const z = model.boolVar(`z_${recipeIndex}`)
     xByRecipeId.set(recipe.candidate.id, x)
     zByRecipeId.set(recipe.candidate.id, z)
 
     model.addConstraint(
-      x.minus(z.times(maxBatches)).leq(0),
-      `usage_${recipeIndex}`,
+      x.minus(z.times(maxJuiceUnitsPerRecipe)).leq(0),
+      `usage_upper_${recipeIndex}`,
+    )
+    model.addConstraint(
+      z.minus(x).leq(0),
+      `usage_lower_${recipeIndex}`,
     )
   })
 
@@ -115,13 +142,52 @@ function buildHighsStage(
     )
   })
 
+  const productionEdgeKeys = [
+    ...new Set(
+      domain.recipes.flatMap((recipe) =>
+        recipe.productionPath.edges.map((edge) => edge.key),
+      ),
+    ),
+  ]
+  const operationByEdgeKey = new Map<string, IntVariable>()
+
+  productionEdgeKeys.forEach((edgeKey, edgeIndex) => {
+    const operationCount = model.intVar(
+      0,
+      maxTotalJuiceUnits,
+      `op_${edgeIndex}`,
+    )
+    operationByEdgeKey.set(edgeKey, operationCount)
+
+    const quantityExpression = sum(
+      ...domain.recipes.flatMap((recipe) => {
+        if (!recipe.productionPath.edges.some((edge) => edge.key === edgeKey)) {
+          return []
+        }
+        const x = xByRecipeId.get(recipe.candidate.id)
+        return x ? [x] : []
+      }),
+    )
+
+    model.addConstraint(
+      quantityExpression
+        .minus(operationCount.times(PROCESSING_STACK_CAPACITY))
+        .leq(0),
+      `operation_capacity_${edgeIndex}`,
+    )
+    model.addConstraint(
+      operationCount.minus(quantityExpression).leq(0),
+      `operation_usage_${edgeIndex}`,
+    )
+  })
+
   const costExpression = sum(
     ...domain.recipes.flatMap((recipe) => {
       const x = xByRecipeId.get(recipe.candidate.id)
-      return x ? [x.times(recipe.batchIngredientCost)] : []
+      return x ? [x.times(recipe.juiceUnitIngredientCost)] : []
     }),
   )
-  const batchExpression = sum(
+  const productionUnitsExpression = sum(
     ...domain.recipes.flatMap((recipe) => {
       const x = xByRecipeId.get(recipe.candidate.id)
       return x ? [x] : []
@@ -133,6 +199,10 @@ function buildHighsStage(
       return z ? [z] : []
     }),
   )
+  const machineOperationsExpression = sum(
+    ...operationByEdgeKey.values(),
+  )
+
   const formalCustomerIds = new Set(domain.request.formalCustomerIds)
   const knownRevenueExpression = sum(
     ...domain.serviceableCustomerIds.flatMap((customerId) => {
@@ -149,12 +219,42 @@ function buildHighsStage(
       })
     }),
   )
+
+  const availableJars = normalizedAvailableJuiceJarCount(domain.request)
+  const jarSwitches = model.intVar(
+    0,
+    Math.max(0, domain.recipes.length),
+    'jar_type_switches',
+  )
+  model.addConstraint(
+    kindExpression.minus(jarSwitches).leq(availableJars),
+    'jar_switch_lower_bound',
+  )
+  model.addConstraint(
+    jarSwitches.minus(kindExpression).leq(0),
+    'jar_switch_usage',
+  )
+
+  const maxJarTypeSwitches =
+    domain.request.constraints?.maxJarTypeSwitches
+  if (
+    typeof maxJarTypeSwitches === 'number' &&
+    Number.isFinite(maxJarTypeSwitches)
+  ) {
+    model.addConstraint(
+      jarSwitches.leq(Math.max(0, Math.floor(maxJarTypeSwitches))),
+      'jar_switch_hard_limit',
+    )
+  }
+
   const expressions = {
     cost: costExpression,
-    batches: batchExpression,
+    productionUnits: productionUnitsExpression,
     kinds: kindExpression,
     negativeKnownRevenue: knownRevenueExpression.times(-1),
     negativeKnownGrossProfit: costExpression.minus(knownRevenueExpression),
+    machineOperations: machineOperationsExpression,
+    jarSwitches,
   }
 
   fixes.forEach((fix, index) => {
@@ -170,27 +270,30 @@ function buildHighsStage(
     model,
     xByRecipeId,
     yByCustomerRecipe,
+    operationByEdgeKey,
   }
 }
 
 export const highsSolverAdapter: BatchOptimizerSolver = {
   async solve(
     domain: BatchOptimizationModel,
-    objective: OptimizationObjective,
+    priorities: OptimizationCriterion[],
   ): Promise<BatchSolverSolution> {
     if (domain.serviceableCustomerIds.length === 0) {
       return {
         assignments: [],
-        batchCountByRecipeId: {},
+        productionUnitsByRecipeId: {},
         metrics: {
           totalIngredientCost: 0,
-          totalBatches: 0,
+          totalProductionUnits: 0,
           recipeKinds: 0,
+          machineOperations: 0,
+          jarTypeSwitches: 0,
         },
       }
     }
 
-    const objectives = objectiveOrder(objective)
+    const objectives = objectiveOrder(priorities)
     const fixes: ObjectiveFix[] = []
     let final:
       | {
@@ -251,40 +354,59 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
       },
     )
 
-    const batchCountByRecipeId: Record<string, number> = {}
+    const productionUnitsByRecipeId: Record<string, number> = {}
     for (const recipe of domain.recipes) {
       const variable = finalStage.built.xByRecipeId.get(recipe.candidate.id)
       const count = variable
         ? Math.round(
             requiredFiniteNumber(
               finalStage.solution.getValue(variable),
-              `batch count ${recipe.candidate.id}`,
+              `production units ${recipe.candidate.id}`,
             ),
           )
         : 0
 
       if (count > 0) {
-        batchCountByRecipeId[recipe.candidate.id] = count
+        productionUnitsByRecipeId[recipe.candidate.id] = count
       }
     }
 
-    const totalBatches = Object.values(batchCountByRecipeId)
-      .reduce((sum, count) => sum + count, 0)
+    const totalProductionUnits = Object.values(productionUnitsByRecipeId)
+      .reduce((total, count) => total + count, 0)
     const totalIngredientCost = domain.recipes.reduce(
-      (sum, recipe) =>
-        sum +
-        (batchCountByRecipeId[recipe.candidate.id] ?? 0) *
-          recipe.batchIngredientCost,
+      (total, recipe) =>
+        total +
+        (productionUnitsByRecipeId[recipe.candidate.id] ?? 0) *
+          recipe.juiceUnitIngredientCost,
       0,
+    )
+    const recipeKinds = Object.keys(productionUnitsByRecipeId).length
+    const machineOperations = [...finalStage.built.operationByEdgeKey.values()]
+      .reduce(
+        (total, variable) =>
+          total +
+          Math.round(
+            requiredFiniteNumber(
+              finalStage.solution.getValue(variable),
+              'machine operation count',
+            ),
+          ),
+        0,
+      )
+    const jarTypeSwitches = Math.max(
+      0,
+      recipeKinds - normalizedAvailableJuiceJarCount(domain.request),
     )
 
     return {
       assignments,
-      batchCountByRecipeId,
+      productionUnitsByRecipeId,
       metrics: {
         totalIngredientCost,
-        totalBatches,
-        recipeKinds: Object.keys(batchCountByRecipeId).length,
+        totalProductionUnits,
+        recipeKinds,
+        machineOperations,
+        jarTypeSwitches,
       },
     }
   },

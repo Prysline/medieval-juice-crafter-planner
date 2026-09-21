@@ -4,3 +4,4 @@ export const JUICE_JAR_SLOT_COST = 1
 export const JUICE_JAR_RACK_CAPACITY = 5
 export const WATER_STACK_CAPACITY = 10
 export const CLEAN_CUP_STACK_CAPACITY = 10
+export const PROCESSING_STACK_CAPACITY = 5

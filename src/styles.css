@@ -1276,7 +1276,8 @@ footer {
   display: grid;
 }
 
-.optimizer-controls select {
+.optimizer-controls select,
+.optimizer-controls input {
   width: 100%;
   min-height: 40px;
   border: 1px solid #d6c8b3;
