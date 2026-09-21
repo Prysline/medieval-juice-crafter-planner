@@ -540,6 +540,12 @@ export default function OptimizerTools({
           </span>
         </div>
 
+        {capacitySummary.effectiveCarriedJuiceJarCount < 1 && (
+          <p className="optimizer-capacity-warning" role="status">
+            請先設定至少 1 個「實際持有果汁罐」，並將「常駐攜帶果汁罐」設為至少 1。
+          </p>
+        )}
+
         <button
           type="button"
           className="optimizer-run-button"
