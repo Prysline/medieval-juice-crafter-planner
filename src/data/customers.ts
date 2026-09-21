@@ -83,7 +83,7 @@ export const customers: Customer[] = [
   { id: 'macarius', name: '馬卡里烏斯', occupation: '旅行者', villageId: 'tranquil-fountain', satisfactionRequired: 0, preferences: [ingredient('黃瓜'), effect('補充精力')] },
   { id: 'jacob', name: '雅各', occupation: '床具商人', villageId: 'tranquil-fountain', satisfactionRequired: 0, preferences: [effect('調節血糖'), effect('紓解壓力')] },
   { id: 'christina', name: '克里斯蒂娜', occupation: '麵包師', villageId: 'tranquil-fountain', satisfactionRequired: 0, preferences: [ingredient('紅蘿蔔'), effect('芳香')] },
-  { id: 'florida', name: '弗洛莉妲', occupation: '孩童', villageId: 'tranquil-fountain', satisfactionRequired: 0, preferences: [ingredient('橙子'), ingredient('肉桂')] },
+  { id: 'florida', name: '弗洛莉婭', occupation: '孩童', villageId: 'tranquil-fountain', satisfactionRequired: 0, preferences: [ingredient('橙子'), ingredient('肉桂')] },
   { id: 'daniel', name: '丹尼爾', occupation: '酒館店主', villageId: 'tranquil-fountain', satisfactionRequired: 200, preferences: null },
   { id: 'octavius', name: '奧克塔維烏斯', occupation: '領主', villageId: 'tranquil-fountain', satisfactionRequired: 300, preferences: null },
 
