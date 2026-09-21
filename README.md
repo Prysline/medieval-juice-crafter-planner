@@ -202,7 +202,7 @@ D4 只處理從家出發、賣完回家的**販售趟**。它不加入顧客 sch
 
 used-cup handling 必須明確選 policy：
 
-- `retain-and-wash`：預設策略；逐杯模擬 clean → used。若某次 used cup 回傳會讓背包超過 10 slots，該趟會在更早位置截斷，回家後可把實際持有的 used cups 清洗成 clean cups再出發；清洗杯數與等量用水都會記錄。
+- `retain-and-wash`：預設策略；逐杯模擬 clean → used。若某次 used cup 回傳會讓背包超過 10 slots，該趟會在更早位置截斷，回家後可把實際持有的 used cups 清洗成 clean cups 再出發；清洗杯數與等量用水都會記錄。
 - `allow-drop-if-full`：persisted **opt-in**；同樣逐杯模擬 clean → used，但 NPC 回傳 used cup 當下若真的沒有空間，才把該杯記為掉落。掉落杯不再供後續趟次使用；這不代表玩家能主動把物品丟地上作 storage。
 - 目前選用的 policy 必須產生可行排程；替代 policy 若因容量不可行，只顯示不可行原因，不會反過來讓已選策略整體失敗。兩種 policy 都保留實際 physical cup ownership，並檢查 `final physical cups = initial physical cups - dropped cups`。
 
