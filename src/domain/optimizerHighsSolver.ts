@@ -6,7 +6,6 @@ import type {
 } from './optimizerSolver'
 import {
   minimumJarTypeSwitchesForRecipeIds,
-  normalizedAvailableJuiceJarCount,
   normalizedInitialCarriedJuiceJars,
   type BatchOptimizationModel,
   type OptimizationCriterion,
