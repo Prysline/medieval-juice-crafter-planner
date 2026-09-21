@@ -36,7 +36,10 @@ function normalizeIngredientUnits(
   return Object.fromEntries(
     Object.entries(value)
       .filter(([id]) => id.length > 0)
-      .map(([id, quantity]) => [id, normalizeCount(quantity)])
+      .map(
+        ([id, quantity]) =>
+          [id, normalizeCount(quantity)] as const,
+      )
       .filter(([, quantity]) => quantity > 0),
   )
 }
