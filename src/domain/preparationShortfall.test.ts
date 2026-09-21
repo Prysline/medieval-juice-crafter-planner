@@ -39,6 +39,8 @@ function inventory(
     cleanCups: 0,
     usedCups: 0,
     juiceJars: [],
+    shelfCount: 0,
+    jarRackCount: 0,
     ...patch,
   }
 }
