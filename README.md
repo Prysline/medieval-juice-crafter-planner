@@ -18,7 +18,7 @@
 - 「配方工具」已改為 ordered sequence builder：點原料直接 append，可重複調味、四原料以上、逐項刪除／清空；observed 精確序列優先，否則顯示 computed / ambiguity。
 - 個人配方只保存自訂名稱、有序 ingredient IDs、備註與建立時間；effects、cost、equipment、matching 每次由目前 domain 重新計算。
 - 「批次規劃」已重構為 production optimizer：可依序指定主要／次要 lexicographic 目標，包含最低成本、最少浪費、最高已知銷售總額、最高已知毛利、最少機器操作與最少果汁罐換裝；結果按最終果汁分組顧客，並顯示共享中間半成品、1～5 份 stack 操作、原料清單、收入／毛利與 unresolved 顧客。
-- Core model correction 2B 已把可用 physical jar 數接進多趟販售 schedule；UI 會分開顯示「保留杯具並回家清洗」與「背包滿時允許丟棄」兩種 policy 的販售趟數與逐罐排程。
+- Core model correction 2B 已把可用 physical jar 數接進多趟販售 schedule；UI 會分開顯示「保留杯具並回家清洗」與「接受背包滿時 used cup 可能掉落」兩種 policy 的販售趟數與逐罐排程。現行 `retain-and-wash` 的固定 1-slot 預留仍是 approximation，後續會改成實際 clean / used cup lifecycle。
 - Inventory / packing D1～D4 已建立：`mjc-inventory` 保存原料、水、杯具與果汁罐狀態；`PreparationDemand` 消費 production-unit optimizer 結果，並已有 stock offset、single-trip packing 與 multi-trip replenishment。
 - 預測若在 effect cutoff 出現未確認同分 tie，會明確標示 ambiguous，且不參與完全匹配推薦。
 - 舊版 `mjc-stage` / `mjc-satisfaction` localStorage 會保守遷移到新版進度資料。
@@ -92,7 +92,7 @@ PR 2B generator 仍只**自動枚舉**「1 種果汁基底 + 0～2 種不重複�
 
 手動 simulator 使用 ordered sequence：重複調味與四原料以上都可評估；每遇到新的 juice-base 就開始下一杯飲料 segment。兩杯飲料經果汁調和器組合時，網站只做 `front.sequence + back.sequence`，不另造 Blender 專用配方格式。多 juice-base sequence 的 unlock 至少為 `juice-blender-unlocked`，equipment 會包含果汁調和器。
 
-果汁調和器的遊戲內精確輸入比例、產量與售價公式仍未確認，因此 blended sequence 只顯示 ordered ingredients / effects / 原料合計，不推導每杯成本或售價。
+果汁調和器已確認 **1:1:1** 數量模型：果汁 A ×q + 果汁 B ×q → 調和果汁 ×q，q = 1～5；機器為 2 個 input + 1 個 output，共 **3 slots**。目前仍未確認的是可接受果汁類型的完整限制、調和後特性與售價規則。現行 simulator 已能做 sequence concatenation，但 automatic production planner 尚未把這個 quantity model 接入 production graph。
 
 特性預測目前採用實測最支持的模型：
 
@@ -117,7 +117,7 @@ optimizer request 會帶入主線進度、分村滿意度、今日已供應顧�
 
 這只是產量換算，不代表一次機器操作。製作設備一次可處理 1～5 份，因此 production graph 會把共享前綴聚合後，再用 `ceil(quantity / 5)` 計算每層機器操作。例如 `AB ×1` 與 `ABC ×2` 會共享 `AB ×3`，而不是各自從頭製作。重複調味如 `A → AB → ABB` 則是兩層不同調味操作。
 
-V1 自動 optimizer 暫只接受「一個 juice-base + seasoning chain」的 production-safe 配方；果汁調和器雖已確認 sequence concatenation，但精確輸入比例／產量仍未知，因此多 juice-base 配方不進自動份數最佳化。
+V1 自動 optimizer 目前仍只接受「一個 juice-base + seasoning chain」的 production-safe 配方。這是**現行實作缺口**，不是遊戲規則未知：果汁調和器已確認 sequence concatenation 與 1:1:1、q = 1～5 的 quantity model；下一輪要把 blending edge 正式接入 production graph 後，才能讓多 juice-base 配方進自動份數最佳化。
 
 HiGHS solver 使用真正的 lexicographic repeated solve，不使用隱藏權重。可指定的 criterion 包含：
 
@@ -157,19 +157,36 @@ GitHub Pages 由 `.github/workflows/pages.yml` 在 `main` 更新後建置 `dist/
 
 ## Inventory / packing boundary
 
-D1 只建立 inventory state 與全天 PreparationDemand：
+D1～D4 已完成既有 inventory / packing foundation：
 
 ```text
 OptimizationResult
 → PreparationDemand
-→ inventory / packing（後續）
+→ stock offset
+→ single-trip packing
+→ physical-jar-aware multi-trip replenishment
 ```
 
-目前正式鎖定的容量規則：背包 10 slot、果汁罐 1 slot / 容量 10 / 同罐不混飲料、果汁罐架 5 slot、水 stack 10、乾淨杯具 stack 10、一般原料／原汁 stack 5。D1/D2 最初建立時尚未使用一般原料／原汁 stack 5；規則現已確認，production optimizer 已使用它計算機器操作。
+目前正式確認的容量／物流規則：
 
-D2 的 single-trip packing 目前只處理**販售趟**：把已分配給顧客的成品按 recipe 分裝進果汁罐，並計算乾淨杯具 stack。optimizer 產生但未分配的 leftover 不帶出門。若完整需求超過 10 slot，只回報 required / overflow slots，不自行決定要犧牲哪位顧客；多趟拆分留到後續 slice。
+- 背包：**10 slots**。
+- 一般原料／原汁：**5 / stack**。
+- 水：**10 / slot**；免費，但搬運與暫存仍占空間。製作區到取水處有一段距離，一次能取多少水由**當下背包可用空間**決定，不是固定只取 1 stack。
+- 一般架子：**9 slots / 架**；每個 shelf slot 沿用背包中同類物品的 stack capacity。
+- 玩家目前似乎不能主動把物品放地面作 storage；採水或 NPC 回傳 used cup 等外部取得物品在背包滿時造成掉落，與主動地面暫存是不同機制。
+- 杯子／乾淨悲劇：**10 / stack**；後續 planner 必須再加入「玩家實際持有杯數」hard constraint。
+- 果汁罐：**1 罐 = 1 slot / 容量 10 / 同罐不混不同飲料**。
+- 果汁罐架：**5 slots / 架**。現行 runtime 的 `JUICE_JAR_RACK_CAPACITY = 5` 等價於單一 rack 的歷史實作；下一輪會改成 `jarRackCount × 5`，並與實際 physical jar 持有數分開。
 
-D3 是 **post-optimizer stock offset**：先用 `mjc-inventory` 中同 recipe 的既有成品抵掉 assigned servings，再重算真正需要的新製作 juice units、原料與 production water；接著用 raw ingredient / water / clean cups inventory 抵扣缺口。一般 packing 仍不重新求解顧客分配；只有「最少／最大果汁罐換裝」會把必要的可用果汁罐摘要回饋給 optimizer。
+machine slots 與「一次可處理 1～5 份」是兩個不同概念：
+
+- 柑橘榨汁機／榨汁機：1 input + 1 output = **2 slots**。
+- 調味器：果汁 input + 調味材料 input + output = **3 slots**。
+- 果汁成品台：果汁 input + 水 input + output = **3 slots**。
+- 悲劇清洗台：used cup input + 水 input + clean cup output = **3 slots**。
+- 果汁調和器：果汁 A input + 果汁 B input + output = **3 slots**，已確認 1:1:1、q = 1～5。
+
+D2 的 single-trip packing 仍只負責單趟 required / overflow 計算；**多趟拆分已由 D4 完成**，不再是「後續 slice」。D3 會先用 `mjc-inventory` 中同 recipe 的既有成品抵 assigned servings，再重算新製作 juice units、原料與 production water，並以 raw ingredient / water / clean cups inventory 抵扣缺口。一般 packing 不重新求解顧客配方分配；只有會影響 final-juice kind selection 的果汁罐換裝條件，才把必要 container summary 回饋給 optimizer。
 
 購買來源只使用目前資料中明確的 seller / shop 價格：若只有一個最低價來源可唯一選擇；同價則保留所有 source records，不加入路線或距離 tie-break。`Ingredient.seller` 與 `shops.ts` 若名稱相同，目前也不自行推定為同一實體商店，等後續 location identity 更完整再處理。
 
@@ -180,10 +197,10 @@ D4 只處理從家出發、賣完回家的**販售趟**。它不加入顧客 sch
 
 used-cup handling 必須明確選 policy：
 
-- `retain-and-wash`：每趟 departure load 只允許使用 9 / 10 slots，預留 1 slot 給第一個 used-cup stack；每趟（最後一趟除外）回家後把該趟 used cups 全部洗回 clean cups，再供下一趟重用。這個「預留 1 slot」是網站 packing policy，不是額外宣稱遊戲 UI 規則。
-- `allow-drop-if-full`：departure 可使用完整 10 slots；若 10 slots 全滿，網站只標示 used cups **可能掉落**，不假裝它們一定能回收，也不假設跨趟重用。
+- `retain-and-wash`：現行 runtime 每趟 departure load 只允許使用 9 / 10 slots，固定預留 1 slot 給 used-cup stack；每趟（最後一趟除外）回家後洗回 clean cups，再供下一趟重用。這是目前的 **packing approximation**，不是最終杯具物理模型。
+- `allow-drop-if-full`：departure 可使用完整 10 slots；若背包滿，網站只標示 used cups **可能掉落**。這表示 planner 接受該結果，不代表玩家能主動把物品丟地上作 storage。
 
-每趟同時可用的果汁罐數會取 **玩家可用 physical jar 數、果汁罐架 5 slots、背包／杯具 policy 可容納量** 的共同限制。規劃採「一次 staging 一趟」的模型；若未來確認遊戲允許不經罐架同時準備更多罐，這項 constraint 再另行調整。
+每趟同時可用的果汁罐數目前取 **玩家可用 physical jar 數、單一 5-slot jar rack、背包／杯具 policy 可容納量** 的共同限制。遊戲規則已確認為 **5 slots / 架**；後續需改為由玩家的 `jarRackCount` 決定 staging capacity。
 
 Core model correction 2B 已把 physical jar identity 接進 D4 schedule。每個 load 都記錄實際果汁罐編號、optimizer 已通過 full-match gate 的顧客 IDs，以及「首次裝填／補裝同種／換裝」狀態；同一 physical jar 在同一趟只會出現一次。當果汁種類多於可用罐數時，新增果汁種類會串到既有 jar queue 上，讓 schedule 實際實現 `max(0, 果汁種類數 - 可用果汁罐數)` 的最低換裝數；當罐數足夠時，額外空罐可平行承擔同一種果汁的多個容量 10 load，而不製造假換裝。
 
@@ -194,6 +211,20 @@ Core model correction 2B 已把 physical jar identity 接進 D4 schedule。每�
 trip grouping 仍是 deterministic capacity-first feasible planning；它目標是產生可解釋、符合 physical jar / rack / backpack / cup constraints 的共同排程，**不宣稱已做最少趟數的全域最佳化**。
 
 
+## Next planner corrections
+
+下一輪 active plan 不先做 route optimizer，而是先把目前 quantity-level planner 補成可執行的 physical logistics：
+
+1. 結果閱讀順序改成 **規劃摘要 → 所需物資 → 製作步驟 → 果汁分配 → 販售排程**；水即使免費也要出現在所需物資，而不是因不需購買就消失。
+2. 製作步驟按機器分組；配方內部順序使用 `▸`，實際加工／轉換使用 `→`。
+3. `mjc-inventory` 補一般架子數、果汁罐架數、實際杯具／果汁罐持有狀態，以及「物品欄常駐 X 個果汁罐」planner setting。
+4. 建立 **背包 ↔ 一般架子 ↔ machine input/output slots** 的 production-logistics 可行性模型；三者不能簡單相加成總 slot。
+5. 把取水納入搬運：水源有距離、取得量受當下背包空間限制，可搬回一般架子後再製作。
+6. 用實際 clean / used cup stack transition 取代固定「預留 1 slot」approximation；「接受背包滿時 used cup 掉落」預設應為 opt-in。
+7. Blender 1:1:1 quantity model 接入 production graph。
+8. 後續再加入 inventory UI、套用規劃 transaction preview，以及多 profile 保存主線進度／顧客／倉儲狀態。
+
+
 ## Schedule / route readiness boundary
 
 D5 目前只做到 **schedule normalization + route-readiness**，不實作 route optimizer，因為 source 尚未提供足夠資料。
@@ -202,7 +233,7 @@ D5 目前只做到 **schedule normalization + route-readiness**，不實作 rout
 
 - `leave_home`：只代表離開家門，**不等於實際離村時間**。
 - `outside_village_by`：只代表到該時間時已在村外，不能反推出精確離村時間。
-- `return_village`：保留觀察到的約略返村時間。
+- `return_village`：保留觀察到的約略返村時間；目前新增傑克（帽匠）約 **15:40** 返村觀察，仍不宣稱每日精準固定。
 - `HH:MM` 與 `HH:MM～HH:MM` 可轉成 minutes 作排序／比較，但原始字串仍保留；不支援的文字維持 unparsed。
 
 目前 route optimization 明確被以下 source gaps 阻塞：
