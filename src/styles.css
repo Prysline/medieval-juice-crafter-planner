@@ -1586,6 +1586,151 @@ footer {
   margin-top: 10px;
 }
 
+.optimizer-machine-group {
+  overflow: hidden;
+  margin-top: 12px;
+  border: 1px solid #d6c8b3;
+  border-radius: 13px;
+  background: #fffdf8;
+}
+
+.optimizer-machine-header {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #dfd2bd;
+  background: #eee4d5;
+  padding: 10px 12px;
+}
+
+.optimizer-machine-header > div {
+  display: grid;
+  gap: 1px;
+}
+
+.optimizer-machine-header > div > span {
+  color: #8a7964;
+  font-size: 0.66rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.optimizer-machine-header strong {
+  color: #38502f;
+  font-size: 0.92rem;
+}
+
+.optimizer-machine-header > span {
+  color: #795d22;
+  font-size: 0.74rem;
+  font-weight: 900;
+}
+
+.optimizer-machine-steps {
+  display: grid;
+  gap: 9px;
+  padding: 10px;
+}
+
+.optimizer-production-step-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #e6dccd;
+  border-radius: 10px;
+  background: #fffaf1;
+  padding: 9px 10px;
+}
+
+.optimizer-production-step-heading {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.optimizer-production-step-heading strong {
+  color: #4f6744;
+  font-size: 0.82rem;
+}
+
+.optimizer-production-step-heading span {
+  color: #7b684e;
+  font-size: 0.72rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.optimizer-operation-batches {
+  display: grid;
+  gap: 7px;
+}
+
+.optimizer-operation-flow {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  border-top: 1px dashed #e5d9c8;
+  padding-top: 7px;
+}
+
+.optimizer-operation-flow:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.optimizer-batch-index {
+  color: #88745a;
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.optimizer-slot-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.optimizer-slot-pill {
+  display: inline-grid;
+  gap: 1px;
+  max-width: 100%;
+  border: 1px solid #d9cab4;
+  border-radius: 999px;
+  background: #f8f0e2;
+  padding: 4px 8px;
+  color: #5d5140;
+  line-height: 1.15;
+}
+
+.optimizer-slot-pill small {
+  color: #947d5e;
+  font-size: 0.58rem;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+}
+
+.optimizer-slot-pill strong {
+  overflow-wrap: anywhere;
+  color: #4e4436;
+  font-size: 0.72rem;
+}
+
+.optimizer-slot-operator,
+.optimizer-slot-arrow {
+  color: #8e7657;
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.optimizer-slot-arrow {
+  margin-inline: 1px;
+}
+
 .optimizer-policy-comparison {
   margin-top: 10px;
   border: 1px solid #e2d7c5;
@@ -1698,5 +1843,22 @@ footer {
   .optimizer-shopping-values {
     display: grid;
     gap: 2px;
+  }
+
+  .optimizer-machine-header,
+  .optimizer-production-step-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .optimizer-machine-header > span,
+  .optimizer-production-step-heading span {
+    white-space: normal;
+  }
+
+  .optimizer-operation-flow {
+    grid-template-columns: 1fr;
+    gap: 4px;
   }
 }
