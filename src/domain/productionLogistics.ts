@@ -53,7 +53,7 @@ export interface ProductionLogisticsPlan {
   issues: string[]
   productionPlan: ProductionPlan
   actions: ProductionLogisticsAction[]
-  ingredientAcquisitionTrips: number
+  ingredientAcquisitionActions: number
   waterFetchTrips: number
   initialSnapshot: ProductionStorageSnapshot
   finalSnapshot: ProductionStorageSnapshot
@@ -326,7 +326,7 @@ export function buildProductionLogisticsPlan(
   )
   const issues: string[] = []
   const actions: ProductionLogisticsAction[] = []
-  let ingredientAcquisitionTrips = 0
+  let ingredientAcquisitionActions = 0
   let waterFetchTrips = 0
   let externalWaterRemaining = shortfall.waterUnitsToFetch
   const capacitySummary = buildInventoryCapacitySummary(
@@ -413,7 +413,7 @@ export function buildProductionLogisticsPlan(
       return false
     }
 
-    ingredientAcquisitionTrips += 1
+    ingredientAcquisitionActions += 1
     pushAction(
       'acquire-ingredient',
       `取得 ${ingredientById.get(ingredientId)?.name ?? ingredientId} ×${missing}`,
@@ -649,7 +649,7 @@ export function buildProductionLogisticsPlan(
     issues,
     productionPlan,
     actions,
-    ingredientAcquisitionTrips,
+    ingredientAcquisitionActions,
     waterFetchTrips,
     initialSnapshot,
     finalSnapshot,
