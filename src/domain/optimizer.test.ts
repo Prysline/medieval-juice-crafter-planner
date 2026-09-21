@@ -393,6 +393,32 @@ describe('production optimizer', () => {
     expect(result.jarTypeSwitches).toBe(0)
   })
 
+  it('rejects recipe variety that would require discarding unconsumed initial juice', async () => {
+    const source = {
+      customers: [
+        customer('a', '酸味'),
+        customer('b', '清新口氣'),
+      ],
+      candidates: [
+        recipe('a-only', ['檸檬'], ['酸味']),
+        recipe('b-only', ['橙子'], ['清新口氣']),
+      ],
+    }
+
+    await expect(
+      optimizeBatchPlan(
+        {
+          ...request(['a', 'b']),
+          initialCarriedJuiceJars: [
+            { recipeId: 'a-only', servings: 2 },
+          ],
+          priorities: ['minimum-cost', 'minimum-jar-switches'],
+        },
+        { source },
+      ),
+    ).rejects.toThrow()
+  })
+
   it('allows a fully consumed initial jar to become the source of a later type switch', async () => {
     const source = {
       customers: [
