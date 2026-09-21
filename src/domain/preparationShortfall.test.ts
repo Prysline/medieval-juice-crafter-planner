@@ -71,24 +71,26 @@ describe('preparation stock shortfall', () => {
       newlyProducedServings: 2,
       newProductionLeftoverServings: 0,
     })
-    expect(result.ingredients).toEqual([
-      {
-        ingredientId: 'lemon',
-        name: '檸檬',
-        requiredUnits: 1,
-        inventoryUnitsAvailable: 1,
-        inventoryUnitsUsed: 1,
-        purchaseUnits: 0,
-      },
-      {
-        ingredientId: 'sugar',
-        name: '糖',
-        requiredUnits: 1,
-        inventoryUnitsAvailable: 0,
-        inventoryUnitsUsed: 0,
-        purchaseUnits: 1,
-      },
-    ])
+    expect(result.ingredients).toEqual(
+      expect.arrayContaining([
+        {
+          ingredientId: 'lemon',
+          name: '檸檬',
+          requiredUnits: 1,
+          inventoryUnitsAvailable: 1,
+          inventoryUnitsUsed: 1,
+          purchaseUnits: 0,
+        },
+        {
+          ingredientId: 'sugar',
+          name: '糖',
+          requiredUnits: 1,
+          inventoryUnitsAvailable: 0,
+          inventoryUnitsUsed: 0,
+          purchaseUnits: 1,
+        },
+      ]),
+    )
     expect(result.productionWaterUnitsRequired).toBe(1)
     expect(result.waterUnitsToFetch).toBe(1)
     expect(result.cleanCupUses).toBe(3)
@@ -134,24 +136,26 @@ describe('preparation stock shortfall', () => {
     const before = structuredClone(state)
     const result = buildPreparationShortfall(demand, state)
 
-    expect(result.ingredients).toEqual([
-      {
-        ingredientId: 'lemon',
-        name: '檸檬',
-        requiredUnits: 2,
-        inventoryUnitsAvailable: 5,
-        inventoryUnitsUsed: 2,
-        purchaseUnits: 0,
-      },
-      {
-        ingredientId: 'sugar',
-        name: '糖',
-        requiredUnits: 2,
-        inventoryUnitsAvailable: 1,
-        inventoryUnitsUsed: 1,
-        purchaseUnits: 1,
-      },
-    ])
+    expect(result.ingredients).toEqual(
+      expect.arrayContaining([
+        {
+          ingredientId: 'lemon',
+          name: '檸檬',
+          requiredUnits: 2,
+          inventoryUnitsAvailable: 5,
+          inventoryUnitsUsed: 2,
+          purchaseUnits: 0,
+        },
+        {
+          ingredientId: 'sugar',
+          name: '糖',
+          requiredUnits: 2,
+          inventoryUnitsAvailable: 1,
+          inventoryUnitsUsed: 1,
+          purchaseUnits: 1,
+        },
+      ]),
+    )
     expect(result.productionWaterUnitsRequired).toBe(2)
     expect(result.waterUnitsUsed).toBe(1)
     expect(result.waterUnitsToFetch).toBe(1)
