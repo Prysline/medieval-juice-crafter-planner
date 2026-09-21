@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { PreparationDemand } from './preparationDemand'
 import {
   buildMultiTripReplenishmentPlan,
+  countJarTypeSwitchesFromSchedule,
+  type MultiTripReplenishmentPlan,
   type UsedCupTripPolicy,
 } from './multiTripReplenishment'
 
@@ -26,7 +28,9 @@ function demand(
     leftoverServings: 0,
     recipes: recipes.map((recipe) => ({
       ...recipe,
-      productionUnits: Math.ceil(recipe.assignedServings / 2),
+      productionUnits: Math.ceil(
+        recipe.assignedServings / 2,
+      ),
       producedServings: recipe.assignedServings,
       leftoverServings: 0,
       ingredientUnitsPerJuiceUnit: [],
@@ -34,18 +38,205 @@ function demand(
   }
 }
 
-function sixFullJarRecipes(): PreparationDemand {
+function namedRecipes(
+  names: string[],
+  assignedServings = 10,
+): PreparationDemand {
   return demand(
-    Array.from({ length: 6 }, (_, index) => ({
-      recipeId: `recipe-${index + 1}`,
-      recipeName: `配方 ${index + 1}`,
-      assignedServings: 10,
+    names.map((name) => ({
+      recipeId: name.toLowerCase(),
+      recipeName: name,
+      assignedServings,
     })),
   )
 }
 
+function expectScheduleConsistency(
+  result: MultiTripReplenishmentPlan,
+): void {
+  expect(result.trips).toHaveLength(result.tripCount)
+  expect(
+    countJarTypeSwitchesFromSchedule(result.trips),
+  ).toBe(result.jarTypeSwitches)
+  expect(
+    result.trips.every(
+      (trip) =>
+        new Set(
+          trip.juiceJars.map(
+            (load) => load.physicalJarId,
+          ),
+        ).size === trip.juiceJars.length,
+    ),
+  ).toBe(true)
+}
+
 describe('multi-trip replenishment', () => {
-  it('keeps one trip when jars and cup stacks fit the selected policy', () => {
+  it('reuses one physical jar across four juice types and records three switches', () => {
+    const result = buildMultiTripReplenishmentPlan(
+      namedRecipes(['A', 'B', 'C', 'D'], 1),
+      'allow-drop-if-full',
+      1,
+    )
+
+    expect(result.tripCount).toBe(4)
+    expect(result.physicalJarsUsed).toBe(1)
+    expect(result.maxJarRackSlotsUsed).toBe(1)
+    expect(result.jarTypeSwitches).toBe(3)
+    expect(
+      result.trips.flatMap((trip) =>
+        trip.juiceJars.map(
+          (load) => load.physicalJarId,
+        ),
+      ),
+    ).toEqual([1, 1, 1, 1])
+    expect(
+      result.trips.flatMap((trip) =>
+        trip.juiceJars.map(
+          (load) => load.fillAction,
+        ),
+      ),
+    ).toEqual([
+      'initial-fill',
+      'type-switch',
+      'type-switch',
+      'type-switch',
+    ])
+    expectScheduleConsistency(result)
+  })
+
+  it('uses two physical jars for four juice types in two trips with two switches', () => {
+    const result = buildMultiTripReplenishmentPlan(
+      namedRecipes(['A', 'B', 'C', 'D'], 1),
+      'allow-drop-if-full',
+      2,
+    )
+
+    expect(result.tripCount).toBe(2)
+    expect(
+      result.trips.map(
+        (trip) => trip.juiceJars.length,
+      ),
+    ).toEqual([2, 2])
+    expect(result.jarTypeSwitches).toBe(2)
+    expect(
+      result.trips[0].juiceJars.map(
+        (load) => load.fillAction,
+      ),
+    ).toEqual(['initial-fill', 'initial-fill'])
+    expect(
+      result.trips[1].juiceJars.map(
+        (load) => load.fillAction,
+      ),
+    ).toEqual(['type-switch', 'type-switch'])
+    expectScheduleConsistency(result)
+  })
+
+  it('requires multiple trips but no switch when one jar refills the same juice type', () => {
+    const result = buildMultiTripReplenishmentPlan(
+      namedRecipes(['A'], 15),
+      'allow-drop-if-full',
+      1,
+    )
+
+    expect(result.tripCount).toBe(2)
+    expect(result.jarTypeSwitches).toBe(0)
+    expect(result.trips[0].juiceJars[0]).toMatchObject({
+      physicalJarId: 1,
+      servings: 10,
+      fillAction: 'initial-fill',
+    })
+    expect(result.trips[1].juiceJars[0]).toMatchObject({
+      physicalJarId: 1,
+      servings: 5,
+      fillAction: 'refill-same-type',
+    })
+    expectScheduleConsistency(result)
+  })
+
+  it('keeps the five-slot jar rack limit even when more physical jars are available', () => {
+    const result = buildMultiTripReplenishmentPlan(
+      namedRecipes(['A', 'B', 'C', 'D', 'E', 'F']),
+      'allow-drop-if-full',
+      8,
+    )
+
+    expect(result.availableJuiceJarCount).toBe(8)
+    expect(result.physicalJarsUsed).toBe(6)
+    expect(result.tripCount).toBe(2)
+    expect(result.trips[0].juiceJars).toHaveLength(5)
+    expect(result.maxJarRackSlotsUsed).toBe(5)
+    expect(result.jarTypeSwitches).toBe(0)
+    expectScheduleConsistency(result)
+  })
+
+  it('limits each trip to the actual physical jar count when it is below rack capacity', () => {
+    const result = buildMultiTripReplenishmentPlan(
+      namedRecipes(['A', 'B', 'C', 'D']),
+      'allow-drop-if-full',
+      2,
+    )
+
+    expect(result.tripCount).toBe(2)
+    expect(result.maxJarRackSlotsUsed).toBe(2)
+    expect(
+      result.trips.every(
+        (trip) => trip.juiceJars.length <= 2,
+      ),
+    ).toBe(true)
+    expect(result.jarTypeSwitches).toBe(2)
+    expectScheduleConsistency(result)
+  })
+
+  it('preserves different trip counts for the two used-cup policies', () => {
+    const salesDemand = namedRecipes([
+      'A',
+      'B',
+      'C',
+      'D',
+      'E',
+    ])
+    const retained = buildMultiTripReplenishmentPlan(
+      salesDemand,
+      'retain-and-wash',
+      5,
+    )
+    const droppable = buildMultiTripReplenishmentPlan(
+      salesDemand,
+      'allow-drop-if-full',
+      5,
+    )
+
+    expect(retained.tripCount).toBe(2)
+    expect(retained.trips[0]).toMatchObject({
+      totalServings: 40,
+      departureSlots: 8,
+      effectiveDepartureSlotLimit: 9,
+      reservedTransientUsedCupSlot: 1,
+      usedCupDropMayOccur: false,
+      jarRackSlotsRequired: 4,
+    })
+    expect(retained.reusableCleanCupPoolSize).toBe(40)
+    expect(retained.betweenTripWashWaterUnits).toBe(40)
+
+    expect(droppable.tripCount).toBe(1)
+    expect(droppable.trips[0]).toMatchObject({
+      totalServings: 50,
+      departureSlots: 10,
+      effectiveDepartureSlotLimit: 10,
+      reservedTransientUsedCupSlot: 0,
+      usedCupDropMayOccur: true,
+      jarRackSlotsRequired: 5,
+    })
+    expect(
+      droppable.reusableCleanCupPoolSize,
+    ).toBeNull()
+    expect(droppable.betweenTripWashWaterUnits).toBe(0)
+
+    expectScheduleConsistency(retained)
+    expectScheduleConsistency(droppable)
+  })
+
+  it('can keep a multi-load same-type demand in one trip when enough physical jars exist', () => {
     const result = buildMultiTripReplenishmentPlan(
       demand([
         {
@@ -60,6 +251,7 @@ describe('multi-trip replenishment', () => {
         },
       ]),
       'retain-and-wash',
+      3,
     )
 
     expect(result.tripCount).toBe(1)
@@ -73,89 +265,42 @@ describe('multi-trip replenishment', () => {
       usedCupDropMayOccur: false,
       jarRackSlotsRequired: 3,
     })
+    expect(result.jarTypeSwitches).toBe(0)
     expect(result.reusableCleanCupPoolSize).toBe(18)
     expect(result.betweenTripWashWaterUnits).toBe(0)
-  })
-
-  it('uses the five-slot jar rack as a per-trip staging limit', () => {
-    const result = buildMultiTripReplenishmentPlan(
-      sixFullJarRecipes(),
-      'allow-drop-if-full',
-    )
-
-    expect(result.tripCount).toBe(2)
-    expect(result.trips[0].juiceJars).toHaveLength(5)
-    expect(result.trips[0]).toMatchObject({
-      totalServings: 50,
-      cleanCupStacks: 5,
-      departureSlots: 10,
-      effectiveDepartureSlotLimit: 10,
-      usedCupDropMayOccur: true,
-      jarRackSlotsRequired: 5,
-    })
-    expect(result.trips[1].juiceJars).toHaveLength(1)
-    expect(result.maxJarRackSlotsUsed).toBe(5)
-  })
-
-  it('reserves one transient used-cup slot under retain-and-wash', () => {
-    const result = buildMultiTripReplenishmentPlan(
-      sixFullJarRecipes(),
-      'retain-and-wash',
-    )
-
-    expect(result.tripCount).toBe(2)
-    expect(result.trips[0]).toMatchObject({
-      totalServings: 40,
-      departureSlots: 8,
-      effectiveDepartureSlotLimit: 9,
-      reservedTransientUsedCupSlot: 1,
-      usedCupDropMayOccur: false,
-    })
-    expect(result.trips[1]).toMatchObject({
-      totalServings: 20,
-      departureSlots: 4,
-      effectiveDepartureSlotLimit: 9,
-      reservedTransientUsedCupSlot: 1,
-      usedCupDropMayOccur: false,
-    })
-    expect(result.reusableCleanCupPoolSize).toBe(40)
-    expect(result.betweenTripWashWaterUnits).toBe(40)
-    expect(result.returnsHomeBetweenTrips).toBe(true)
-  })
-
-  it('does not assume cup reuse when full-backpack dropping is allowed', () => {
-    const result = buildMultiTripReplenishmentPlan(
-      sixFullJarRecipes(),
-      'allow-drop-if-full',
-    )
-
-    expect(result.cleanCupUnitsRequiredWithoutMiddayWashing).toBe(60)
-    expect(result.reusableCleanCupPoolSize).toBeNull()
-    expect(result.betweenTripWashWaterUnits).toBe(0)
-    expect(result.trips[0].usedCupDropMayOccur).toBe(true)
+    expectScheduleConsistency(result)
   })
 
   it.each<UsedCupTripPolicy>([
     'retain-and-wash',
     'allow-drop-if-full',
-  ])('returns an empty plan for zero demand under %s', (policy) => {
-    const result = buildMultiTripReplenishmentPlan(
-      demand([]),
-      policy,
-    )
+  ])(
+    'returns an empty plan for zero demand under %s',
+    (policy) => {
+      const result = buildMultiTripReplenishmentPlan(
+        demand([]),
+        policy,
+        2,
+      )
 
-    expect(result).toEqual({
-      policy,
-      trips: [],
-      tripCount: 0,
-      totalAssignedServings: 0,
-      totalJuiceJars: 0,
-      maxJarRackSlotsUsed: 0,
-      cleanCupUnitsRequiredWithoutMiddayWashing: 0,
-      reusableCleanCupPoolSize:
-        policy === 'retain-and-wash' ? 0 : null,
-      betweenTripWashWaterUnits: 0,
-      returnsHomeBetweenTrips: false,
-    })
-  })
+      expect(result).toEqual({
+        policy,
+        availableJuiceJarCount: 2,
+        physicalJarsUsed: 0,
+        totalJarLoads: 0,
+        distinctFinalJuiceTypes: 0,
+        jarTypeSwitches: 0,
+        trips: [],
+        tripCount: 0,
+        totalAssignedServings: 0,
+        maxJarRackSlotsUsed: 0,
+        cleanCupUnitsRequiredWithoutMiddayWashing: 0,
+        reusableCleanCupPoolSize:
+          policy === 'retain-and-wash' ? 0 : null,
+        betweenTripWashWaterUnits: 0,
+        returnsHomeBetweenTrips: false,
+      })
+      expectScheduleConsistency(result)
+    },
+  )
 })
