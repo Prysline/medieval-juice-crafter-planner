@@ -20,6 +20,7 @@ import type {
   UsedCupTripPolicy,
 } from './domain/multiTripReplenishment'
 import type { PreparationShortfall } from './domain/preparationShortfall'
+import type { ProductionLogisticsPlan } from './domain/productionLogistics'
 import { buildInventoryCapacitySummary } from './domain/inventoryCapacity'
 import {
   readInventoryState,
@@ -58,6 +59,7 @@ type OptimizerRunState =
       status: 'success'
       result: OptimizationResult
       preparationShortfall: PreparationShortfall
+      productionLogistics: ProductionLogisticsPlan
       salesTripPlans: SalesTripPlans
     }
   | { status: 'error'; message: string }
@@ -131,6 +133,17 @@ function tripPolicyNote(plan: MultiTripReplenishmentPlan): string {
   return plan.policy === 'retain-and-wash'
     ? '目前 approximation：每趟固定預留 1 格處理 used cups；非最後一趟回家後清洗，再供下一趟重用。'
     : '出發可使用完整 10 格；背包滿時接受 used cups 可能掉落。這不是玩家主動把物品丟到地面作 storage。'
+}
+
+function productionLogisticsActionKindLabel(
+  kind: ProductionLogisticsPlan['actions'][number]['kind'],
+): string {
+  if (kind === 'acquire-ingredient') return '取得原料'
+  if (kind === 'fetch-water') return '取水'
+  if (kind === 'load-machine') return '放入機器'
+  if (kind === 'run-machine') return '機器加工'
+  if (kind === 'unload-intermediate') return '取出中間產物'
+  return '成品裝罐'
 }
 
 function uniquePriorities(
@@ -250,11 +263,13 @@ export default function OptimizerTools({
         { optimizeBatchPlan },
         { buildPreparationDemand },
         { buildPreparationShortfall },
+        { buildProductionLogisticsPlan },
         { buildMultiTripReplenishmentPlan },
       ] = await Promise.all([
         import('./domain/optimizer'),
         import('./domain/preparationDemand'),
         import('./domain/preparationShortfall'),
+        import('./domain/productionLogistics'),
         import('./domain/multiTripReplenishment'),
       ])
       const parsedMaxSwitches =
@@ -294,6 +309,11 @@ export default function OptimizerTools({
       const preparationShortfall = buildPreparationShortfall(
         preparationDemand,
         inventoryState,
+      )
+      const productionLogistics = buildProductionLogisticsPlan(
+        preparationShortfall,
+        inventoryState,
+        plannerSettings,
       )
       const selectedPolicy: UsedCupTripPolicy =
         plannerSettings.allowUsedCupDropIfFull
@@ -345,6 +365,7 @@ export default function OptimizerTools({
         status: 'success',
         result,
         preparationShortfall,
+        productionLogistics,
         salesTripPlans,
       })
     } catch (error) {
@@ -370,7 +391,7 @@ export default function OptimizerTools({
         </div>
 
         <p className="tool-description">
-          以 full match 顧客分配為基礎，同時計算實際果汁份數、1～5 份製作 stack、共享中間半成品、機器操作與果汁罐換裝。路線仍不自行推導；果汁調和器 1:1:1、q = 1～5 已確認，但 blending edge 尚未接入 automatic production graph。
+          以 full match 顧客分配為基礎，同時計算實際果汁份數、1～5 份製作 stack、共享中間半成品、機器操作、果汁罐換裝與 downstream production logistics。路線仍不自行推導；果汁調和器 1:1:1、q = 1～5 已接入 production graph。
         </p>
 
         <div className="optimizer-controls">
@@ -609,6 +630,7 @@ export default function OptimizerTools({
         <OptimizerResultPanel
           result={runState.result}
           preparationShortfall={runState.preparationShortfall}
+          productionLogistics={runState.productionLogistics}
           priorities={priorities}
           salesTripPlans={runState.salesTripPlans}
         />
@@ -663,7 +685,7 @@ function machineSlotLabels(equipment: string): string[] {
 }
 
 function productionStepLabel(
-  step: OptimizationResult['productionSteps'][number],
+  step: ProductionLogisticsPlan['productionPlan']['steps'][number],
 ): string {
   if (step.kind === 'juicing') {
     return ingredientLabel(step.addedIngredientId ?? '') + ' → 原汁'
@@ -677,17 +699,28 @@ function productionStepLabel(
       sequenceLabel(step.toIngredientIds)
     )
   }
+  if (step.kind === 'blending') {
+    return (
+      sequenceLabel(step.fromIngredientIds) +
+      ' + ' +
+      sequenceLabel(step.secondaryFromIngredientIds ?? []) +
+      ' → ' +
+      sequenceLabel(step.toIngredientIds)
+    )
+  }
   return sequenceLabel(step.fromIngredientIds) + ' + 水 → 販售成品'
 }
 
 function OptimizerResultPanel({
   result,
   preparationShortfall,
+  productionLogistics,
   priorities,
   salesTripPlans,
 }: {
   result: OptimizationResult
   preparationShortfall: PreparationShortfall
+  productionLogistics: ProductionLogisticsPlan
   priorities: OptimizationCriterion[]
   salesTripPlans: SalesTripPlans
 }) {
@@ -696,9 +729,10 @@ function OptimizerResultPanel({
   const purchaseItemByIngredientId = new Map(
     result.shoppingList.map((item) => [item.ingredientId, item]),
   )
-  const productionStepsByEquipment = result.productionSteps.reduce<
-    Record<string, OptimizationResult['productionSteps']>
-  >((groups, step) => {
+  const productionStepsByEquipment =
+    productionLogistics.productionPlan.steps.reduce<
+      Record<string, ProductionLogisticsPlan['productionPlan']['steps']>
+    >((groups, step) => {
     ;(groups[step.equipment] ??= []).push(step)
     return groups
   }, {})
@@ -727,7 +761,7 @@ function OptimizerResultPanel({
           value={String(result.recipePlans.length)}
         />
         <MetricCard
-          label="機器操作"
+          label="最佳化機器操作（gross）"
           value={result.machineOperations.total + ' 次'}
         />
         <MetricCard
@@ -750,9 +784,18 @@ function OptimizerResultPanel({
           最佳化順序：{priorities.map(criterionLabel).join(' → ')}
         </strong>
         <span>
-          製作操作：榨汁 {result.machineOperations.juicing} 次 · 調味{' '}
-          {result.machineOperations.seasoning} 次 · 成品台{' '}
+          最佳化 gross 操作：榨汁 {result.machineOperations.juicing} 次 · 調味{' '}
+          {result.machineOperations.seasoning} 次 · 調和{' '}
+          {result.machineOperations.blending} 次 · 成品台{' '}
           {result.machineOperations.finalizing} 次
+        </span>
+        <span>
+          庫存抵扣後實際需製作：
+          {productionLogistics.productionPlan.machineOperations.total} 次操作
+          （榨汁 {productionLogistics.productionPlan.machineOperations.juicing} · 調味{' '}
+          {productionLogistics.productionPlan.machineOperations.seasoning} · 調和{' '}
+          {productionLogistics.productionPlan.machineOperations.blending} · 成品台{' '}
+          {productionLogistics.productionPlan.machineOperations.finalizing}）
         </span>
         <span>
           常駐攜帶果汁罐 {result.availableJuiceJarCount} 個；同罐改裝成另一種果汁才計入換裝。
@@ -874,7 +917,9 @@ function OptimizerResultPanel({
       <section className="optimizer-result-section">
         <div className="section-title">
           <strong>製作步驟</strong>
-          <span>{result.machineOperations.total} 次操作</span>
+          <span>
+            庫存抵扣後 {productionLogistics.productionPlan.machineOperations.total} 次操作
+          </span>
         </div>
 
         {Object.keys(productionStepsByEquipment).length === 0 ? (
@@ -928,8 +973,81 @@ function OptimizerResultPanel({
         )}
 
         <small className="optimizer-boundary-note">
-          ▸ 表示配方內部 ingredient / sequence 順序；→ 只用於實際加工或狀態轉換。
+          ▸ 表示配方內部 ingredient / sequence 順序；→ 只用於實際加工或狀態轉換。此區使用 stock offset 後的 net production plan，不再重複顯示 gross optimizer steps。現行 inventory 尚未保存每件物品的精確位置，因此 Phase 3 把既有 production materials 視為 home supply，依一般架與背包容量建立 deterministic feasible placement / transfer；同時追蹤 machine slots 與 finalizer output 的 physical jar receiver。罐內既有內容與首次換裝相容性仍維持 deferred，clean / used cups 的實際占位與 transition 留到 Phase 4。
         </small>
+
+        <div className="optimizer-logistics-summary">
+          <strong>
+            製作物流：{productionLogistics.feasible ? '可行' : '目前不可行'}
+          </strong>
+          <span>
+            原料取得動作 {productionLogistics.ingredientAcquisitionActions} · 取水{' '}
+            {productionLogistics.waterFetchTrips} 趟 · 物流動作{' '}
+            {productionLogistics.actions.length}
+          </span>
+          <span>
+            初始一般架 {productionLogistics.initialSnapshot.shelfSlotsUsed}/
+            {productionLogistics.initialSnapshot.shelfSlotsAvailable} slots · 背包一般物品{' '}
+            {productionLogistics.initialSnapshot.backpackSlotsUsed}/
+            {productionLogistics.initialSnapshot.backpackSlotsAvailable} slots · 常駐果汁罐{' '}
+            {productionLogistics.initialSnapshot.carriedJarSlots} slots · 成品罐接手{' '}
+            {productionLogistics.initialSnapshot.outputJarReceiverSlots} 個 physical jars
+            （背包 {productionLogistics.initialSnapshot.carriedOutputJarSlots} · rack{' '}
+            {productionLogistics.initialSnapshot.rackOutputJarSlots}）
+          </span>
+        </div>
+
+        {!productionLogistics.feasible && (
+          <div className="optimizer-logistics-warning" role="status">
+            {productionLogistics.issues.map((issue) => (
+              <p key={issue}>{issue}</p>
+            ))}
+          </div>
+        )}
+
+        {productionLogistics.actions.length > 0 && (
+          <details className="optimizer-logistics-details">
+            <summary>
+              展開 production logistics trace（{productionLogistics.actions.length} actions）
+            </summary>
+            <div className="optimizer-batch-list">
+              {productionLogistics.actions.map((action) => (
+                <article
+                  className="optimizer-batch-card"
+                  key={action.index + '-' + action.kind}
+                >
+                  <div>
+                    <strong>
+                      {action.index}. {action.label}
+                    </strong>
+                    <span>
+                      {productionLogisticsActionKindLabel(action.kind)}
+                    </span>
+                  </div>
+                  <p>
+                    一般架 {action.snapshot.shelfSlotsUsed}/
+                    {action.snapshot.shelfSlotsAvailable} · 背包一般物品{' '}
+                    {action.snapshot.backpackSlotsUsed}/
+                    {action.snapshot.backpackSlotsAvailable} · 常駐罐{' '}
+                    {action.snapshot.carriedJarSlots}
+                    {action.snapshot.machineSlotsAvailable > 0
+                      ? ' · machine ' +
+                        action.snapshot.machineSlotsUsed +
+                        '/' +
+                        action.snapshot.machineSlotsAvailable
+                      : ''}
+                    {action.outputJarReceiver
+                      ? ' · output → ' +
+                        (action.outputJarReceiver === 'carried-jar'
+                          ? '常駐 physical jar'
+                          : 'jar-rack staging physical jar')
+                      : ''}
+                  </p>
+                </article>
+              ))}
+            </div>
+          </details>
+        )}
       </section>
 
       <section className="optimizer-result-section">

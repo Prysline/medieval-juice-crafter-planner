@@ -161,11 +161,13 @@ function buildHighsStage(
 
     const quantityExpression = sum(
       ...domain.recipes.flatMap((recipe) => {
-        if (!recipe.productionPath.edges.some((edge) => edge.key === edgeKey)) {
-          return []
-        }
+        const edgeMultiplicity = recipe.productionPath.edges.filter(
+          (edge) => edge.key === edgeKey,
+        ).length
+        if (edgeMultiplicity === 0) return []
+
         const x = xByRecipeId.get(recipe.candidate.id)
-        return x ? [x] : []
+        return x ? [x.times(edgeMultiplicity)] : []
       }),
     )
 

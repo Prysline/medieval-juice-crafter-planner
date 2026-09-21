@@ -37,6 +37,7 @@ describe('single-trip packing', () => {
           {
             recipeId: 'lemon',
             recipeName: '檸檬汁',
+            ingredientIds: [],
             customerIds: Array.from({ length: 12 }, (_, index) => `lemon-${index + 1}`),
             productionUnits: 6,
             producedServings: 12,
@@ -47,6 +48,7 @@ describe('single-trip packing', () => {
           {
             recipeId: 'orange',
             recipeName: '橙汁',
+            ingredientIds: [],
             customerIds: ['orange-1', 'orange-2', 'orange-3'],
             productionUnits: 2,
             producedServings: 4,
@@ -107,6 +109,7 @@ describe('single-trip packing', () => {
           {
             recipeId: 'orange',
             recipeName: '橙汁',
+            ingredientIds: [],
             customerIds: ['orange-1'],
             productionUnits: 1,
             producedServings: 2,
@@ -142,6 +145,7 @@ describe('single-trip packing', () => {
           {
             recipeId: 'large',
             recipeName: '大量果汁',
+            ingredientIds: [],
             customerIds: Array.from({ length: 101 }, (_, index) => `large-${index + 1}`),
             productionUnits: 51,
             producedServings: 102,
@@ -168,6 +172,7 @@ describe('single-trip packing', () => {
           {
             recipeId: 'lemon',
             recipeName: '檸檬汁',
+            ingredientIds: [],
             customerIds: Array.from({ length: 15 }, (_, index) => `lemon-${index + 1}`),
             productionUnits: 8,
             producedServings: 16,

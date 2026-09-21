@@ -1612,6 +1612,61 @@ footer {
   line-height: 1.45;
 }
 
+.optimizer-logistics-summary {
+  display: grid;
+  gap: 4px;
+  margin-top: 10px;
+  border: 1px solid #d9ccb9;
+  border-radius: 10px;
+  background: #fbf7ef;
+  padding: 10px 12px;
+  color: #5d5140;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.optimizer-logistics-summary strong {
+  color: #3f3528;
+  font-size: 0.82rem;
+}
+
+.optimizer-logistics-warning {
+  margin-top: 8px;
+  border-left: 4px solid #9a5b3b;
+  background: #fff0e8;
+  padding: 8px 10px;
+  color: #74432f;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.optimizer-logistics-warning p {
+  margin: 0;
+}
+
+.optimizer-logistics-warning p + p {
+  margin-top: 4px;
+}
+
+.optimizer-logistics-details {
+  margin-top: 8px;
+  border: 1px solid #e2d7c5;
+  border-radius: 10px;
+  background: #fffdf8;
+  padding: 8px 10px;
+}
+
+.optimizer-logistics-details > summary {
+  cursor: pointer;
+  color: #5d4d36;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.optimizer-logistics-details[open] > summary {
+  margin-bottom: 8px;
+}
+
 @media (max-width: 720px) {
   .optimizer-controls,
   .optimizer-metrics {

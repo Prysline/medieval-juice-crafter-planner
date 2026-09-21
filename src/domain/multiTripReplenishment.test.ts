@@ -32,6 +32,7 @@ function demand(
         { length: recipe.assignedServings },
         (_, index) => `${recipe.recipeId}-customer-${index + 1}`,
       ),
+      ingredientIds: [],
       productionUnits: Math.ceil(
         recipe.assignedServings / 2,
       ),

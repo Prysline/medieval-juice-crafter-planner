@@ -301,4 +301,33 @@ describe('optimizer model', () => {
     expect(model.serviceableCustomerIds).toEqual([])
     expect(model.unresolvedCustomerIds).toEqual(['a'])
   })
+
+  it('admits a confirmed multi-base Blender path after its unlock', () => {
+    const blenderCandidate = candidate(
+      'blend',
+      'computed',
+      ['檸檬', '糖', '橙子', '薄荷'],
+      [{ name: '甜味', value: 5 }],
+      'juice-blender-unlocked',
+    )
+
+    const model = buildOptimizationModel(
+      {
+        ...baseRequest,
+        customerIds: ['a'],
+        formalCustomerIds: [],
+        currentProgress: 'juice-blender-unlocked',
+      },
+      {
+        customers,
+        candidates: [blenderCandidate],
+      },
+    )
+
+    expect(model.serviceableCustomerIds).toEqual(['a'])
+    expect(model.recipes).toHaveLength(1)
+    expect(
+      model.recipes[0].productionPath.edges.map((edge) => edge.kind),
+    ).toContain('blending')
+  })
 })
