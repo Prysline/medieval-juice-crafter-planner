@@ -14,11 +14,11 @@
 - 配方列表可反查目前已解鎖、且滿意度門檻已達的顧客。
 - 三原料配方保留調味順序；四原料以上的重複調味實測不進一般配方列表。
 - 三種以下有效序列會自動產生候選：既有實測配方優先，未實測組合只顯示預測特性，不推導售價。
-- 配方同時顯示批次原料成本與單杯原料成本；目前每批固定產出 2 杯。
+- 配方仍顯示「1 份果汁基準單位」的原料成本與單杯原料成本；果汁成品台 1 份果汁可產出 2 杯，但實際一次機器操作可處理 1～5 份，不再把「2 杯」視為一次固定製作批次。
 - 「配方工具」已改為 ordered sequence builder：點原料直接 append，可重複調味、四原料以上、逐項刪除／清空；observed 精確序列優先，否則顯示 computed / ambiguity。
 - 個人配方只保存自訂名稱、有序 ingredient IDs、備註與建立時間；effects、cost、equipment、matching 每次由目前 domain 重新計算。
-- 「批次規劃」頁籤已接入 optimizer domain：可切全部／潛在／正式顧客、observed-only／allow computed、最低成本／最少浪費／最高已知銷售總額／最高已知毛利，並顯示批次、分配、原料清單、成本、已知收入／毛利、剩餘杯與 unresolved 顧客。
-- Inventory foundation 已建立：`mjc-inventory` 保存原料數量、水、乾淨／用過杯具與果汁罐狀態；`PreparationDemand` 將 optimizer 結果轉成全天 gross 備料需求，尚未開始 backpack packing。
+- 「批次規劃」已重構為 production optimizer：可依序指定主要／次要 lexicographic 目標，包含最低成本、最少浪費、最高已知銷售總額、最高已知毛利、最少機器操作與最少果汁罐換裝；結果按最終果汁分組顧客，並顯示共享中間半成品、1～5 份 stack 操作、原料清單、收入／毛利與 unresolved 顧客。
+- Inventory / packing D1～D4 已建立：`mjc-inventory` 保存原料、水、杯具與果汁罐狀態；`PreparationDemand` 消費 production-unit optimizer 結果，並已有 stock offset、single-trip packing 與 multi-trip replenishment。
 - 預測若在 effect cutoff 出現未確認同分 tie，會明確標示 ambiguous，且不參與完全匹配推薦。
 - 舊版 `mjc-stage` / `mjc-satisfaction` localStorage 會保守遷移到新版進度資料。
 
@@ -64,7 +64,8 @@ src/
     optimizerModel.ts  # optimizer request、customer→recipe eligible matrix 與 gating
     optimizerSolver.ts # 可替換的 async solver adapter contract
     optimizerHighsSolver.ts # HiGHS WASM lexicographic MIP adapter
-    optimizer.ts       # batch plan / shopping list / unresolved result normalization
+    optimizer.ts       # recipe production plan / shopping list / metrics normalization
+    productionPlan.ts  # shared-prefix production graph / 1～5 stack machine operations
     optimizerUi.ts     # UI 預設需求集合：已解鎖、今日未供應、正式／潛在篩選
     inventoryRules.ts  # 已確認的背包／果汁罐／罐架／水／乾淨杯具容量常數
     preparationDemand.ts # OptimizationResult → 全天 gross 備料需求
@@ -102,20 +103,35 @@ slotCount = min(5, 不重複原料種類數 + 1)
 
 未確認的遊戲機制不會直接寫成正式配方或最佳化公式。
 
-## Batch optimizer domain
+## Production optimizer domain
 
-optimizer request 會帶入主線進度、分村滿意度、今日已供應顧客與 candidate policy。domain 自己透過既有 availability / matching gate 過濾顧客與配方，不把正確性只交給 UI。
+optimizer request 會帶入主線進度、分村滿意度、今日已供應顧客、candidate policy，以及有順序的 lexicographic priorities。domain 自己透過既有 availability / matching gate 過濾顧客與配方，不把正確性只交給 UI。
 
-V1 solver 使用 `@bubblyworld/highs-ts@1.3.0`（HiGHS WASM），並隔離在 solver adapter 後。objective 不使用隱藏權重：
+核心數量單位已從「固定 2 杯 batch」改為 **juice production unit**：
 
-- `minimum-cost`：原料成本 → 批數／剩餘杯 → 配方種類數。
-- `minimum-waste`：批數／剩餘杯 → 原料成本 → 配方種類數。
-- `maximum-known-revenue`：正式顧客的已知販售收入 → 原料成本 → 批數／剩餘杯 → 配方種類數。
-- `maximum-known-gross-profit`：正式顧客已知販售收入 − 全部製作批次原料成本 → 原料成本 → 批數／剩餘杯 → 配方種類數。
+```text
+1 份原汁／調製後果汁 + 1 份水
+→ 2 份可販售果汁
+```
 
-收入相關 objective 不推導 computed 售價。正式顧客若要參與 revenue / gross-profit objective，只能使用 `salePrice !== null` 的 full-match 配方；潛在顧客仍可依 candidate policy 使用 computed full match，但其試喝收入未確認，因此只計為試喝需求、不計入已知銷售額。結果會分開顯示正式販售、潛在試喝、已知銷售總額與已知毛利。
+這只是產量換算，不代表一次機器操作。製作設備一次可處理 1～5 份，因此 production graph 會把共享前綴聚合後，再用 `ceil(quantity / 5)` 計算每層機器操作。例如 `AB ×1` 與 `ABC ×2` 會共享 `AB ×3`，而不是各自從頭製作。重複調味如 `A → AB → ABB` 則是兩層不同調味操作。
 
-solver domain 為 async；「批次規劃」UI 只有在玩家按下「產生批次規劃」時才 dynamic import optimizer。Vite production build 會拆出約 22.84 kB optimizer JS、42.44 kB HiGHS glue 與 3.65 MB WASM（gzip 約 1.10 MB），避免首頁 initial bundle eager-load solver。
+V1 自動 optimizer 暫只接受「一個 juice-base + seasoning chain」的 production-safe 配方；果汁調和器雖已確認 sequence concatenation，但精確輸入比例／產量仍未知，因此多 juice-base 配方不進自動份數最佳化。
+
+HiGHS solver 使用真正的 lexicographic repeated solve，不使用隱藏權重。可指定的 criterion 包含：
+
+- `minimum-cost`
+- `minimum-waste`
+- `maximum-known-revenue`
+- `maximum-known-gross-profit`
+- `minimum-machine-operations`
+- `minimum-jar-switches`
+
+果汁罐換裝定義為「同一罐從一種最終果汁改裝成另一種」；空罐第一次裝入與補裝同種類不算。忽略既有預裝內容時，若方案有 `K` 種最終果汁、可用 `J` 個果汁罐，最低換裝數為 `max(0, K - J)`。UI 可指定可用果汁罐數與 `maxJarTypeSwitches` hard constraint。
+
+收入相關 criterion 不推導 computed 售價。正式顧客若要參與 revenue / gross-profit criterion，只能使用 `salePrice !== null` 的 full-match 配方；潛在顧客仍可依 candidate policy 使用 computed full match，但試喝收入不計入已知銷售額。
+
+solver domain 為 async；UI 只有在玩家按下規劃時才 dynamic import optimizer / HiGHS WASM。
 
 ## 開發
 
@@ -148,11 +164,11 @@ OptimizationResult
 → inventory / packing（後續）
 ```
 
-目前正式鎖定的容量規則只有：背包 10 slot、果汁罐 1 slot / 容量 10 / 同罐不混飲料、果汁罐架 5 slot、水 stack 10、乾淨杯具 stack 10。一般原料／原汁 stack 5 仍待再驗證，因此沒有進入 D1 / D2 的正式 packing constraint。
+目前正式鎖定的容量規則：背包 10 slot、果汁罐 1 slot / 容量 10 / 同罐不混飲料、果汁罐架 5 slot、水 stack 10、乾淨杯具 stack 10、一般原料／原汁 stack 5。D1/D2 最初建立時尚未使用一般原料／原汁 stack 5；規則現已確認，production optimizer 已使用它計算機器操作。
 
 D2 的 single-trip packing 目前只處理**販售趟**：把已分配給顧客的成品按 recipe 分裝進果汁罐，並計算乾淨杯具 stack。optimizer 產生但未分配的 leftover 不帶出門。若完整需求超過 10 slot，只回報 required / overflow slots，不自行決定要犧牲哪位顧客；多趟拆分留到後續 slice。
 
-D3 是 **post-optimizer stock offset**：先用 `mjc-inventory` 中同 recipe 的既有成品抵掉 assigned servings，再重算真正需要新做的批數、原料與 production water；接著用 raw ingredient / water / clean cups inventory 抵扣缺口。D3 不重新求解或改寫 Slice B 的 recipe assignment。
+D3 是 **post-optimizer stock offset**：先用 `mjc-inventory` 中同 recipe 的既有成品抵掉 assigned servings，再重算真正需要的新製作 juice units、原料與 production water；接著用 raw ingredient / water / clean cups inventory 抵扣缺口。一般 packing 仍不重新求解顧客分配；只有「最少／最大果汁罐換裝」會把必要的可用果汁罐摘要回饋給 optimizer。
 
 購買來源只使用目前資料中明確的 seller / shop 價格：若只有一個最低價來源可唯一選擇；同價則保留所有 source records，不加入路線或距離 tie-break。`Ingredient.seller` 與 `shops.ts` 若名稱相同，目前也不自行推定為同一實體商店，等後續 location identity 更完整再處理。
 
