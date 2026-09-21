@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { PreparationDemand } from './preparationDemand'
 import {
-  buildMultiTripReplenishmentPlan,
+  buildMultiTripReplenishmentPlan as buildMultiTripReplenishmentPlanWithCups,
   countJarTypeSwitchesFromSchedule,
   type MultiTripReplenishmentPlan,
   type UsedCupTripPolicy,
@@ -41,6 +41,23 @@ function demand(
       ingredientUnitsPerJuiceUnit: [],
     })),
   }
+}
+
+function buildPlan(
+  salesDemand: PreparationDemand,
+  policy: UsedCupTripPolicy,
+  carriedJuiceJarCount: number,
+  cups = {
+    cleanCups: salesDemand.assignedServings,
+    usedCups: 0,
+  },
+): MultiTripReplenishmentPlan {
+  return buildMultiTripReplenishmentPlanWithCups(
+    salesDemand,
+    policy,
+    carriedJuiceJarCount,
+    cups,
+  )
 }
 
 function namedRecipes(
@@ -93,7 +110,7 @@ function expectScheduleConsistency(
 
 describe('multi-trip replenishment', () => {
   it('reuses one physical jar across four juice types and records three switches', () => {
-    const result = buildMultiTripReplenishmentPlan(
+    const result = buildPlan(
       namedRecipes(['A', 'B', 'C', 'D'], 1),
       'allow-drop-if-full',
       1,
@@ -136,7 +153,7 @@ describe('multi-trip replenishment', () => {
   })
 
   it('uses two physical jars for four juice types in two trips with two switches', () => {
-    const result = buildMultiTripReplenishmentPlan(
+    const result = buildPlan(
       namedRecipes(['A', 'B', 'C', 'D'], 1),
       'allow-drop-if-full',
       2,
@@ -163,7 +180,7 @@ describe('multi-trip replenishment', () => {
   })
 
   it('requires multiple trips but no switch when one jar refills the same juice type', () => {
-    const result = buildMultiTripReplenishmentPlan(
+    const result = buildPlan(
       namedRecipes(['A'], 15),
       'allow-drop-if-full',
       1,
@@ -185,7 +202,7 @@ describe('multi-trip replenishment', () => {
   })
 
   it('limits concurrent carried jars by backpack capacity instead of a global rack constant', () => {
-    const result = buildMultiTripReplenishmentPlan(
+    const result = buildPlan(
       namedRecipes(['A', 'B', 'C', 'D', 'E', 'F']),
       'allow-drop-if-full',
       8,
@@ -201,7 +218,7 @@ describe('multi-trip replenishment', () => {
   })
 
   it('limits each trip to the configured carried jar count', () => {
-    const result = buildMultiTripReplenishmentPlan(
+    const result = buildPlan(
       namedRecipes(['A', 'B', 'C', 'D']),
       'allow-drop-if-full',
       2,
@@ -226,12 +243,12 @@ describe('multi-trip replenishment', () => {
       'D',
       'E',
     ])
-    const retained = buildMultiTripReplenishmentPlan(
+    const retained = buildPlan(
       salesDemand,
       'retain-and-wash',
       5,
     )
-    const droppable = buildMultiTripReplenishmentPlan(
+    const droppable = buildPlan(
       salesDemand,
       'allow-drop-if-full',
       5,
@@ -239,15 +256,17 @@ describe('multi-trip replenishment', () => {
 
     expect(retained.tripCount).toBe(2)
     expect(retained.trips[0]).toMatchObject({
-      totalServings: 40,
-      departureSlots: 9,
-      effectiveDepartureSlotLimit: 9,
-      reservedTransientUsedCupSlot: 1,
+      totalServings: 41,
+      departureSlots: 10,
+      effectiveDepartureSlotLimit: 10,
+      reservedTransientUsedCupSlot: 0,
       usedCupDropMayOccur: false,
+      droppedUsedCups: 0,
+      peakOccupiedSlots: 10,
       juiceJarSlotsCarried: 5,
     })
-    expect(retained.reusableCleanCupPoolSize).toBe(40)
-    expect(retained.betweenTripWashWaterUnits).toBe(40)
+    expect(retained.reusableCleanCupPoolSize).toBe(41)
+    expect(retained.totalCupWashWaterUnits).toBe(0)
 
     expect(droppable.tripCount).toBe(1)
     expect(droppable.trips[0]).toMatchObject({
@@ -256,19 +275,23 @@ describe('multi-trip replenishment', () => {
       effectiveDepartureSlotLimit: 10,
       reservedTransientUsedCupSlot: 0,
       usedCupDropMayOccur: true,
+      droppedUsedCups: 9,
+      peakOccupiedSlots: 10,
       juiceJarSlotsCarried: 5,
     })
+    expect(droppable.droppedUsedCups).toBe(9)
+    expect(droppable.finalPhysicalCupCount).toBe(41)
     expect(
       droppable.reusableCleanCupPoolSize,
     ).toBeNull()
-    expect(droppable.betweenTripWashWaterUnits).toBe(0)
+    expect(droppable.totalCupWashWaterUnits).toBe(0)
 
     expectScheduleConsistency(retained)
     expectScheduleConsistency(droppable)
   })
 
   it('can keep a multi-load same-type demand in one trip when enough physical jars exist', () => {
-    const result = buildMultiTripReplenishmentPlan(
+    const result = buildPlan(
       demand([
         {
           recipeId: 'lemon',
@@ -292,8 +315,10 @@ describe('multi-trip replenishment', () => {
       cleanCupsCarried: 18,
       departureSlots: 5,
       effectiveDepartureSlotLimit: 9,
-      reservedTransientUsedCupSlot: 1,
+      reservedTransientUsedCupSlot: 0,
       usedCupDropMayOccur: false,
+      droppedUsedCups: 0,
+      peakOccupiedSlots: 5,
       juiceJarSlotsCarried: 3,
     })
     expect(result.jarTypeSwitches).toBe(0)
@@ -302,34 +327,96 @@ describe('multi-trip replenishment', () => {
     expectScheduleConsistency(result)
   })
 
-  it('can make drop policy feasible when retain-and-wash is not', () => {
+  it('replaces the fixed retained-cup slot reservation with exact stack transitions', () => {
     const salesDemand = namedRecipes(['A'], 1)
 
-    expect(() =>
-      buildMultiTripReplenishmentPlan(
-        salesDemand,
-        'retain-and-wash',
-        9,
-      ),
-    ).toThrow('A single jar cannot fit the retain-and-wash trip policy')
+    const retained = buildPlan(
+      salesDemand,
+      'retain-and-wash',
+      9,
+    )
+    expect(retained.tripCount).toBe(1)
+    expect(retained.trips[0]).toMatchObject({
+      totalServings: 1,
+      departureSlots: 10,
+      peakOccupiedSlots: 10,
+      reservedTransientUsedCupSlot: 0,
+      droppedUsedCups: 0,
+      juiceJarSlotsCarried: 9,
+    })
 
-    const droppable = buildMultiTripReplenishmentPlan(
+    const droppable = buildPlan(
       salesDemand,
       'allow-drop-if-full',
       9,
     )
     expect(droppable.tripCount).toBe(1)
-    expect(droppable.trips[0]).toMatchObject({
-      totalServings: 1,
+    expect(droppable.trips[0].droppedUsedCups).toBe(0)
+  })
+
+  it('washes and reuses a smaller physical cup pool across trips', () => {
+    const result = buildPlan(
+      namedRecipes(['A'], 15),
+      'retain-and-wash',
+      1,
+      { cleanCups: 5, usedCups: 0 },
+    )
+
+    expect(result.tripCount).toBe(3)
+    expect(result.trips.map((trip) => trip.totalServings)).toEqual([
+      5,
+      5,
+      5,
+    ])
+    expect(result.trips.map((trip) => trip.cupsWashedBeforeTrip)).toEqual([
+      0,
+      5,
+      5,
+    ])
+    expect(result.initialPhysicalCupCount).toBe(5)
+    expect(result.finalPhysicalCupCount).toBe(5)
+    expect(result.betweenTripWashWaterUnits).toBe(10)
+    expect(result.totalCupWashWaterUnits).toBe(10)
+    expect(result.droppedUsedCups).toBe(0)
+    expectScheduleConsistency(result)
+  })
+
+  it('records used cups that actually drop when the backpack has no return slot', () => {
+    const result = buildPlan(
+      namedRecipes(['A'], 10),
+      'allow-drop-if-full',
+      9,
+      { cleanCups: 10, usedCups: 0 },
+    )
+
+    expect(result.tripCount).toBe(1)
+    expect(result.trips[0]).toMatchObject({
+      totalServings: 10,
       departureSlots: 10,
-      usedCupDropMayOccur: true,
-      juiceJarSlotsCarried: 9,
+      peakOccupiedSlots: 10,
+      droppedUsedCups: 9,
+      usedCupsAfterTrip: 1,
+      physicalCupsAfterTrip: 1,
     })
+    expect(result.droppedUsedCups).toBe(9)
+    expect(result.finalPhysicalCupCount).toBe(1)
+    expectScheduleConsistency(result)
+  })
+
+  it('rejects positive sales demand when the player owns no physical cups', () => {
+    expect(() =>
+      buildPlan(
+        namedRecipes(['A'], 1),
+        'retain-and-wash',
+        1,
+        { cleanCups: 0, usedCups: 0 },
+      ),
+    ).toThrow('Sales planning requires at least one physical cup')
   })
 
   it('rejects positive sales demand when no jar is carried', () => {
     expect(() =>
-      buildMultiTripReplenishmentPlan(
+      buildPlan(
         namedRecipes(['A'], 1),
         'retain-and-wash',
         0,
@@ -345,7 +432,7 @@ describe('multi-trip replenishment', () => {
   ])(
     'returns an empty plan for zero demand under %s',
     (policy) => {
-      const result = buildMultiTripReplenishmentPlan(
+      const result = buildPlan(
         demand([]),
         policy,
         2,
@@ -365,7 +452,16 @@ describe('multi-trip replenishment', () => {
         cleanCupUnitsRequiredWithoutMiddayWashing: 0,
         reusableCleanCupPoolSize:
           policy === 'retain-and-wash' ? 0 : null,
+        initialCleanCups: 0,
+        initialUsedCups: 0,
+        initialPhysicalCupCount: 0,
+        finalCleanCups: 0,
+        finalUsedCups: 0,
+        finalPhysicalCupCount: 0,
+        droppedUsedCups: 0,
+        initialWashWaterUnits: 0,
         betweenTripWashWaterUnits: 0,
+        totalCupWashWaterUnits: 0,
         returnsHomeBetweenTrips: false,
       })
       expectScheduleConsistency(result)
