@@ -26,10 +26,10 @@ function demand(
     leftoverServings: 0,
     recipes: recipes.map((recipe) => ({
       ...recipe,
-      batches: Math.ceil(recipe.assignedServings / 2),
+      productionUnits: Math.ceil(recipe.assignedServings / 2),
       producedServings: recipe.assignedServings,
       leftoverServings: 0,
-      ingredientUnitsPerBatch: [],
+      ingredientUnitsPerJuiceUnit: [],
     })),
   }
 }
