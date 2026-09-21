@@ -131,8 +131,8 @@ function tripPolicyLabel(plan: MultiTripReplenishmentPlan): string {
 
 function tripPolicyNote(plan: MultiTripReplenishmentPlan): string {
   return plan.policy === 'retain-and-wash'
-    ? '目前 approximation：每趟固定預留 1 格處理 used cups；非最後一趟回家後清洗，再供下一趟重用。'
-    : '出發可使用完整 10 格；背包滿時接受 used cups 可能掉落。這不是玩家主動把物品丟到地面作 storage。'
+    ? '依實際持有杯數逐杯追蹤 clean → used；若回傳 used cup 會超出背包容量，就拆成下一趟，回家後可清洗再重用。'
+    : '依實際持有杯數逐杯追蹤 clean → used；只有 NPC 回傳 used cup 當下背包真的放不下時才記為掉落，不把地面視為 storage。'
 }
 
 function productionLogisticsActionKindLabel(
@@ -331,6 +331,10 @@ export default function OptimizerTools({
           preparationDemand,
           policy,
           result.availableJuiceJarCount,
+          {
+            cleanCups: inventoryState.cleanCups,
+            usedCups: inventoryState.usedCups,
+          },
         )
         if (plan.jarTypeSwitches !== result.jarTypeSwitches) {
           throw new Error(
@@ -801,7 +805,7 @@ function OptimizerResultPanel({
           常駐攜帶果汁罐 {result.availableJuiceJarCount} 個；同罐改裝成另一種果汁才計入換裝。
         </span>
         <span>
-          販售摘要目前採「{tripPolicyLabel(selectedSalesTripPlan)}」approximation；替代 used-cup policy 可在販售排程展開比較。
+          販售摘要採「{tripPolicyLabel(selectedSalesTripPlan)}」；杯具依實際持有量與 clean → used stack transition 計算，替代 policy 可在販售排程展開比較。
         </span>
         {(result.potentialTrialCount > 0 ||
           result.unknownFormalSalePriceCount > 0) && (
@@ -896,15 +900,20 @@ function OptimizerResultPanel({
           <article className="optimizer-batch-card">
             <div>
               <strong>杯具</strong>
-              <span>目前仍使用既有 cup-lifecycle approximation</span>
+              <span>實際持有杯數限制販售量</span>
             </div>
             <p>
-              乾淨杯需求 {preparationShortfall.cleanCupUses} · 現有{' '}
-              {preparationShortfall.cleanCupsAvailable} · 洗滌前短缺{' '}
-              {preparationShortfall.cleanCupShortfallBeforeWashing}
+              全天供應 {preparationShortfall.cleanCupUses} 杯 · 起始 clean{' '}
+              {selectedSalesTripPlan.initialCleanCups} · used{' '}
+              {selectedSalesTripPlan.initialUsedCups} · 實體杯共{' '}
+              {selectedSalesTripPlan.initialPhysicalCupCount}
             </p>
             <small>
-              現有 used cups：{preparationShortfall.usedCupsAvailable}。used cup 不會在沒有清洗計畫時直接算成 clean cup。
+              目前策略需清洗 {selectedSalesTripPlan.totalCupWashWaterUnits} 個杯子（等量用水）；
+              結束後持有 {selectedSalesTripPlan.finalPhysicalCupCount} 個杯子
+              {selectedSalesTripPlan.droppedUsedCups > 0
+                ? '，其中 ' + selectedSalesTripPlan.droppedUsedCups + ' 個 used cup 因背包滿而掉落。'
+                : '，沒有杯具掉落。'}
             </small>
           </article>
         </div>
@@ -1109,7 +1118,7 @@ function OptimizerResultPanel({
         </details>
 
         <small className="optimizer-boundary-note">
-          兩種 policy 都仍沿用目前 D4 approximation。這裡只排從家出發、販售後回家的可行裝載，不推導跨村路線、顧客順序或到達時間。
+          兩種 policy 都使用實際持有杯數與逐杯 clean → used stack transition 驗證可行性；回家清洗會計入杯數與用水，掉落只代表 NPC 回傳時背包無空位。這裡仍不推導跨村路線、顧客順序或到達時間。
         </small>
       </section>
 
@@ -1143,6 +1152,12 @@ function SalesTripPlanBlock({
           實際使用 {plan.physicalJarsUsed} / {plan.carriedJuiceJarCount}{' '}
           個常駐攜帶果汁罐；單趟最多帶出 {plan.maxJuiceJarSlotsCarried} 個。
         </p>
+        <p>
+          杯具：起始 clean {plan.initialCleanCups} / used {plan.initialUsedCups}
+          {' · '}清洗 {plan.totalCupWashWaterUnits} 次／用水 {plan.totalCupWashWaterUnits}
+          {' · '}結束實體杯 {plan.finalPhysicalCupCount}
+          {plan.droppedUsedCups > 0 ? ' · 掉落 ' + plan.droppedUsedCups : ''}
+        </p>
         <small>{tripPolicyNote(plan)}</small>
       </article>
 
@@ -1158,8 +1173,19 @@ function SalesTripPlanBlock({
             </span>
           </div>
           <p>
-            杯具 {trip.cleanCupStacks} 疊 · 出發占用 {trip.departureSlots} /{' '}
-            {trip.effectiveDepartureSlotLimit} 個可用 slot
+            帶出 clean cup {trip.cleanCupsCarried} 個 / {trip.cleanCupStacks} 疊
+            {' · '}出發占用 {trip.departureSlots} / {trip.effectiveDepartureSlotLimit} slots
+            {' · '}趟中峰值 {trip.peakOccupiedSlots} / {trip.effectiveDepartureSlotLimit} slots
+          </p>
+          <p>
+            出發前 clean {trip.cleanCupsBeforeTrip} / used {trip.usedCupsBeforeTrip}
+            {trip.cupsWashedBeforeTrip > 0
+              ? ' · 先清洗 ' + trip.cupsWashedBeforeTrip + ' 個'
+              : ' · 不需先清洗'}
+            {' · '}回家後 clean {trip.cleanCupsAfterTrip} / used {trip.usedCupsAfterTrip}
+            {trip.droppedUsedCups > 0
+              ? ' · 本趟掉落 ' + trip.droppedUsedCups + ' 個 used cup'
+              : ''}
           </p>
           {trip.juiceJars.map((load) => (
             <div
