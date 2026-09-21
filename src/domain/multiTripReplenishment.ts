@@ -20,6 +20,7 @@ export interface MultiTripJuiceJarLoad {
   physicalJarId: number
   recipeId: string
   recipeName: string
+  customerIds: string[]
   servings: number
   slotCost: 1
   fillAction: JuiceJarFillAction
@@ -58,11 +59,16 @@ export interface MultiTripReplenishmentPlan {
   returnsHomeBetweenTrips: boolean
 }
 
+interface RecipeJarChunk {
+  servings: number
+  customerIds: string[]
+}
+
 interface RecipeJarDemand {
   recipeId: string
   recipeName: string
   servings: number
-  chunks: number[]
+  chunks: RecipeJarChunk[]
 }
 
 interface JarQueue {
@@ -81,14 +87,31 @@ function normalizedAvailableJuiceJarCount(value: number): number {
     : 1
 }
 
-function splitServings(servings: number): number[] {
-  const chunks: number[] = []
-  let remaining = Math.max(0, Math.floor(servings))
+function splitCustomerServings(
+  customerIds: string[],
+  servings: number,
+): RecipeJarChunk[] {
+  const normalizedServings = Math.max(0, Math.floor(servings))
+  if (customerIds.length !== normalizedServings) {
+    throw new Error(
+      'Sales demand customer assignments do not match assigned servings',
+    )
+  }
 
-  while (remaining > 0) {
-    const jarServings = Math.min(remaining, JUICE_JAR_CAPACITY)
-    chunks.push(jarServings)
-    remaining -= jarServings
+  const chunks: RecipeJarChunk[] = []
+  for (
+    let start = 0;
+    start < customerIds.length;
+    start += JUICE_JAR_CAPACITY
+  ) {
+    const chunkCustomerIds = customerIds.slice(
+      start,
+      start + JUICE_JAR_CAPACITY,
+    )
+    chunks.push({
+      servings: chunkCustomerIds.length,
+      customerIds: chunkCustomerIds,
+    })
   }
 
   return chunks
@@ -102,7 +125,10 @@ function recipeJarDemands(
       recipeId: recipe.recipeId,
       recipeName: recipe.recipeName,
       servings: Math.max(0, Math.floor(recipe.assignedServings)),
-      chunks: splitServings(recipe.assignedServings),
+      chunks: splitCustomerServings(
+        recipe.customerIds,
+        recipe.assignedServings,
+      ),
     }))
     .filter((recipe) => recipe.chunks.length > 0)
     .sort(
@@ -117,9 +143,9 @@ function recipeJarDemands(
 function appendRecipeChunks(
   queue: JarQueue,
   recipe: RecipeJarDemand,
-  chunks: number[],
+  chunks: RecipeJarChunk[],
 ): void {
-  for (const servings of chunks) {
+  for (const chunk of chunks) {
     const previous = queue.loads.at(-1)
     const previousRecipeId = previous?.recipeId ?? null
     const previousRecipeName = previous?.recipeName ?? null
@@ -133,7 +159,8 @@ function appendRecipeChunks(
       physicalJarId: queue.physicalJarId,
       recipeId: recipe.recipeId,
       recipeName: recipe.recipeName,
-      servings,
+      customerIds: [...chunk.customerIds],
+      servings: chunk.servings,
       slotCost: JUICE_JAR_SLOT_COST,
       fillAction,
       previousRecipeId,
