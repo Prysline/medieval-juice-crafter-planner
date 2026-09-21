@@ -73,6 +73,7 @@ src/
     preparationDemand.ts # OptimizationResult → 全天 gross 備料需求
     preparationShortfall.ts # 既有成品／raw inventory → 實際新製作與缺口
     productionLogistics.ts # stock-offset net production → backpack / shelf / machine / water / 指定實體果汁罐接收時序
+    planApplicationTransaction.ts # 規劃結果 → 不可變 before / after 交易草稿；不寫 storage
     purchaseSources.ts # 已知購買來源、最低價／同價保留 decision
     singleTripPacking.ts # 販售趟 finished-drink jars + clean cups 最小必要 slot / overflow
     multiTripReplenishment.ts # 持久果汁罐 ID、初始內容、多趟販售、實際裝罐時序、leftover 與杯具 policy
@@ -228,7 +229,7 @@ Phase 3 已完成：
 - 水依當下背包 free slots 取得，可先回到 home storage 再分批製作；沒有 route / seller distance 資料的原料取得只記 acquisition action，不假裝成已知往返趟數。
 - 果汁調和器已按 **1:1:1、q = 1～5** 接入製作圖；多個果汁段會分開製作再調和。
 - 果汁成品台每次操作產出 **2～10 份偶數成品**；Phase 5B2-4/5 / PR #47 後，成品不再交給任意接收罐，而是依選定的販售排程綁定到明確的實體果汁罐。常駐攜帶罐可直接接收；非攜帶罐只有在果汁罐架有暫存容量且該實體果汁罐真實存在時才能接手，rack 空位本身不會憑空生成罐子。
-- 同一實體果汁罐的裝罐／販售時序會驗證容量上限 10、配方相容性與前一內容已售完；跨多趟販售但仍是同一批罐內成品時不會重複計成補裝。現行 `mjc-inventory` 尚未保存每件製作材料的精確位置，因此 raw / water 仍視為 home supply；**Phase 5B2 已完成，但結果尚不寫回庫存**，實際 inventory transaction / Apply Plan 留給 Phase 5C。
+- 同一實體果汁罐的裝罐／販售時序會驗證容量上限 10、配方相容性與前一內容已售完；跨多趟販售但仍是同一批罐內成品時不會重複計成補裝。現行 `mjc-inventory` 尚未保存每件製作材料的精確位置，因此 raw / water 仍視為 home supply。Phase 5C-1 / PR #50 已建立**純交易草稿**：把既有庫存、逐罐終局、杯具終局與今日供應顧客轉成不可變 before / after snapshot，但**尚未提供交易預覽 UI，也不寫 localStorage**。
 
 Phase 4 已完成：
 
@@ -244,7 +245,8 @@ Phase 4 已完成：
 10. PR #44 完成 **Phase 5B2-1｜既有成品來源追蹤**：finished stock 已固定到 persistent jar，未選為常駐攜帶的果汁罐不會被視為可直接供應來源。
 11. PR #45 完成 **Phase 5B2-2/3｜真實初始罐內容與販售排程**：optimizer 與販售排程都會考慮各常駐罐原本裝著什麼、還有幾份；未喝空的既有內容不能為了換裝而被自動丟棄。
 12. PR #47 完成 **Phase 5B2-4/5｜果汁成品台接收罐與同罐容量時序**：選定販售排程會產生逐罐實際裝填事件，果汁成品台輸出綁定指定的持久果汁罐 ID、配方與販售趟次前置條件；同一批罐內成品跨多趟販售時會沿用內容，不虛構補裝。
-13. **下一個最小切片是 Phase 5C｜套用規劃與庫存交易**：把目前可重算的實體果汁罐／杯具／備料結果轉成純交易預覽，再做一次性完整寫入與顧客供應狀態更新。路線最佳化仍等待跨村移動時間、位置資訊、完整顧客服務時段與商店營業時間資料。
+13. PR #50 完成 **Phase 5C-1｜純交易模型**：由已驗證的 optimizer、備料缺口、製作物流與販售排程建立不可變 before / after transaction draft；原料、水、杯具、實體果汁罐與今日供應顧客都有可重算終局，並保留進度／滿意度／正式顧客／planner settings 基準供後續過期驗證。此步驟不修改 storage。
+14. **下一個最小切片是 Phase 5C-2｜交易預覽介面**：把 transaction draft 的原料、水、杯具、逐罐內容與新增今日供應顧客顯示為變更前 → 變更後；正式寫入與過期驗證仍留給 5C-3～5。路線最佳化仍等待跨村移動時間、位置資訊、完整顧客服務時段與商店營業時間資料。
 
 
 ## Schedule / route readiness boundary
