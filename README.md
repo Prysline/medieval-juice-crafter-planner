@@ -185,7 +185,9 @@ used-cup handling 必須明確選 policy：
 
 每趟同時可用的果汁罐數會取 **玩家可用 physical jar 數、果汁罐架 5 slots、背包／杯具 policy 可容納量** 的共同限制。規劃採「一次 staging 一趟」的模型；若未來確認遊戲允許不經罐架同時準備更多罐，這項 constraint 再另行調整。
 
-Core model correction 2B 已把 physical jar identity 接進 D4 schedule。每個 load 都記錄實際果汁罐編號，以及「首次裝填／補裝同種／換裝」狀態；同一 physical jar 在同一趟只會出現一次。當果汁種類多於可用罐數時，新增果汁種類會串到既有 jar queue 上，讓 schedule 實際實現 `max(0, 果汁種類數 - 可用果汁罐數)` 的最低換裝數；當罐數足夠時，額外空罐可平行承擔同一種果汁的多個容量 10 load，而不製造假換裝。
+Core model correction 2B 已把 physical jar identity 接進 D4 schedule。每個 load 都記錄實際果汁罐編號、optimizer 已通過 full-match gate 的顧客 IDs，以及「首次裝填／補裝同種／換裝」狀態；同一 physical jar 在同一趟只會出現一次。當果汁種類多於可用罐數時，新增果汁種類會串到既有 jar queue 上，讓 schedule 實際實現 `max(0, 果汁種類數 - 可用果汁罐數)` 的最低換裝數；當罐數足夠時，額外空罐可平行承擔同一種果汁的多個容量 10 load，而不製造假換裝。
+
+販售 schedule 不重新計算喜好匹配，而是直接沿用 optimizer 的 customer → recipe full-match assignment，再依果汁罐容量把顧客切進對應 jar load；因此 UI 可以直接說明每一罐要服務哪些「完整符合」顧客。若 preparation demand 的 assigned servings 與 customer IDs 數量不一致，schedule 會拒絕產生。
 
 `jarTypeSwitches` 與 `tripCount` 現在都從**同一份可行 physical jar schedule** 取得：換裝數可從 schedule 逐罐重算，趟數就是 schedule 的 trip 數；optimizer UI 會再檢查 downstream schedule 的換裝數與 recipe-assignment solver 回報一致，若漂移則停止顯示結果。兩種 used-cup policy 仍各自建 schedule，因此趟數不同時會分開顯示，不合併成沒有 policy 語意的單一數字。
 
