@@ -13,6 +13,12 @@ export interface RecipeResearchObservation {
  *
  * 這些資料只用來研究特性累加、slot、同分排序與售價規則，
  * 不會出現在一般配方資料庫。
+ *
+ * 目前已確認的單一果汁基底＋調味器售價研究邊界：
+ * - 相同 unique ingredient set 時，加入順序不改變售價。
+ * - 重複加入集合內已存在的原料，不提高售價。
+ * 這些結論只作 research / regression，不用來推導 computed candidate 售價，
+ * 也不外推到果汁調和器成品。
  */
 export const recipeResearchObservations: RecipeResearchObservation[] = [
   {
