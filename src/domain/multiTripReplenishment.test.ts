@@ -28,6 +28,10 @@ function demand(
     leftoverServings: 0,
     recipes: recipes.map((recipe) => ({
       ...recipe,
+      customerIds: Array.from(
+        { length: recipe.assignedServings },
+        (_, index) => `${recipe.recipeId}-customer-${index + 1}`,
+      ),
       productionUnits: Math.ceil(
         recipe.assignedServings / 2,
       ),
@@ -68,6 +72,22 @@ function expectScheduleConsistency(
         ).size === trip.juiceJars.length,
     ),
   ).toBe(true)
+  expect(
+    result.trips.every((trip) =>
+      trip.juiceJars.every(
+        (load) => load.customerIds.length === load.servings,
+      ),
+    ),
+  ).toBe(true)
+  const servedCustomerIds = result.trips.flatMap((trip) =>
+    trip.juiceJars.flatMap((load) => load.customerIds),
+  )
+  expect(new Set(servedCustomerIds).size).toBe(
+    servedCustomerIds.length,
+  )
+  expect(servedCustomerIds).toHaveLength(
+    result.totalAssignedServings,
+  )
 }
 
 describe('multi-trip replenishment', () => {
@@ -89,6 +109,16 @@ describe('multi-trip replenishment', () => {
         ),
       ),
     ).toEqual([1, 1, 1, 1])
+    expect(
+      result.trips.flatMap((trip) =>
+        trip.juiceJars.flatMap((load) => load.customerIds),
+      ),
+    ).toEqual([
+      'a-customer-1',
+      'b-customer-1',
+      'c-customer-1',
+      'd-customer-1',
+    ])
     expect(
       result.trips.flatMap((trip) =>
         trip.juiceJars.map(
