@@ -525,16 +525,31 @@ export function buildProductionLogisticsPlan(
       }
 
       const materialsBefore = cloneMaterials(materials)
+      const actionsLengthBefore = actions.length
+      const ingredientAcquisitionActionsBefore =
+        ingredientAcquisitionActions
+      const waterFetchTripsBefore = waterFetchTrips
+      const externalWaterRemainingBefore = externalWaterRemaining
+
+      const rollbackOperationAttempt = () => {
+        materials.clear()
+        for (const [key, value] of materialsBefore) {
+          materials.set(key, value)
+        }
+        actions.splice(actionsLengthBefore)
+        ingredientAcquisitionActions =
+          ingredientAcquisitionActionsBefore
+        waterFetchTrips = waterFetchTripsBefore
+        externalWaterRemaining = externalWaterRemainingBefore
+      }
+
       const machineSlotsAvailable = equipmentSlotCapacity(step.kind)
       let preloadedMachineSlots = 0
 
       if (step.kind === 'juicing') {
         const ingredientId = step.addedIngredientId
         if (!ingredientId || !ensureRaw(ingredientId, quantity)) {
-          materials.clear()
-          for (const [key, value] of materialsBefore) {
-            materials.set(key, value)
-          }
+          rollbackOperationAttempt()
           continue
         }
         removeMaterial(materials, rawKey(ingredientId), quantity)
@@ -556,10 +571,7 @@ export function buildProductionLogisticsPlan(
               machineSlotsAvailable,
             )
           ) {
-            materials.clear()
-            for (const [key, value] of materialsBefore) {
-              materials.set(key, value)
-            }
+            rollbackOperationAttempt()
             continue
           }
           removeMaterial(materials, rawKey(ingredientId), quantity)
@@ -571,10 +583,7 @@ export function buildProductionLogisticsPlan(
               machineSlotsAvailable,
             )
           ) {
-            materials.clear()
-            for (const [key, value] of materialsBefore) {
-              materials.set(key, value)
-            }
+            rollbackOperationAttempt()
             continue
           }
           removeMaterial(materials, 'water', quantity)
@@ -621,10 +630,7 @@ export function buildProductionLogisticsPlan(
               : null
 
         if (!outputJarReceiver) {
-          materials.clear()
-          for (const [key, value] of materialsBefore) {
-            materials.set(key, value)
-          }
+          rollbackOperationAttempt()
           continue
         }
 
@@ -646,10 +652,7 @@ export function buildProductionLogisticsPlan(
         )
         const snapshot = storageSnapshot(materials, inventory, settings)
         if (!storageFits(snapshot)) {
-          materials.clear()
-          for (const [key, value] of materialsBefore) {
-            materials.set(key, value)
-          }
+          rollbackOperationAttempt()
           continue
         }
         pushAction(
