@@ -1,3 +1,4 @@
+import { formatMoney } from './displayFormat'
 import { PROCESSING_STACK_CAPACITY, WATER_STACK_CAPACITY } from './inventoryRules'
 import { customerIsUnlocked } from './availability'
 import type {
@@ -44,7 +45,7 @@ export function optimizerCustomerLabel(
 }
 
 export function optimizerMoney(value: number): string {
-  return `${value} 金幣`
+  return formatMoney(value)
 }
 
 
