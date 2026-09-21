@@ -973,7 +973,7 @@ function RecipeRow({
       </summary>
 
       <div className="row-details">
-        <TagGroup title="原料順序" tags={[recipe.ingredients.join(' → ')]} />
+        <TagGroup title="原料順序" tags={[formatRecipeSequence(recipe.ingredients)]} />
         <TagGroup
           title={
             recipe.source === 'observed'
