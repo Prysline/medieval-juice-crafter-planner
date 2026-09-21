@@ -13,10 +13,10 @@ export interface RecipeStockAdjustment {
   finishedServingsUsed: number
   finishedServingsRemaining: number
   servingsToProduce: number
-  batchesToPrepare: number
+  juiceUnitsToPrepare: number
   newlyProducedServings: number
   newProductionLeftoverServings: number
-  ingredientUnitsPerBatch: PreparationRecipeIngredient[]
+  ingredientUnitsPerJuiceUnit: PreparationRecipeIngredient[]
 }
 
 export interface IngredientShortfall {
@@ -76,8 +76,8 @@ export function buildPreparationShortfall(
     )
     const servingsToProduce =
       recipe.assignedServings - finishedServingsUsed
-    const batchesToPrepare = Math.ceil(servingsToProduce / 2)
-    const newlyProducedServings = batchesToPrepare * 2
+    const juiceUnitsToPrepare = Math.ceil(servingsToProduce / 2)
+    const newlyProducedServings = juiceUnitsToPrepare * 2
 
     return {
       recipeId: recipe.recipeId,
@@ -88,21 +88,22 @@ export function buildPreparationShortfall(
       finishedServingsRemaining:
         finishedServingsAvailable - finishedServingsUsed,
       servingsToProduce,
-      batchesToPrepare,
+      juiceUnitsToPrepare,
       newlyProducedServings,
       newProductionLeftoverServings:
         newlyProducedServings - servingsToProduce,
-      ingredientUnitsPerBatch: recipe.ingredientUnitsPerBatch,
+      ingredientUnitsPerJuiceUnit:
+        recipe.ingredientUnitsPerJuiceUnit,
     }
   })
 
   const requiredByIngredient = new Map<string, number>()
   for (const recipe of recipes) {
-    for (const ingredient of recipe.ingredientUnitsPerBatch) {
+    for (const ingredient of recipe.ingredientUnitsPerJuiceUnit) {
       requiredByIngredient.set(
         ingredient.ingredientId,
         (requiredByIngredient.get(ingredient.ingredientId) ?? 0) +
-          ingredient.quantityPerBatch * recipe.batchesToPrepare,
+          ingredient.quantityPerJuiceUnit * recipe.juiceUnitsToPrepare,
       )
     }
   }
@@ -130,7 +131,7 @@ export function buildPreparationShortfall(
     .sort((a, b) => a.name.localeCompare(b.name, 'zh-Hant'))
 
   const productionWaterUnitsRequired = recipes.reduce(
-    (sum, recipe) => sum + recipe.batchesToPrepare,
+    (sum, recipe) => sum + recipe.juiceUnitsToPrepare,
     0,
   )
   const waterUnitsUsed = Math.min(
