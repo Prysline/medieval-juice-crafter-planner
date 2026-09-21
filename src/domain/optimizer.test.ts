@@ -396,6 +396,93 @@ describe('production optimizer', () => {
     ).toBe(result.totalIngredientCost)
   })
 
+  it('counts repeated Blender segments in the machine-operation objective', async () => {
+    const repeatedBlend: RecipeCandidate = {
+      id: 'repeated-blend',
+      name: 'Repeated Blend',
+      source: 'computed',
+      unlockedAt: 'juice-blender-unlocked',
+      salePrice: null,
+      ingredients: ['檸檬', '檸檬'],
+      effects: [{ name: '甜味', value: 5 }],
+      equipment: ['柑橘榨汁機', '果汁調和器', '果汁成品台'],
+    }
+    const normalRecipe: RecipeCandidate = {
+      id: 'normal',
+      name: 'Normal',
+      source: 'computed',
+      unlockedAt: 'seasoner-unlocked',
+      salePrice: null,
+      ingredients: ['橙子', '薄荷'],
+      effects: [{ name: '甜味', value: 5 }],
+      equipment: ['柑橘榨汁機', '調味器', '果汁成品台'],
+    }
+    const demandCustomers = Array.from({ length: 5 }, (_, index) =>
+      customer(String(index + 1), '甜味'),
+    )
+
+    const result = await optimizeBatchPlan(
+      {
+        ...request(
+          demandCustomers.map((item) => item.id),
+          'minimum-cost',
+          [],
+        ),
+        currentProgress: 'juice-blender-unlocked',
+        candidatePolicy: 'allow-unambiguous-computed',
+        priorities: ['minimum-machine-operations', 'minimum-cost'],
+      },
+      {
+        source: {
+          customers: demandCustomers,
+          candidates: [repeatedBlend, normalRecipe],
+        },
+      },
+    )
+
+    expect(result.recipePlans).toHaveLength(1)
+    expect(result.recipePlans[0].recipeId).toBe('normal')
+    expect(result.machineOperations.total).toBe(3)
+  })
+
+  it('reports Blender operations for an eligible multi-base candidate', async () => {
+    const blenderCandidate: RecipeCandidate = {
+      id: 'blend',
+      name: 'Blend',
+      source: 'computed',
+      unlockedAt: 'juice-blender-unlocked',
+      salePrice: null,
+      ingredients: ['檸檬', '糖', '橙子', '薄荷'],
+      effects: [{ name: '甜味', value: 5 }],
+      equipment: ['柑橘榨汁機', '調味器', '果汁調和器', '果汁成品台'],
+    }
+
+    const result = await optimizeBatchPlan(
+      {
+        ...request(['a'], 'minimum-cost', []),
+        currentProgress: 'juice-blender-unlocked',
+        candidatePolicy: 'allow-unambiguous-computed',
+      },
+      {
+        source: {
+          customers: [customer('a', '甜味')],
+          candidates: [blenderCandidate],
+        },
+      },
+    )
+
+    expect(result.machineOperations).toEqual({
+      total: 6,
+      juicing: 2,
+      seasoning: 2,
+      blending: 1,
+      finalizing: 1,
+    })
+    expect(
+      result.productionSteps.some((step) => step.kind === 'blending'),
+    ).toBe(true)
+  })
+
   it('solves the current tranquil-fountain dataset without duplicate assignments', async () => {
     const result = await optimizeBatchPlan({
       customerIds: canonicalCustomers.map((item) => item.id),
