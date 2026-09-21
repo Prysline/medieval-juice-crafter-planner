@@ -44,6 +44,11 @@ export interface OptimizationResult {
   shoppingList: IngredientPurchase[]
   unresolvedCustomers: string[]
   totalIngredientCost: number
+  knownSalesRevenue: number
+  knownGrossProfit: number
+  formalSalesCount: number
+  potentialTrialCount: number
+  unknownFormalSalePriceCount: number
   producedServings: number
   assignedServings: number
   leftoverServings: number
@@ -153,6 +158,35 @@ export async function optimizeBatchPlan(
   )
   const assignedServings = solution.assignments.length
   const producedServings = solution.metrics.totalBatches * 2
+  const formalCustomerIds = new Set(request.formalCustomerIds)
+  const candidateById = new Map(
+    model.recipes.map((recipe) => [
+      recipe.candidate.id,
+      recipe.candidate,
+    ]),
+  )
+  let knownSalesRevenue = 0
+  let formalSalesCount = 0
+  let potentialTrialCount = 0
+  let unknownFormalSalePriceCount = 0
+
+  for (const assignment of solution.assignments) {
+    if (!formalCustomerIds.has(assignment.customerId)) {
+      potentialTrialCount += 1
+      continue
+    }
+
+    formalSalesCount += 1
+    const candidate = candidateById.get(assignment.recipeId)
+    if (!candidate || candidate.salePrice === null) {
+      unknownFormalSalePriceCount += 1
+      continue
+    }
+
+    knownSalesRevenue += candidate.salePrice
+  }
+  const knownGrossProfit =
+    knownSalesRevenue - solution.metrics.totalIngredientCost
 
   return {
     assignments: solution.assignments,
@@ -160,6 +194,11 @@ export async function optimizeBatchPlan(
     shoppingList,
     unresolvedCustomers: model.unresolvedCustomerIds,
     totalIngredientCost: solution.metrics.totalIngredientCost,
+    knownSalesRevenue,
+    knownGrossProfit,
+    formalSalesCount,
+    potentialTrialCount,
+    unknownFormalSalePriceCount,
     producedServings,
     assignedServings,
     leftoverServings: producedServings - assignedServings,
