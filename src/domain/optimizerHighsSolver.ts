@@ -8,7 +8,12 @@ import type {
   OptimizationObjective,
 } from './optimizerModel'
 
-type ObjectiveKey = 'cost' | 'batches' | 'kinds'
+type ObjectiveKey =
+  | 'cost'
+  | 'batches'
+  | 'kinds'
+  | 'negativeKnownRevenue'
+  | 'negativeKnownGrossProfit'
 type IntVariable = ReturnType<Model['intVar']>
 type BoolVariable = ReturnType<Model['boolVar']>
 
@@ -30,9 +35,19 @@ function requiredFiniteNumber(
 function objectiveOrder(
   objective: OptimizationObjective,
 ): ObjectiveKey[] {
-  return objective === 'minimum-cost'
-    ? ['cost', 'batches', 'kinds']
-    : ['batches', 'cost', 'kinds']
+  if (objective === 'minimum-cost') {
+    return ['cost', 'batches', 'kinds']
+  }
+
+  if (objective === 'minimum-waste') {
+    return ['batches', 'cost', 'kinds']
+  }
+
+  if (objective === 'maximum-known-revenue') {
+    return ['negativeKnownRevenue', 'cost', 'batches', 'kinds']
+  }
+
+  return ['negativeKnownGrossProfit', 'cost', 'batches', 'kinds']
 }
 
 function buildHighsStage(
@@ -118,10 +133,28 @@ function buildHighsStage(
       return z ? [z] : []
     }),
   )
+  const formalCustomerIds = new Set(domain.request.formalCustomerIds)
+  const knownRevenueExpression = sum(
+    ...domain.serviceableCustomerIds.flatMap((customerId) => {
+      if (!formalCustomerIds.has(customerId)) return []
+
+      return domain.recipes.flatMap((recipe) => {
+        const salePrice = recipe.candidate.salePrice
+        if (salePrice === null) return []
+
+        const y = yByCustomerRecipe.get(
+          `${customerId}\u001f${recipe.candidate.id}`,
+        )
+        return y ? [y.times(salePrice)] : []
+      })
+    }),
+  )
   const expressions = {
     cost: costExpression,
     batches: batchExpression,
     kinds: kindExpression,
+    negativeKnownRevenue: knownRevenueExpression.times(-1),
+    negativeKnownGrossProfit: costExpression.minus(knownRevenueExpression),
   }
 
   fixes.forEach((fix, index) => {
