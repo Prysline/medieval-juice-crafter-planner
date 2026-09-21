@@ -68,6 +68,7 @@ src/
     optimizerUi.ts     # UI 預設需求集合：已解鎖、今日未供應、正式／潛在篩選
     inventoryRules.ts  # 已確認的背包／果汁罐／罐架／水／乾淨杯具容量常數
     preparationDemand.ts # OptimizationResult → 全天 gross 備料需求
+    singleTripPacking.ts # 販售趟 finished-drink jars + clean cups 最小必要 slot / overflow
   storage/
     plannerState.ts    # localStorage 讀寫、正式顧客與 legacy migration
     savedRecipes.ts    # 個人配方 schema validation / CRUD
@@ -136,3 +137,5 @@ OptimizationResult
 ```
 
 目前正式鎖定的容量規則只有：背包 10 slot、果汁罐 1 slot / 容量 10 / 同罐不混飲料、果汁罐架 5 slot、水 stack 10、乾淨杯具 stack 10。一般原料／原汁 stack 5 仍待再驗證，因此沒有進入 D1 / D2 的正式 packing constraint。
+
+D2 的 single-trip packing 目前只處理**販售趟**：把已分配給顧客的成品按 recipe 分裝進果汁罐，並計算乾淨杯具 stack。optimizer 產生但未分配的 leftover 不帶出門。若完整需求超過 10 slot，只回報 required / overflow slots，不自行決定要犧牲哪位顧客；多趟拆分留到後續 slice。
