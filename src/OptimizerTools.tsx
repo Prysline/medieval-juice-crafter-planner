@@ -17,6 +17,7 @@ import type {
 import type {
   MultiTripJuiceJarLoad,
   MultiTripReplenishmentPlan,
+  UsedCupTripPolicy,
 } from './domain/multiTripReplenishment'
 import type { PreparationShortfall } from './domain/preparationShortfall'
 import { buildInventoryCapacitySummary } from './domain/inventoryCapacity'
@@ -44,8 +45,10 @@ interface OptimizerToolsProps {
 }
 
 interface SalesTripPlans {
-  retainAndWash: MultiTripReplenishmentPlan
-  allowDropIfFull: MultiTripReplenishmentPlan
+  selected: MultiTripReplenishmentPlan
+  alternate: MultiTripReplenishmentPlan | null
+  alternatePolicy: UsedCupTripPolicy
+  alternateError: string | null
 }
 
 type OptimizerRunState =
@@ -114,10 +117,14 @@ function jarFillActionLabel(load: MultiTripJuiceJarLoad): string {
   )
 }
 
-function tripPolicyLabel(plan: MultiTripReplenishmentPlan): string {
-  return plan.policy === 'retain-and-wash'
+function usedCupPolicyLabel(policy: UsedCupTripPolicy): string {
+  return policy === 'retain-and-wash'
     ? '保留杯具並回家清洗'
     : '接受背包滿時 used cup 掉落'
+}
+
+function tripPolicyLabel(plan: MultiTripReplenishmentPlan): string {
+  return usedCupPolicyLabel(plan.policy)
 }
 
 function tripPolicyNote(plan: MultiTripReplenishmentPlan): string {
@@ -288,25 +295,50 @@ export default function OptimizerTools({
         preparationDemand,
         inventoryState,
       )
-      const salesTripPlans: SalesTripPlans = {
-        retainAndWash: buildMultiTripReplenishmentPlan(
-          preparationDemand,
-          'retain-and-wash',
-          result.availableJuiceJarCount,
-        ),
-        allowDropIfFull: buildMultiTripReplenishmentPlan(
-          preparationDemand,
-          'allow-drop-if-full',
-          result.availableJuiceJarCount,
-        ),
-      }
+      const selectedPolicy: UsedCupTripPolicy =
+        plannerSettings.allowUsedCupDropIfFull
+          ? 'allow-drop-if-full'
+          : 'retain-and-wash'
+      const alternatePolicy: UsedCupTripPolicy =
+        selectedPolicy === 'retain-and-wash'
+          ? 'allow-drop-if-full'
+          : 'retain-and-wash'
 
-      for (const plan of Object.values(salesTripPlans)) {
+      const buildCheckedSalesTripPlan = (
+        policy: UsedCupTripPolicy,
+      ): MultiTripReplenishmentPlan => {
+        const plan = buildMultiTripReplenishmentPlan(
+          preparationDemand,
+          policy,
+          result.availableJuiceJarCount,
+        )
         if (plan.jarTypeSwitches !== result.jarTypeSwitches) {
           throw new Error(
             '果汁罐換裝與販售趟數排程不一致，已停止顯示結果。',
           )
         }
+        return plan
+      }
+
+      const selectedSalesTripPlan =
+        buildCheckedSalesTripPlan(selectedPolicy)
+      let alternateSalesTripPlan: MultiTripReplenishmentPlan | null = null
+      let alternateError: string | null = null
+      try {
+        alternateSalesTripPlan =
+          buildCheckedSalesTripPlan(alternatePolicy)
+      } catch (error) {
+        alternateError =
+          error instanceof Error
+            ? error.message
+            : '替代杯具策略目前無法產生可行排程。'
+      }
+
+      const salesTripPlans: SalesTripPlans = {
+        selected: selectedSalesTripPlan,
+        alternate: alternateSalesTripPlan,
+        alternatePolicy,
+        alternateError,
       }
 
       setRunState({
@@ -579,7 +611,6 @@ export default function OptimizerTools({
           preparationShortfall={runState.preparationShortfall}
           priorities={priorities}
           salesTripPlans={runState.salesTripPlans}
-          allowUsedCupDropIfFull={plannerSettings.allowUsedCupDropIfFull}
         />
       )}
     </section>
@@ -654,20 +685,14 @@ function OptimizerResultPanel({
   preparationShortfall,
   priorities,
   salesTripPlans,
-  allowUsedCupDropIfFull,
 }: {
   result: OptimizationResult
   preparationShortfall: PreparationShortfall
   priorities: OptimizationCriterion[]
   salesTripPlans: SalesTripPlans
-  allowUsedCupDropIfFull: boolean
 }) {
-  const selectedSalesTripPlan = allowUsedCupDropIfFull
-    ? salesTripPlans.allowDropIfFull
-    : salesTripPlans.retainAndWash
-  const alternateSalesTripPlan = allowUsedCupDropIfFull
-    ? salesTripPlans.retainAndWash
-    : salesTripPlans.allowDropIfFull
+  const selectedSalesTripPlan = salesTripPlans.selected
+  const alternateSalesTripPlan = salesTripPlans.alternate
   const purchaseItemByIngredientId = new Map(
     result.shoppingList.map((item) => [item.ingredientId, item]),
   )
@@ -950,10 +975,19 @@ function OptimizerResultPanel({
 
         <details className="optimizer-policy-comparison">
           <summary>
-            比較替代策略：{tripPolicyLabel(alternateSalesTripPlan)}（
-            {alternateSalesTripPlan.tripCount} 趟）
+            比較替代策略：{usedCupPolicyLabel(salesTripPlans.alternatePolicy)}
+            {alternateSalesTripPlan
+              ? '（' + alternateSalesTripPlan.tripCount + ' 趟）'
+              : '（目前不可行）'}
           </summary>
-          <SalesTripPlanBlock plan={alternateSalesTripPlan} />
+          {alternateSalesTripPlan ? (
+            <SalesTripPlanBlock plan={alternateSalesTripPlan} />
+          ) : (
+            <p className="optimizer-policy-unavailable">
+              {salesTripPlans.alternateError ??
+                '替代杯具策略目前無法產生可行排程。'}
+            </p>
+          )}
         </details>
 
         <small className="optimizer-boundary-note">
