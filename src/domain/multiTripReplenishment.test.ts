@@ -301,6 +301,31 @@ describe('multi-trip replenishment', () => {
     expectScheduleConsistency(result)
   })
 
+  it('can make drop policy feasible when retain-and-wash is not', () => {
+    const salesDemand = namedRecipes(['A'], 1)
+
+    expect(() =>
+      buildMultiTripReplenishmentPlan(
+        salesDemand,
+        'retain-and-wash',
+        9,
+      ),
+    ).toThrow('A single jar cannot fit the retain-and-wash trip policy')
+
+    const droppable = buildMultiTripReplenishmentPlan(
+      salesDemand,
+      'allow-drop-if-full',
+      9,
+    )
+    expect(droppable.tripCount).toBe(1)
+    expect(droppable.trips[0]).toMatchObject({
+      totalServings: 1,
+      departureSlots: 10,
+      usedCupDropMayOccur: true,
+      juiceJarSlotsCarried: 9,
+    })
+  })
+
   it('rejects positive sales demand when no jar is carried', () => {
     expect(() =>
       buildMultiTripReplenishmentPlan(
