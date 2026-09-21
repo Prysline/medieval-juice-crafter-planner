@@ -19,7 +19,7 @@
 - 個人配方只保存自訂名稱、有序 ingredient IDs、備註與建立時間；effects、cost、equipment、matching 每次由目前 domain 重新計算。
 - 「批次規劃」已重構為 production optimizer：可依序指定主要／次要 lexicographic 目標，包含最低成本、最少浪費、最高已知銷售總額、最高已知毛利、最少機器操作與最少果汁罐換裝。Phase 1 結果資訊架構已完成：閱讀順序為 **規劃摘要 → 所需物資 → 製作步驟 → 果汁分配 → 販售排程**；水會以免費取得需求顯示，製作步驟按機器分組並拆出 machine slots / 每次 1～5 份操作。
 - Core model correction 2B 已把 physical jar identity 接進多趟販售 schedule。Phase 2 capacity contract 也已完成：`mjc-inventory` 會保存一般架子數、果汁罐架數與每個 physical jar；`mjc-planner-settings` 另保存常駐攜帶果汁罐數與「接受背包滿時 used cup 可能掉落」opt-in。常駐攜帶罐會固定占背包 slot，ownership、carrying 與 jar-rack staging 不再混成同一個數字。
-- Inventory / packing D1～D4 已建立：`PreparationDemand` 消費 production-unit optimizer 結果，已有 stock offset、single-trip packing 與 multi-trip replenishment；現行 `retain-and-wash` 固定預留 1 slot 仍是 approximation，Phase 4 才會改成實際 clean / used cup lifecycle。
+- Inventory / packing D1～D4 與 Phase 4 cup lifecycle 已建立：`PreparationDemand` 消費 production-unit optimizer 結果，已有 stock offset、single-trip packing 與 physical-jar-aware multi-trip replenishment；販售排程現在會用玩家實際持有的 clean / used cups，逐杯追蹤 clean → used stack transition，不再固定預留 1 slot。
 - 預測若在 effect cutoff 出現未確認同分 tie，會明確標示 ambiguous，且不參與完全匹配推薦。
 - 舊版 `mjc-stage` / `mjc-satisfaction` localStorage 會保守遷移到新版進度資料。
 
@@ -177,7 +177,7 @@ OptimizationResult
 - 水：**10 / slot**；免費，但搬運與暫存仍占空間。製作區到取水處有一段距離，一次能取多少水由**當下背包可用空間**決定，不是固定只取 1 stack。
 - 一般架子：**9 slots / 架**；每個 shelf slot 沿用背包中同類物品的 stack capacity。
 - 玩家目前似乎不能主動把物品放地面作 storage；採水或 NPC 回傳 used cup 等外部取得物品在背包滿時造成掉落，與主動地面暫存是不同機制。
-- 杯子／乾淨悲劇：**10 / stack**；`cleanCups + usedCups` 代表玩家目前實際持有杯具總數，但「實際持有杯數」何時限制全天／單趟服務量仍留到 Phase 4。
+- 杯子／乾淨悲劇：**10 / stack**；`cleanCups + usedCups` 代表玩家目前實際持有杯具總數。Phase 4 已把這個實體杯具總數接入販售排程：每趟只帶實際可用的 clean cups，回傳後轉成 used cups；需要跨趟重用時只能清洗目前實際持有的 used cups。
 - 果汁罐：**1 罐 = 1 slot / 容量 10 / 同罐不混不同飲料**；每個 `juiceJars[]` item 都代表一個 actual physical jar，空罐也保留 identity。
 - 果汁罐架：**5 slots / 架**；Phase 2 已改為 `jarRackCount × 5` staging capacity，與 physical jar 持有數、常駐攜帶數分開。一般架則為 `shelfCount × 9` slots。
 
@@ -202,9 +202,9 @@ D4 只處理從家出發、賣完回家的**販售趟**。它不加入顧客 sch
 
 used-cup handling 必須明確選 policy：
 
-- `retain-and-wash`：預設策略；現行 runtime 每趟固定預留 1 slot 給 used-cup stack，非最後一趟回家後洗回 clean cups 再重用。這仍是 **packing approximation**，不是最終杯具物理模型。
-- `allow-drop-if-full`：Phase 2 已改成 persisted **opt-in**；departure 可使用完整 10 slots，背包滿時只接受 used cups **可能掉落**。這不代表玩家能主動把物品丟地上作 storage。
-- 目前選用的 policy 必須產生可行排程；替代 policy 若因容量不可行，只顯示不可行原因，不會反過來讓已選策略整體失敗。
+- `retain-and-wash`：預設策略；逐杯模擬 clean → used。若某次 used cup 回傳會讓背包超過 10 slots，該趟會在更早位置截斷，回家後可把實際持有的 used cups 清洗成 clean cups再出發；清洗杯數與等量用水都會記錄。
+- `allow-drop-if-full`：persisted **opt-in**；同樣逐杯模擬 clean → used，但 NPC 回傳 used cup 當下若真的沒有空間，才把該杯記為掉落。掉落杯不再供後續趟次使用；這不代表玩家能主動把物品丟地上作 storage。
+- 目前選用的 policy 必須產生可行排程；替代 policy 若因容量不可行，只顯示不可行原因，不會反過來讓已選策略整體失敗。兩種 policy 都保留實際 physical cup ownership，並檢查 `final physical cups = initial physical cups - dropped cups`。
 
 Phase 2 也把「physical jar ownership」「常駐攜帶數」「jar-rack staging」拆開。常駐攜帶 `X` 個果汁罐時，**每一趟都固定占 X 個背包 slots**，即使某趟只有部分罐實際裝果汁；因此多帶空罐可能減少換裝，卻同時壓縮杯具／其他搬運空間。jar rack staging capacity 則獨立為 `jarRackCount × 5`。
 
@@ -219,7 +219,7 @@ trip grouping 仍是 deterministic capacity-first feasible planning；它目標�
 
 ## Next planner corrections
 
-Phase 1｜Planner result information architecture 已於 PR #22 完成；Phase 2｜Inventory / capacity contract 已於 PR #24 完成；Phase 3｜Production logistics 已於 PR #27 完成。
+Phase 1｜Planner result information architecture 已於 PR #22 完成；Phase 2｜Inventory / capacity contract 已於 PR #24 完成；Phase 3｜Production logistics 已於 PR #27 完成；Phase 4｜Cup lifecycle / sales trips 已於 PR #30 完成。
 
 Phase 3 已完成：
 
@@ -230,12 +230,13 @@ Phase 3 已完成：
 - finalizer 每次 operation 最大產出 10 份，必須有至少一個 **physical juice jar receiver** 接手；receiver 可來自常駐攜帶 jars 或 `jarRackCount × 5` staging 中實際存在的 non-carried jars，rack 空位本身不會憑空生成罐子。
 - 現行 `mjc-inventory` 尚未保存每件 production material 的精確位置，因此 Phase 3 把既有 raw / water 視為 home supply，依目前 shelf / backpack capacity 建 deterministic feasible placement；罐內既有內容與「第一次換裝」相容性仍 deferred。
 
-下一輪從 **Phase 4｜Cup lifecycle / sales trips** 開始：
+Phase 4 已完成：
 
-1. 用玩家實際持有杯數限制單趟／全天可服務量。
-2. 追蹤 clean cups → used cups 的 stack transition，取代目前 `retain-and-wash = 固定預留 1 slot` approximation。
-3. 保留「回家清洗後跨趟重用」與「背包滿時接受掉落」的不同語意；不得把地面當一般 storage。
-4. Phase 5 / 6 再做完整 inventory UI、Apply Plan 與 profiles；route optimizer 仍等待 travel time / location / service-window / shop-hours 資料。
+1. 玩家實際持有的 `cleanCups + usedCups` 已成為販售排程的 hard physical constraint；沒有實體杯就不會產生正需求販售排程。
+2. 每趟逐杯追蹤 clean → used stack transition；`retain-and-wash` 不再固定預留 1 slot，而是依實際趟中峰值判斷是否需要拆趟。
+3. 跨趟重用只會清洗實際持有的 used cups，並記錄清洗杯數／用水；`allow-drop-if-full` 只在 NPC 回傳 used cup 當下無空位時記錄掉落，掉落杯不會被當成後續可用 storage。
+4. 下一個獨立 runtime follow-up 是把 optimizer `leftoverServings` 帶入販售結果的 recipe / physical jar identity，避免剩餘成品從 trip result 消失；跨日 persistent jar contents / Apply Plan transaction 仍留到 Phase 5 邊界。
+5. Phase 5 / 6 再做完整 inventory UI、Apply Plan 與 profiles；route optimizer 仍等待 travel time / location / service-window / shop-hours 資料。
 
 
 ## Schedule / route readiness boundary
