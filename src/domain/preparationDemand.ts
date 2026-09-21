@@ -6,6 +6,11 @@ export interface PreparationIngredientDemand {
   quantity: number
 }
 
+export interface PreparationRecipeIngredient {
+  ingredientId: string
+  quantityPerBatch: number
+}
+
 export interface PreparationRecipeDemand {
   recipeId: string
   recipeName: string
@@ -13,6 +18,7 @@ export interface PreparationRecipeDemand {
   producedServings: number
   assignedServings: number
   leftoverServings: number
+  ingredientUnitsPerBatch: PreparationRecipeIngredient[]
 }
 
 export interface PreparationDemand {
@@ -31,6 +37,11 @@ export function buildPreparationDemand(
   const recipeMap = new Map<string, PreparationRecipeDemand>()
 
   for (const batch of result.batches) {
+    const unitsPerBatch = [...new Set(batch.ingredientIds)].map((ingredientId) => ({
+      ingredientId,
+      quantityPerBatch: batch.ingredientIds.filter((id) => id === ingredientId).length,
+    }))
+
     const current = recipeMap.get(batch.recipeId) ?? {
       recipeId: batch.recipeId,
       recipeName: batch.recipeName,
@@ -38,6 +49,7 @@ export function buildPreparationDemand(
       producedServings: 0,
       assignedServings: 0,
       leftoverServings: 0,
+      ingredientUnitsPerBatch: unitsPerBatch,
     }
 
     current.batches += 1
