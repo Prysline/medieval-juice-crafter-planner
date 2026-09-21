@@ -108,6 +108,7 @@ export function buildPreparationShortfall(
   }
 
   const ingredientShortfalls = [...requiredByIngredient.entries()]
+    .filter(([, requiredUnits]) => requiredUnits > 0)
     .map(([ingredientId, requiredUnits]): IngredientShortfall => {
       const ingredient = ingredientById.get(ingredientId)
       const inventoryUnitsAvailable =
