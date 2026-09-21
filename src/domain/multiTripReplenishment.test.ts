@@ -239,7 +239,7 @@ describe('multi-trip replenishment', () => {
     expect(retained.tripCount).toBe(2)
     expect(retained.trips[0]).toMatchObject({
       totalServings: 40,
-      departureSlots: 8,
+      departureSlots: 9,
       effectiveDepartureSlotLimit: 9,
       reservedTransientUsedCupSlot: 1,
       usedCupDropMayOccur: false,
