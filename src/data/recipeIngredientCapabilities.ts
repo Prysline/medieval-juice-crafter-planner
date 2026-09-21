@@ -18,8 +18,8 @@ export interface RecipeIngredientCapability {
  * 手動 simulator 可保留重複調味與四原料以上 sequence；第二個 juice-base
  * 代表下一杯飲料的 sequence 開始，整體以果汁調和器串接。
  *
- * 果汁調和器的遊戲內精確輸入比例、產量與售價公式仍未確認；網站只把
- * 使用者指定的兩杯飲料 ordered sequence 做 concat，不自行推導這些未知值。
+ * 果汁調和器已確認 1:1:1、q = 1～5；網站把不同 drink segment 的
+ * ordered sequence 依序 concat。仍未知的是完整輸入類型限制、成品特性與售價。
  */
 export const recipeIngredientCapabilities: RecipeIngredientCapability[] = [
   { ingredientId: 'lemon', roles: ['juice-base'], baseEquipment: '柑橘榨汁機' },
