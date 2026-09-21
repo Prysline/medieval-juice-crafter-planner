@@ -14,6 +14,7 @@ const result: OptimizationResult = {
       recipeName: '檸檬汁',
       batchNumber: 1,
       customerIds: ['a', 'b'],
+      ingredientIds: ['lemon'],
       batchIngredientCost: 9,
     },
     {
@@ -21,6 +22,7 @@ const result: OptimizationResult = {
       recipeName: '橙汁',
       batchNumber: 1,
       customerIds: ['c'],
+      ingredientIds: ['orange'],
       batchIngredientCost: 11,
     },
   ],
@@ -67,6 +69,9 @@ describe('preparation demand adapter', () => {
           producedServings: 2,
           assignedServings: 2,
           leftoverServings: 0,
+          ingredientUnitsPerBatch: [
+            { ingredientId: 'lemon', quantityPerBatch: 1 },
+          ],
         },
         {
           recipeId: 'orange',
@@ -75,6 +80,9 @@ describe('preparation demand adapter', () => {
           producedServings: 2,
           assignedServings: 1,
           leftoverServings: 1,
+          ingredientUnitsPerBatch: [
+            { ingredientId: 'orange', quantityPerBatch: 1 },
+          ],
         },
       ],
     })
