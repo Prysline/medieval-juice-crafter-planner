@@ -14,6 +14,7 @@ export type UsedCupTripPolicy =
 
 export type JuiceJarFillAction =
   | 'use-existing'
+  | 'continue-loaded'
   | 'initial-fill'
   | 'refill-same-type'
   | 'type-switch'
@@ -27,6 +28,11 @@ export interface MultiTripJuiceJarLoad {
   servings: number
   /** Servings that remain in this jar after the assigned sales. */
   retainedLeftoverServings: number
+  /**
+   * Finished servings that must be loaded into this physical jar before this
+   * trip. Zero means the trip continues contents already present in the jar.
+   */
+  plannedFillServings: number
   slotCost: 1
   fillAction: JuiceJarFillAction
   previousRecipeId: string | null
@@ -48,6 +54,17 @@ export interface MultiTripPhysicalJar {
   physicalJarId: string
   initialRecipeId: string | null
   initialServings: number
+}
+
+export interface MultiTripProductionJarFill {
+  physicalJarId: string
+  recipeId: string
+  recipeName: string
+  beforeTripNumber: number
+  servings: number
+  fillAction: 'initial-fill' | 'refill-same-type' | 'type-switch'
+  previousRecipeId: string | null
+  previousRecipeName: string | null
 }
 
 export interface CupInventoryInput {
@@ -92,6 +109,7 @@ export interface MultiTripReplenishmentPlan {
   totalAssignedServings: number
   totalLeftoverServings: number
   leftoverJarContents: MultiTripLeftoverJarContent[]
+  productionJarFills: MultiTripProductionJarFill[]
   maxJuiceJarSlotsCarried: number
   cleanCupUnitsRequiredWithoutMiddayWashing: number
   reusableCleanCupPoolSize: number | null
@@ -302,7 +320,8 @@ function buildInitialJarQueues(
           recipeName: recipe.recipeName,
           customerIds,
           servings: source.servingsUsed,
-          retainedLeftoverServings: 0,
+          retainedLeftoverServings: source.servingsRemaining,
+          plannedFillServings: 0,
           slotCost: JUICE_JAR_SLOT_COST,
           fillAction: 'use-existing',
           previousRecipeId: source.recipeId,
@@ -393,6 +412,7 @@ function appendRecipeChunks(
       customerIds: [...chunk.customerIds],
       servings: chunk.servings,
       retainedLeftoverServings: 0,
+      plannedFillServings: chunk.servings,
       slotCost: JUICE_JAR_SLOT_COST,
       fillAction,
       previousRecipeId,
@@ -579,6 +599,56 @@ function buildPhysicalJarQueues(
   return recipes.length > reusableQueueCount
     ? buildJarQueuesWithSwitches(recipes, queues)
     : buildJarQueuesWithoutSwitches(recipes, queues)
+}
+
+function assignNewProductionLeftovers(
+  shortfall: PreparationShortfall,
+  queues: JarQueue[],
+): void {
+  for (const recipe of shortfall.recipes) {
+    let remaining = Math.max(
+      0,
+      Math.floor(recipe.newProductionLeftoverServings),
+    )
+    if (remaining === 0) continue
+
+    const candidates = queues
+      .flatMap((queue) => {
+        const load = queue.loads.at(-1)
+        return load &&
+          load.recipeId === recipe.recipeId &&
+          load.plannedFillServings > 0
+          ? [{ queue, load }]
+          : []
+      })
+      .sort(
+        (a, b) =>
+          b.load.servings - a.load.servings ||
+          a.queue.physicalJarId.localeCompare(
+            b.queue.physicalJarId,
+          ),
+      )
+
+    for (const candidate of candidates) {
+      if (remaining <= 0) break
+      const freeCapacity =
+        JUICE_JAR_CAPACITY -
+        candidate.load.servings -
+        candidate.load.retainedLeftoverServings
+      const retained = Math.min(remaining, freeCapacity)
+      if (retained <= 0) continue
+
+      candidate.load.retainedLeftoverServings += retained
+      candidate.load.plannedFillServings += retained
+      remaining -= retained
+    }
+
+    if (remaining > 0) {
+      throw new Error(
+        `Not enough terminal sales-jar capacity to preserve ${remaining} leftover serving(s) without switching away from retained juice`,
+      )
+    }
+  }
 }
 
 function cleanCupStacksFor(cups: number): number {
@@ -772,10 +842,14 @@ function buildTrips(
 
       if (servingsToTake === 0) continue
 
+      const isPartialLoad = servingsToTake < jar.servings
       trip.juiceJars.push({
         ...jar,
         servings: servingsToTake,
         customerIds: jar.customerIds.slice(0, servingsToTake),
+        retainedLeftoverServings: isPartialLoad
+          ? 0
+          : jar.retainedLeftoverServings,
       })
       trip.totalServings += servingsToTake
       selectedServingsByJarId.set(
@@ -831,11 +905,10 @@ function buildTrips(
 
       head.servings -= served
       head.customerIds = head.customerIds.slice(served)
-      if (head.fillAction !== 'use-existing') {
-        head.fillAction = 'refill-same-type'
-        head.previousRecipeId = head.recipeId
-        head.previousRecipeName = head.recipeName
-      }
+      head.plannedFillServings = 0
+      head.fillAction = 'continue-loaded'
+      head.previousRecipeId = head.recipeId
+      head.previousRecipeName = head.recipeName
     }
 
     trips.push({
@@ -854,133 +927,176 @@ function allocateLeftoverJarContents(
   shortfall: PreparationShortfall,
   trips: MultiTripSalesTrip[],
 ): MultiTripLeftoverJarContent[] {
-  const lastSalesLoadByJar = new Map<
-    string,
-    {
-      trip: MultiTripSalesTrip
-      load: MultiTripJuiceJarLoad
-    }
-  >()
-  for (const trip of trips) {
-    for (const load of trip.juiceJars) {
-      lastSalesLoadByJar.set(load.physicalJarId, { trip, load })
-    }
-  }
-
-  const contents: MultiTripLeftoverJarContent[] = []
-
-  for (const recipe of shortfall.recipes) {
-    for (const source of recipe.finishedStockSources) {
-      if (
-        source.servingsUsed <= 0 ||
-        source.servingsRemaining <= 0
-      ) {
-        continue
-      }
-
-      const candidate = lastSalesLoadByJar.get(source.physicalJarId)
-      if (
-        !candidate ||
-        candidate.load.recipeId !== recipe.recipeId
-      ) {
-        throw new Error(
-          `Existing leftover source ${source.physicalJarId} lost its sales-jar identity`,
-        )
-      }
-
-      candidate.load.retainedLeftoverServings +=
-        source.servingsRemaining
-      contents.push({
-        physicalJarId: source.physicalJarId,
-        recipeId: recipe.recipeId,
-        recipeName: recipe.recipeName,
-        servings: source.servingsRemaining,
-        tripNumber: candidate.trip.tripNumber,
-      })
-    }
-  }
-
-  const remainingByRecipe = new Map(
-    shortfall.recipes
-      .map((recipe) => [
-        recipe.recipeId,
-        Math.max(
-          0,
-          Math.floor(recipe.newProductionLeftoverServings),
-        ),
-      ] as const)
-      .filter(([, servings]) => servings > 0),
-  )
-
-  const finalSalesCandidates = [...lastSalesLoadByJar.values()]
-    .filter(({ load }) => {
-      const remaining = remainingByRecipe.get(load.recipeId) ?? 0
-      return (
-        remaining > 0 &&
-        load.servings + load.retainedLeftoverServings <
-          JUICE_JAR_CAPACITY
-      )
-    })
+  const contents = trips
+    .flatMap((trip) =>
+      trip.juiceJars.flatMap((load) =>
+        load.retainedLeftoverServings > 0
+          ? [{
+              physicalJarId: load.physicalJarId,
+              recipeId: load.recipeId,
+              recipeName: load.recipeName,
+              servings: load.retainedLeftoverServings,
+              tripNumber: trip.tripNumber,
+            }]
+          : [],
+      ),
+    )
     .sort(
       (a, b) =>
-        (remainingByRecipe.get(b.load.recipeId) ?? 0) -
-          (remainingByRecipe.get(a.load.recipeId) ?? 0) ||
-        b.load.servings - a.load.servings ||
-        a.load.physicalJarId.localeCompare(b.load.physicalJarId),
+        a.physicalJarId.localeCompare(b.physicalJarId) ||
+        a.recipeName.localeCompare(b.recipeName, 'zh-Hant') ||
+        a.recipeId.localeCompare(b.recipeId),
     )
 
-  for (const candidate of finalSalesCandidates) {
-    const recipeId = candidate.load.recipeId
-    const remaining = remainingByRecipe.get(recipeId) ?? 0
-    if (remaining <= 0) continue
+  const expectedLeftovers = shortfall.recipes.reduce(
+    (sum, recipe) =>
+      sum +
+      recipe.newProductionLeftoverServings +
+      recipe.finishedStockSources.reduce(
+        (sourceSum, source) =>
+          sourceSum +
+          (source.servingsUsed > 0
+            ? source.servingsRemaining
+            : 0),
+        0,
+      ),
+    0,
+  )
+  const actualLeftovers = contents.reduce(
+    (sum, item) => sum + item.servings,
+    0,
+  )
 
-    const freeCapacity =
-      JUICE_JAR_CAPACITY -
-      candidate.load.servings -
-      candidate.load.retainedLeftoverServings
-    const retained = Math.min(remaining, freeCapacity)
-    if (retained <= 0) continue
+  if (actualLeftovers !== expectedLeftovers) {
+    throw new Error(
+      `Physical jar leftover timeline drifted: expected ${expectedLeftovers}, got ${actualLeftovers}`,
+    )
+  }
 
-    candidate.load.retainedLeftoverServings += retained
-    remainingByRecipe.set(recipeId, remaining - retained)
-    contents.push({
-      physicalJarId: candidate.load.physicalJarId,
-      recipeId,
-      recipeName: candidate.load.recipeName,
-      servings: retained,
-      tripNumber: candidate.trip.tripNumber,
+  return contents
+}
+
+export function buildProductionJarFillsFromSchedule(
+  trips: MultiTripSalesTrip[],
+  initialJars: MultiTripPhysicalJar[] = [],
+): MultiTripProductionJarFill[] {
+  const jarState = new Map<
+    string,
+    {
+      currentRecipeId: string | null
+      lastRecipeId: string | null
+      servings: number
+    }
+  >()
+
+  for (const jar of initialJars) {
+    jarState.set(jar.physicalJarId, {
+      currentRecipeId:
+        jar.initialRecipeId && jar.initialServings > 0
+          ? jar.initialRecipeId
+          : null,
+      lastRecipeId:
+        jar.initialRecipeId && jar.initialServings > 0
+          ? jar.initialRecipeId
+          : null,
+      servings: Math.max(0, Math.floor(jar.initialServings)),
     })
   }
 
-  const unallocated = [...remainingByRecipe.values()].reduce(
-    (sum, servings) => sum + servings,
-    0,
-  )
-  if (unallocated > 0) {
-    throw new Error(
-      `Not enough terminal sales-jar capacity to preserve ${unallocated} leftover serving(s) without switching away from retained juice`,
-    )
-  }
+  const fills: MultiTripProductionJarFill[] = []
 
   for (const trip of trips) {
     for (const load of trip.juiceJars) {
+      const state = jarState.get(load.physicalJarId)
+      if (!state) {
+        throw new Error(
+          `Sales schedule references unknown physical jar ${load.physicalJarId}`,
+        )
+      }
+
+      if (load.plannedFillServings > 0) {
+        if (
+          load.fillAction === 'use-existing' ||
+          load.fillAction === 'continue-loaded'
+        ) {
+          throw new Error(
+            `Jar ${load.physicalJarId} cannot load newly produced juice with action ${load.fillAction}`,
+          )
+        }
+        if (state.servings > 0) {
+          throw new Error(
+            `Jar ${load.physicalJarId} still contains ${state.servings} serving(s) before trip ${trip.tripNumber}`,
+          )
+        }
+
+        const expectedAction: MultiTripProductionJarFill['fillAction'] =
+          state.lastRecipeId === null
+            ? 'initial-fill'
+            : state.lastRecipeId === load.recipeId
+              ? 'refill-same-type'
+              : 'type-switch'
+
+        if (load.fillAction !== expectedAction) {
+          throw new Error(
+            `Jar ${load.physicalJarId} has inconsistent production fill action before trip ${trip.tripNumber}`,
+          )
+        }
+        if (load.plannedFillServings > JUICE_JAR_CAPACITY) {
+          throw new Error(
+            `Physical jar ${load.physicalJarId} exceeds juice capacity before trip ${trip.tripNumber}`,
+          )
+        }
+
+        fills.push({
+          physicalJarId: load.physicalJarId,
+          recipeId: load.recipeId,
+          recipeName: load.recipeName,
+          beforeTripNumber: trip.tripNumber,
+          servings: load.plannedFillServings,
+          fillAction: load.fillAction,
+          previousRecipeId: load.previousRecipeId,
+          previousRecipeName: load.previousRecipeName,
+        })
+        state.currentRecipeId = load.recipeId
+        state.lastRecipeId = load.recipeId
+        state.servings = load.plannedFillServings
+      } else {
+        if (
+          load.fillAction !== 'use-existing' &&
+          load.fillAction !== 'continue-loaded'
+        ) {
+          throw new Error(
+            `Jar ${load.physicalJarId} declares ${load.fillAction} without a production fill before trip ${trip.tripNumber}`,
+          )
+        }
+      }
+
       if (
-        load.servings + load.retainedLeftoverServings >
-        JUICE_JAR_CAPACITY
+        state.currentRecipeId !== load.recipeId ||
+        state.servings < load.servings
       ) {
         throw new Error(
-          `Physical jar ${load.physicalJarId} exceeds juice capacity in trip ${trip.tripNumber}`,
+          `Jar ${load.physicalJarId} does not contain enough ${load.recipeId} for trip ${trip.tripNumber}`,
+        )
+      }
+
+      state.servings -= load.servings
+      if (state.servings === 0) {
+        state.currentRecipeId = null
+      }
+
+      if (
+        load.retainedLeftoverServings > 0 &&
+        state.servings !== load.retainedLeftoverServings
+      ) {
+        throw new Error(
+          `Jar ${load.physicalJarId} retained-leftover state drifted after trip ${trip.tripNumber}`,
         )
       }
     }
   }
 
-  return contents.sort(
-    (a, b) =>
-      a.physicalJarId.localeCompare(b.physicalJarId) ||
-      a.recipeName.localeCompare(b.recipeName, 'zh-Hant') ||
-      a.recipeId.localeCompare(b.recipeId),
-  )
+  return fills
 }
 
 export function countJarTypeSwitchesFromSchedule(
@@ -1022,6 +1138,13 @@ export function countJarTypeSwitchesFromSchedule(
           )
         }
         expectedAction = 'use-existing'
+      } else if (load.fillAction === 'continue-loaded') {
+        if (previousRecipeId !== load.recipeId) {
+          throw new Error(
+            `Jar ${load.physicalJarId} cannot continue loaded contents as recipe ${load.recipeId}`,
+          )
+        }
+        expectedAction = 'continue-loaded'
       } else {
         expectedAction =
           previousRecipeId === undefined
@@ -1095,6 +1218,7 @@ export function buildMultiTripReplenishmentPlan(
     recipes,
     initialQueues,
   )
+  assignNewProductionLeftovers(shortfall, queues)
   const { trips: mutableTrips, finalCupState } = buildTrips(
     queues,
     policy,
@@ -1153,6 +1277,24 @@ export function buildMultiTripReplenishmentPlan(
     shortfall,
     trips,
   )
+  const productionJarFills =
+    buildProductionJarFillsFromSchedule(
+      trips,
+      carriedJuiceJars,
+    )
+  const expectedProducedServings = shortfall.recipes.reduce(
+    (sum, recipe) => sum + recipe.newlyProducedServings,
+    0,
+  )
+  const scheduledProducedServings = productionJarFills.reduce(
+    (sum, fill) => sum + fill.servings,
+    0,
+  )
+  if (scheduledProducedServings !== expectedProducedServings) {
+    throw new Error(
+      `Production jar fills drifted: expected ${expectedProducedServings}, got ${scheduledProducedServings}`,
+    )
+  }
   const totalLeftoverServings = leftoverJarContents.reduce(
     (sum, item) => sum + item.servings,
     0,
@@ -1244,6 +1386,7 @@ export function buildMultiTripReplenishmentPlan(
     totalAssignedServings,
     totalLeftoverServings,
     leftoverJarContents,
+    productionJarFills,
     maxJuiceJarSlotsCarried: trips.reduce(
       (max, trip) =>
         Math.max(max, trip.juiceJarSlotsCarried),
