@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { InventoryState, PlannerSettings } from '../types'
 import type { PreparationShortfall } from './preparationShortfall'
+import type { MultiTripProductionJarFill } from './multiTripReplenishment'
 import {
   buildNetProductionPlan,
   buildProductionLogisticsPlan,
@@ -98,6 +99,38 @@ function shortfall(
   }
 }
 
+function receiverTimeline(
+  juiceUnitsToPrepare: number,
+  physicalJarId = 'jar-1',
+): MultiTripProductionJarFill[] {
+  const fills: MultiTripProductionJarFill[] = []
+  let remaining = Math.max(0, Math.floor(juiceUnitsToPrepare))
+  let tripNumber = 1
+
+  while (remaining > 0) {
+    const juiceUnits = Math.min(5, remaining)
+    fills.push({
+      physicalJarId,
+      recipeId: 'recipe',
+      recipeName: 'Recipe',
+      beforeTripNumber: tripNumber,
+      servings: juiceUnits * 2,
+      fillAction:
+        tripNumber === 1
+          ? 'initial-fill'
+          : 'refill-same-type',
+      previousRecipeId:
+        tripNumber === 1 ? null : 'recipe',
+      previousRecipeName:
+        tripNumber === 1 ? null : 'Recipe',
+    })
+    remaining -= juiceUnits
+    tripNumber += 1
+  }
+
+  return fills
+}
+
 describe('production logistics', () => {
   it('rebuilds the production graph from stock-offset net units', () => {
     const plan = buildNetProductionPlan(
@@ -130,6 +163,7 @@ describe('production logistics', () => {
         shelfCount: 2,
       }),
       settings(),
+      receiverTimeline(7),
     )
 
     expect(result.feasible).toBe(true)
@@ -151,15 +185,36 @@ describe('production logistics', () => {
           action.snapshot.machineSlotsUsed > 0,
       ),
     ).toBe(true)
+    const handoffs = result.actions.filter(
+      (action) => action.kind === 'handoff-finished',
+    )
     expect(
-      result.actions
-        .filter((action) => action.kind === 'handoff-finished')
-        .every(
-          (action) =>
-            action.quantity <= 10 &&
-            action.outputJarReceiver === 'carried-jar',
-        ),
+      handoffs.every(
+        (action) =>
+          action.quantity <= 10 &&
+          action.outputJarReceiver === 'carried-jar' &&
+          action.outputPhysicalJarId === 'jar-1',
+      ),
     ).toBe(true)
+    expect(
+      handoffs.map((action) => ({
+        quantity: action.quantity,
+        beforeSalesTripNumber: action.beforeSalesTripNumber,
+        requiresCompletedSalesTrips:
+          action.requiresCompletedSalesTrips,
+      })),
+    ).toEqual([
+      {
+        quantity: 10,
+        beforeSalesTripNumber: 1,
+        requiresCompletedSalesTrips: 0,
+      },
+      {
+        quantity: 4,
+        beforeSalesTripNumber: 2,
+        requiresCompletedSalesTrips: 1,
+      },
+    ])
   })
 
   it('acquires missing raw ingredients just in time through backpack capacity', () => {
@@ -167,6 +222,7 @@ describe('production logistics', () => {
       shortfall(['lemon', 'sugar'], 2),
       inventory(),
       settings(),
+      receiverTimeline(2),
     )
 
     expect(result.feasible).toBe(true)
@@ -198,6 +254,7 @@ describe('production logistics', () => {
         shelfCount: 2,
       }),
       settings(),
+      receiverTimeline(2),
     )
 
     expect(result.feasible).toBe(true)
@@ -223,6 +280,7 @@ describe('production logistics', () => {
         jarRackCount: 1,
       }),
       settings({ carriedJuiceJarIds: [] }),
+      receiverTimeline(1),
     )
 
     expect(result.feasible).toBe(true)
@@ -232,6 +290,11 @@ describe('production logistics', () => {
     expect(handoff).toMatchObject({
       quantity: 2,
       outputJarReceiver: 'jar-rack',
+      outputPhysicalJarId: 'jar-1',
+      outputRecipeId: 'recipe',
+      beforeSalesTripNumber: 1,
+      requiresCompletedSalesTrips: 0,
+      outputJarServingsAfterHandoff: 2,
     })
     expect(handoff?.snapshot).toMatchObject({
       carriedOutputJarSlots: 0,
@@ -250,6 +313,7 @@ describe('production logistics', () => {
         jarRackCount: 0,
       }),
       settings({ carriedJuiceJarIds: [] }),
+      receiverTimeline(1),
     )
 
     expect(result.feasible).toBe(false)
@@ -260,7 +324,7 @@ describe('production logistics', () => {
       outputJarReceiverSlots: 0,
     })
     expect(result.issues.join(' ')).toContain(
-      'finalizer output 沒有可接手的 physical juice jar',
+      '不是常駐攜帶罐，且目前沒有可用的果汁罐架 staging slot',
     )
     expect(
       result.actions.some((action) => action.kind === 'handoff-finished'),
@@ -277,11 +341,12 @@ describe('production logistics', () => {
         jarRackCount: 1,
       }),
       settings({ carriedJuiceJarIds: [] }),
+      receiverTimeline(1),
     )
 
     expect(result.feasible).toBe(false)
     expect(result.issues.join(' ')).toContain(
-      'finalizer output 沒有可接手的 physical juice jar',
+      'finalizer receiver jar-1 不存在',
     )
     expect(result.waterFetchTrips).toBe(0)
     expect(
@@ -307,6 +372,7 @@ describe('production logistics', () => {
         juiceJars: jars,
       }),
       settings({ carriedJuiceJarIds: carriedIds(9) }),
+      receiverTimeline(1),
     )
 
     expect(result.feasible).toBe(true)
@@ -336,6 +402,7 @@ describe('production logistics', () => {
         juiceJars: jars,
       }),
       settings({ carriedJuiceJarIds: carriedIds(10) }),
+      receiverTimeline(1),
     )
 
     expect(result.feasible).toBe(false)
@@ -360,6 +427,7 @@ describe('production logistics', () => {
         })),
       }),
       settings({ carriedJuiceJarIds: carriedIds(9) }),
+      receiverTimeline(1),
     )
 
     expect(result.feasible).toBe(false)

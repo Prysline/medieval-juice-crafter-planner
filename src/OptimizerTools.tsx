@@ -121,6 +121,7 @@ function criterionLabel(criterion: OptimizationCriterion): string {
 
 function jarFillActionLabel(load: MultiTripJuiceJarLoad): string {
   if (load.fillAction === 'use-existing') return '使用既有成品'
+  if (load.fillAction === 'continue-loaded') return '沿用罐內成品'
   if (load.fillAction === 'initial-fill') return '首次裝填'
   if (load.fillAction === 'refill-same-type') return '補裝同種'
 
@@ -441,11 +442,6 @@ export default function OptimizerTools({
           finishedJuiceJarIds: carriedJuiceJars.map((jar) => jar.id),
         },
       )
-      const productionLogistics = buildProductionLogisticsPlan(
-        preparationShortfall,
-        inventoryState,
-        plannerSettings,
-      )
       const selectedPolicy: UsedCupTripPolicy =
         plannerSettings.allowUsedCupDropIfFull
           ? 'allow-drop-if-full'
@@ -478,6 +474,12 @@ export default function OptimizerTools({
 
       const selectedSalesTripPlan =
         buildCheckedSalesTripPlan(selectedPolicy)
+      const productionLogistics = buildProductionLogisticsPlan(
+        preparationShortfall,
+        inventoryState,
+        plannerSettings,
+        selectedSalesTripPlan.productionJarFills,
+      )
       let alternateSalesTripPlan: MultiTripReplenishmentPlan | null = null
       let alternateError: string | null = null
       try {
@@ -1190,7 +1192,7 @@ function OptimizerResultPanel({
           常駐攜帶果汁罐 {result.availableJuiceJarCount} 個；同罐改裝成另一種果汁才計入換裝。
         </span>
         <span>
-          販售摘要採「{tripPolicyLabel(selectedSalesTripPlan)}」；杯具依實際持有量與 clean → used stack transition 計算，替代 policy 可在販售排程展開比較。
+          販售摘要採「{tripPolicyLabel(selectedSalesTripPlan)}」；杯具依實際持有量與 clean → used stack transition 計算，果汁成品台接收罐也依這份販售排程的 physical jar 時序安排；替代 policy 可在販售排程展開比較。
         </span>
         {(result.potentialTrialCount > 0 ||
           result.unknownFormalSalePriceCount > 0) && (
@@ -1440,7 +1442,15 @@ function OptimizerResultPanel({
                       ? ' · output → ' +
                         (action.outputJarReceiver === 'carried-jar'
                           ? '常駐 physical jar'
-                          : 'jar-rack staging physical jar')
+                          : 'jar-rack staging physical jar') +
+                        (action.outputPhysicalJarId
+                          ? ' ' + action.outputPhysicalJarId
+                          : '') +
+                        (action.beforeSalesTripNumber
+                          ? ' · 第 ' +
+                            action.beforeSalesTripNumber +
+                            ' 趟前可裝入'
+                          : '')
                       : ''}
                   </p>
                 </article>

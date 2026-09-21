@@ -6,6 +6,7 @@ import {
   WATER_STACK_CAPACITY,
 } from './inventoryRules'
 import type { PreparationShortfall } from './preparationShortfall'
+import type { MultiTripProductionJarFill } from './multiTripReplenishment'
 import {
   buildProductionPlan,
   type ProductionPlan,
@@ -48,8 +49,12 @@ export interface ProductionLogisticsAction {
   label: string
   equipment?: ProductionStep['equipment']
   quantity: number
-  /** Finalizer output receiver; jar contents/type compatibility remains deferred. */
   outputJarReceiver?: 'carried-jar' | 'jar-rack'
+  outputPhysicalJarId?: string
+  outputRecipeId?: string
+  beforeSalesTripNumber?: number
+  requiresCompletedSalesTrips?: number
+  outputJarServingsAfterHandoff?: number
   snapshot: ProductionStorageSnapshot
 }
 
@@ -68,6 +73,7 @@ interface PendingOperation {
   id: string
   step: ProductionStep
   quantity: number
+  receiverFill?: MultiTripProductionJarFill
 }
 
 const ingredientById = new Map(
@@ -322,6 +328,7 @@ export function buildProductionLogisticsPlan(
   shortfall: PreparationShortfall,
   inventory: InventoryState,
   settings: PlannerSettings,
+  receiverTimeline: MultiTripProductionJarFill[],
 ): ProductionLogisticsPlan {
   const productionPlan = buildNetProductionPlan(shortfall)
   const materials = new Map<string, MaterialState>()
@@ -359,6 +366,38 @@ export function buildProductionLogisticsPlan(
     inventory,
     settings,
   )
+  const inventoryJarIds = new Set(
+    inventory.juiceJars.map((jar) => jar.id),
+  )
+  const carriedJarIds = new Set(
+    capacitySummary.carriedJuiceJarIds,
+  )
+
+  for (const fill of receiverTimeline) {
+    if (!inventoryJarIds.has(fill.physicalJarId)) {
+      issues.push(
+        `finalizer receiver ${fill.physicalJarId} 不存在於目前 physical juice jar inventory。`,
+      )
+      continue
+    }
+    if (
+      !carriedJarIds.has(fill.physicalJarId) &&
+      capacitySummary.jarRackStagingCapacity < 1
+    ) {
+      issues.push(
+        `finalizer receiver ${fill.physicalJarId} 不是常駐攜帶罐，且目前沒有可用的果汁罐架 staging slot。`,
+      )
+    }
+    if (
+      fill.servings < 1 ||
+      fill.servings > 10 ||
+      fill.servings % 2 !== 0
+    ) {
+      issues.push(
+        `finalizer receiver ${fill.physicalJarId} 的成品裝罐量 ${fill.servings} 無法由果汁成品台單次 2～10 份偶數產量解釋。`,
+      )
+    }
+  }
 
   if (
     productionPlan.steps.length > 0 &&
@@ -375,14 +414,53 @@ export function buildProductionLogisticsPlan(
     )
   }
 
+  const usedReceiverFills = new Set<MultiTripProductionJarFill>()
   const pending: PendingOperation[] = productionPlan.steps.flatMap(
-    (step) =>
-      splitOperations(step.quantity).map((quantity, index) => ({
-        id: `${step.key}#${index + 1}`,
-        step,
-        quantity,
-      })),
+    (step) => {
+      if (step.kind !== 'finalizing') {
+        return splitOperations(step.quantity).map(
+          (quantity, index) => ({
+            id: `${step.key}#${index + 1}`,
+            step,
+            quantity,
+          }),
+        )
+      }
+
+      const fills = receiverTimeline
+        .filter((fill) => step.recipeIds.includes(fill.recipeId))
+        .sort(
+          (a, b) =>
+            a.beforeTripNumber - b.beforeTripNumber ||
+            a.physicalJarId.localeCompare(b.physicalJarId),
+        )
+      const receiverJuiceUnits = fills.reduce(
+        (sum, fill) => sum + fill.servings / 2,
+        0,
+      )
+      if (receiverJuiceUnits !== step.quantity) {
+        issues.push(
+          `finalizer receiver timeline 與 ${step.key} 製作量不一致：需要 ${step.quantity} juice units，但 receiver timeline 對應 ${receiverJuiceUnits}。`,
+        )
+      }
+
+      return fills.map((fill, index) => {
+        usedReceiverFills.add(fill)
+        return {
+          id: `${step.key}#receiver-${index + 1}`,
+          step,
+          quantity: fill.servings / 2,
+          receiverFill: fill,
+        }
+      })
+    },
   )
+
+  if (usedReceiverFills.size !== receiverTimeline.length) {
+    issues.push(
+      'finalizer receiver timeline 含有無法對應到目前 production recipe 的裝罐事件。',
+    )
+  }
 
   function pushAction(
     kind: ProductionLogisticsActionKind,
@@ -391,6 +469,7 @@ export function buildProductionLogisticsPlan(
     snapshot: ProductionStorageSnapshot,
     equipment?: ProductionStep['equipment'],
     outputJarReceiver?: 'carried-jar' | 'jar-rack',
+    receiverFill?: MultiTripProductionJarFill,
   ) {
     actions.push({
       index: actions.length + 1,
@@ -399,6 +478,13 @@ export function buildProductionLogisticsPlan(
       equipment,
       quantity,
       outputJarReceiver,
+      outputPhysicalJarId: receiverFill?.physicalJarId,
+      outputRecipeId: receiverFill?.recipeId,
+      beforeSalesTripNumber: receiverFill?.beforeTripNumber,
+      requiresCompletedSalesTrips: receiverFill
+        ? Math.max(0, receiverFill.beforeTripNumber - 1)
+        : undefined,
+      outputJarServingsAfterHandoff: receiverFill?.servings,
       snapshot,
     })
   }
@@ -628,25 +714,36 @@ export function buildProductionLogisticsPlan(
 
       if (step.kind === 'finalizing') {
         const snapshot = storageSnapshot(materials, inventory, settings)
-        const outputJarReceiver =
-          snapshot.carriedOutputJarSlots > 0
-            ? 'carried-jar'
-            : snapshot.rackOutputJarSlots > 0
-              ? 'jar-rack'
-              : null
+        const receiverFill = operation.receiverFill
+        if (!receiverFill) {
+          rollbackOperationAttempt()
+          continue
+        }
 
-        if (!outputJarReceiver) {
+        const outputJarReceiver = carriedJarIds.has(
+          receiverFill.physicalJarId,
+        )
+          ? 'carried-jar'
+          : capacitySummary.jarRackStagingCapacity > 0
+            ? 'jar-rack'
+            : null
+
+        if (
+          !outputJarReceiver ||
+          receiverFill.servings !== quantity * 2
+        ) {
           rollbackOperationAttempt()
           continue
         }
 
         pushAction(
           'handoff-finished',
-          `成品 ×${quantity * 2} → physical juice jar → 販售補裝排程`,
-          quantity * 2,
+          `第 ${receiverFill.beforeTripNumber} 趟前：成品 ×${receiverFill.servings} → ${receiverFill.physicalJarId}（${receiverFill.recipeName}）`,
+          receiverFill.servings,
           snapshot,
           step.equipment,
           outputJarReceiver,
+          receiverFill,
         )
       } else {
         addMaterial(
@@ -691,9 +788,8 @@ export function buildProductionLogisticsPlan(
       )
 
       issues.push(
-        finalizerReadyWithoutReceiver &&
-          receiverSnapshot.outputJarReceiverSlots < 1
-          ? 'finalizer output 沒有可接手的 physical juice jar：常駐攜帶 jars 與 jar-rack staging 都沒有可用的實體罐 receiver slot。'
+        finalizerReadyWithoutReceiver
+          ? 'finalizer output 無法依販售排程指定的 physical juice jar 時序完成裝罐；請檢查接收罐內容、容量與可用時點。'
           : '目前 backpack / shelf capacity 無法在不使用地面 storage 的前提下完成下一個 production operation。',
       )
     }
