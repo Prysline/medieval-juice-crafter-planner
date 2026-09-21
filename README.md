@@ -18,6 +18,7 @@
 - 「配方工具」可用目前正式支援的 V1 製作鏈即時模擬有序原料序列；observed 配方優先，否則顯示 computed / ambiguity。
 - 個人配方只保存自訂名稱、有序 ingredient IDs、備註與建立時間；effects、cost、equipment、matching 每次由目前 domain 重新計算。
 - 「批次規劃」頁籤已接入 optimizer domain：可切全部／潛在／正式顧客、observed-only／allow computed、最低成本／最少浪費，並顯示批次、分配、原料清單、成本、剩餘杯與 unresolved 顧客。
+- Inventory foundation 已建立：`mjc-inventory` 保存原料數量、水、乾淨／用過杯具與果汁罐狀態；`PreparationDemand` 將 optimizer 結果轉成全天 gross 備料需求，尚未開始 backpack packing。
 - 預測若在 effect cutoff 出現未確認同分 tie，會明確標示 ambiguous，且不參與完全匹配推薦。
 - 舊版 `mjc-stage` / `mjc-satisfaction` localStorage 會保守遷移到新版進度資料。
 
@@ -65,9 +66,12 @@ src/
     optimizerHighsSolver.ts # HiGHS WASM lexicographic MIP adapter
     optimizer.ts       # batch plan / shopping list / unresolved result normalization
     optimizerUi.ts     # UI 預設需求集合：已解鎖、今日未供應、正式／潛在篩選
+    inventoryRules.ts  # 已確認的背包／果汁罐／罐架／水／乾淨杯具容量常數
+    preparationDemand.ts # OptimizationResult → 全天 gross 備料需求
   storage/
     plannerState.ts    # localStorage 讀寫、正式顧客與 legacy migration
     savedRecipes.ts    # 個人配方 schema validation / CRUD
+    inventoryState.ts  # mjc-inventory schema normalization / storage
   types.ts             # 共用 domain / data 型別
   App.tsx              # 顧客／配方／配方工具／批次規劃頁籤
   RecipeTools.tsx      # Recipe Simulator + Personal Recipes UI
@@ -118,4 +122,17 @@ npm run build
 
 GitHub Pages 由 `.github/workflows/pages.yml` 在 `main` 更新後建置 `dist/` 並部署。
 
-目前玩家進度使用瀏覽器 `localStorage` 保存，不需要後端。正式顧客使用 `mjc-formal-customers`，與每日重置的 `mjc-supplied-today` 分開保存；個人配方使用 `mjc-saved-recipes`，只保存玩家輸入資料，不保存 derived evaluation。
+目前玩家進度使用瀏覽器 `localStorage` 保存，不需要後端。正式顧客使用 `mjc-formal-customers`，與每日重置的 `mjc-supplied-today` 分開保存；個人配方使用 `mjc-saved-recipes`；inventory foundation 使用 `mjc-inventory`。個人配方與 inventory 都只保存自己的 canonical input/state，不保存可由 domain 重算的 optimizer derived result。
+
+
+## Inventory / packing boundary
+
+D1 只建立 inventory state 與全天 PreparationDemand：
+
+```text
+OptimizationResult
+→ PreparationDemand
+→ inventory / packing（後續）
+```
+
+目前正式鎖定的容量規則只有：背包 10 slot、果汁罐 1 slot / 容量 10 / 同罐不混飲料、果汁罐架 5 slot、水 stack 10、乾淨杯具 stack 10。一般原料／原汁 stack 5 仍待再驗證，因此沒有進入 D1 / D2 的正式 packing constraint。
