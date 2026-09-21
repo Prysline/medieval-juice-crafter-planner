@@ -163,8 +163,9 @@ describe('customer recipe matching', () => {
 
   it('never claims full match from an ambiguous computed cutoff', () => {
     const candidates = generateRecipeCandidates('tranquil-fountain-unlocked')
-    const lemonCinnamon = candidates.find(
-      (candidate) => candidate.ingredients.join(' → ') === '檸檬 → 肉桂',
+    const lemonCinnamonMint = candidates.find(
+      (candidate) =>
+        candidate.ingredients.join(' → ') === '檸檬 → 肉桂 → 薄荷',
     )
     const syntheticCustomer = {
       id: 'ambiguous-test',
@@ -178,9 +179,9 @@ describe('customer recipe matching', () => {
       ],
     }
 
-    expect(lemonCinnamon?.source).toBe('computed')
-    expect(lemonCinnamon?.effectAmbiguity).toBeDefined()
-    expect(recipeCandidateMatchesCustomer(lemonCinnamon!, syntheticCustomer)).toBe(false)
+    expect(lemonCinnamonMint?.source).toBe('computed')
+    expect(lemonCinnamonMint?.effectAmbiguity).toBeDefined()
+    expect(recipeCandidateMatchesCustomer(lemonCinnamonMint!, syntheticCustomer)).toBe(false)
   })
 
   it('sorts known-price observed matches before unknown-price computed matches', () => {
