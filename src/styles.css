@@ -1601,6 +1601,10 @@ footer {
     grid-template-columns: 1fr;
   }
 
+  .optimizer-controls .optimizer-checkbox-control {
+    grid-column: auto;
+  }
+
   .segmented-control {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
