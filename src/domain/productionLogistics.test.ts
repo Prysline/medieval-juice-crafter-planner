@@ -72,6 +72,7 @@ function shortfall(
         finishedServingsAvailable: 0,
         finishedServingsUsed: 0,
         finishedServingsRemaining: 0,
+        finishedStockSources: [],
         servingsToProduce: juiceUnitsToPrepare * 2,
         juiceUnitsToPrepare,
         newlyProducedServings: juiceUnitsToPrepare * 2,
