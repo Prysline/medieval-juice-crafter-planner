@@ -24,7 +24,7 @@ function settings(
   patch: Partial<PlannerSettings> = {},
 ): PlannerSettings {
   return {
-    carriedJuiceJarCount: 0,
+    carriedJuiceJarIds: [],
     allowUsedCupDropIfFull: false,
     ...patch,
   }
@@ -44,7 +44,7 @@ describe('inventory capacity summary', () => {
           { id: 'jar-3', recipeId: null, servings: 0 },
         ],
       }),
-      settings({ carriedJuiceJarCount: 2 }),
+      settings({ carriedJuiceJarIds: ['jar-1', 'jar-2'] }),
     )
 
     expect(result).toEqual({
@@ -75,12 +75,33 @@ describe('inventory capacity summary', () => {
     expect(
       selectCarriedJuiceJars(
         state,
-        settings({ carriedJuiceJarCount: 2 }),
+        settings({
+          carriedJuiceJarIds: ['jar-third', 'jar-filled'],
+        }),
       ),
     ).toEqual([
       { id: 'jar-filled', recipeId: 'lemon-juice', servings: 4 },
-      { id: 'jar-empty', recipeId: null, servings: 0 },
+      { id: 'jar-third', recipeId: 'orange-juice', servings: 2 },
     ])
+  })
+
+  it('deduplicates selection intent and ignores stale IDs', () => {
+    const result = buildInventoryCapacitySummary(
+      inventory({
+        juiceJars: [
+          { id: 'jar-1', recipeId: null, servings: 0 },
+          { id: 'jar-2', recipeId: null, servings: 0 },
+        ],
+      }),
+      settings({
+        carriedJuiceJarIds: ['jar-2', 'jar-2', 'missing'],
+      }),
+    )
+
+    expect(result.requestedCarriedJuiceJarCount).toBe(2)
+    expect(result.carriedJuiceJarIds).toEqual(['jar-2'])
+    expect(result.effectiveCarriedJuiceJarCount).toBe(1)
+    expect(result.carriedJarRequestExceedsOwned).toBe(true)
   })
 
   it('caps carried jars by actual ownership without treating rack slots as jars', () => {
@@ -91,7 +112,7 @@ describe('inventory capacity summary', () => {
           { id: 'jar-1', recipeId: null, servings: 0 },
         ],
       }),
-      settings({ carriedJuiceJarCount: 5 }),
+      settings({ carriedJuiceJarIds: ['jar-1', 'missing-a', 'missing-b'] }),
     )
 
     expect(result.jarRackStagingCapacity).toBe(20)
