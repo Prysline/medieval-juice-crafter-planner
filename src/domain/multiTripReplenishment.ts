@@ -82,8 +82,11 @@ interface MutableTrip {
 
 function normalizedCarriedJuiceJarCount(value: number): number {
   return Number.isFinite(value)
-    ? Math.max(1, Math.floor(value))
-    : 1
+    ? Math.min(
+        BACKPACK_SLOT_CAPACITY,
+        Math.max(0, Math.floor(value)),
+      )
+    : 0
 }
 
 function splitCustomerServings(
@@ -323,12 +326,12 @@ function canAddJar(
   policy: UsedCupTripPolicy,
   maxConcurrentJars: number,
 ): boolean {
-  const jarCount = trip.juiceJars.length + 1
-  if (jarCount > maxConcurrentJars) return false
+  const loadedJarCount = trip.juiceJars.length + 1
+  if (loadedJarCount > maxConcurrentJars) return false
 
   const servings = trip.totalServings + jar.servings
   const cupStacks = cleanCupStacksFor(servings)
-  const departureSlots = jarCount + cupStacks
+  const departureSlots = maxConcurrentJars + cupStacks
 
   return (
     departureSlots <= effectiveDepartureSlotLimit(policy)
@@ -458,6 +461,11 @@ export function buildMultiTripReplenishmentPlan(
       carriedJuiceJarCount,
     )
   const recipes = recipeJarDemands(demand)
+  if (recipes.length > 0 && normalizedJarCount < 1) {
+    throw new Error(
+      'Sales planning requires at least one carried physical juice jar',
+    )
+  }
   const queues = buildPhysicalJarQueues(
     recipes,
     normalizedJarCount,
@@ -474,7 +482,7 @@ export function buildMultiTripReplenishmentPlan(
         trip.totalServings,
       )
       const departureSlots =
-        trip.juiceJars.length + cleanCupStacks
+        normalizedJarCount + cleanCupStacks
 
       return {
         tripNumber: index + 1,
@@ -495,7 +503,7 @@ export function buildMultiTripReplenishmentPlan(
           policy === 'allow-drop-if-full' &&
           trip.totalServings > 0 &&
           departureSlots === BACKPACK_SLOT_CAPACITY,
-        juiceJarSlotsCarried: trip.juiceJars.length,
+        juiceJarSlotsCarried: normalizedJarCount,
       }
     },
   )
