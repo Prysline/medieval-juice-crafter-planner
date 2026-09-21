@@ -204,28 +204,38 @@ function backpackFreeSlots(snapshot: ProductionStorageSnapshot): number {
   )
 }
 
-function requiredIntermediateInputs(
-  step: ProductionStep,
-): string[][] {
-  if (step.kind === 'juicing') return []
-  if (step.kind === 'seasoning' || step.kind === 'finalizing') {
-    return [step.fromIngredientIds]
+function intermediateRequirements(
+  operation: PendingOperation,
+): Map<string, number> {
+  const requirements = new Map<string, number>()
+  const sequences =
+    operation.step.kind === 'juicing'
+      ? []
+      : operation.step.kind === 'seasoning' ||
+          operation.step.kind === 'finalizing'
+        ? [operation.step.fromIngredientIds]
+        : [
+            operation.step.fromIngredientIds,
+            operation.step.secondaryFromIngredientIds ?? [],
+          ]
+
+  for (const sequence of sequences) {
+    if (sequence.length === 0) continue
+    const key = intermediateKey(sequence)
+    requirements.set(
+      key,
+      (requirements.get(key) ?? 0) + operation.quantity,
+    )
   }
-  return [
-    step.fromIngredientIds,
-    step.secondaryFromIngredientIds ?? [],
-  ]
+  return requirements
 }
 
 function canRunWithCurrentIntermediateStock(
   operation: PendingOperation,
   materials: Map<string, MaterialState>,
 ): boolean {
-  return requiredIntermediateInputs(operation.step).every(
-    (sequence) =>
-      sequence.length > 0 &&
-      materialQuantity(materials, intermediateKey(sequence)) >=
-        operation.quantity,
+  return [...intermediateRequirements(operation).entries()].every(
+    ([key, quantity]) => materialQuantity(materials, key) >= quantity,
   )
 }
 
@@ -318,6 +328,20 @@ export function buildProductionLogisticsPlan(
   const actions: ProductionLogisticsAction[] = []
   let ingredientAcquisitionTrips = 0
   let waterFetchTrips = 0
+  let externalWaterRemaining = shortfall.waterUnitsToFetch
+  const capacitySummary = buildInventoryCapacitySummary(
+    inventory,
+    settings,
+  )
+
+  if (
+    productionPlan.steps.length > 0 &&
+    capacitySummary.backpackSlotsRemainingAfterCarriedJars < 1
+  ) {
+    issues.push(
+      '常駐攜帶果汁罐已占滿背包，沒有可供 shelf ↔ machine 搬運使用的暫時 slot。',
+    )
+  }
 
   if (!storageFits(initialSnapshot)) {
     issues.push(
@@ -393,26 +417,39 @@ export function buildProductionLogisticsPlan(
     if (available >= quantity) return true
 
     const missing = quantity - available
-    if (!canAcquireOneStack()) return false
+    const currentSnapshot = storageSnapshot(
+      materials,
+      inventory,
+      settings,
+    )
+    const freeSlots = backpackFreeSlots(currentSnapshot)
+    if (freeSlots < 1) return false
+
+    const fetchUnits = Math.min(
+      externalWaterRemaining,
+      freeSlots * WATER_STACK_CAPACITY,
+    )
+    if (fetchUnits < missing) return false
 
     addMaterial(
       materials,
       'water',
       'water',
-      missing,
+      fetchUnits,
       WATER_STACK_CAPACITY,
     )
     const snapshot = storageSnapshot(materials, inventory, settings)
     if (!storageFits(snapshot)) {
-      removeMaterial(materials, 'water', missing)
+      removeMaterial(materials, 'water', fetchUnits)
       return false
     }
 
+    externalWaterRemaining -= fetchUnits
     waterFetchTrips += 1
     pushAction(
       'fetch-water',
-      `取水 ×${missing}`,
-      missing,
+      `取水 ×${fetchUnits}`,
+      fetchUnits,
       snapshot,
     )
     return true
@@ -480,35 +517,22 @@ export function buildProductionLogisticsPlan(
           rawKey(step.addedIngredientId ?? ''),
           quantity,
         )
-      } else if (step.kind === 'seasoning') {
-        removeMaterial(
-          materials,
-          intermediateKey(step.fromIngredientIds),
-          quantity,
-        )
-        removeMaterial(
-          materials,
-          rawKey(step.addedIngredientId ?? ''),
-          quantity,
-        )
-      } else if (step.kind === 'blending') {
-        removeMaterial(
-          materials,
-          intermediateKey(step.fromIngredientIds),
-          quantity,
-        )
-        removeMaterial(
-          materials,
-          intermediateKey(step.secondaryFromIngredientIds ?? []),
-          quantity,
-        )
       } else {
-        removeMaterial(
-          materials,
-          intermediateKey(step.fromIngredientIds),
-          quantity,
-        )
-        removeMaterial(materials, 'water', quantity)
+        for (const [key, required] of intermediateRequirements(
+          operation,
+        )) {
+          removeMaterial(materials, key, required)
+        }
+
+        if (step.kind === 'seasoning') {
+          removeMaterial(
+            materials,
+            rawKey(step.addedIngredientId ?? ''),
+            quantity,
+          )
+        } else if (step.kind === 'finalizing') {
+          removeMaterial(materials, 'water', quantity)
+        }
       }
 
       const machineSlotsAvailable = equipmentSlotCapacity(step.kind)
