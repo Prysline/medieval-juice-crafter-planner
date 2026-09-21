@@ -327,14 +327,6 @@ export default function OptimizerTools({
       const buildCheckedSalesTripPlan = (
         policy: UsedCupTripPolicy,
       ): MultiTripReplenishmentPlan => {
-        const stationaryJuiceJarCount = Math.min(
-          Math.max(
-            0,
-            capacitySummary.physicalJuiceJarCount -
-              result.availableJuiceJarCount,
-          ),
-          capacitySummary.jarRackStagingCapacity,
-        )
         const plan = buildMultiTripReplenishmentPlan(
           preparationDemand,
           policy,
@@ -343,7 +335,6 @@ export default function OptimizerTools({
             cleanCups: inventoryState.cleanCups,
             usedCups: inventoryState.usedCups,
           },
-          stationaryJuiceJarCount,
         )
         if (plan.jarTypeSwitches !== result.jarTypeSwitches) {
           throw new Error(
@@ -1158,7 +1149,7 @@ function SalesTripPlanBlock({
           </span>
         </div>
         <p>
-          實際使用 {plan.physicalJarsUsed} / {plan.carriedJuiceJarCount}{' '}
+          販售排程使用 {plan.physicalJarsUsed} / {plan.carriedJuiceJarCount}{' '}
           個常駐攜帶果汁罐；單趟最多帶出 {plan.maxJuiceJarSlotsCarried} 個。
         </p>
         <p>
@@ -1176,7 +1167,7 @@ function SalesTripPlanBlock({
         <small>
           {tripPolicyNote(plan)}
           {plan.totalLeftoverServings > 0
-            ? ' 剩餘成品目前只保存於本次 planner result；跨日寫回 inventory 仍待 Apply Plan。'
+            ? ' 剩餘成品只會留在該 recipe 最後販售的同一 physical jar；目前只保存於本次 planner result，跨日寫回 inventory 仍待 Apply Plan。'
             : ''}
         </small>
       </article>
@@ -1232,35 +1223,6 @@ function SalesTripPlanBlock({
           ))}
         </article>
       ))}
-      {plan.leftoverJarContents.some(
-        (item) => item.location !== 'sales-trip',
-      ) && (
-        <article className="optimizer-batch-card">
-          <div>
-            <strong>留在家中的剩餘成品</strong>
-            <span>不增加今日顧客服務量</span>
-          </div>
-          {plan.leftoverJarContents
-            .filter((item) => item.location !== 'sales-trip')
-            .map((item) => (
-              <p
-                key={
-                  plan.policy +
-                  '-leftover-' +
-                  item.physicalJarId +
-                  '-' +
-                  item.recipeId
-                }
-              >
-                果汁罐 {item.physicalJarId}：{item.recipeName} ×{item.servings} 杯
-                {' · '}
-                {item.location === 'jar-rack'
-                  ? '果汁罐架 staging'
-                  : '未用於販售的 carried jar'}
-              </p>
-            ))}
-        </article>
-      )}
     </div>
   )
 }
