@@ -150,11 +150,9 @@ export interface SavedRecipe {
 
 export type RecipeSequenceIssueCode =
   | 'empty'
-  | 'too-many-ingredients'
   | 'unknown-ingredient'
   | 'invalid-base'
-  | 'invalid-seasoning'
-  | 'duplicate-ingredient'
+  | 'unsupported-ingredient'
 
 export interface RecipeSequenceIssue {
   code: RecipeSequenceIssueCode
@@ -172,6 +170,9 @@ export interface RecipeSequenceEvaluationSuccess {
     missingIngredients: string[]
   }
   availableAtCurrentProgress: boolean
+  /** 每個 juice-base 開啟一段飲料序列；多於一段代表需要果汁調和器串接。 */
+  drinkSegmentCount: number
+  usesBlender: boolean
 }
 
 export interface RecipeSequenceEvaluationFailure {
