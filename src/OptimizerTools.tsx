@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { customers } from './data/customers'
 import { ingredients } from './data/ingredients'
+import { recipes } from './data/recipes'
 import {
   optimizerCustomerIds,
   optimizerCustomerLabel,
@@ -25,7 +26,10 @@ import type {
 } from './domain/multiTripReplenishment'
 import type { PreparationShortfall } from './domain/preparationShortfall'
 import type { ProductionLogisticsPlan } from './domain/productionLogistics'
-import { buildInventoryCapacitySummary } from './domain/inventoryCapacity'
+import {
+  buildInventoryCapacitySummary,
+  selectCarriedJuiceJars,
+} from './domain/inventoryCapacity'
 import {
   readInventoryState,
   resizeJuiceJarInventory,
@@ -75,6 +79,9 @@ const customerById = new Map(
 )
 const ingredientNameById = new Map(
   ingredients.map((ingredient) => [ingredient.id, ingredient.name]),
+)
+const recipeNameById = new Map(
+  recipes.map((recipe) => [recipe.id, recipe.name]),
 )
 
 const secondaryCriterionOptions: Array<{
@@ -195,6 +202,11 @@ export default function OptimizerTools({
   const priorities = useMemo(
     () => uniquePriorities(primaryCriterion, secondaryOne, secondaryTwo),
     [primaryCriterion, secondaryOne, secondaryTwo],
+  )
+
+  const carriedJuiceJars = useMemo(
+    () => selectCarriedJuiceJars(inventoryState, plannerSettings),
+    [inventoryState, plannerSettings],
   )
 
   const capacitySummary = useMemo(
@@ -336,7 +348,7 @@ export default function OptimizerTools({
         const plan = buildMultiTripReplenishmentPlan(
           preparationDemand,
           policy,
-          result.availableJuiceJarCount,
+          carriedJuiceJars,
           {
             cleanCups: inventoryState.cleanCups,
             usedCups: inventoryState.usedCups,
@@ -587,6 +599,9 @@ export default function OptimizerTools({
           <span>
             果汁罐：持有 {capacitySummary.physicalJuiceJarCount} · 常駐攜帶{' '}
             {capacitySummary.effectiveCarriedJuiceJarCount}
+            {capacitySummary.carriedJuiceJarIds.length > 0
+              ? '（' + capacitySummary.carriedJuiceJarIds.join('、') + '）'
+              : ''}
             {maxJarTypeSwitches.trim() !== ''
               ? ' · 最多換裝 ' + maxJarTypeSwitches + ' 次'
               : ' · 換裝不限'}
@@ -1259,6 +1274,22 @@ function SalesTripPlanBlock({
           個常駐攜帶果汁罐；單趟最多帶出 {plan.maxJuiceJarSlotsCarried} 個。
         </p>
         <p>
+          本次 persistent jars：{' '}
+          {plan.carriedJuiceJars
+            .map((jar) => {
+              const initial =
+                jar.initialRecipeId && jar.initialServings > 0
+                  ? (recipeNameById.get(jar.initialRecipeId) ??
+                      jar.initialRecipeId) +
+                    ' ' +
+                    jar.initialServings +
+                    ' 杯'
+                  : '空罐'
+              return jar.physicalJarId + '（' + initial + '）'
+            })
+            .join('、')}
+        </p>
+        <p>
           杯具：起始 clean {plan.initialCleanCups} / used {plan.initialUsedCups}
           {' · '}清洗 {plan.totalCupWashWaterUnits} 次／用水 {plan.totalCupWashWaterUnits}
           {' · '}結束實體杯 {plan.finalPhysicalCupCount}
@@ -1273,8 +1304,9 @@ function SalesTripPlanBlock({
         <small>
           {tripPolicyNote(plan)}
           {plan.totalLeftoverServings > 0
-            ? ' 剩餘成品只會留在該 recipe 最後販售的同一 physical jar；目前只保存於本次 planner result，跨日寫回 inventory 仍待 Apply Plan。'
+            ? ' 剩餘成品只會留在該 recipe 最後販售的同一 persistent physical jar；目前仍不寫回 inventory，跨日 commit 留待 Apply Plan。'
             : ''}
+          {' '}目前初始 jar contents 只作 metadata；第一次補裝／換裝相容性留待 Phase 5B。
         </small>
       </article>
 
