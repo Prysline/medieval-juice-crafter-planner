@@ -53,24 +53,39 @@ describe('recipe generator', () => {
     ])
   })
 
-  it('keeps unresolved cutoff ties explicit instead of inventing a tie-break', () => {
+  it('breaks equal-value effects by the later-added ingredient', () => {
     const result = predictRecipeEffects([
       ingredient('檸檬'),
       ingredient('薄荷'),
     ])
 
+    expect(result.effectAmbiguity).toBeUndefined()
     expect(result.effects).toEqual([
       { name: '清新口氣', value: 4 },
       { name: '酸味', value: 4 },
+      { name: '舒緩腸胃', value: 3 },
+    ])
+  })
+
+  it('keeps ambiguity when equal effects share the same latest contributing ingredient', () => {
+    const result = predictRecipeEffects([
+      ingredient('橙子'),
+      ingredient('肉桂'),
+    ])
+
+    expect(result.effects).toEqual([
+      { name: '調節血糖', value: 4 },
+      { name: '增強免疫', value: 4 },
     ])
     expect(result.effectAmbiguity).toMatchObject({
-      cutoffValue: 3,
+      cutoffValue: 2,
       remainingSlots: 1,
     })
     expect(result.effectAmbiguity?.candidates).toEqual(
       expect.arrayContaining([
-        { name: '增強免疫', value: 3 },
-        { name: '舒緩腸胃', value: 3 },
+        { name: '芳香', value: 2 },
+        { name: '保護心臟', value: 2 },
+        { name: '輔助瘦身', value: 2 },
       ]),
     )
   })
