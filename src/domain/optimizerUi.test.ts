@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { Customer, SatisfactionByVillage } from '../types'
 import {
   optimizerCustomerIds,
+  optimizerCustomerLabel,
+  optimizerMoney,
   type OptimizerCustomerScope,
 } from './optimizerUi'
 
@@ -68,5 +70,14 @@ describe('optimizer UI demand selection', () => {
   it('separates potential and formal customer scopes', () => {
     expect(ids('potential')).toEqual(['open-potential'])
     expect(ids('formal')).toEqual(['open-formal'])
+  })
+  it('formats customer labels with occupations and money with an explicit unit', () => {
+    expect(
+      optimizerCustomerLabel({
+        name: '烏爾里希',
+        occupation: '旅人',
+      }),
+    ).toBe('烏爾里希（旅人）')
+    expect(optimizerMoney(44)).toBe('44 金幣')
   })
 })
