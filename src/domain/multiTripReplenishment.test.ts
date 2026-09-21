@@ -199,7 +199,7 @@ describe('multi-trip replenishment', () => {
     expectScheduleConsistency(result)
   })
 
-  it('limits each trip to the actual physical jar count when it is below rack capacity', () => {
+  it('limits each trip to the configured carried jar count', () => {
     const result = buildMultiTripReplenishmentPlan(
       namedRecipes(['A', 'B', 'C', 'D']),
       'allow-drop-if-full',
