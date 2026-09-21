@@ -240,7 +240,7 @@ describe('production logistics', () => {
       shortfall(['lemon'], 1),
       inventory({
         ingredientUnits: { lemon: 1 },
-        waterUnits: 1,
+        waterUnits: 0,
         juiceJars: [],
         jarRackCount: 1,
       }),
@@ -251,6 +251,13 @@ describe('production logistics', () => {
     expect(result.issues.join(' ')).toContain(
       'finalizer output 沒有可接手的 physical juice jar',
     )
+    expect(result.waterFetchTrips).toBe(0)
+    expect(
+      result.actions.some((action) => action.kind === 'fetch-water'),
+    ).toBe(false)
+    expect(
+      result.actions.some((action) => action.kind === 'handoff-finished'),
+    ).toBe(false)
   })
 
   it('frees the last backpack slot by loading the first machine input before fetching water', () => {
