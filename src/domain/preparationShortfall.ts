@@ -5,6 +5,22 @@ import type {
   PreparationRecipeIngredient,
 } from './preparationDemand'
 
+export interface FinishedJarStockUsage {
+  physicalJarId: string
+  recipeId: string
+  initialServings: number
+  servingsUsed: number
+  servingsRemaining: number
+}
+
+export interface PreparationShortfallOptions {
+  /**
+   * When provided, only these persistent jars may satisfy finished-stock
+   * demand directly. The order still follows InventoryState.juiceJars.
+   */
+  finishedJuiceJarIds?: string[]
+}
+
 export interface RecipeStockAdjustment {
   recipeId: string
   recipeName: string
@@ -13,6 +29,7 @@ export interface RecipeStockAdjustment {
   finishedServingsAvailable: number
   finishedServingsUsed: number
   finishedServingsRemaining: number
+  finishedStockSources: FinishedJarStockUsage[]
   servingsToProduce: number
   juiceUnitsToPrepare: number
   newlyProducedServings: number
@@ -46,34 +63,74 @@ const ingredientById = new Map(
   ingredients.map((ingredient) => [ingredient.id, ingredient]),
 )
 
-function finishedServingsByRecipe(
+function finishedJarsByRecipe(
   inventory: InventoryState,
-): Map<string, number> {
-  const result = new Map<string, number>()
+  options: PreparationShortfallOptions,
+): Map<string, InventoryState['juiceJars']> {
+  const result = new Map<string, InventoryState['juiceJars']>()
+  const eligibleIds = options.finishedJuiceJarIds
+    ? new Set(options.finishedJuiceJarIds)
+    : null
 
   for (const jar of inventory.juiceJars) {
-    if (!jar.recipeId || jar.servings <= 0) continue
-    result.set(
-      jar.recipeId,
-      (result.get(jar.recipeId) ?? 0) + jar.servings,
-    )
+    if (
+      !jar.recipeId ||
+      jar.servings <= 0 ||
+      (eligibleIds && !eligibleIds.has(jar.id))
+    ) {
+      continue
+    }
+
+    const current = result.get(jar.recipeId) ?? []
+    current.push(jar)
+    result.set(jar.recipeId, current)
   }
 
   return result
 }
 
+function allocateFinishedJarStock(
+  recipeId: string,
+  assignedServings: number,
+  jars: InventoryState['juiceJars'],
+): FinishedJarStockUsage[] {
+  let remainingDemand = Math.max(0, Math.floor(assignedServings))
+
+  return jars.map((jar) => {
+    const initialServings = Math.max(0, Math.floor(jar.servings))
+    const servingsUsed = Math.min(initialServings, remainingDemand)
+    remainingDemand -= servingsUsed
+
+    return {
+      physicalJarId: jar.id,
+      recipeId,
+      initialServings,
+      servingsUsed,
+      servingsRemaining: initialServings - servingsUsed,
+    }
+  })
+}
+
 export function buildPreparationShortfall(
   demand: PreparationDemand,
   inventory: InventoryState,
+  options: PreparationShortfallOptions = {},
 ): PreparationShortfall {
-  const finishedStock = finishedServingsByRecipe(inventory)
+  const finishedStock = finishedJarsByRecipe(inventory, options)
 
   const recipes = demand.recipes.map((recipe): RecipeStockAdjustment => {
-    const finishedServingsAvailable =
-      finishedStock.get(recipe.recipeId) ?? 0
-    const finishedServingsUsed = Math.min(
+    const finishedStockSources = allocateFinishedJarStock(
+      recipe.recipeId,
       recipe.assignedServings,
-      finishedServingsAvailable,
+      finishedStock.get(recipe.recipeId) ?? [],
+    )
+    const finishedServingsAvailable = finishedStockSources.reduce(
+      (sum, source) => sum + source.initialServings,
+      0,
+    )
+    const finishedServingsUsed = finishedStockSources.reduce(
+      (sum, source) => sum + source.servingsUsed,
+      0,
     )
     const servingsToProduce =
       recipe.assignedServings - finishedServingsUsed
@@ -89,6 +146,7 @@ export function buildPreparationShortfall(
       finishedServingsUsed,
       finishedServingsRemaining:
         finishedServingsAvailable - finishedServingsUsed,
+      finishedStockSources,
       servingsToProduce,
       juiceUnitsToPrepare,
       newlyProducedServings,
