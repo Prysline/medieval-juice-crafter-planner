@@ -130,7 +130,7 @@ HiGHS solver 使用真正的 lexicographic repeated solve，不使用隱藏權�
 - `minimum-machine-operations`
 - `minimum-jar-switches`
 
-果汁罐換裝定義為「同一罐從一種最終果汁改裝成另一種」；空罐第一次裝入與補裝同種類不算。忽略既有預裝內容時，若方案有 `K` 種最終果汁、可用 `J` 個果汁罐，最低換裝數為 `max(0, K - J)`。UI 可指定可用果汁罐數與 `maxJarTypeSwitches` hard constraint。
+果汁罐換裝定義為「同一罐從一種最終果汁改裝成另一種」；空罐第一次裝入與補裝同種類不算。忽略既有預裝內容時，若方案有 `K` 種最終果汁、規劃中有 `J` 個**常駐攜帶 physical jars**，最低換裝數為 `max(0, K - J)`。Phase 2 後 UI 會分開設定「實際持有果汁罐」與「常駐攜帶果汁罐」；optimizer 只接收 ownership / backpack capacity 正規化後的 effective carried jar count，另可指定 `maxJarTypeSwitches` hard constraint。
 
 收入相關 criterion 不推導 computed 售價。正式顧客若要參與 revenue / gross-profit criterion，只能使用 `salePrice !== null` 的 full-match 配方；潛在顧客仍可依 candidate policy 使用 computed full match，但試喝收入不計入已知銷售額。
 
@@ -154,7 +154,7 @@ npm run build
 
 GitHub Pages 由 `.github/workflows/pages.yml` 在 `main` 更新後建置 `dist/` 並部署。
 
-目前玩家進度使用瀏覽器 `localStorage` 保存，不需要後端。正式顧客使用 `mjc-formal-customers`，與每日重置的 `mjc-supplied-today` 分開保存；個人配方使用 `mjc-saved-recipes`；inventory foundation 使用 `mjc-inventory`。個人配方與 inventory 都只保存自己的 canonical input/state，不保存可由 domain 重算的 optimizer derived result。
+目前玩家進度使用瀏覽器 `localStorage` 保存，不需要後端。正式顧客使用 `mjc-formal-customers`，與每日重置的 `mjc-supplied-today` 分開保存；個人配方使用 `mjc-saved-recipes`；inventory 使用 `mjc-inventory`；planner capacity settings 使用 `mjc-planner-settings`。這些 storage 只保存 canonical input/state，不保存可由 domain 重算的 optimizer derived result。
 
 
 ## Inventory / packing boundary
@@ -205,13 +205,13 @@ used-cup handling 必須明確選 policy：
 
 Phase 2 也把「physical jar ownership」「常駐攜帶數」「jar-rack staging」拆開。常駐攜帶 `X` 個果汁罐時，**每一趟都固定占 X 個背包 slots**，即使某趟只有部分罐實際裝果汁；因此多帶空罐可能減少換裝，卻同時壓縮杯具／其他搬運空間。jar rack staging capacity 則獨立為 `jarRackCount × 5`。
 
-Core model correction 2B 已把 physical jar identity 接進 D4 schedule。每個 load 都記錄實際果汁罐編號、optimizer 已通過 full-match gate 的顧客 IDs，以及「首次裝填／補裝同種／換裝」狀態；同一 physical jar 在同一趟只會出現一次。當果汁種類多於可用罐數時，新增果汁種類會串到既有 jar queue 上，讓 schedule 實際實現 `max(0, 果汁種類數 - 可用果汁罐數)` 的最低換裝數；當罐數足夠時，額外空罐可平行承擔同一種果汁的多個容量 10 load，而不製造假換裝。
+Core model correction 2B 已把 physical jar identity 接進 D4 schedule。每個 load 都記錄實際果汁罐編號、optimizer 已通過 full-match gate 的顧客 IDs，以及「首次裝填／補裝同種／換裝」狀態；同一 physical jar 在同一趟只會出現一次。當果汁種類多於**常駐攜帶罐數**時，新增果汁種類會串到既有 jar queue 上，讓 schedule 實際實現 `max(0, 果汁種類數 - 常駐攜帶罐數)` 的最低換裝數；當攜帶罐數足夠時，額外空罐可平行承擔同一種果汁的多個容量 10 load，而不製造假換裝。
 
 販售 schedule 不重新計算喜好匹配，而是直接沿用 optimizer 的 customer → recipe full-match assignment，再依果汁罐容量把顧客切進對應 jar load；因此 UI 可以直接說明每一罐要服務哪些「完整符合」顧客。若 preparation demand 的 assigned servings 與 customer IDs 數量不一致，schedule 會拒絕產生。
 
 `jarTypeSwitches` 與 `tripCount` 現在都從**同一份可行 physical jar schedule** 取得：換裝數可從 schedule 逐罐重算，趟數就是 schedule 的 trip 數；optimizer UI 會再檢查 downstream schedule 的換裝數與 recipe-assignment solver 回報一致，若漂移則停止顯示結果。兩種 used-cup policy 仍各自建 schedule，因此趟數不同時會分開顯示，不合併成沒有 policy 語意的單一數字。
 
-trip grouping 仍是 deterministic capacity-first feasible planning；它目標是產生可解釋、符合 physical jar / rack / backpack / cup constraints 的共同排程，**不宣稱已做最少趟數的全域最佳化**。
+trip grouping 仍是 deterministic capacity-first feasible planning；它目標是產生可解釋、符合 physical jar ownership / carried-jar / backpack / cup constraints 的共同排程。`jarRackCount × 5` 是獨立 staging capacity，不再作 D4 單趟固定上限；**目前仍不宣稱已做最少趟數的全域最佳化**。
 
 
 ## Next planner corrections
