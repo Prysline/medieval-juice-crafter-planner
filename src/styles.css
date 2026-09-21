@@ -1605,6 +1605,13 @@ footer {
   margin-bottom: 8px;
 }
 
+.optimizer-policy-unavailable {
+  margin: 0;
+  color: #7d4f3a;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
 @media (max-width: 720px) {
   .optimizer-controls,
   .optimizer-metrics {
