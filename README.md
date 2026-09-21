@@ -72,6 +72,7 @@ src/
     purchaseSources.ts # 已知購買來源、最低價／同價保留 decision
     singleTripPacking.ts # 販售趟 finished-drink jars + clean cups 最小必要 slot / overflow
     multiTripReplenishment.ts # 多趟販售、杯具 policy、jar-rack staging
+    scheduleRouteReadiness.ts # 作息觀察 normalization 與 route-data blockers
   storage/
     plannerState.ts    # localStorage 讀寫、正式顧客與 legacy migration
     savedRecipes.ts    # 個人配方 schema validation / CRUD
