@@ -54,7 +54,7 @@ describe('inventory storage', () => {
       cleanCups: 4,
       usedCups: 0,
       juiceJars: [],
-      shelfCount: 0,
+      shelfCount: 2,
       jarRackCount: 0,
     })
   })
