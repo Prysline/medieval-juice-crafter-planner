@@ -7,13 +7,18 @@ import type { StorageLike } from './plannerState'
 
 export const INVENTORY_STORAGE_KEY = 'mjc-inventory'
 
-export const EMPTY_INVENTORY_STATE: InventoryState = {
-  ingredientUnits: {},
-  waterUnits: 0,
-  cleanCups: 0,
-  usedCups: 0,
-  juiceJars: [],
+function createEmptyInventoryState(): InventoryState {
+  return {
+    ingredientUnits: {},
+    waterUnits: 0,
+    cleanCups: 0,
+    usedCups: 0,
+    juiceJars: [],
+  }
 }
+
+export const EMPTY_INVENTORY_STATE: InventoryState =
+  createEmptyInventoryState()
 
 function normalizeCount(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value)
@@ -42,7 +47,15 @@ function normalizeJar(value: unknown): JuiceJarInventoryItem | null {
   const jar = value as Partial<JuiceJarInventoryItem>
   if (typeof jar.id !== 'string' || jar.id.length === 0) return null
 
-  const servings = normalizeCount(jar.servings)
+  if (
+    typeof jar.servings !== 'number' ||
+    !Number.isFinite(jar.servings) ||
+    jar.servings < 0
+  ) {
+    return null
+  }
+
+  const servings = Math.floor(jar.servings)
   if (servings > JUICE_JAR_CAPACITY) return null
 
   if (servings === 0) {
@@ -78,7 +91,7 @@ function normalizeJars(value: unknown): JuiceJarInventoryItem[] {
 
 export function normalizeInventoryState(value: unknown): InventoryState {
   if (!value || typeof value !== 'object') {
-    return { ...EMPTY_INVENTORY_STATE }
+    return createEmptyInventoryState()
   }
 
   const state = value as Partial<InventoryState>
@@ -93,12 +106,12 @@ export function normalizeInventoryState(value: unknown): InventoryState {
 
 export function readInventoryState(storage: StorageLike): InventoryState {
   const raw = storage.getItem(INVENTORY_STORAGE_KEY)
-  if (raw === null) return { ...EMPTY_INVENTORY_STATE }
+  if (raw === null) return createEmptyInventoryState()
 
   try {
     return normalizeInventoryState(JSON.parse(raw))
   } catch {
-    return { ...EMPTY_INVENTORY_STATE }
+    return createEmptyInventoryState()
   }
 }
 
