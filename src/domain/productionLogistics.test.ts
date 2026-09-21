@@ -27,11 +27,15 @@ function inventory(
   }
 }
 
+function carriedIds(count: number): string[] {
+  return Array.from({ length: count }, (_, index) => `jar-${index + 1}`)
+}
+
 function settings(
   patch: Partial<PlannerSettings> = {},
 ): PlannerSettings {
   return {
-    carriedJuiceJarCount: 1,
+    carriedJuiceJarIds: ['jar-1'],
     allowUsedCupDropIfFull: false,
     ...patch,
   }
@@ -217,7 +221,7 @@ describe('production logistics', () => {
         waterUnits: 1,
         jarRackCount: 1,
       }),
-      settings({ carriedJuiceJarCount: 0 }),
+      settings({ carriedJuiceJarIds: [] }),
     )
 
     expect(result.feasible).toBe(true)
@@ -244,7 +248,7 @@ describe('production logistics', () => {
         shelfCount: 10,
         jarRackCount: 0,
       }),
-      settings({ carriedJuiceJarCount: 0 }),
+      settings({ carriedJuiceJarIds: [] }),
     )
 
     expect(result.feasible).toBe(false)
@@ -271,7 +275,7 @@ describe('production logistics', () => {
         juiceJars: [],
         jarRackCount: 1,
       }),
-      settings({ carriedJuiceJarCount: 0 }),
+      settings({ carriedJuiceJarIds: [] }),
     )
 
     expect(result.feasible).toBe(false)
@@ -301,7 +305,7 @@ describe('production logistics', () => {
         shelfCount: 0,
         juiceJars: jars,
       }),
-      settings({ carriedJuiceJarCount: 9 }),
+      settings({ carriedJuiceJarIds: carriedIds(9) }),
     )
 
     expect(result.feasible).toBe(true)
@@ -330,7 +334,7 @@ describe('production logistics', () => {
         ingredientUnits: { lemon: 1 },
         juiceJars: jars,
       }),
-      settings({ carriedJuiceJarCount: 10 }),
+      settings({ carriedJuiceJarIds: carriedIds(10) }),
     )
 
     expect(result.feasible).toBe(false)
@@ -354,7 +358,7 @@ describe('production logistics', () => {
           servings: 0,
         })),
       }),
-      settings({ carriedJuiceJarCount: 9 }),
+      settings({ carriedJuiceJarIds: carriedIds(9) }),
     )
 
     expect(result.feasible).toBe(false)
