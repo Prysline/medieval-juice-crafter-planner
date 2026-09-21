@@ -131,7 +131,7 @@ HiGHS solver 使用真正的 lexicographic repeated solve，不使用隱藏權�
 - `minimum-machine-operations`
 - `minimum-jar-switches`
 
-果汁罐換裝定義為「同一罐從一種最終果汁改裝成另一種」；空罐第一次裝入與補裝同種類不算。忽略既有預裝內容時，若方案有 `K` 種最終果汁、規劃中有 `J` 個**常駐攜帶 physical jars**，最低換裝數為 `max(0, K - J)`。Phase 2 後 UI 會分開設定「實際持有果汁罐」與「常駐攜帶果汁罐」；optimizer 只接收 ownership / backpack capacity 正規化後的 effective carried jar count，另可指定 `maxJarTypeSwitches` hard constraint。
+果汁罐換裝定義為「同一罐從一種最終果汁改裝成另一種」；空罐第一次裝入與補裝同種類不算。Phase 5B2-2/3 / PR #45 後，optimizer 會接收每個常駐攜帶果汁罐的初始 `recipeId / servings`，而不只接收罐數：初始就是該配方的罐與空罐可先覆蓋不需換裝的最終果汁種類；已有內容的罐只有在今日需求確實把原內容全部售完後，才可再換裝成其他配方，未售完內容不能為了降低換裝數而自動倒掉。Phase 5B2-4/5 / PR #47 的販售排程會再依同一份逐罐時序重算換裝數，並與 optimizer 結果檢查一致；`maxJarTypeSwitches` 也使用這套初始內容感知的換裝語意。
 
 收入相關 criterion 不推導 computed 售價。正式顧客若要參與 revenue / gross-profit criterion，只能使用 `salePrice !== null` 的 full-match 配方；潛在顧客仍可依 candidate policy 使用 computed full match，但試喝收入不計入已知銷售額。
 
