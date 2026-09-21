@@ -14,7 +14,13 @@ function inventory(
     waterUnits: 0,
     cleanCups: 0,
     usedCups: 0,
-    juiceJars: [],
+    juiceJars: [
+      {
+        id: 'jar-1',
+        recipeId: null,
+        servings: 0,
+      },
+    ],
     shelfCount: 1,
     jarRackCount: 0,
     ...patch,
@@ -25,7 +31,7 @@ function settings(
   patch: Partial<PlannerSettings> = {},
 ): PlannerSettings {
   return {
-    carriedJuiceJarCount: 0,
+    carriedJuiceJarCount: 1,
     allowUsedCupDropIfFull: false,
     ...patch,
   }
@@ -140,6 +146,15 @@ describe('production logistics', () => {
           action.snapshot.machineSlotsUsed > 0,
       ),
     ).toBe(true)
+    expect(
+      result.actions
+        .filter((action) => action.kind === 'handoff-finished')
+        .every(
+          (action) =>
+            action.quantity <= 10 &&
+            action.outputJarReceiver === 'carried-jar',
+        ),
+    ).toBe(true)
   })
 
   it('acquires missing raw ingredients just in time through backpack capacity', () => {
@@ -192,6 +207,50 @@ describe('production logistics', () => {
       machineSlotsUsed: 1,
       machineSlotsAvailable: 3,
     })
+  })
+
+  it('uses a jar-rack staged physical jar as the finalizer receiver', () => {
+    const result = buildProductionLogisticsPlan(
+      shortfall(['lemon'], 1),
+      inventory({
+        ingredientUnits: { lemon: 1 },
+        waterUnits: 1,
+        jarRackCount: 1,
+      }),
+      settings({ carriedJuiceJarCount: 0 }),
+    )
+
+    expect(result.feasible).toBe(true)
+    const handoff = result.actions.find(
+      (action) => action.kind === 'handoff-finished',
+    )
+    expect(handoff).toMatchObject({
+      quantity: 2,
+      outputJarReceiver: 'jar-rack',
+    })
+    expect(handoff?.snapshot).toMatchObject({
+      carriedOutputJarSlots: 0,
+      rackOutputJarSlots: 1,
+      outputJarReceiverSlots: 1,
+    })
+  })
+
+  it('does not treat empty jar-rack slots as physical jars', () => {
+    const result = buildProductionLogisticsPlan(
+      shortfall(['lemon'], 1),
+      inventory({
+        ingredientUnits: { lemon: 1 },
+        waterUnits: 1,
+        juiceJars: [],
+        jarRackCount: 1,
+      }),
+      settings({ carriedJuiceJarCount: 0 }),
+    )
+
+    expect(result.feasible).toBe(false)
+    expect(result.issues.join(' ')).toContain(
+      'finalizer output 沒有可接手的 physical juice jar',
+    )
   })
 
   it('frees the last backpack slot by loading the first machine input before fetching water', () => {
