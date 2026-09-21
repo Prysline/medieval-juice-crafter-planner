@@ -616,7 +616,7 @@ describe('multi-trip replenishment', () => {
           recipeId: 'b',
           recipeName: 'B',
           assignedServings: 0,
-          leftoverServings: 1,
+          leftoverServings: 2,
         },
       ]),
       'retain-and-wash',
@@ -628,7 +628,7 @@ describe('multi-trip replenishment', () => {
       physicalJarId: 2,
       recipeId: 'b',
       recipeName: 'B',
-      servings: 1,
+      servings: 2,
       location: 'carried-reserve',
       tripNumber: null,
     })
