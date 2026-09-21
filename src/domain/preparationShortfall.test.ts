@@ -17,13 +17,13 @@ const demand: PreparationDemand = {
     {
       recipeId: 'lemon-sugar',
       recipeName: '檸檬糖',
-      batches: 2,
+      productionUnits: 2,
       producedServings: 4,
       assignedServings: 3,
       leftoverServings: 1,
-      ingredientUnitsPerBatch: [
-        { ingredientId: 'lemon', quantityPerBatch: 1 },
-        { ingredientId: 'sugar', quantityPerBatch: 1 },
+      ingredientUnitsPerJuiceUnit: [
+        { ingredientId: 'lemon', quantityPerJuiceUnit: 1 },
+        { ingredientId: 'sugar', quantityPerJuiceUnit: 1 },
       ],
     },
   ],
@@ -43,7 +43,7 @@ function inventory(
 }
 
 describe('preparation stock shortfall', () => {
-  it('uses finished recipe stock before deciding new production batches', () => {
+  it('uses finished recipe stock before deciding new production units', () => {
     const result = buildPreparationShortfall(
       demand,
       inventory({
@@ -67,7 +67,7 @@ describe('preparation stock shortfall', () => {
       finishedServingsUsed: 1,
       finishedServingsRemaining: 0,
       servingsToProduce: 2,
-      batchesToPrepare: 1,
+      juiceUnitsToPrepare: 1,
       newlyProducedServings: 2,
       newProductionLeftoverServings: 0,
     })
@@ -116,7 +116,7 @@ describe('preparation stock shortfall', () => {
       finishedServingsUsed: 3,
       finishedServingsRemaining: 2,
       servingsToProduce: 0,
-      batchesToPrepare: 0,
+      juiceUnitsToPrepare: 0,
       newlyProducedServings: 0,
     })
     expect(result.ingredients).toEqual([])
