@@ -22,13 +22,14 @@ function recipe(
   id: string,
   ingredients: string[],
   effects: string[],
+  salePrice: number | null = 10,
 ): RecipeCandidate {
   return {
     id,
     name: id,
     source: 'observed',
     unlockedAt: 'seasoner-unlocked',
-    salePrice: 10,
+    salePrice,
     ingredients,
     effects: effects.map((name, index) => ({
       name,
@@ -41,6 +42,7 @@ function recipe(
 function request(
   customerIds: string[],
   objective: OptimizationRequest['objective'] = 'minimum-cost',
+  formalCustomerIds: string[] = customerIds,
 ): OptimizationRequest {
   return {
     customerIds,
@@ -50,6 +52,7 @@ function request(
       'east-harbor': 999,
       'tranquil-fountain': 999,
     },
+    formalCustomerIds,
     candidatePolicy: 'observed-only',
     objective,
   }
@@ -173,6 +176,93 @@ describe('batch optimizer', () => {
     expect(leastWaste.leftoverServings).toBe(1)
   })
 
+  it('maximum-known-revenue and maximum-known-gross-profit can choose different plans', async () => {
+    const source = {
+      customers: [customer('a', '甜味')],
+      candidates: [
+        recipe(
+          'high-revenue',
+          ['檸檬', '薄荷'],
+          ['甜味'],
+          40,
+        ),
+        recipe(
+          'high-profit',
+          ['檸檬'],
+          ['甜味'],
+          30,
+        ),
+      ],
+    }
+
+    const revenue = await optimizeBatchPlan(
+      request(['a'], 'maximum-known-revenue'),
+      { source },
+    )
+    const profit = await optimizeBatchPlan(
+      request(['a'], 'maximum-known-gross-profit'),
+      { source },
+    )
+
+    expect(revenue.batches[0].recipeId).toBe('high-revenue')
+    expect(revenue.knownSalesRevenue).toBe(40)
+    expect(revenue.totalIngredientCost).toBe(23)
+    expect(revenue.knownGrossProfit).toBe(17)
+
+    expect(profit.batches[0].recipeId).toBe('high-profit')
+    expect(profit.knownSalesRevenue).toBe(30)
+    expect(profit.totalIngredientCost).toBe(9)
+    expect(profit.knownGrossProfit).toBe(21)
+  })
+
+  it('keeps potential trials outside known sales revenue', async () => {
+    const result = await optimizeBatchPlan(
+      request(
+        ['a'],
+        'maximum-known-revenue',
+        [],
+      ),
+      {
+        source: {
+          customers: [customer('a', '甜味')],
+          candidates: [
+            recipe('cheap', ['檸檬'], ['甜味'], 10),
+            recipe('expensive', ['檸檬', '薄荷'], ['甜味'], 40),
+          ],
+        },
+      },
+    )
+
+    expect(result.batches[0].recipeId).toBe('cheap')
+    expect(result.formalSalesCount).toBe(0)
+    expect(result.potentialTrialCount).toBe(1)
+    expect(result.knownSalesRevenue).toBe(0)
+    expect(result.knownGrossProfit).toBe(-9)
+  })
+
+  it('reports known revenue metrics in cost mode without changing the primary objective', async () => {
+    const result = await optimizeBatchPlan(
+      request(['a', 'b'], 'minimum-cost', ['a']),
+      {
+        source: {
+          customers: [
+            customer('a', '甜味'),
+            customer('b', '甜味'),
+          ],
+          candidates: [
+            recipe('sweet', ['檸檬', '糖'], ['甜味'], 19),
+          ],
+        },
+      },
+    )
+
+    expect(result.formalSalesCount).toBe(1)
+    expect(result.potentialTrialCount).toBe(1)
+    expect(result.knownSalesRevenue).toBe(19)
+    expect(result.totalIngredientCost).toBe(16)
+    expect(result.knownGrossProfit).toBe(3)
+  })
+
   it('lists customers without any reliable full match as unresolved', async () => {
     const result = await optimizeBatchPlan(
       request(['a', 'b']),
@@ -265,6 +355,7 @@ describe('batch optimizer', () => {
         'east-harbor': 999,
         'tranquil-fountain': 999,
       },
+      formalCustomerIds: canonicalCustomers.map((item) => item.id),
       candidatePolicy: 'allow-unambiguous-computed',
       objective: 'minimum-cost',
     })

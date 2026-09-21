@@ -15,12 +15,15 @@ export type OptimizationCandidatePolicy =
 export type OptimizationObjective =
   | 'minimum-cost'
   | 'minimum-waste'
+  | 'maximum-known-revenue'
+  | 'maximum-known-gross-profit'
 
 export interface OptimizationRequest {
   customerIds: string[]
   currentProgress: ProgressMilestoneId
   suppliedCustomerIds: string[]
   satisfactionByVillage: SatisfactionByVillage
+  formalCustomerIds: string[]
   candidatePolicy: OptimizationCandidatePolicy
   objective: OptimizationObjective
 }
@@ -48,6 +51,15 @@ function unique(values: string[]): string[] {
   return [...new Set(values)]
 }
 
+export function isRevenueObjective(
+  objective: OptimizationObjective,
+): boolean {
+  return (
+    objective === 'maximum-known-revenue' ||
+    objective === 'maximum-known-gross-profit'
+  )
+}
+
 function candidateIsEligible(
   candidate: RecipeCandidate,
   request: OptimizationRequest,
@@ -71,6 +83,7 @@ export function buildOptimizationModel(
   source: OptimizationSource,
 ): BatchOptimizationModel {
   const suppliedIds = new Set(request.suppliedCustomerIds)
+  const formalIds = new Set(request.formalCustomerIds)
   const requestedIds = unique(request.customerIds)
   const excludedSuppliedCustomerIds = requestedIds.filter((id) =>
     suppliedIds.has(id),
@@ -111,9 +124,21 @@ export function buildOptimizationModel(
     }
 
     const recipeIds = eligibleCandidates
-      .filter(({ candidate }) =>
-        recipeCandidateMatchesCustomer(candidate, customer),
-      )
+      .filter(({ candidate }) => {
+        if (!recipeCandidateMatchesCustomer(candidate, customer)) {
+          return false
+        }
+
+        if (
+          isRevenueObjective(request.objective) &&
+          formalIds.has(customerId) &&
+          candidate.salePrice === null
+        ) {
+          return false
+        }
+
+        return true
+      })
       .map(({ candidate }) => candidate.id)
 
     if (recipeIds.length === 0) {

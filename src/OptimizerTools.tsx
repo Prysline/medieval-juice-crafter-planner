@@ -94,6 +94,7 @@ export default function OptimizerTools({
         currentProgress,
         suppliedCustomerIds,
         satisfactionByVillage,
+        formalCustomerIds,
         candidatePolicy,
         objective,
       })
@@ -180,6 +181,12 @@ export default function OptimizerTools({
             >
               <option value="minimum-cost">最低原料成本</option>
               <option value="minimum-waste">最少剩餘杯</option>
+              <option value="maximum-known-revenue">
+                最高已知銷售總額
+              </option>
+              <option value="maximum-known-gross-profit">
+                最高已知毛利
+              </option>
             </select>
           </label>
         </div>
@@ -240,6 +247,18 @@ function OptimizerResultPanel({
           label="原料總成本"
           value={optimizerMoney(result.totalIngredientCost)}
         />
+        <MetricCard
+          label="已知銷售總額"
+          value={optimizerMoney(result.knownSalesRevenue)}
+        />
+        <MetricCard
+          label="已知毛利"
+          value={optimizerMoney(result.knownGrossProfit)}
+        />
+        <MetricCard
+          label="正式販售 / 潛在試喝"
+          value={`${result.formalSalesCount} / ${result.potentialTrialCount}`}
+        />
         <MetricCard label="製作批數" value={String(result.batches.length)} />
         <MetricCard
           label="已分配 / 產出"
@@ -249,14 +268,19 @@ function OptimizerResultPanel({
       </div>
 
       <div className="optimizer-result-note">
-        <strong>
-          {objective === 'minimum-cost' ? '最低成本模式' : '最少浪費模式'}
-        </strong>
-        <span>
-          {objective === 'minimum-cost'
-            ? '先最小化原料成本；同成本再減少批數／剩餘杯與配方種類。'
-            : '先最小化批數／剩餘杯；再比較原料成本與配方種類。'}
-        </span>
+        <strong>{objectiveLabel(objective)}</strong>
+        <span>{objectiveDescription(objective)}</span>
+        {(result.potentialTrialCount > 0 ||
+          result.unknownFormalSalePriceCount > 0) && (
+          <small>
+            {result.potentialTrialCount > 0
+              ? `潛在試喝 ${result.potentialTrialCount} 杯的收入未確認，不計入已知銷售總額。`
+              : ''}
+            {result.unknownFormalSalePriceCount > 0
+              ? ` 正式販售另有 ${result.unknownFormalSalePriceCount} 杯售價未知。`
+              : ''}
+          </small>
+        )}
       </div>
 
       <section className="optimizer-result-section">
@@ -357,6 +381,28 @@ function OptimizerResultPanel({
       )}
     </div>
   )
+}
+
+function objectiveLabel(objective: OptimizationObjective): string {
+  if (objective === 'minimum-cost') return '最低成本模式'
+  if (objective === 'minimum-waste') return '最少浪費模式'
+  if (objective === 'maximum-known-revenue') {
+    return '最高已知銷售總額模式'
+  }
+  return '最高已知毛利模式'
+}
+
+function objectiveDescription(objective: OptimizationObjective): string {
+  if (objective === 'minimum-cost') {
+    return '先最小化原料成本；同成本再減少批數／剩餘杯與配方種類。'
+  }
+  if (objective === 'minimum-waste') {
+    return '先最小化批數／剩餘杯；再比較原料成本與配方種類。'
+  }
+  if (objective === 'maximum-known-revenue') {
+    return '先最大化正式顧客的已知販售收入；同收入再降低原料成本與批數。'
+  }
+  return '先最大化「正式顧客已知販售收入－全部製作批次原料成本」；同毛利再降低原料成本與批數。'
 }
 
 function MetricCard({
