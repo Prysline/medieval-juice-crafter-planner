@@ -8,6 +8,7 @@ import type {
 export interface RecipeStockAdjustment {
   recipeId: string
   recipeName: string
+  ingredientIds: string[]
   assignedServings: number
   finishedServingsAvailable: number
   finishedServingsUsed: number
@@ -82,6 +83,7 @@ export function buildPreparationShortfall(
     return {
       recipeId: recipe.recipeId,
       recipeName: recipe.recipeName,
+      ingredientIds: [...recipe.ingredientIds],
       assignedServings: recipe.assignedServings,
       finishedServingsAvailable,
       finishedServingsUsed,
