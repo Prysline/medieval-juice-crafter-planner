@@ -14,6 +14,8 @@ function createEmptyInventoryState(): InventoryState {
     cleanCups: 0,
     usedCups: 0,
     juiceJars: [],
+    shelfCount: 0,
+    jarRackCount: 0,
   }
 }
 
@@ -104,6 +106,8 @@ export function normalizeInventoryState(value: unknown): InventoryState {
     cleanCups: normalizeCount(state.cleanCups),
     usedCups: normalizeCount(state.usedCups),
     juiceJars: normalizeJars(state.juiceJars),
+    shelfCount: normalizeCount(state.shelfCount),
+    jarRackCount: normalizeCount(state.jarRackCount),
   }
 }
 
@@ -126,4 +130,47 @@ export function writeInventoryState(
     INVENTORY_STORAGE_KEY,
     JSON.stringify(normalizeInventoryState(state)),
   )
+}
+
+
+function nextJuiceJarId(reserved: Set<string>): string {
+  let index = 1
+  while (reserved.has(`jar-${index}`)) index += 1
+  return `jar-${index}`
+}
+
+export function resizeJuiceJarInventory(
+  state: InventoryState,
+  requestedCount: number,
+): InventoryState {
+  const targetCount = normalizeCount(requestedCount)
+  const nonEmpty = state.juiceJars.filter((jar) => jar.servings > 0)
+  const minimumCount = nonEmpty.length
+  const finalCount = Math.max(targetCount, minimumCount)
+
+  if (finalCount === state.juiceJars.length) {
+    return normalizeInventoryState(state)
+  }
+
+  const keptNonEmptyIds = new Set(nonEmpty.map((jar) => jar.id))
+  const emptyJars = state.juiceJars.filter(
+    (jar) => !keptNonEmptyIds.has(jar.id),
+  )
+  const keptEmptyCount = Math.max(0, finalCount - nonEmpty.length)
+  const jars = [
+    ...nonEmpty,
+    ...emptyJars.slice(0, keptEmptyCount),
+  ]
+
+  const reserved = new Set(jars.map((jar) => jar.id))
+  while (jars.length < finalCount) {
+    const id = nextJuiceJarId(reserved)
+    reserved.add(id)
+    jars.push({ id, recipeId: null, servings: 0 })
+  }
+
+  return {
+    ...normalizeInventoryState(state),
+    juiceJars: jars,
+  }
 }

@@ -2,7 +2,6 @@ import {
   BACKPACK_SLOT_CAPACITY,
   CLEAN_CUP_STACK_CAPACITY,
   JUICE_JAR_CAPACITY,
-  JUICE_JAR_RACK_CAPACITY,
   JUICE_JAR_SLOT_COST,
 } from './inventoryRules'
 import type { PreparationDemand } from './preparationDemand'
@@ -39,12 +38,12 @@ export interface MultiTripSalesTrip {
   spareDepartureSlots: number
   reservedTransientUsedCupSlot: number
   usedCupDropMayOccur: boolean
-  jarRackSlotsRequired: number
+  juiceJarSlotsCarried: number
 }
 
 export interface MultiTripReplenishmentPlan {
   policy: UsedCupTripPolicy
-  availableJuiceJarCount: number
+  carriedJuiceJarCount: number
   physicalJarsUsed: number
   totalJarLoads: number
   distinctFinalJuiceTypes: number
@@ -52,7 +51,7 @@ export interface MultiTripReplenishmentPlan {
   trips: MultiTripSalesTrip[]
   tripCount: number
   totalAssignedServings: number
-  maxJarRackSlotsUsed: number
+  maxJuiceJarSlotsCarried: number
   cleanCupUnitsRequiredWithoutMiddayWashing: number
   reusableCleanCupPoolSize: number | null
   betweenTripWashWaterUnits: number
@@ -81,10 +80,13 @@ interface MutableTrip {
   totalServings: number
 }
 
-function normalizedAvailableJuiceJarCount(value: number): number {
+function normalizedCarriedJuiceJarCount(value: number): number {
   return Number.isFinite(value)
-    ? Math.max(1, Math.floor(value))
-    : 1
+    ? Math.min(
+        BACKPACK_SLOT_CAPACITY,
+        Math.max(0, Math.floor(value)),
+      )
+    : 0
 }
 
 function splitCustomerServings(
@@ -171,10 +173,10 @@ function appendRecipeChunks(
 
 function buildJarQueuesWithSwitches(
   recipes: RecipeJarDemand[],
-  availableJuiceJarCount: number,
+  carriedJuiceJarCount: number,
 ): JarQueue[] {
   const queues = Array.from(
-    { length: availableJuiceJarCount },
+    { length: carriedJuiceJarCount },
     (_, index): JarQueue => ({
       physicalJarId: index + 1,
       loads: [],
@@ -183,7 +185,7 @@ function buildJarQueuesWithSwitches(
 
   recipes.forEach((recipe, index) => {
     const target =
-      index < availableJuiceJarCount
+      index < carriedJuiceJarCount
         ? queues[index]
         : [...queues].sort(
             (a, b) =>
@@ -207,14 +209,14 @@ function buildJarQueuesWithSwitches(
 
 function buildJarQueuesWithoutSwitches(
   recipes: RecipeJarDemand[],
-  availableJuiceJarCount: number,
+  carriedJuiceJarCount: number,
 ): JarQueue[] {
   const totalJarLoads = recipes.reduce(
     (sum, recipe) => sum + recipe.chunks.length,
     0,
   )
   const jarsToUse = Math.min(
-    availableJuiceJarCount,
+    carriedJuiceJarCount,
     totalJarLoads,
   )
   const allocatedByRecipeId = new Map(
@@ -291,18 +293,18 @@ function buildJarQueuesWithoutSwitches(
 
 function buildPhysicalJarQueues(
   recipes: RecipeJarDemand[],
-  availableJuiceJarCount: number,
+  carriedJuiceJarCount: number,
 ): JarQueue[] {
   if (recipes.length === 0) return []
 
-  return recipes.length > availableJuiceJarCount
+  return recipes.length > carriedJuiceJarCount
     ? buildJarQueuesWithSwitches(
         recipes,
-        availableJuiceJarCount,
+        carriedJuiceJarCount,
       )
     : buildJarQueuesWithoutSwitches(
         recipes,
-        availableJuiceJarCount,
+        carriedJuiceJarCount,
       )
 }
 
@@ -324,12 +326,12 @@ function canAddJar(
   policy: UsedCupTripPolicy,
   maxConcurrentJars: number,
 ): boolean {
-  const jarCount = trip.juiceJars.length + 1
-  if (jarCount > maxConcurrentJars) return false
+  const loadedJarCount = trip.juiceJars.length + 1
+  if (loadedJarCount > maxConcurrentJars) return false
 
   const servings = trip.totalServings + jar.servings
   const cupStacks = cleanCupStacksFor(servings)
-  const departureSlots = jarCount + cupStacks
+  const departureSlots = maxConcurrentJars + cupStacks
 
   return (
     departureSlots <= effectiveDepartureSlotLimit(policy)
@@ -339,17 +341,14 @@ function canAddJar(
 function buildTrips(
   queues: JarQueue[],
   policy: UsedCupTripPolicy,
-  availableJuiceJarCount: number,
+  carriedJuiceJarCount: number,
 ): MutableTrip[] {
   const pending = queues.map((queue) => ({
     physicalJarId: queue.physicalJarId,
     loads: [...queue.loads],
   }))
   const trips: MutableTrip[] = []
-  const maxConcurrentJars = Math.min(
-    availableJuiceJarCount,
-    JUICE_JAR_RACK_CAPACITY,
-  )
+  const maxConcurrentJars = carriedJuiceJarCount
 
   while (pending.some((queue) => queue.loads.length > 0)) {
     const candidates = pending
@@ -455,13 +454,18 @@ export function countJarTypeSwitchesFromSchedule(
 export function buildMultiTripReplenishmentPlan(
   demand: PreparationDemand,
   policy: UsedCupTripPolicy,
-  availableJuiceJarCount: number,
+  carriedJuiceJarCount: number,
 ): MultiTripReplenishmentPlan {
   const normalizedJarCount =
-    normalizedAvailableJuiceJarCount(
-      availableJuiceJarCount,
+    normalizedCarriedJuiceJarCount(
+      carriedJuiceJarCount,
     )
   const recipes = recipeJarDemands(demand)
+  if (recipes.length > 0 && normalizedJarCount < 1) {
+    throw new Error(
+      'Sales planning requires at least one carried physical juice jar',
+    )
+  }
   const queues = buildPhysicalJarQueues(
     recipes,
     normalizedJarCount,
@@ -478,7 +482,7 @@ export function buildMultiTripReplenishmentPlan(
         trip.totalServings,
       )
       const departureSlots =
-        trip.juiceJars.length + cleanCupStacks
+        normalizedJarCount + cleanCupStacks
 
       return {
         tripNumber: index + 1,
@@ -499,7 +503,7 @@ export function buildMultiTripReplenishmentPlan(
           policy === 'allow-drop-if-full' &&
           trip.totalServings > 0 &&
           departureSlots === BACKPACK_SLOT_CAPACITY,
-        jarRackSlotsRequired: trip.juiceJars.length,
+        juiceJarSlotsCarried: normalizedJarCount,
       }
     },
   )
@@ -530,7 +534,7 @@ export function buildMultiTripReplenishmentPlan(
 
   return {
     policy,
-    availableJuiceJarCount: normalizedJarCount,
+    carriedJuiceJarCount: normalizedJarCount,
     physicalJarsUsed,
     totalJarLoads,
     distinctFinalJuiceTypes: recipes.length,
@@ -538,9 +542,9 @@ export function buildMultiTripReplenishmentPlan(
     trips,
     tripCount: trips.length,
     totalAssignedServings,
-    maxJarRackSlotsUsed: trips.reduce(
+    maxJuiceJarSlotsCarried: trips.reduce(
       (max, trip) =>
-        Math.max(max, trip.jarRackSlotsRequired),
+        Math.max(max, trip.juiceJarSlotsCarried),
       0,
     ),
     cleanCupUnitsRequiredWithoutMiddayWashing:

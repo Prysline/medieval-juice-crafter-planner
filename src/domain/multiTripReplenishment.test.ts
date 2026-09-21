@@ -100,7 +100,7 @@ describe('multi-trip replenishment', () => {
 
     expect(result.tripCount).toBe(4)
     expect(result.physicalJarsUsed).toBe(1)
-    expect(result.maxJarRackSlotsUsed).toBe(1)
+    expect(result.maxJuiceJarSlotsCarried).toBe(1)
     expect(result.jarTypeSwitches).toBe(3)
     expect(
       result.trips.flatMap((trip) =>
@@ -183,23 +183,23 @@ describe('multi-trip replenishment', () => {
     expectScheduleConsistency(result)
   })
 
-  it('keeps the five-slot jar rack limit even when more physical jars are available', () => {
+  it('limits concurrent carried jars by backpack capacity instead of a global rack constant', () => {
     const result = buildMultiTripReplenishmentPlan(
       namedRecipes(['A', 'B', 'C', 'D', 'E', 'F']),
       'allow-drop-if-full',
       8,
     )
 
-    expect(result.availableJuiceJarCount).toBe(8)
+    expect(result.carriedJuiceJarCount).toBe(8)
     expect(result.physicalJarsUsed).toBe(6)
-    expect(result.tripCount).toBe(2)
-    expect(result.trips[0].juiceJars).toHaveLength(5)
-    expect(result.maxJarRackSlotsUsed).toBe(5)
+    expect(result.tripCount).toBe(3)
+    expect(result.trips[0].juiceJars).toHaveLength(2)
+    expect(result.maxJuiceJarSlotsCarried).toBe(8)
     expect(result.jarTypeSwitches).toBe(0)
     expectScheduleConsistency(result)
   })
 
-  it('limits each trip to the actual physical jar count when it is below rack capacity', () => {
+  it('limits each trip to the configured carried jar count', () => {
     const result = buildMultiTripReplenishmentPlan(
       namedRecipes(['A', 'B', 'C', 'D']),
       'allow-drop-if-full',
@@ -207,7 +207,7 @@ describe('multi-trip replenishment', () => {
     )
 
     expect(result.tripCount).toBe(2)
-    expect(result.maxJarRackSlotsUsed).toBe(2)
+    expect(result.maxJuiceJarSlotsCarried).toBe(2)
     expect(
       result.trips.every(
         (trip) => trip.juiceJars.length <= 2,
@@ -239,11 +239,11 @@ describe('multi-trip replenishment', () => {
     expect(retained.tripCount).toBe(2)
     expect(retained.trips[0]).toMatchObject({
       totalServings: 40,
-      departureSlots: 8,
+      departureSlots: 9,
       effectiveDepartureSlotLimit: 9,
       reservedTransientUsedCupSlot: 1,
       usedCupDropMayOccur: false,
-      jarRackSlotsRequired: 4,
+      juiceJarSlotsCarried: 5,
     })
     expect(retained.reusableCleanCupPoolSize).toBe(40)
     expect(retained.betweenTripWashWaterUnits).toBe(40)
@@ -255,7 +255,7 @@ describe('multi-trip replenishment', () => {
       effectiveDepartureSlotLimit: 10,
       reservedTransientUsedCupSlot: 0,
       usedCupDropMayOccur: true,
-      jarRackSlotsRequired: 5,
+      juiceJarSlotsCarried: 5,
     })
     expect(
       droppable.reusableCleanCupPoolSize,
@@ -293,12 +293,49 @@ describe('multi-trip replenishment', () => {
       effectiveDepartureSlotLimit: 9,
       reservedTransientUsedCupSlot: 1,
       usedCupDropMayOccur: false,
-      jarRackSlotsRequired: 3,
+      juiceJarSlotsCarried: 3,
     })
     expect(result.jarTypeSwitches).toBe(0)
     expect(result.reusableCleanCupPoolSize).toBe(18)
     expect(result.betweenTripWashWaterUnits).toBe(0)
     expectScheduleConsistency(result)
+  })
+
+  it('can make drop policy feasible when retain-and-wash is not', () => {
+    const salesDemand = namedRecipes(['A'], 1)
+
+    expect(() =>
+      buildMultiTripReplenishmentPlan(
+        salesDemand,
+        'retain-and-wash',
+        9,
+      ),
+    ).toThrow('A single jar cannot fit the retain-and-wash trip policy')
+
+    const droppable = buildMultiTripReplenishmentPlan(
+      salesDemand,
+      'allow-drop-if-full',
+      9,
+    )
+    expect(droppable.tripCount).toBe(1)
+    expect(droppable.trips[0]).toMatchObject({
+      totalServings: 1,
+      departureSlots: 10,
+      usedCupDropMayOccur: true,
+      juiceJarSlotsCarried: 9,
+    })
+  })
+
+  it('rejects positive sales demand when no jar is carried', () => {
+    expect(() =>
+      buildMultiTripReplenishmentPlan(
+        namedRecipes(['A'], 1),
+        'retain-and-wash',
+        0,
+      ),
+    ).toThrow(
+      'Sales planning requires at least one carried physical juice jar',
+    )
   })
 
   it.each<UsedCupTripPolicy>([
@@ -315,7 +352,7 @@ describe('multi-trip replenishment', () => {
 
       expect(result).toEqual({
         policy,
-        availableJuiceJarCount: 2,
+        carriedJuiceJarCount: 2,
         physicalJarsUsed: 0,
         totalJarLoads: 0,
         distinctFinalJuiceTypes: 0,
@@ -323,7 +360,7 @@ describe('multi-trip replenishment', () => {
         trips: [],
         tripCount: 0,
         totalAssignedServings: 0,
-        maxJarRackSlotsUsed: 0,
+        maxJuiceJarSlotsCarried: 0,
         cleanCupUnitsRequiredWithoutMiddayWashing: 0,
         reusableCleanCupPoolSize:
           policy === 'retain-and-wash' ? 0 : null,
