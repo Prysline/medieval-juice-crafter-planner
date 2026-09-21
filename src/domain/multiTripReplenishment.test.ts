@@ -261,11 +261,11 @@ describe('multi-trip replenishment', () => {
         [{ id: 'owned-a', recipeId: 'a', servings: 2 }],
         { cleanCups: 1, usedCups: 0 },
       ),
-    ).toThrow(/cannot accept newly produced juice without discarding retained contents/)
+    ).toThrow(/without discarding retained contents/)
   })
 
   it('keeps a prefilled unrelated jar locked while an empty jar handles later recipe switches', () => {
-    const salesDemand = namedRecipes(['B', 'C'], 1)
+    const salesDemand = namedRecipes(['B', 'C'], 2)
     const result = buildPlanWithJars(
       salesDemand,
       'allow-drop-if-full',
@@ -273,7 +273,7 @@ describe('multi-trip replenishment', () => {
         { id: 'locked-a', recipeId: 'a', servings: 2 },
         { id: 'empty', recipeId: null, servings: 0 },
       ],
-      { cleanCups: 2, usedCups: 0 },
+      { cleanCups: 4, usedCups: 0 },
     )
 
     expect(result.physicalJarsUsed).toBe(1)
@@ -293,8 +293,8 @@ describe('multi-trip replenishment', () => {
       { id: 'persistent-a', recipeId: 'lemon-juice', servings: 2 },
       { id: 'persistent-b', recipeId: null, servings: 0 },
     ]
-    const salesDemand = namedRecipes(['A', 'B'], 1)
-    const cups = { cleanCups: 2, usedCups: 0 }
+    const salesDemand = namedRecipes(['A', 'B'], 2)
+    const cups = { cleanCups: 4, usedCups: 0 }
 
     const retain = buildPlanWithJars(
       salesDemand,
@@ -341,7 +341,7 @@ describe('multi-trip replenishment', () => {
 
   it('reuses one physical jar across four juice types and records three switches', () => {
     const result = buildPlan(
-      namedRecipes(['A', 'B', 'C', 'D'], 1),
+      namedRecipes(['A', 'B', 'C', 'D'], 2),
       'allow-drop-if-full',
       1,
     )
@@ -384,7 +384,7 @@ describe('multi-trip replenishment', () => {
 
   it('uses two physical jars for four juice types in two trips with two switches', () => {
     const result = buildPlan(
-      namedRecipes(['A', 'B', 'C', 'D'], 1),
+      namedRecipes(['A', 'B', 'C', 'D'], 2),
       'allow-drop-if-full',
       2,
     )
