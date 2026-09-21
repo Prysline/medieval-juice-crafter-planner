@@ -74,6 +74,15 @@ describe('preparation stock shortfall', () => {
       juiceUnitsToPrepare: 1,
       newlyProducedServings: 2,
       newProductionLeftoverServings: 0,
+      finishedStockSources: [
+        {
+          physicalJarId: 'jar-1',
+          recipeId: 'lemon-sugar',
+          initialServings: 1,
+          servingsUsed: 1,
+          servingsRemaining: 0,
+        },
+      ],
     })
     expect(result.ingredients).toEqual(
       expect.arrayContaining([
@@ -126,6 +135,87 @@ describe('preparation stock shortfall', () => {
     expect(result.ingredients).toEqual([])
     expect(result.productionWaterUnitsRequired).toBe(0)
     expect(result.waterUnitsToFetch).toBe(0)
+  })
+
+  it('allocates finished stock to persistent jars in stable inventory order', () => {
+    const result = buildPreparationShortfall(
+      demand,
+      inventory({
+        juiceJars: [
+          {
+            id: 'jar-a',
+            recipeId: 'lemon-sugar',
+            servings: 2,
+          },
+          {
+            id: 'jar-b',
+            recipeId: 'lemon-sugar',
+            servings: 4,
+          },
+        ],
+      }),
+    )
+
+    expect(result.recipes[0]).toMatchObject({
+      finishedServingsAvailable: 6,
+      finishedServingsUsed: 3,
+      finishedServingsRemaining: 3,
+      finishedStockSources: [
+        {
+          physicalJarId: 'jar-a',
+          recipeId: 'lemon-sugar',
+          initialServings: 2,
+          servingsUsed: 2,
+          servingsRemaining: 0,
+        },
+        {
+          physicalJarId: 'jar-b',
+          recipeId: 'lemon-sugar',
+          initialServings: 4,
+          servingsUsed: 1,
+          servingsRemaining: 3,
+        },
+      ],
+      servingsToProduce: 0,
+    })
+  })
+
+  it('only offsets finished stock from explicitly eligible carried jars', () => {
+    const result = buildPreparationShortfall(
+      demand,
+      inventory({
+        juiceJars: [
+          {
+            id: 'not-carried',
+            recipeId: 'lemon-sugar',
+            servings: 3,
+          },
+          {
+            id: 'carried',
+            recipeId: 'lemon-sugar',
+            servings: 1,
+          },
+        ],
+      }),
+      { finishedJuiceJarIds: ['carried'] },
+    )
+
+    expect(result.recipes[0]).toMatchObject({
+      finishedServingsAvailable: 1,
+      finishedServingsUsed: 1,
+      finishedServingsRemaining: 0,
+      finishedStockSources: [
+        {
+          physicalJarId: 'carried',
+          recipeId: 'lemon-sugar',
+          initialServings: 1,
+          servingsUsed: 1,
+          servingsRemaining: 0,
+        },
+      ],
+      servingsToProduce: 2,
+      juiceUnitsToPrepare: 1,
+    })
   })
 
   it('uses raw inventory and water without mutating the input state', () => {
