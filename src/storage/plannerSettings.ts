@@ -78,7 +78,25 @@ export function readPlannerSettings(
   if (raw === null) return { ...DEFAULT_PLANNER_SETTINGS }
 
   try {
-    return normalizePlannerSettings(JSON.parse(raw), inventory)
+    const parsed = JSON.parse(raw)
+    const normalized = normalizePlannerSettings(parsed, inventory)
+    const legacy =
+      parsed &&
+      typeof parsed === 'object' &&
+      !Array.isArray(
+        (parsed as { carriedJuiceJarIds?: unknown })
+          .carriedJuiceJarIds,
+      ) &&
+      typeof (parsed as { carriedJuiceJarCount?: unknown })
+        .carriedJuiceJarCount === 'number'
+
+    if (legacy && inventory) {
+      storage.setItem(
+        PLANNER_SETTINGS_STORAGE_KEY,
+        JSON.stringify(normalized),
+      )
+    }
+    return normalized
   } catch {
     return { ...DEFAULT_PLANNER_SETTINGS }
   }
