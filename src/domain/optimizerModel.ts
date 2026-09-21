@@ -145,7 +145,9 @@ export function minimumJarTypeSwitchesForRecipeIds(
   const emptyJarCount = jars.filter(
     (jar) => !jar.recipeId || jar.servings <= 0,
   ).length
-  const unmatchedRecipeKinds = new Set(recipeIds).difference(initialRecipeIds).size
+  const unmatchedRecipeKinds = [...new Set(recipeIds)].filter(
+    (recipeId) => !initialRecipeIds.has(recipeId),
+  ).length
 
   return Math.max(0, unmatchedRecipeKinds - emptyJarCount)
 }
