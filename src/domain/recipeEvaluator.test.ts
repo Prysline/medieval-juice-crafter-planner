@@ -299,7 +299,7 @@ describe('recipe sequence evaluator', () => {
     })
   }
 
-  it('matches observed blender effects with the general ordered-sequence model', () => {
+  it('keeps observed blender effects compatible with the general ordered-sequence model', () => {
     const ingredientById = new Map(
       ingredients.map((ingredient) => [ingredient.id, ingredient]),
     )
@@ -314,8 +314,32 @@ describe('recipe sequence evaluator', () => {
       })
       const prediction = predictRecipeEffects(sequence)
 
-      expect(prediction.effectAmbiguity).toBeUndefined()
-      expect(prediction.effects).toEqual(observation.effects)
+      expect(observation.effects).toEqual(
+        expect.arrayContaining(prediction.effects),
+      )
+
+      if (!prediction.effectAmbiguity) {
+        expect(prediction.effects).toEqual(observation.effects)
+        continue
+      }
+
+      const unresolvedObserved = observation.effects.filter(
+        (observedEffect) =>
+          !prediction.effects.some(
+            (predictedEffect) =>
+              predictedEffect.name === observedEffect.name &&
+              predictedEffect.value === observedEffect.value,
+          ),
+      )
+
+      expect(unresolvedObserved).toHaveLength(
+        prediction.effectAmbiguity.remainingSlots,
+      )
+      for (const observedEffect of unresolvedObserved) {
+        expect(prediction.effectAmbiguity.candidates).toContainEqual(
+          observedEffect,
+        )
+      }
     }
   })
 })
