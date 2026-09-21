@@ -17,7 +17,7 @@
 - 配方同時顯示批次原料成本與單杯原料成本；目前每批固定產出 2 杯。
 - 「配方工具」可用目前正式支援的 V1 製作鏈即時模擬有序原料序列；observed 配方優先，否則顯示 computed / ambiguity。
 - 個人配方只保存自訂名稱、有序 ingredient IDs、備註與建立時間；effects、cost、equipment、matching 每次由目前 domain 重新計算。
-- 「批次規劃」頁籤已接入 optimizer domain：可切全部／潛在／正式顧客、observed-only／allow computed、最低成本／最少浪費，並顯示批次、分配、原料清單、成本、剩餘杯與 unresolved 顧客。
+- 「批次規劃」頁籤已接入 optimizer domain：可切全部／潛在／正式顧客、observed-only／allow computed、最低成本／最少浪費／最高已知銷售總額／最高已知毛利，並顯示批次、分配、原料清單、成本、已知收入／毛利、剩餘杯與 unresolved 顧客。
 - Inventory foundation 已建立：`mjc-inventory` 保存原料數量、水、乾淨／用過杯具與果汁罐狀態；`PreparationDemand` 將 optimizer 結果轉成全天 gross 備料需求，尚未開始 backpack packing。
 - 預測若在 effect cutoff 出現未確認同分 tie，會明確標示 ambiguous，且不參與完全匹配推薦。
 - 舊版 `mjc-stage` / `mjc-satisfaction` localStorage 會保守遷移到新版進度資料。
@@ -105,6 +105,10 @@ V1 solver 使用 `@bubblyworld/highs-ts@1.3.0`（HiGHS WASM），並隔離在 so
 
 - `minimum-cost`：原料成本 → 批數／剩餘杯 → 配方種類數。
 - `minimum-waste`：批數／剩餘杯 → 原料成本 → 配方種類數。
+- `maximum-known-revenue`：正式顧客的已知販售收入 → 原料成本 → 批數／剩餘杯 → 配方種類數。
+- `maximum-known-gross-profit`：正式顧客已知販售收入 − 全部製作批次原料成本 → 原料成本 → 批數／剩餘杯 → 配方種類數。
+
+收入相關 objective 不推導 computed 售價。正式顧客若要參與 revenue / gross-profit objective，只能使用 `salePrice !== null` 的 full-match 配方；潛在顧客仍可依 candidate policy 使用 computed full match，但其試喝收入未確認，因此只計為試喝需求、不計入已知銷售額。結果會分開顯示正式販售、潛在試喝、已知銷售總額與已知毛利。
 
 solver domain 為 async；「批次規劃」UI 只有在玩家按下「產生批次規劃」時才 dynamic import optimizer。Vite production build 會拆出約 22.84 kB optimizer JS、42.44 kB HiGHS glue 與 3.65 MB WASM（gzip 約 1.10 MB），避免首頁 initial bundle eager-load solver。
 
