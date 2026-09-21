@@ -1287,6 +1287,29 @@ footer {
   padding: 8px 10px;
 }
 
+.optimizer-controls .optimizer-checkbox-control {
+  display: flex;
+  grid-column: span 2;
+  gap: 8px;
+  align-items: center;
+  min-height: 40px;
+  border: 1px solid #d6c8b3;
+  border-radius: 9px;
+  background: #fffdf8;
+  padding: 8px 10px;
+}
+
+.optimizer-controls .optimizer-checkbox-control > input {
+  width: 18px;
+  min-height: 18px;
+  margin: 0;
+  padding: 0;
+}
+
+.optimizer-controls .optimizer-checkbox-control > span {
+  margin: 0;
+}
+
 .segmented-control {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
