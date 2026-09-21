@@ -171,13 +171,35 @@ describe('recipe generator', () => {
     expect(afterBlender).toEqual(beforeBlender)
   })
 
+  it('uses the newly synced tranquil-fountain sequences as observed overlays', () => {
+    const candidates = generateRecipeCandidates('tranquil-fountain-unlocked')
+    const expected = new Map([
+      ['香蕉 → 肉桂', 37],
+      ['橙子 → 肉桂', 32],
+      ['香蕉 → 肉桂 → 薄荷', 58],
+      ['橙子 → 肉桂 → 薄荷', 53],
+    ])
+
+    for (const [sequence, salePrice] of expected) {
+      const candidate = candidates.find(
+        (item) => item.ingredients.join(' → ') === sequence,
+      )
+
+      expect(candidate).toMatchObject({
+        source: 'observed',
+        salePrice,
+      })
+      expect(candidate?.effectAmbiguity).toBeUndefined()
+    }
+  })
+
   it('never invents a sale price for computed candidates', () => {
     const candidates = generateRecipeCandidates('tranquil-fountain-unlocked')
-    const bananaCinnamon = candidates.find(
-      (candidate) => candidate.ingredients.join(' → ') === '香蕉 → 肉桂',
+    const bananaSugar = candidates.find(
+      (candidate) => candidate.ingredients.join(' → ') === '香蕉 → 糖',
     )
 
-    expect(bananaCinnamon?.source).toBe('computed')
-    expect(bananaCinnamon?.salePrice).toBeNull()
+    expect(bananaSugar?.source).toBe('computed')
+    expect(bananaSugar?.salePrice).toBeNull()
   })
 })
