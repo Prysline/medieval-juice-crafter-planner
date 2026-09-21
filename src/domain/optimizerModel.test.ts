@@ -57,6 +57,51 @@ const baseRequest: OptimizationRequest = {
 }
 
 describe('optimizer model', () => {
+  it('requires every customer preference to match before a recipe becomes eligible', () => {
+    const multiPreferenceCustomer: Customer = {
+      id: 'multi',
+      name: 'Multi',
+      occupation: '測試',
+      villageId: 'east-harbor',
+      satisfactionRequired: 0,
+      preferences: [
+        { kind: 'ingredient', value: '檸檬' },
+        { kind: 'effect', value: '甜味' },
+      ],
+    }
+
+    const model = buildOptimizationModel(
+      {
+        ...baseRequest,
+        customerIds: ['multi'],
+        formalCustomerIds: ['multi'],
+      },
+      {
+        customers: [multiPreferenceCustomer],
+        candidates: [
+          candidate(
+            'partial-only',
+            'observed',
+            ['檸檬'],
+            [{ name: '酸味', value: 5 }],
+          ),
+          candidate(
+            'full-match',
+            'observed',
+            ['檸檬', '糖'],
+            [{ name: '甜味', value: 5 }],
+          ),
+        ],
+      },
+    )
+
+    expect(model.serviceableCustomerIds).toEqual(['multi'])
+    expect(model.recipes.map((recipe) => recipe.candidate.id)).toEqual([
+      'full-match',
+    ])
+    expect(model.recipes[0].eligibleCustomerIds).toEqual(['multi'])
+  })
+
   it('builds a customer-to-eligible-recipe matrix and excludes supplied demand', () => {
     const model = buildOptimizationModel(
       {
