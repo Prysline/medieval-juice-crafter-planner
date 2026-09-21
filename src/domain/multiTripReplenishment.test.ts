@@ -288,7 +288,7 @@ describe('multi-trip replenishment', () => {
     expectScheduleConsistency(result)
   })
 
-  it('uses the same persistent jar identities for both cup policies', () => {  it('uses the same persistent jar identities for both cup policies', () => {
+  it('uses the same persistent jar identities for both cup policies', () => {
     const jars: JuiceJarInventoryItem[] = [
       { id: 'persistent-a', recipeId: 'lemon-juice', servings: 2 },
       { id: 'persistent-b', recipeId: null, servings: 0 },
