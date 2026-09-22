@@ -1890,7 +1890,7 @@ function OptimizerResultPanel({
                     一般架 {action.snapshot.shelfSlotsUsed}/
                     {action.snapshot.shelfSlotsAvailable} · 背包一般物品{' '}
                     {action.snapshot.backpackSlotsUsed}/
-                    {action.snapshot.backpackSlotsAvailable} · 常駐罐{' '}
+                    {action.snapshot.backpackSlotsAvailable} · 果汁罐格{' '}
                     {action.snapshot.carriedJarSlots}
                     {action.snapshot.machineSlotsAvailable > 0
                       ? ' · 機器 ' +
@@ -1899,10 +1899,10 @@ function OptimizerResultPanel({
                         action.snapshot.machineSlotsAvailable
                       : ''}
                     {action.outputJarReceiver
-                      ? ' · output → ' +
+                      ? ' · 成品接收 → ' +
                         (action.outputJarReceiver === 'carried-jar'
-                          ? '常駐 physical jar'
-                          : 'jar-rack staging physical jar') +
+                          ? '隨身實體果汁罐'
+                          : '果汁罐架上的實體果汁罐') +
                         (action.outputPhysicalJarId
                           ? ' ' + action.outputPhysicalJarId
                           : '') +
