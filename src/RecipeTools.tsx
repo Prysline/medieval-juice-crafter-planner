@@ -6,7 +6,11 @@ import {
   customerIsUnlocked,
   ingredientIsAvailable,
 } from './domain/availability'
-import { recipeCandidateMatchesCustomer } from './domain/matching'
+import {
+  recipeCandidateMatchLevel,
+  recipeCandidateMatchesCustomer,
+  type MatchLevel,
+} from './domain/matching'
 import {
   combineRecipeSequences,
   evaluateRecipeSequence,
@@ -23,6 +27,8 @@ import {
   writeSavedRecipes,
 } from './storage/savedRecipes'
 import type {
+  Customer,
+  Preference,
   ProgressMilestoneId,
   RecipeSequenceEvaluation,
   SavedRecipe,
@@ -66,6 +72,18 @@ function ingredientRoleLabel(ingredientId: string): string {
   return ''
 }
 
+function preferenceLabel(preference: Preference): string {
+  return preference.kind === 'ingredient'
+    ? `原料：${preference.value}`
+    : `特性：${preference.value}`
+}
+
+function matchLevelLabel(level: MatchLevel): string {
+  if (level === 'full') return '完全匹配'
+  if (level === 'partial') return '部分匹配'
+  return '未匹配'
+}
+
 function makeSavedRecipeId(): string {
   if (globalThis.crypto?.randomUUID) {
     return globalThis.crypto.randomUUID()
@@ -84,11 +102,33 @@ export function RecipeTools({
   const [blenderBackIds, setBlenderBackIds] = useState<string[]>([])
   const [saveName, setSaveName] = useState('')
   const [saveNote, setSaveNote] = useState('')
+  const [targetCustomerId, setTargetCustomerId] = useState('')
 
   const evaluation = useMemo(
     () => evaluateRecipeSequence(ingredientIds, currentProgress),
     [ingredientIds, currentProgress],
   )
+
+  const targetCustomers = useMemo(
+    () =>
+      customers
+        .filter((customer) =>
+          customerIsUnlocked(
+            customer,
+            currentProgress,
+            satisfactionByVillage,
+          ),
+        )
+        .sort(
+          (a, b) =>
+            a.name.localeCompare(b.name, 'zh-Hant') ||
+            a.occupation.localeCompare(b.occupation, 'zh-Hant'),
+        ),
+    [currentProgress, satisfactionByVillage],
+  )
+  const targetCustomer =
+    targetCustomers.find((customer) => customer.id === targetCustomerId) ??
+    null
 
   const matchingCustomers = useMemo(() => {
     if (
@@ -254,6 +294,11 @@ export function RecipeTools({
                     {ingredientRoleLabel(ingredient.id)}
                     {!available ? ' · 尚未解鎖' : ''}
                   </span>
+                  <small className="ingredient-effect-summary">
+                    {ingredient.effects
+                      .map((effect) => `${effect.name} ${effect.value}`)
+                      .join(' · ')}
+                  </small>
                 </button>
               )
             })}
@@ -341,6 +386,14 @@ export function RecipeTools({
           </div>
         </div>
 
+        <TargetCustomerPanel
+          customers={targetCustomers}
+          selectedCustomer={targetCustomer}
+          selectedCustomerId={targetCustomerId}
+          onSelect={setTargetCustomerId}
+          evaluation={evaluation}
+        />
+
         <EvaluationPanel
           evaluation={evaluation}
           matchingCustomers={matchingCustomers}
@@ -405,6 +458,104 @@ export function RecipeTools({
         )}
       </div>
     </section>
+  )
+}
+
+function TargetCustomerPanel({
+  customers: availableCustomers,
+  selectedCustomer,
+  selectedCustomerId,
+  onSelect,
+  evaluation,
+}: {
+  customers: Customer[]
+  selectedCustomer: Customer | null
+  selectedCustomerId: string
+  onSelect: (customerId: string) => void
+  evaluation: RecipeSequenceEvaluation
+}) {
+  const level =
+    selectedCustomer && evaluation.valid
+      ? recipeCandidateMatchLevel(
+          evaluation.candidate,
+          selectedCustomer,
+        )
+      : null
+  const hasAmbiguity =
+    evaluation.valid && Boolean(evaluation.candidate.effectAmbiguity)
+
+  return (
+    <div className="target-customer-panel">
+      <div className="section-title">
+        <strong>目標顧客</strong>
+        <span>只供本次模擬參考，不會寫入玩家資料</span>
+      </div>
+      <label>
+        <span>暫選顧客</span>
+        <select
+          value={
+            selectedCustomer ? selectedCustomerId : ''
+          }
+          onChange={(event) => onSelect(event.target.value)}
+        >
+          <option value="">不指定</option>
+          {availableCustomers.map((customer) => (
+            <option value={customer.id} key={customer.id}>
+              {customer.name}（{customer.occupation}）
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {selectedCustomer && (
+        <div className="target-customer-result">
+          <div>
+            <strong>
+              {selectedCustomer.name}（{selectedCustomer.occupation}）
+            </strong>
+            <div className="tags target-preferences">
+              {selectedCustomer.preferences === null ? (
+                <span className="tag">喜好仍顯示？</span>
+              ) : selectedCustomer.preferences.length > 0 ? (
+                selectedCustomer.preferences.map((preference) => (
+                  <span
+                    className="tag"
+                    key={`${preference.kind}:${preference.value}`}
+                  >
+                    {preferenceLabel(preference)}
+                  </span>
+                ))
+              ) : (
+                <span className="tag">沒有已知喜好</span>
+              )}
+            </div>
+          </div>
+
+          <div className="target-match-status">
+            {!evaluation.valid ? (
+              <>
+                <strong>目前無法判定</strong>
+                <span>先建立可評估的配方序列。</span>
+              </>
+            ) : hasAmbiguity ? (
+              <>
+                <strong>完全匹配待確認</strong>
+                <span>
+                  目前已知條件為
+                  {level ? `「${matchLevelLabel(level)}」` : '未知'}；
+                  成品特性仍有同分歧義，因此暫不宣稱完全匹配。
+                </span>
+              </>
+            ) : (
+              <>
+                <strong>{level ? matchLevelLabel(level) : '未匹配'}</strong>
+                <span>依目前配方的原料與成品特性判定。</span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
