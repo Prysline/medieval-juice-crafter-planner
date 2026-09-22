@@ -194,12 +194,14 @@ function storageSnapshot(
     capacity.shelfSlotCapacity,
   )
   const backpackSlotsUsed = Math.max(0, totalSlots - shelfSlotsUsed)
-  const carriedOutputJarSlots =
-    capacity.effectiveCarriedJuiceJarCount
+  const carriedOutputJarSlots = Math.min(
+    capacity.physicalJuiceJarCount,
+    capacity.effectiveReservedJuiceJarSlots,
+  )
   const nonCarriedPhysicalJars = Math.max(
     0,
     capacity.physicalJuiceJarCount -
-      capacity.effectiveCarriedJuiceJarCount,
+      carriedOutputJarSlots,
   )
   const rackOutputJarSlots = Math.min(
     nonCarriedPhysicalJars,
@@ -369,10 +371,6 @@ export function buildProductionLogisticsPlan(
   const inventoryJarIds = new Set(
     inventory.juiceJars.map((jar) => jar.id),
   )
-  const carriedJarIds = new Set(
-    capacitySummary.carriedJuiceJarIds,
-  )
-
   for (const fill of receiverTimeline) {
     if (!inventoryJarIds.has(fill.physicalJarId)) {
       issues.push(
@@ -381,11 +379,11 @@ export function buildProductionLogisticsPlan(
       continue
     }
     if (
-      !carriedJarIds.has(fill.physicalJarId) &&
+      fill.receiver === 'jar-rack' &&
       capacitySummary.jarRackStagingCapacity < 1
     ) {
       issues.push(
-        `finalizer receiver ${fill.physicalJarId} 不是常駐攜帶罐，且目前沒有可用的果汁罐架 staging slot。`,
+        `finalizer receiver ${fill.physicalJarId} 需要放在果汁罐架，但目前沒有可用的果汁罐架 slot。`,
       )
     }
     if (
@@ -404,13 +402,13 @@ export function buildProductionLogisticsPlan(
     capacitySummary.backpackSlotsRemainingAfterCarriedJars < 1
   ) {
     issues.push(
-      '常駐攜帶果汁罐已占滿背包，沒有可供 shelf ↔ machine 搬運使用的暫時 slot。',
+      '果汁罐的強制隨身／固定預留格已占滿背包，沒有可供架子 ↔ 機器搬運使用的暫時格。',
     )
   }
 
   if (!storageFits(initialSnapshot)) {
     issues.push(
-      '現有 production materials 無法放入目前一般架與常駐果汁罐占用後的背包空間。',
+      '現有製作物資無法放入目前一般架與果汁罐占用／預留後的背包空間。',
     )
   }
 
@@ -484,7 +482,8 @@ export function buildProductionLogisticsPlan(
       requiresCompletedSalesTrips: receiverFill
         ? Math.max(0, receiverFill.beforeTripNumber - 1)
         : undefined,
-      outputJarServingsAfterHandoff: receiverFill?.servings,
+      outputJarServingsAfterHandoff:
+        receiverFill?.servingsAfterFill,
       snapshot,
     })
   }
@@ -720,18 +719,9 @@ export function buildProductionLogisticsPlan(
           continue
         }
 
-        const outputJarReceiver = carriedJarIds.has(
-          receiverFill.physicalJarId,
-        )
-          ? 'carried-jar'
-          : capacitySummary.jarRackStagingCapacity > 0
-            ? 'jar-rack'
-            : null
+        const outputJarReceiver = receiverFill.receiver
 
-        if (
-          !outputJarReceiver ||
-          receiverFill.servings !== quantity * 2
-        ) {
+        if (receiverFill.servings !== quantity * 2) {
           rollbackOperationAttempt()
           continue
         }
