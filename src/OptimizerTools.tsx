@@ -1613,7 +1613,7 @@ function OptimizerResultPanel({
           {productionLogistics.productionPlan.machineOperations.finalizing}）
         </span>
         <span>
-          常駐攜帶果汁罐 {result.availableJuiceJarCount} 個；同罐改裝成另一種果汁才計入換裝。
+          本日可用實體果汁罐 {result.availableJuiceJarCount} 個；有果汁罐架時可跨趟換罐，同罐改裝成另一種果汁才計入換裝。
         </span>
         <span>
           販售摘要採「{tripPolicyLabel(selectedSalesTripPlan)}」；杯具依實際持有量與 clean → used stack transition 計算，果汁成品台接收罐也依這份販售排程的 physical jar 時序安排；替代 policy 可在販售排程展開比較。
@@ -1834,12 +1834,12 @@ function OptimizerResultPanel({
           </span>
           <span>
             初始一般架 {productionLogistics.initialSnapshot.shelfSlotsUsed}/
-            {productionLogistics.initialSnapshot.shelfSlotsAvailable} slots · 背包一般物品{' '}
+            {productionLogistics.initialSnapshot.shelfSlotsAvailable} 格 · 背包一般物品{' '}
             {productionLogistics.initialSnapshot.backpackSlotsUsed}/
-            {productionLogistics.initialSnapshot.backpackSlotsAvailable} slots · 常駐果汁罐{' '}
-            {productionLogistics.initialSnapshot.carriedJarSlots} slots · 成品罐接手{' '}
-            {productionLogistics.initialSnapshot.outputJarReceiverSlots} 個 physical jars
-            （背包 {productionLogistics.initialSnapshot.carriedOutputJarSlots} · rack{' '}
+            {productionLogistics.initialSnapshot.backpackSlotsAvailable} 格 · 強制隨身／固定使用的果汁罐格{' '}
+            {productionLogistics.initialSnapshot.carriedJarSlots} 格 · 可接手成品的實體罐{' '}
+            {productionLogistics.initialSnapshot.outputJarReceiverSlots} 個
+            （背包 {productionLogistics.initialSnapshot.carriedOutputJarSlots} · 果汁罐架{' '}
             {productionLogistics.initialSnapshot.rackOutputJarSlots}）
           </span>
         </div>
