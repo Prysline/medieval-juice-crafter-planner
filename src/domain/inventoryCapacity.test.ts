@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { InventoryState, PlannerSettings } from '../types'
 import {
   buildInventoryCapacitySummary,
-  selectCarriedJuiceJars,
+  selectAccessibleJuiceJars,
 } from './inventoryCapacity'
 
 function inventory(
@@ -24,7 +24,8 @@ function settings(
   patch: Partial<PlannerSettings> = {},
 ): PlannerSettings {
   return {
-    carriedJuiceJarIds: [],
+    juiceJarCarryMode: 'auto',
+    reservedJuiceJarSlots: 0,
     allowUsedCupDropIfFull: false,
     ...patch,
   }
@@ -44,7 +45,10 @@ describe('inventory capacity summary', () => {
           { id: 'jar-3', recipeId: null, servings: 0 },
         ],
       }),
-      settings({ carriedJuiceJarIds: ['jar-1', 'jar-2'] }),
+      settings({
+        juiceJarCarryMode: 'fixed-slots',
+        reservedJuiceJarSlots: 2,
+      }),
     )
 
     expect(result).toEqual({
@@ -54,71 +58,99 @@ describe('inventory capacity summary', () => {
       jarRackStagingCapacity: 15,
       physicalJuiceJarCount: 3,
       physicalCupCount: 11,
-      requestedCarriedJuiceJarCount: 2,
-      effectiveCarriedJuiceJarCount: 2,
-      carriedJuiceJarIds: ['jar-1', 'jar-2'],
+      juiceJarCarryMode: 'fixed-slots',
+      requestedReservedJuiceJarSlots: 2,
+      minimumCarriedJuiceJarSlots: 0,
+      effectiveReservedJuiceJarSlots: 2,
+      maxJuiceJarSlotsPerTrip: 2,
       carriedJarSlotCost: 2,
       backpackSlotsRemainingAfterCarriedJars: 8,
-      carriedJarRequestExceedsOwned: false,
+      allOwnedJarsMustBeCarried: false,
+      jarStorageCapacityExceeded: false,
     })
   })
 
-  it('selects persistent carried jar identities in stable inventory order', () => {
-    const state = inventory({
-      juiceJars: [
-        { id: 'jar-filled', recipeId: 'lemon-juice', servings: 4 },
-        { id: 'jar-empty', recipeId: null, servings: 0 },
-        { id: 'jar-third', recipeId: 'orange-juice', servings: 2 },
-      ],
-    })
-
-    expect(
-      selectCarriedJuiceJars(
-        state,
-        settings({
-          carriedJuiceJarIds: ['jar-third', 'jar-filled'],
-        }),
-      ),
-    ).toEqual([
-      { id: 'jar-filled', recipeId: 'lemon-juice', servings: 4 },
-      { id: 'jar-third', recipeId: 'orange-juice', servings: 2 },
-    ])
-  })
-
-  it('deduplicates selection intent and ignores stale IDs', () => {
+  it('makes every owned jar mandatory when there is no jar rack', () => {
     const result = buildInventoryCapacitySummary(
       inventory({
         juiceJars: [
           { id: 'jar-1', recipeId: null, servings: 0 },
-          { id: 'jar-2', recipeId: null, servings: 0 },
+          { id: 'jar-2', recipeId: 'lemon', servings: 3 },
+          { id: 'jar-3', recipeId: null, servings: 0 },
+        ],
+      }),
+      settings(),
+    )
+
+    expect(result.minimumCarriedJuiceJarSlots).toBe(3)
+    expect(result.effectiveReservedJuiceJarSlots).toBe(3)
+    expect(result.maxJuiceJarSlotsPerTrip).toBe(3)
+    expect(result.allOwnedJarsMustBeCarried).toBe(true)
+    expect(result.backpackSlotsRemainingAfterCarriedJars).toBe(7)
+  })
+
+  it('auto mode only forces jars that cannot fit on the rack', () => {
+    const result = buildInventoryCapacitySummary(
+      inventory({
+        jarRackCount: 1,
+        juiceJars: Array.from({ length: 7 }, (_, index) => ({
+          id: `jar-${index + 1}`,
+          recipeId: null,
+          servings: 0,
+        })),
+      }),
+      settings(),
+    )
+
+    expect(result.jarRackStagingCapacity).toBe(5)
+    expect(result.minimumCarriedJuiceJarSlots).toBe(2)
+    expect(result.effectiveReservedJuiceJarSlots).toBe(2)
+    expect(result.maxJuiceJarSlotsPerTrip).toBe(7)
+  })
+
+  it('fixed slots preserve the requested backpack reservation without binding jar identities', () => {
+    const result = buildInventoryCapacitySummary(
+      inventory({
+        jarRackCount: 1,
+        juiceJars: [
+          { id: 'jar-filled', recipeId: 'lemon', servings: 4 },
+          { id: 'jar-empty', recipeId: null, servings: 0 },
         ],
       }),
       settings({
-        carriedJuiceJarIds: ['jar-2', 'jar-2', 'missing'],
+        juiceJarCarryMode: 'fixed-slots',
+        reservedJuiceJarSlots: 4,
       }),
     )
 
-    expect(result.requestedCarriedJuiceJarCount).toBe(2)
-    expect(result.carriedJuiceJarIds).toEqual(['jar-2'])
-    expect(result.effectiveCarriedJuiceJarCount).toBe(1)
-    expect(result.carriedJarRequestExceedsOwned).toBe(true)
+    expect(result.effectiveReservedJuiceJarSlots).toBe(4)
+    expect(result.maxJuiceJarSlotsPerTrip).toBe(2)
+    expect(result.backpackSlotsRemainingAfterCarriedJars).toBe(6)
+    expect(selectAccessibleJuiceJars(inventory({
+      juiceJars: [
+        { id: 'jar-filled', recipeId: 'lemon', servings: 4 },
+        { id: 'jar-empty', recipeId: null, servings: 0 },
+      ],
+    }))).toEqual([
+      { id: 'jar-filled', recipeId: 'lemon', servings: 4 },
+      { id: 'jar-empty', recipeId: null, servings: 0 },
+    ])
   })
 
-  it('caps carried jars by actual ownership without treating rack slots as jars', () => {
+  it('flags impossible ownership when rack plus backpack cannot hold every jar', () => {
     const result = buildInventoryCapacitySummary(
       inventory({
-        jarRackCount: 4,
-        juiceJars: [
-          { id: 'jar-1', recipeId: null, servings: 0 },
-        ],
+        jarRackCount: 1,
+        juiceJars: Array.from({ length: 16 }, (_, index) => ({
+          id: `jar-${index + 1}`,
+          recipeId: null,
+          servings: 0,
+        })),
       }),
-      settings({ carriedJuiceJarIds: ['jar-1', 'missing-a', 'missing-b'] }),
+      settings(),
     )
 
-    expect(result.jarRackStagingCapacity).toBe(20)
-    expect(result.physicalJuiceJarCount).toBe(1)
-    expect(result.effectiveCarriedJuiceJarCount).toBe(1)
-    expect(result.backpackSlotsRemainingAfterCarriedJars).toBe(9)
-    expect(result.carriedJarRequestExceedsOwned).toBe(true)
+    expect(result.minimumCarriedJuiceJarSlots).toBe(11)
+    expect(result.jarStorageCapacityExceeded).toBe(true)
   })
 })
