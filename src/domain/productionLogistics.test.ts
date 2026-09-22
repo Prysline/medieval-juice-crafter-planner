@@ -36,7 +36,8 @@ function settings(
   patch: Partial<PlannerSettings> = {},
 ): PlannerSettings {
   return {
-    carriedJuiceJarIds: ['jar-1'],
+    juiceJarCarryMode: 'auto',
+    reservedJuiceJarSlots: 0,
     allowUsedCupDropIfFull: false,
     ...patch,
   }
@@ -115,6 +116,7 @@ function receiverTimeline(
       recipeName: 'Recipe',
       beforeTripNumber: tripNumber,
       servings: juiceUnits * 2,
+      servingsAfterFill: juiceUnits * 2,
       fillAction:
         tripNumber === 1
           ? 'initial-fill'
@@ -123,6 +125,7 @@ function receiverTimeline(
         tripNumber === 1 ? null : 'recipe',
       previousRecipeName:
         tripNumber === 1 ? null : 'Recipe',
+      receiver: 'carried-jar',
     })
     remaining -= juiceUnits
     tripNumber += 1
