@@ -61,7 +61,10 @@ export interface MultiTripProductionJarFill {
   recipeId: string
   recipeName: string
   beforeTripNumber: number
+  /** 本次由果汁成品台新增的杯數。 */
   servings: number
+  /** 補裝完成後此 physical jar 內的總杯數。 */
+  servingsAfterFill: number
   fillAction: 'initial-fill' | 'refill-same-type' | 'type-switch'
   previousRecipeId: string | null
   previousRecipeName: string | null
@@ -1144,6 +1147,8 @@ export function buildProductionJarFillsFromSchedule(
           recipeName: load.recipeName,
           beforeTripNumber: trip.tripNumber,
           servings: load.plannedFillServings,
+          servingsAfterFill:
+            state.servings + load.plannedFillServings,
           fillAction: load.fillAction,
           previousRecipeId: load.previousRecipeId,
           previousRecipeName: load.previousRecipeName,
