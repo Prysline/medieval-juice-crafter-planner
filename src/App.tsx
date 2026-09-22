@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import OptimizerTools from './OptimizerTools'
 import RecipeTools from './RecipeTools'
 import { customers } from './data/customers'
+import { ingredients } from './data/ingredients'
 import { progressMilestoneLabels, progressMilestones } from './data/progress'
 import { villageNames } from './data/villages'
 import {
@@ -30,7 +31,16 @@ import {
 import {
   buildRecipeCandidatePool,
   recipeCandidatesInCurrentSearchScope,
+  type RecipeCandidatePoolEntry,
+  type RecipeCandidatePoolSource,
 } from './domain/recipeCandidatePool'
+import {
+  customerMatchesResearchFilters,
+  recipeEntryMatchesResearchFilters,
+  type FilterMatchMode,
+  type RecipePriceFilter,
+  type RecipeSourceFilter,
+} from './domain/listFilters'
 import { searchRecipeCandidatesForCustomer } from './domain/recipeSearch'
 import {
   calculateRecipeIngredientCost,
@@ -65,8 +75,6 @@ import type {
 
 type Tab = 'customers' | 'recipes' | 'tools' | 'optimizer'
 type RecipeSortKey = 'name' | 'salePrice'
-type RecipeSourceFilter = 'all' | 'observed' | 'computed'
-type RecipePriceFilter = 'all' | 'known' | 'unknown'
 type CustomerVisibility = 'available' | 'all'
 
 const RECIPE_PAGE_SIZE = 50
@@ -79,6 +87,17 @@ const scheduleLabels = {
 
 function formatEffect(effect: EffectValue) {
   return `${effect.name}（${effect.value}）`
+}
+
+function recipePoolSourceLabel(source: RecipeCandidatePoolSource): string {
+  if (source === 'observed') return '實測'
+  if (source === 'saved') return '已保存'
+  if (source === 'computed') return '安全推導'
+  return '歧義推導'
+}
+
+function recipeEntrySourceLabel(entry: RecipeCandidatePoolEntry): string {
+  return entry.sources.map(recipePoolSourceLabel).join('・')
 }
 
 function App() {
@@ -97,6 +116,18 @@ function App() {
     useState<CustomerVisibility>('available')
   const [customerSortDirection, setCustomerSortDirection] =
     useState<SortDirection>('asc')
+  const [customerVillageFilter, setCustomerVillageFilter] =
+    useState<VillageId | null>(null)
+  const [
+    customerPreferenceIngredientFilter,
+    setCustomerPreferenceIngredientFilter,
+  ] = useState<string | null>(null)
+  const [
+    customerPreferenceEffectFilter,
+    setCustomerPreferenceEffectFilter,
+  ] = useState<string | null>(null)
+  const [customerPreferenceMode, setCustomerPreferenceMode] =
+    useState<FilterMatchMode>('all')
   const [recipeSortKey, setRecipeSortKey] = useState<RecipeSortKey>('salePrice')
   const [recipeSortDirection, setRecipeSortDirection] =
     useState<SortDirection>('desc')
@@ -104,6 +135,14 @@ function App() {
     useState<RecipeSourceFilter>('all')
   const [recipePriceFilter, setRecipePriceFilter] =
     useState<RecipePriceFilter>('all')
+  const [recipeIngredientCountFilter, setRecipeIngredientCountFilter] =
+    useState<number | null>(null)
+  const [recipeIngredientFilter, setRecipeIngredientFilter] =
+    useState<string | null>(null)
+  const [recipeConfirmedEffectFilter, setRecipeConfirmedEffectFilter] =
+    useState<string | null>(null)
+  const [recipePossibleEffectFilter, setRecipePossibleEffectFilter] =
+    useState<string | null>(null)
   const [recipePage, setRecipePage] = useState(1)
   const [suppliedCustomerIds, setSuppliedCustomerIds] = useState<string[]>(() =>
     readSuppliedCustomerIds(window.localStorage),
@@ -130,12 +169,32 @@ function App() {
     () => recipeCandidatesInCurrentSearchScope(recipeCandidatePool),
     [recipeCandidatePool],
   )
+  const recipeListEntries = useMemo(
+    () =>
+      recipeCandidatePool.entries.filter(
+        (entry) =>
+          entry.availableAtCurrentProgress &&
+          (
+            entry.inGeneratedSearchScope ||
+            entry.sources.includes('saved') ||
+            entry.sources.includes('observed')
+          ),
+      ),
+    [recipeCandidatePool],
+  )
   const recipeOrder = useMemo(
     () =>
       new Map(
         recipeCandidates.map((candidate, index) => [candidate.id, index]),
       ),
     [recipeCandidates],
+  )
+  const recipeListOrder = useMemo(
+    () =>
+      new Map(
+        recipeListEntries.map((entry, index) => [entry.id, index]),
+      ),
+    [recipeListEntries],
   )
   const eastHarborFormalCount = countFormalCustomersByVillage(
     customers,
@@ -146,6 +205,55 @@ function App() {
     customers,
     formalCustomerIds,
     'tranquil-fountain',
+  )
+
+  const customerPreferenceIngredientOptions = useMemo(
+    () =>
+      [...new Set(
+        customers.flatMap((customer) =>
+          (customer.preferences ?? [])
+            .filter((preference) => preference.kind === 'ingredient')
+            .map((preference) => preference.value),
+        ),
+      )].sort((a, b) => a.localeCompare(b, 'zh-Hant')),
+    [],
+  )
+  const customerPreferenceEffectOptions = useMemo(
+    () =>
+      [...new Set(
+        customers.flatMap((customer) =>
+          (customer.preferences ?? [])
+            .filter((preference) => preference.kind === 'effect')
+            .map((preference) => preference.value),
+        ),
+      )].sort((a, b) => a.localeCompare(b, 'zh-Hant')),
+    [],
+  )
+  const recipeIngredientCountOptions = useMemo(
+    () =>
+      [...new Set(recipeListEntries.map((entry) => entry.ingredientIds.length))]
+        .sort((a, b) => a - b),
+    [recipeListEntries],
+  )
+  const recipeConfirmedEffectOptions = useMemo(
+    () =>
+      [...new Set(
+        recipeListEntries.flatMap((entry) =>
+          entry.candidate.effects.map((effect) => effect.name),
+        ),
+      )].sort((a, b) => a.localeCompare(b, 'zh-Hant')),
+    [recipeListEntries],
+  )
+  const recipePossibleEffectOptions = useMemo(
+    () =>
+      [...new Set(
+        recipeListEntries.flatMap((entry) =>
+          entry.candidate.effectAmbiguity?.candidates.map(
+            (effect) => effect.name,
+          ) ?? [],
+        ),
+      )].sort((a, b) => a.localeCompare(b, 'zh-Hant')),
+    [recipeListEntries],
   )
 
   const customerRows = useMemo(() => {
@@ -195,6 +303,14 @@ function App() {
         }
       })
       .filter(({ unlocked }) => customerVisibility === 'all' || unlocked)
+      .filter(({ customer }) =>
+        customerMatchesResearchFilters(customer, {
+          villageId: customerVillageFilter,
+          preferenceIngredient: customerPreferenceIngredientFilter,
+          preferenceEffect: customerPreferenceEffectFilter,
+          preferenceMode: customerPreferenceMode,
+        }),
+      )
 
     const suppliedFilteredRows = filterSuppliedCustomerRows(
       rows,
@@ -238,6 +354,10 @@ function App() {
     recipeCandidatePool,
     recipeOrder,
     customerVisibility,
+    customerVillageFilter,
+    customerPreferenceIngredientFilter,
+    customerPreferenceEffectFilter,
+    customerPreferenceMode,
     showSuppliedToday,
     suppliedCustomerIds,
     customerSortDirection,
@@ -245,27 +365,20 @@ function App() {
   ])
 
   const recipeRows = useMemo(() => {
-    const rows = recipeCandidates
-      .filter((recipe) => {
-        if (
-          recipeSourceFilter !== 'all' &&
-          recipe.source !== recipeSourceFilter
-        ) {
-          return false
-        }
-        if (
-          recipePriceFilter === 'known' &&
-          recipe.salePrice === null
-        ) {
-          return false
-        }
-        if (
-          recipePriceFilter === 'unknown' &&
-          recipe.salePrice !== null
-        ) {
-          return false
-        }
+    const rows = recipeListEntries
+      .filter((entry) =>
+        recipeEntryMatchesResearchFilters(entry, {
+          ingredientCount: recipeIngredientCountFilter,
+          ingredientId: recipeIngredientFilter,
+          confirmedEffect: recipeConfirmedEffectFilter,
+          possibleEffect: recipePossibleEffectFilter,
+          source: recipeSourceFilter,
+          price: recipePriceFilter,
+        }),
+      )
+      .filter((entry) => {
         if (!normalizedQuery) return true
+        const recipe = entry.candidate
         return [
           recipe.name,
           ...recipe.ingredients,
@@ -280,29 +393,37 @@ function App() {
 
     const direction = recipeSortDirection === 'asc' ? 1 : -1
 
-    return rows.sort((a, b) => {
+    return [...rows].sort((a, b) => {
+      const left = a.candidate
+      const right = b.candidate
+
       if (recipeSortKey === 'salePrice') {
-        if (a.salePrice === null && b.salePrice === null) {
+        if (left.salePrice === null && right.salePrice === null) {
           return (
-            ((recipeOrder.get(a.id) ?? 0) -
-              (recipeOrder.get(b.id) ?? 0)) *
+            ((recipeListOrder.get(a.id) ?? 0) -
+              (recipeListOrder.get(b.id) ?? 0)) *
             direction
           )
         }
-        if (a.salePrice === null) return 1
-        if (b.salePrice === null) return -1
+        if (left.salePrice === null) return 1
+        if (right.salePrice === null) return -1
         return (
-          (a.salePrice - b.salePrice) * direction ||
-          (recipeOrder.get(a.id) ?? 0) - (recipeOrder.get(b.id) ?? 0)
+          (left.salePrice - right.salePrice) * direction ||
+          (recipeListOrder.get(a.id) ?? 0) -
+            (recipeListOrder.get(b.id) ?? 0)
         )
       }
 
-      return a.name.localeCompare(b.name, 'zh-Hant') * direction
+      return left.name.localeCompare(right.name, 'zh-Hant') * direction
     })
   }, [
     normalizedQuery,
-    recipeCandidates,
-    recipeOrder,
+    recipeListEntries,
+    recipeListOrder,
+    recipeIngredientCountFilter,
+    recipeIngredientFilter,
+    recipeConfirmedEffectFilter,
+    recipePossibleEffectFilter,
     recipePriceFilter,
     recipeSortDirection,
     recipeSortKey,
@@ -324,6 +445,10 @@ function App() {
   }, [
     currentProgress,
     normalizedQuery,
+    recipeIngredientCountFilter,
+    recipeIngredientFilter,
+    recipeConfirmedEffectFilter,
+    recipePossibleEffectFilter,
     recipePriceFilter,
     recipeSourceFilter,
   ])
@@ -420,6 +545,22 @@ function App() {
 
   function clearComparisonCustomers() {
     setComparisonCustomerIds([])
+  }
+
+  function clearCustomerResearchFilters() {
+    setCustomerVillageFilter(null)
+    setCustomerPreferenceIngredientFilter(null)
+    setCustomerPreferenceEffectFilter(null)
+    setCustomerPreferenceMode('all')
+  }
+
+  function clearRecipeResearchFilters() {
+    setRecipeIngredientCountFilter(null)
+    setRecipeIngredientFilter(null)
+    setRecipeConfirmedEffectFilter(null)
+    setRecipePossibleEffectFilter(null)
+    setRecipeSourceFilter('all')
+    setRecipePriceFilter('all')
   }
 
   return (
@@ -551,6 +692,88 @@ function App() {
 
       {tab === 'customers' ? (
         <>
+          <section className="research-filter-panel" aria-label="顧客篩選">
+            <div className="research-filter-heading">
+              <div>
+                <strong>顧客篩選</strong>
+                <span>村落固定限制範圍；「全部／任一」只套用喜好條件。</span>
+              </div>
+              <button
+                type="button"
+                className="research-filter-clear"
+                onClick={clearCustomerResearchFilters}
+              >
+                清除篩選
+              </button>
+            </div>
+            <div className="research-filter-grid customer-research-filters">
+              <label>
+                <span>村落</span>
+                <select
+                  value={customerVillageFilter ?? ''}
+                  onChange={(event) =>
+                    setCustomerVillageFilter(
+                      (event.target.value || null) as VillageId | null,
+                    )
+                  }
+                >
+                  <option value="">全部村落</option>
+                  <option value="east-harbor">東港村</option>
+                  <option value="tranquil-fountain">靜謐噴泉</option>
+                </select>
+              </label>
+              <label>
+                <span>喜好原料</span>
+                <select
+                  value={customerPreferenceIngredientFilter ?? ''}
+                  onChange={(event) =>
+                    setCustomerPreferenceIngredientFilter(
+                      event.target.value || null,
+                    )
+                  }
+                >
+                  <option value="">不限</option>
+                  {customerPreferenceIngredientOptions.map((name) => (
+                    <option value={name} key={name}>{name}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>喜好特性</span>
+                <select
+                  value={customerPreferenceEffectFilter ?? ''}
+                  onChange={(event) =>
+                    setCustomerPreferenceEffectFilter(
+                      event.target.value || null,
+                    )
+                  }
+                >
+                  <option value="">不限</option>
+                  {customerPreferenceEffectOptions.map((name) => (
+                    <option value={name} key={name}>{name}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>喜好條件</span>
+                <select
+                  value={customerPreferenceMode}
+                  onChange={(event) =>
+                    setCustomerPreferenceMode(
+                      event.target.value as FilterMatchMode,
+                    )
+                  }
+                >
+                  <option value="all">全部符合</option>
+                  <option value="any">任一符合</option>
+                </select>
+              </label>
+            </div>
+            <p className="research-filter-summary">
+              目前顯示 {customerRows.length} 位顧客。
+            </p>
+          </section>
+
           <div className="customer-toolbar" aria-label="顧客顯示範圍">
             <button
               type="button"
@@ -638,41 +861,124 @@ function App() {
         </>
       ) : tab === 'recipes' ? (
         <>
-          <div className="recipe-toolbar" aria-label="配方篩選">
-            <label>
-              <span>來源</span>
-              <select
-                value={recipeSourceFilter}
-                onChange={(event) =>
-                  setRecipeSourceFilter(
-                    event.target.value as RecipeSourceFilter,
-                  )
-                }
+          <section className="research-filter-panel" aria-label="配方篩選">
+            <div className="research-filter-heading">
+              <div>
+                <strong>配方篩選</strong>
+                <span>「確定特性」與歧義中的「可能特性」分開判定。</span>
+              </div>
+              <button
+                type="button"
+                className="research-filter-clear"
+                onClick={clearRecipeResearchFilters}
               >
-                <option value="all">全部</option>
-                <option value="observed">實測</option>
-                <option value="computed">預測</option>
-              </select>
-            </label>
-            <label>
-              <span>售價</span>
-              <select
-                value={recipePriceFilter}
-                onChange={(event) =>
-                  setRecipePriceFilter(
-                    event.target.value as RecipePriceFilter,
-                  )
-                }
-              >
-                <option value="all">全部</option>
-                <option value="known">已有實測售價</option>
-                <option value="unknown">售價未知</option>
-              </select>
-            </label>
-            <span>
+                清除篩選
+              </button>
+            </div>
+            <div className="research-filter-grid recipe-research-filters">
+              <label>
+                <span>原料總數</span>
+                <select
+                  value={recipeIngredientCountFilter ?? ''}
+                  onChange={(event) =>
+                    setRecipeIngredientCountFilter(
+                      event.target.value
+                        ? Number(event.target.value)
+                        : null,
+                    )
+                  }
+                >
+                  <option value="">不限</option>
+                  {recipeIngredientCountOptions.map((count) => (
+                    <option value={count} key={count}>{count} 項</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>具體原料</span>
+                <select
+                  value={recipeIngredientFilter ?? ''}
+                  onChange={(event) =>
+                    setRecipeIngredientFilter(event.target.value || null)
+                  }
+                >
+                  <option value="">不限</option>
+                  {ingredients.map((ingredient) => (
+                    <option value={ingredient.id} key={ingredient.id}>
+                      {ingredient.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>確定成品特性</span>
+                <select
+                  value={recipeConfirmedEffectFilter ?? ''}
+                  onChange={(event) =>
+                    setRecipeConfirmedEffectFilter(
+                      event.target.value || null,
+                    )
+                  }
+                >
+                  <option value="">不限</option>
+                  {recipeConfirmedEffectOptions.map((name) => (
+                    <option value={name} key={name}>{name}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>可能特性（歧義）</span>
+                <select
+                  value={recipePossibleEffectFilter ?? ''}
+                  onChange={(event) =>
+                    setRecipePossibleEffectFilter(
+                      event.target.value || null,
+                    )
+                  }
+                >
+                  <option value="">不限</option>
+                  {recipePossibleEffectOptions.map((name) => (
+                    <option value={name} key={name}>{name}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>來源</span>
+                <select
+                  value={recipeSourceFilter}
+                  onChange={(event) =>
+                    setRecipeSourceFilter(
+                      event.target.value as RecipeSourceFilter,
+                    )
+                  }
+                >
+                  <option value="all">全部來源</option>
+                  <option value="observed">實測</option>
+                  <option value="saved">已保存</option>
+                  <option value="computed">安全推導</option>
+                  <option value="ambiguous-computed">歧義推導</option>
+                </select>
+              </label>
+              <label>
+                <span>售價</span>
+                <select
+                  value={recipePriceFilter}
+                  onChange={(event) =>
+                    setRecipePriceFilter(
+                      event.target.value as RecipePriceFilter,
+                    )
+                  }
+                >
+                  <option value="all">全部</option>
+                  <option value="known">已有實測售價</option>
+                  <option value="unknown">售價未知</option>
+                </select>
+              </label>
+            </div>
+            <p className="research-filter-summary">
               符合 {recipeRows.length} 筆 · 每頁最多 {RECIPE_PAGE_SIZE} 筆
-            </span>
-          </div>
+            </p>
+          </section>
 
           <section className="table-list recipe-table" aria-label="配方">
             <div className="table-head recipe-columns">
@@ -694,10 +1000,10 @@ function App() {
               />
             </div>
 
-            {pagedRecipeRows.map((recipe) => (
+            {pagedRecipeRows.map((entry) => (
               <RecipeRow
-                key={recipe.id}
-                recipe={recipe}
+                key={entry.id}
+                entry={entry}
                 currentProgress={currentProgress}
                 satisfactionByVillage={satisfactionByVillage}
               />
@@ -1219,14 +1525,15 @@ export function ComparisonDock({
 }
 
 function RecipeRow({
-  recipe,
+  entry,
   currentProgress,
   satisfactionByVillage,
 }: {
-  recipe: RecipeCandidate
+  entry: RecipeCandidatePoolEntry
   currentProgress: ProgressMilestoneId
   satisfactionByVillage: SatisfactionByVillage
 }) {
+  const recipe = entry.candidate
   const cost = calculateRecipeIngredientCost(recipe)
   const matchingCustomers = customers
     .filter((customer) =>
@@ -1241,7 +1548,7 @@ function RecipeRow({
           <strong>{formatRecipeDisplayName(recipe.name)}</strong>
           <span className="cell-secondary">
             {progressMilestoneLabels[recipe.unlockedAt]} ·{' '}
-            {recipe.source === 'observed' ? '實測' : '預測'}
+            {recipeEntrySourceLabel(entry)}
           </span>
         </div>
 

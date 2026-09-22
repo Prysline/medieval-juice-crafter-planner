@@ -236,6 +236,90 @@ h1 {
   font-weight: 800;
 }
 
+.research-filter-panel {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 8px;
+  border: 1px solid rgba(82, 66, 44, 0.16);
+  border-radius: 13px;
+  background: rgba(255, 253, 248, 0.94);
+  padding: 10px;
+}
+
+.research-filter-heading {
+  display: flex;
+  gap: 12px;
+  align-items: start;
+  justify-content: space-between;
+}
+
+.research-filter-heading > div {
+  display: grid;
+  gap: 2px;
+}
+
+.research-filter-heading strong {
+  color: #38502f;
+  font-size: 0.84rem;
+}
+
+.research-filter-heading span,
+.research-filter-summary {
+  color: #786b59;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.research-filter-clear {
+  flex: 0 0 auto;
+  min-height: 34px;
+  border: 1px solid #d6c8b3;
+  border-radius: 9px;
+  background: #f5eee3;
+  color: #655640;
+  padding: 5px 10px;
+  font-size: 0.74rem;
+  font-weight: 900;
+}
+
+.research-filter-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.customer-research-filters {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.recipe-research-filters {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.research-filter-grid label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: #6d604d;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.research-filter-grid select {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  border: 1px solid #d6c8b3;
+  border-radius: 9px;
+  background: #fffdf8;
+  color: #2f2a22;
+  padding: 7px 9px;
+}
+
+.research-filter-summary {
+  margin: 0;
+  font-weight: 800;
+}
+
 .recipe-toolbar,
 .recipe-pagination {
   display: flex;
@@ -1563,6 +1647,19 @@ footer {
 @media (max-width: 720px) {
   .tabs {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .research-filter-heading {
+    display: grid;
+  }
+
+  .research-filter-clear {
+    width: 100%;
+  }
+
+  .customer-research-filters,
+  .recipe-research-filters {
+    grid-template-columns: 1fr;
   }
 
   .tabs button {
