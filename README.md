@@ -18,7 +18,7 @@
 - 「配方工具」已改為有序原料編排：點原料直接加入，可重複調味、四原料以上、逐項刪除／清空；精確原料順序已有實測資料時以實測結果優先，否則顯示推導結果或歧義。
 - 個人配方只保存自訂名稱、有序 ingredient IDs、備註與建立時間；effects、cost、equipment、matching 每次由目前 domain 重新計算。
 - 「批次規劃」已重構為 production optimizer：可依序指定主要／次要 lexicographic 目標，包含最低成本、最少浪費、最高已知銷售總額、最高已知毛利、最少機器操作與最少果汁罐換裝。Phase 1 結果資訊架構已完成：閱讀順序為 **規劃摘要 → 所需物資 → 製作步驟 → 果汁分配 → 販售排程**；水會以免費取得需求顯示。PR #33 後製作步驟以機器為獨立區塊，每次 1～5 份製作拆成各批 slot flow；原料／果汁／水／output 各自用膠囊顯示，`▸` 只代表配方內部順序，`→` 只代表加工／狀態轉換。
-- Core model correction 2B 已把 physical jar identity 接進多趟販售 schedule。Phase 2 capacity contract 也已完成：`mjc-inventory` 保存原料、水、clean / used cups、一般架子數、果汁罐架數與每個 physical jar；PR #39 / Phase 5B1 後批次規劃已有實際 Inventory editor，可逐罐設定 recipe identity / servings。`mjc-planner-settings` 改保存明確的 `carriedJuiceJarIds` 與 used-cup drop opt-in；舊 count 會依 inventory 穩定順序一次遷移。常駐攜帶罐會固定占背包 slot，ownership、carrying 與 jar-rack staging 不再混成同一個數字。
+- Core model correction 2B 已把 physical jar identity 接進多趟販售 schedule。Phase 2 capacity contract 也已完成：`mjc-inventory` 保存原料、水、clean / used cups、一般架子數、果汁罐架數與每個 physical jar；PR #39 / Phase 5B1 後批次規劃已有實際 Inventory editor，可逐罐設定 recipe identity / servings。`mjc-planner-settings` 現在保存果汁罐攜帶策略 `juiceJarCarryMode`、固定格數 `reservedJuiceJarSlots` 與 used-cup drop opt-in；舊的 `carriedJuiceJarIds`／count 只會遷移成固定格數，不再保留特定實體罐綁定。沒有果汁罐架時，所有持有的實體果汁罐都必須隨身；有果汁罐架後，規劃器可在各趟之間整罐上架／取出，固定模式只固定果汁罐占用格數，自動模式則依每趟需求計算攜帶數。
 - Inventory / packing D1～D4 與 Phase 4 cup lifecycle 已建立：`PreparationDemand` 消費 production-unit optimizer 結果，已有 stock offset、single-trip packing 與 physical-jar-aware multi-trip replenishment；販售排程現在會用玩家實際持有的 clean / used cups，逐杯追蹤 clean → used stack transition，不再固定預留 1 slot。PR #32 先把 optimizer `leftoverServings` 保留在同一實體罐；PR #37 再把 sales schedule 的 plan-local 罐號改成 persistent `mjc-inventory` jar ID，並攜帶該罐規劃前的 `recipeId / servings` metadata。剩餘成品仍只能留在同一 physical jar，不允許跨罐倒果汁；果汁罐只能整罐移動，居家放置只使用果汁罐架，不把一般架當果汁罐 storage。
 - 特性同分時會先套用已確認的順序規則：**較晚加入原料所提供／最後貢獻的特性排序較高**；只有套用此規則後，cutoff 候選仍同分且最後貢獻位置相同時才保留 ambiguous，且 ambiguous computed candidate 不參與完全匹配推薦。
 - 舊版 `mjc-stage` / `mjc-satisfaction` localStorage 會保守遷移到新版進度資料。
@@ -138,7 +138,7 @@ HiGHS solver 使用真正的 lexicographic repeated solve，不使用隱藏權�
 - `minimum-machine-operations`
 - `minimum-jar-switches`
 
-果汁罐換裝定義為「同一罐從一種最終果汁改裝成另一種」；空罐第一次裝入與補裝同種類不算。Phase 5B2-2/3 / PR #45 後，optimizer 會接收每個常駐攜帶果汁罐的初始 `recipeId / servings`，而不只接收罐數：初始已裝該配方的罐與空罐可先覆蓋不需換裝的最終果汁種類；已有內容的罐只有在今日需求確實把原內容全部售完後，才可再換裝成其他配方，未售完內容不能為了降低換裝數而自動倒掉。Phase 5B2-4/5 / PR #47 的販售排程會再依同一份逐罐時序重算換裝數，並與 optimizer 結果檢查一致；`maxJarTypeSwitches` 也使用這套初始內容感知的換裝語意。
+果汁罐換裝定義為「同一罐從一種最終果汁改裝成另一種」；空罐第一次裝入與補裝相同配方不算。Correctness-1 / PR #64 後，optimizer 與販售排程會讀取本日可用的所有實體果汁罐初始 `recipeId / servings`：有果汁罐架時，可在返家後把整罐放回架上並換另一罐出門；未喝空內容仍不能為了降低換裝數而自動倒掉或跨罐轉移。果汁成品台若面對仍有相同配方內容的未滿罐，可以直接補裝，只要補裝後不超過 10 份；不同配方仍必須先讓舊內容合法耗盡。販售排程會依同一份逐罐時序重算換裝數，並與 optimizer 結果檢查一致；`maxJarTypeSwitches` 也使用這套初始內容感知的換裝語意。
 
 收入相關 criterion 不推導 computed 售價。正式顧客若要參與 revenue / gross-profit criterion，只能使用 `salePrice !== null` 的 full-match 配方；潛在顧客仍可依 candidate policy 使用 computed full match，但試喝收入不計入已知銷售額。
 
@@ -186,7 +186,7 @@ OptimizationResult
 - 玩家目前似乎不能主動把物品放地面作 storage；採水或 NPC 回傳 used cup 等外部取得物品在背包滿時造成掉落，與主動地面暫存是不同機制。
 - 杯子／乾淨悲劇：**10 / stack**；`cleanCups + usedCups` 代表玩家目前實際持有杯具總數。Phase 4 已把這個實體杯具總數接入販售排程：每趟只帶實際可用的 clean cups，回傳後轉成 used cups；需要跨趟重用時只能清洗目前實際持有的 used cups。
 - 果汁罐：**1 罐 = 1 slot / 容量 10 / 同罐不混不同飲料**；每個 `juiceJars[]` item 都代表一個 actual physical jar，空罐也保留 identity。
-- 果汁罐架：**5 slots / 架**；Phase 2 已改為 `jarRackCount × 5` staging capacity，與 physical jar 持有數、常駐攜帶數分開。一般架則為 `shelfCount × 9` slots。
+- 果汁罐架：**5 slots / 架**；`jarRackCount × 5` 是獨立的居家果汁罐容量。若持有罐數超過果汁罐架容量，超出的罐子就是每趟至少必須留在背包的數量；背包 10 格只限制單趟，不再截斷整日可使用的實體果汁罐總數。一般架則為 `shelfCount × 9` slots。
 
 machine slots 與「一次可處理 1～5 份」是兩個不同概念：
 
@@ -213,9 +213,9 @@ used-cup handling 必須明確選 policy：
 - `allow-drop-if-full`：persisted **opt-in**；同樣逐杯模擬 clean → used，但 NPC 回傳 used cup 當下若真的沒有空間，才把該杯記為掉落。掉落杯不再供後續趟次使用；這不代表玩家能主動把物品丟地上作 storage。
 - 目前選用的 policy 必須產生可行排程；替代 policy 若因容量不可行，只顯示不可行原因，不會反過來讓已選策略整體失敗。兩種 policy 都保留實際 physical cup ownership，並檢查 `final physical cups = initial physical cups - dropped cups`。
 
-Phase 2 也把「physical jar ownership」「常駐攜帶 selection」「jar-rack staging」拆開。Phase 5B1 / PR #39 後玩家會逐罐勾選 persistent jar IDs；選中的 `X` 個果汁罐在**每一趟都固定占 X 個背包 slots**，即使某趟只有部分罐實際裝果汁。因此多帶空罐可能減少換裝，卻同時壓縮杯具／其他搬運空間；jar rack staging capacity 仍獨立為 `jarRackCount × 5`。
+Correctness-1 / PR #64 已把「實體果汁罐是哪些」與「背包要留多少果汁罐格」重新拆開。**沒有果汁罐架時，所有持有的實體果汁罐都必須隨身；有果汁罐架時，才允許跨趟上架／換罐。**玩家可以選擇固定果汁罐格數，或交給規劃器逐趟自動計算；固定格數不再綁定特定 persistent jar ID。各趟會記錄真正隨身的實體罐，滿架的一換一交換可用「先取出、再放回」完成，不要求永久額外空一格。
 
-Core model correction 2B 已把 physical jar identity 接進 D4 schedule；Phase 5A / PR #37 再把原本的 plan-local 編號橋接到 persistent `InventoryState.juiceJars[].id`。Phase 5B1 / PR #39 已加入逐罐庫存編輯與明確常駐攜帶果汁罐選擇，canonical planner settings 直接保存 persistent IDs，不再用 count 當 source of truth。Phase 5B2-1 / PR #44 進一步把既有成品抵扣固定到實際 persistent jar；Phase 5B2-2/3 / PR #45 已讓販售排程與 optimizer 從真實初始罐內容開始計算。Phase 5B2-4/5 / PR #47 再把**實際新製作成品的裝罐事件**固定到同一份販售排程：每次裝罐都帶持久果汁罐 ID、配方、實際裝入份數與必須發生在第幾趟販售前；只有先前內容已售完後，同一罐才可補裝或換裝。若一罐已一次裝好 10 份、只是因杯具限制分成兩趟販售，後一趟會標成「沿用罐內成品」，不會虛構第二次補裝。尚未喝空的內容仍不會被自動丟棄或跨罐轉移。
+Core model correction 2B 已把 physical jar identity 接進 D4 schedule；Phase 5A / PR #37 再把原本的 plan-local 編號橋接到 persistent `InventoryState.juiceJars[].id`。Phase 5B1 / PR #39 當時加入逐罐庫存編輯與明確常駐實體罐選擇；Correctness-1 / PR #64 已 supersede 這個設定方式，canonical planner settings 改為 slot-based carry policy，舊 persistent ID 選擇只遷移成固定格數。Phase 5B2-1 / PR #44 把既有成品抵扣固定到實際 persistent jar；PR #64 後，**所有持有且可合法存放的實體罐內容**都能納入本日需求，不再只看先前勾選的常駐罐。Phase 5B2-4/5 / PR #47 建立的逐罐裝填事件仍沿用，但現在同配方未空罐可直接補裝至最多 10 份；不同配方仍必須先把舊內容合法耗盡。若一罐已一次裝好 10 份、只是因杯具限制分成兩趟販售，後一趟會標成「沿用罐內成品」，不會虛構第二次補裝。尚未喝空的內容仍不會被自動丟棄或跨罐轉移。
 
 販售 schedule 不重新計算喜好匹配，而是直接沿用 optimizer 的 customer → recipe full-match assignment，再依果汁罐容量把顧客切進對應 jar load；因此 UI 可以直接說明每一罐要服務哪些「完整符合」顧客。若 preparation demand 的 assigned servings 與 customer IDs 數量不一致，schedule 會拒絕產生。
 
@@ -231,11 +231,11 @@ Phase 1｜Planner result information architecture 已於 PR #22 完成；Phase 2
 Phase 3 已完成：
 
 - stock offset 後會依 `juiceUnitsToPrepare` 重建 **net production plan**；UI 不再把 gross optimizer steps 冒充成實際仍需製作的步驟。
-- `productionLogistics.ts` 產生 deterministic feasible trace，分開追蹤一般架、背包、常駐果汁罐與 machine input/output slots；input 進機器後會釋放原 storage，operation 失敗時 material / action / fetch counters 會 transactionally rollback。
+- `productionLogistics.ts` 產生 deterministic feasible trace，分開追蹤一般架、背包、果汁罐占用／預留與 machine input/output slots；input 進機器後會釋放原 storage，operation 失敗時 material / action / fetch counters 會 transactionally rollback。
 - 水依當下背包 free slots 取得，可先回到 home storage 再分批製作；沒有 route / seller distance 資料的原料取得只記 acquisition action，不假裝成已知往返趟數。
 - 果汁調和器已按 **1:1:1、q = 1～5** 接入製作圖；多個果汁段會分開製作再調和。
-- 果汁成品台每次操作產出 **2～10 份偶數成品**；Phase 5B2-4/5 / PR #47 後，成品不再交給任意接收罐，而是依選定的販售排程綁定到明確的實體果汁罐。常駐攜帶罐可直接接收；非攜帶罐只有在果汁罐架有暫存容量且該實體果汁罐真實存在時才能接手，rack 空位本身不會憑空生成罐子。
-- 同一實體果汁罐的裝罐／販售時序會驗證容量上限 10、配方相容性與前一內容已售完；跨多趟販售但仍是同一批罐內成品時不會重複計成補裝。現行 `mjc-inventory` 尚未保存每件製作材料的精確位置，因此 raw / water 仍視為 home supply。Phase 5C-1 / PR #50 已建立**純交易草稿**；Phase 5C-2 / PR #52 已提供交易預覽；Phase 5C-3 / PR #54 已加入**寫入前過期驗證能力**；Phase 5C-4 / PR #56 已加入正式確認套用入口與 single-write commit；Phase 5C-5 / PR #58 已完成套用後刷新與重複套用防護。成功提交後會立即清除舊規劃結果，讓更新後的 inventory／今日已供應狀態成為下一次求解輸入，不會自動背景重跑 HiGHS；同一 transaction draft 再次提交會被 stale validation 拒絕且不新增 storage write。
+- 果汁成品台每次操作產出 **2～10 份偶數成品**；Phase 5B2-4/5 / PR #47 後，成品會依選定的販售排程綁定到明確的實體果汁罐。PR #64 後，接收罐是否隨身不再由固定 persistent ID 決定：沒有果汁罐架時所有罐都隨身；有架時可依趟次換罐。rack 空位只提供存放位置，不會憑空生成實體果汁罐。
+- 同一實體果汁罐的裝罐／販售時序會驗證容量上限 10 與配方相容性；相同配方可在未空罐時直接補裝，只要總量不超過 10，不同配方則必須先讓舊內容耗盡。跨多趟販售但仍是同一批罐內成品時不會重複計成補裝。現行 `mjc-inventory` 尚未保存每件製作材料的精確位置，因此 raw / water 仍視為 home supply。Phase 5C-1 / PR #50 已建立**純交易草稿**；Phase 5C-2 / PR #52 已提供交易預覽；Phase 5C-3 / PR #54 已加入**寫入前過期驗證能力**；Phase 5C-4 / PR #56 已加入正式確認套用入口與 single-write commit；Phase 5C-5 / PR #58 已完成套用後刷新與重複套用防護。成功提交後會立即清除舊規劃結果，讓更新後的 inventory／今日已供應狀態成為下一次求解輸入，不會自動背景重跑 HiGHS；同一 transaction draft 再次提交會被 stale validation 拒絕且不新增 storage write。
 
 Phase 4 已完成：
 
@@ -253,12 +253,13 @@ Phase 4 已完成：
 12. PR #47 完成 **Phase 5B2-4/5｜果汁成品台接收罐與同罐容量時序**：選定販售排程會產生逐罐實際裝填事件，果汁成品台輸出綁定指定的持久果汁罐 ID、配方與販售趟次前置條件；同一批罐內成品跨多趟販售時會沿用內容，不虛構補裝。
 13. PR #50 完成 **Phase 5C-1｜純交易模型**：由已驗證的 optimizer、備料缺口、製作物流與販售排程建立不可變 before / after transaction draft；原料、水、杯具、實體果汁罐與今日供應顧客都有可重算終局，並保留進度／滿意度／正式顧客／planner settings 基準供後續過期驗證。此步驟不修改 storage。
 14. PR #52 完成 **Phase 5C-2｜交易預覽介面**：最佳化結果頁會顯示 transaction draft 的原料、水、乾淨／用過杯具、今日供應顧客與實體果汁罐變更前 → 變更後，並列出持久果汁罐的首次裝填／補裝同種／換裝事件與販售趟次前置條件；製作物流不可行時明確不建立交易草稿。預覽仍沒有正式寫入控制。
-15. PR #54 完成 **Phase 5C-3｜寫入前過期驗證**：新增純 basis validator 與 read-only stored-basis reader；可重新取得 inventory、進度、滿意度、正式／今日供應顧客與 planner settings 的 canonical 狀態，並固定回報哪些依賴已漂移。legacy progress / satisfaction / carried-jar count 會依現行 migration 等價規則解析，但驗證過程不寫 migration；顧客集合忽略無意義順序差異，而 physical jar / carried jar 穩定順序仍視為規劃依賴。
+15. PR #54 完成 **Phase 5C-3｜寫入前過期驗證**：新增純 basis validator 與 read-only stored-basis reader；可重新取得 inventory、進度、滿意度、正式／今日供應顧客與 planner settings 的 canonical 狀態，並固定回報哪些依賴已漂移。legacy progress / satisfaction / carried-jar count 會依現行 migration 等價規則解析，但驗證過程不寫 migration；顧客集合忽略無意義順序差異，而 physical jar 穩定順序與目前的攜帶模式／固定格數仍視為規劃依賴。
 16. PR #56 完成 **Phase 5C-4｜一次性完整寫入**：正式套用會在 commit 前重新執行 5C-3 stored-basis validation；stale 時依類別回報並保持零寫入。basis 有效時，transaction after 的 inventory（原料、水、clean / used cups、持久 physical jar 內容與未改動 shelf / jar-rack 欄位）和今日已供應顧客會寫入單一 `mjc-plan-application-state` canonical envelope，只需一次 `localStorage.setItem()`，避免 inventory / supplied customers 跨 key 寫入中途失敗形成 partial state；其他 basis-only 狀態不覆寫。
 17. PR #58 完成 **Phase 5C-5｜寫入後刷新與重複套用防護**：成功 commit 後立即把舊 optimizer result / transaction preview 切回 idle，保留成功提示並讓更新後的 inventory 與今日已供應狀態成為下一次規劃輸入；不自動再次執行 HiGHS。相同 transaction draft 第二次提交會被 stored-basis validation 判定 stale，不會再次扣庫存、重複標記顧客或新增 storage write。
 18. PR #60 完成 **Candidate-1｜共用候選配方池**：以完整有序原料序列作去重邊界，保留既有 `RecipeCandidate.id`，同一 entry 可同時帶實測／已保存／安全推導／歧義來源；SavedRecipe 會經 canonical evaluator 與進度檢查，invalid saved rows 不進 pool。App、顧客推薦與批次最佳化共用同一份 current-search candidates；saved-only／future-progress entries 目前只保留 metadata，不提前擴大搜尋。
 19. PR #62 完成 **Candidate-2A｜單一果汁段漸進搜尋**：不重複原料由淺到深搜尋；顧客頁與批次最佳化共用同一停止規則；只有不重複候選無法保證完全匹配且重複可能改變特性時，才啟用有界的重複調味後備搜尋。
-20. **下一個最小切片是 Candidate-2B｜多層果汁調和搜尋**：在既有單一果汁段搜尋穩定後，再定義合法調和樹、調和深度／獨立果汁段上限、剪枝與固定排序；不把複數需榨汁原料當普通原料排列。路線最佳化仍等待跨村移動時間、位置資訊、完整顧客服務時段與商店營業時間資料。
+20. PR #64 完成 **Correctness-1｜跨趟果汁罐交換與同配方直接補裝**：planner settings 從 persistent jar ID 綁定改為 `auto`／`fixed-slots`；無果汁罐架時所有持有罐強制隨身，有架時可跨趟整罐上架／換罐，架上既有成品也會納入今日需求；同配方未空罐可直接補裝至容量 10，不同配方仍禁止直接混裝。
+21. **下一個最小切片是 UX-1｜配方模擬器與批次規劃可讀性**：先補原料特性直接顯示、暫選目標顧客、批次錯誤中文化與可操作解法；完成後再進 Candidate-2B｜多層果汁調和搜尋。路線最佳化仍等待跨村移動時間、位置資訊、完整顧客服務時段與商店營業時間資料。
 
 
 ## Schedule / route readiness boundary
