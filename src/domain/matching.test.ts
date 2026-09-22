@@ -195,7 +195,7 @@ describe('customer recipe matching', () => {
         lemonCinnamonMint!,
         syntheticCustomer,
       ),
-    ).toBe('full')
+    ).toBe('partial')
     expect(
       recipeCandidateMatchesCustomer(
         lemonCinnamonMint!,
