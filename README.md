@@ -62,6 +62,7 @@ src/
     recipeCost.ts      # 批次／單杯原料成本
     recipeEvaluator.ts # 單一有序序列 validation / observed overlay / computed evaluation
     recipeGenerator.ts # 只枚舉 V1 合法候選，再交由 evaluator 評估
+    recipeCandidatePool.ts # Candidate-1：依完整有序序列合併實測／已保存／安全推導／歧義來源，並提供共用 current-search candidates
     optimizerModel.ts  # optimizer request、customer→recipe eligible matrix 與 gating
     optimizerSolver.ts # 可替換的 async solver adapter contract
     optimizerHighsSolver.ts # HiGHS WASM lexicographic MIP adapter
@@ -96,7 +97,7 @@ src/
   **/*.test.ts         # domain / storage regression tests
 ```
 
-PR 2B generator 仍只**自動枚舉**「1 種果汁基底 + 0～2 種不重複調味材料」，避免候選爆炸；這不再是 simulator/evaluator 的能力上限。
+PR 2B generator 仍只**自動枚舉**「1 種果汁基底 + 0～2 種不重複調味材料」，避免候選爆炸；這不再是 simulator/evaluator 的能力上限。Candidate-1 / PR #60 已在 generator 外建立共用候選配方池：同一完整有序原料序列只保留一筆 entry，但來源可同時標記實測／已保存／安全推導／仍有歧義。SavedRecipe 會經同一 evaluator 與進度檢查；saved-only 或尚未解鎖序列目前只保留在 pool metadata，不會在 Candidate-1 就擴大顧客推薦或 optimizer 的既有搜尋範圍。
 
 手動配方模擬器使用有序原料順序：重複調味與四原料以上都可評估；每遇到新的需榨汁原料就開始下一個果汁段。兩杯果汁經果汁調和器組合時，網站只做 `front.sequence + back.sequence`，不另造果汁調和器專用配方格式。含多個需榨汁原料的序列至少需要實際程式進度 key `juice-blender-unlocked`，設備需求會包含果汁調和器。
 
@@ -254,7 +255,8 @@ Phase 4 已完成：
 15. PR #54 完成 **Phase 5C-3｜寫入前過期驗證**：新增純 basis validator 與 read-only stored-basis reader；可重新取得 inventory、進度、滿意度、正式／今日供應顧客與 planner settings 的 canonical 狀態，並固定回報哪些依賴已漂移。legacy progress / satisfaction / carried-jar count 會依現行 migration 等價規則解析，但驗證過程不寫 migration；顧客集合忽略無意義順序差異，而 physical jar / carried jar 穩定順序仍視為規劃依賴。
 16. PR #56 完成 **Phase 5C-4｜一次性完整寫入**：正式套用會在 commit 前重新執行 5C-3 stored-basis validation；stale 時依類別回報並保持零寫入。basis 有效時，transaction after 的 inventory（原料、水、clean / used cups、持久 physical jar 內容與未改動 shelf / jar-rack 欄位）和今日已供應顧客會寫入單一 `mjc-plan-application-state` canonical envelope，只需一次 `localStorage.setItem()`，避免 inventory / supplied customers 跨 key 寫入中途失敗形成 partial state；其他 basis-only 狀態不覆寫。
 17. PR #58 完成 **Phase 5C-5｜寫入後刷新與重複套用防護**：成功 commit 後立即把舊 optimizer result / transaction preview 切回 idle，保留成功提示並讓更新後的 inventory 與今日已供應狀態成為下一次規劃輸入；不自動再次執行 HiGHS。相同 transaction draft 第二次提交會被 stored-basis validation 判定 stale，不會再次扣庫存、重複標記顧客或新增 storage write。
-18. **下一個最小切片是 Candidate-1｜共用候選配方池**：統一顧客推薦與批次最佳化的候選配方來源資訊與去重規則；先不擴大搜尋深度。路線最佳化仍等待跨村移動時間、位置資訊、完整顧客服務時段與商店營業時間資料。
+18. PR #60 完成 **Candidate-1｜共用候選配方池**：以完整有序原料序列作去重邊界，保留既有 `RecipeCandidate.id`，同一 entry 可同時帶實測／已保存／安全推導／歧義來源；SavedRecipe 會經 canonical evaluator 與進度檢查，invalid saved rows 不進 pool。App、顧客推薦與批次最佳化共用同一份 current-search candidates；saved-only／future-progress entries 目前只保留 metadata，不提前擴大搜尋。
+19. **下一個最小切片是 Candidate-2A｜單一果汁段漸進搜尋**：把現有「一個需榨汁原料＋最多兩種不同調味」改成固定、可重現的逐層搜尋；先不加入多果汁段自動搜尋。路線最佳化仍等待跨村移動時間、位置資訊、完整顧客服務時段與商店營業時間資料。
 
 
 ## Schedule / route readiness boundary
