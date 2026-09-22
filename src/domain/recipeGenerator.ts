@@ -20,11 +20,26 @@ export const MAX_REPEATED_RECIPE_INGREDIENT_COUNT = 6
 export const RECIPE_SEARCH_LAYER_CANDIDATE_LIMIT = 2048
 export const RECIPE_SEARCH_TOTAL_CANDIDATE_LIMIT = 4096
 
-export type RecipeCandidateSearchPhase = 'unique' | 'repeat-fallback'
+export const MAX_BLEND_SEGMENT_COUNT = 3
+export const MAX_BLEND_DEPTH = MAX_BLEND_SEGMENT_COUNT - 1
+export const BLEND_SEARCH_LAYER_CANDIDATE_LIMIT = 6000
+export const BLEND_SEARCH_TOTAL_CANDIDATE_LIMIT = 11000
+
+const MAX_BLEND_TOTAL_SEASONING_DEPTH_BY_SEGMENT_COUNT = {
+  2: 4,
+  3: 2,
+} as const
+
+export type RecipeCandidateSearchPhase =
+  | 'unique'
+  | 'blend'
+  | 'repeat-fallback'
 
 export interface RecipeCandidateGenerationLayer {
   readonly phase: RecipeCandidateSearchPhase
   readonly seasoningDepth: number
+  readonly segmentCount: number
+  readonly ingredientCount: number
   readonly candidates: readonly RecipeCandidate[]
   readonly totalSequenceCount: number
   readonly truncated: boolean
@@ -192,6 +207,174 @@ function sequenceLayer(
   return {
     phase,
     seasoningDepth,
+    segmentCount: 1,
+    ingredientCount: seasoningDepth + 1,
+    candidates: selectedSequences.map((sequence) =>
+      evaluatedCandidate(sequence, currentProgress),
+    ),
+    totalSequenceCount,
+    truncated: selectedSequences.length < totalSequenceCount,
+  }
+}
+
+function collectSeasoningDepthDistributions(
+  segmentCount: number,
+  totalSeasoningDepth: number,
+): number[][] {
+  const result: number[][] = []
+  const maxSegmentSeasoningDepth = MAX_UNIQUE_INGREDIENT_COUNT - 1
+
+  function visit(prefix: number[], remainingDepth: number) {
+    if (prefix.length === segmentCount) {
+      if (remainingDepth === 0) result.push([...prefix])
+      return
+    }
+
+    const remainingSegments = segmentCount - prefix.length - 1
+    const maximumDepth = Math.min(
+      maxSegmentSeasoningDepth,
+      remainingDepth,
+    )
+
+    for (let depth = 0; depth <= maximumDepth; depth += 1) {
+      const nextRemaining = remainingDepth - depth
+      if (
+        nextRemaining >
+        remainingSegments * maxSegmentSeasoningDepth
+      ) {
+        continue
+      }
+
+      prefix.push(depth)
+      visit(prefix, nextRemaining)
+      prefix.pop()
+    }
+  }
+
+  visit([], totalSeasoningDepth)
+  return result
+}
+
+function singleSegmentSequencesByDepth(
+  currentProgress: ProgressMilestoneId,
+  seasoningDepth: number,
+): string[][] {
+  const { bases, seasonings } =
+    availableSingleSegmentCapabilities(currentProgress)
+  const seasoningIds = seasonings
+    .map((capability) => capability.ingredientId)
+    .sort(compareIds)
+  const tails = collectSeasoningTails(
+    seasoningIds,
+    seasoningDepth,
+    false,
+    permutationCount(seasoningIds.length, seasoningDepth),
+  )
+
+  return bases.flatMap((base) =>
+    tails.map((tail) => [base.ingredientId, ...tail]),
+  )
+}
+
+function blendedSequenceCount(
+  currentProgress: ProgressMilestoneId,
+  segmentCount: number,
+  totalSeasoningDepth: number,
+): number {
+  const { bases, seasonings } =
+    availableSingleSegmentCapabilities(currentProgress)
+  const distributions = collectSeasoningDepthDistributions(
+    segmentCount,
+    totalSeasoningDepth,
+  )
+
+  return distributions.reduce((sum, distribution) => {
+    const count = distribution.reduce(
+      (product, depth) =>
+        product *
+        bases.length *
+        permutationCount(seasonings.length, depth),
+      1,
+    )
+    return sum + count
+  }, 0)
+}
+
+function collectBlendedSequences(
+  currentProgress: ProgressMilestoneId,
+  segmentCount: number,
+  totalSeasoningDepth: number,
+  limit: number,
+): string[][] {
+  const result: string[][] = []
+  const distributions = collectSeasoningDepthDistributions(
+    segmentCount,
+    totalSeasoningDepth,
+  )
+  const optionsByDepth = new Map<number, string[][]>()
+
+  function segmentOptions(depth: number): string[][] {
+    const existing = optionsByDepth.get(depth)
+    if (existing) return existing
+
+    const options = singleSegmentSequencesByDepth(
+      currentProgress,
+      depth,
+    )
+    optionsByDepth.set(depth, options)
+    return options
+  }
+
+  for (const distribution of distributions) {
+    if (result.length >= limit) break
+    const selectedSegments: string[][] = []
+
+    function visitSegment(segmentIndex: number) {
+      if (result.length >= limit) return
+
+      if (segmentIndex === segmentCount) {
+        result.push(selectedSegments.flat())
+        return
+      }
+
+      const options = segmentOptions(distribution[segmentIndex] ?? 0)
+      for (const option of options) {
+        if (result.length >= limit) return
+        selectedSegments.push(option)
+        visitSegment(segmentIndex + 1)
+        selectedSegments.pop()
+      }
+    }
+
+    visitSegment(0)
+  }
+
+  return result
+}
+
+function blendLayer(
+  currentProgress: ProgressMilestoneId,
+  segmentCount: 2 | 3,
+  totalSeasoningDepth: number,
+  candidateLimit: number,
+): RecipeCandidateGenerationLayer {
+  const totalSequenceCount = blendedSequenceCount(
+    currentProgress,
+    segmentCount,
+    totalSeasoningDepth,
+  )
+  const selectedSequences = collectBlendedSequences(
+    currentProgress,
+    segmentCount,
+    totalSeasoningDepth,
+    candidateLimit,
+  )
+
+  return {
+    phase: 'blend',
+    seasoningDepth: totalSeasoningDepth,
+    segmentCount,
+    ingredientCount: segmentCount + totalSeasoningDepth,
     candidates: selectedSequences.map((sequence) =>
       evaluatedCandidate(sequence, currentProgress),
     ),
@@ -227,6 +410,77 @@ export function generateUniqueRecipeCandidateLayers(
 
       return layer
     },
+  )
+}
+
+export function generateBlendedRecipeCandidateLayers(
+  currentProgress: ProgressMilestoneId,
+): RecipeCandidateGenerationLayer[] {
+  const specs: {
+    segmentCount: 2 | 3
+    seasoningDepth: number
+  }[] = []
+
+  const maximumIngredientCount =
+    2 +
+    MAX_BLEND_TOTAL_SEASONING_DEPTH_BY_SEGMENT_COUNT[2]
+
+  for (
+    let ingredientCount = 2;
+    ingredientCount <= maximumIngredientCount;
+    ingredientCount += 1
+  ) {
+    for (const segmentCount of [2, 3] as const) {
+      const seasoningDepth = ingredientCount - segmentCount
+      const maximumSeasoningDepth =
+        MAX_BLEND_TOTAL_SEASONING_DEPTH_BY_SEGMENT_COUNT[
+          segmentCount
+        ]
+
+      if (
+        seasoningDepth < 0 ||
+        seasoningDepth > maximumSeasoningDepth
+      ) {
+        continue
+      }
+
+      specs.push({
+        segmentCount,
+        seasoningDepth,
+      })
+    }
+  }
+
+  let remaining = BLEND_SEARCH_TOTAL_CANDIDATE_LIMIT
+  return specs.map(({ segmentCount, seasoningDepth }) => {
+    const layer = blendLayer(
+      currentProgress,
+      segmentCount,
+      seasoningDepth,
+      Math.min(
+        BLEND_SEARCH_LAYER_CANDIDATE_LIMIT,
+        remaining,
+      ),
+    )
+    remaining = Math.max(
+      0,
+      remaining - layer.candidates.length,
+    )
+    return layer
+  })
+}
+
+export function generateProgressiveRecipeCandidateLayers(
+  currentProgress: ProgressMilestoneId,
+): RecipeCandidateGenerationLayer[] {
+  return [
+    ...generateUniqueRecipeCandidateLayers(currentProgress),
+    ...generateBlendedRecipeCandidateLayers(currentProgress),
+  ].sort(
+    (left, right) =>
+      left.ingredientCount - right.ingredientCount ||
+      left.segmentCount - right.segmentCount ||
+      left.seasoningDepth - right.seasoningDepth,
   )
 }
 

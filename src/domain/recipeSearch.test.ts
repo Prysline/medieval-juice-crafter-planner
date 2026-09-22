@@ -80,6 +80,8 @@ function syntheticPool(
     generatedLayers: layers.map(({ seasoningDepth, candidate }) => ({
       phase: 'unique',
       seasoningDepth,
+      segmentCount: 1,
+      ingredientCount: seasoningDepth + 1,
       candidateIds: [candidate.id],
       totalSequenceCount: 1,
       truncated: false,
@@ -134,6 +136,60 @@ describe('progressive recipe search', () => {
       ),
     ).toBe(true)
     expect(result.usedRepeatedSeasoningFallback).toBe(false)
+  })
+
+  it('keeps future Blender layers out of current search before the Blender unlock', () => {
+    const pool = buildRecipeCandidatePool(
+      'tranquil-fountain-unlocked',
+    )
+    const result = searchRecipeCandidatesForCustomer(
+      pool,
+      'tranquil-fountain-unlocked',
+      customer([
+        { kind: 'ingredient', value: '檸檬' },
+        { kind: 'ingredient', value: '梨' },
+      ]),
+      { candidatePolicy: 'allow-unambiguous-computed' },
+    )
+
+    expect(result.guaranteedFullMatchFound).toBe(false)
+    expect(
+      result.exploredLayers.some((layer) => layer.phase === 'blend'),
+    ).toBe(false)
+    expect(
+      result.candidates.some(
+        (candidate) =>
+          candidate.ingredients.join(' → ') === '檸檬 → 梨',
+      ),
+    ).toBe(false)
+  })
+
+  it('searches legal Blender layers after unlock and can stop on a two-segment match', () => {
+    const pool = buildRecipeCandidatePool('juice-blender-unlocked')
+    const result = searchRecipeCandidatesForCustomer(
+      pool,
+      'juice-blender-unlocked',
+      customer([
+        { kind: 'ingredient', value: '檸檬' },
+        { kind: 'ingredient', value: '梨' },
+      ]),
+      { candidatePolicy: 'allow-unambiguous-computed' },
+    )
+
+    expect(result.guaranteedFullMatchFound).toBe(true)
+    expect(result.stoppedAt).toEqual({
+      phase: 'blend',
+      seasoningDepth: 0,
+    })
+    const candidate = result.candidates.find(
+      (item) =>
+        item.ingredients.join(' → ') === '檸檬 → 梨',
+    )
+    expect(candidate).toMatchObject({
+      source: 'computed',
+      salePrice: null,
+    })
+    expect(candidate?.equipment).toContain('果汁調和器')
   })
 
   it('enables repeated seasoning only after unique layers fail and stops at the first successful fallback layer', () => {

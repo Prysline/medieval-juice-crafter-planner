@@ -214,8 +214,8 @@ function eligibleOptimizationRecipe(
   const cost = calculateRecipeIngredientCost(candidate)
   if (cost.batchIngredientCost === null) return null
 
-  // 製作可行性仍由 production graph 負責。Candidate-2A 只自動產生
-  // 單一果汁段；明確提供的 multi-base fixture 仍沿用既有 Blender path 支援。
+  // 製作可行性仍由 production graph 負責。Candidate-2B 的共用搜尋可產生
+  // canonical multi-segment candidates，但不另外實作第二套 Blender execution 規則。
   const productionPath = productionPathForCandidate(candidate)
   if (!productionPath) return null
 
