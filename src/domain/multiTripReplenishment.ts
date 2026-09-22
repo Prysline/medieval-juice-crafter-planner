@@ -169,13 +169,12 @@ interface JarQueue {
 function normalizeCarriedJuiceJars(
   jars: JuiceJarInventoryItem[],
 ): MultiTripPhysicalJar[] {
-  const limited = jars.slice(0, BACKPACK_SLOT_CAPACITY)
   const seen = new Set<string>()
 
-  return limited.map((jar) => {
+  return jars.map((jar) => {
     if (!jar.id || seen.has(jar.id)) {
       throw new Error(
-        'Carried physical juice jars require unique persistent inventory IDs',
+        'Available physical juice jars require unique persistent inventory IDs',
       )
     }
     seen.add(jar.id)
