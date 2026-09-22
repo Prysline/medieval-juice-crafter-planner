@@ -31,7 +31,8 @@ function transactionDraft(): PlanApplicationTransactionDraft {
       formalCustomerIds: ['jack'],
       suppliedCustomerIds: [],
       plannerSettings: {
-        carriedJuiceJarIds: ['jar-1'],
+        juiceJarCarryMode: 'fixed-slots',
+        reservedJuiceJarSlots: 1,
         allowUsedCupDropIfFull: false,
       },
     },
@@ -59,7 +60,8 @@ function transactionDraft(): PlanApplicationTransactionDraft {
       formalCustomerIds: ['jack'],
       suppliedCustomerIds: ['jack'],
       plannerSettings: {
-        carriedJuiceJarIds: ['jar-1'],
+        juiceJarCarryMode: 'fixed-slots',
+        reservedJuiceJarSlots: 1,
         allowUsedCupDropIfFull: false,
       },
     },
@@ -117,9 +119,11 @@ const fills: MultiTripProductionJarFill[] = [
     recipeName: '橙汁',
     beforeTripNumber: 2,
     servings: 2,
+    servingsAfterFill: 2,
     fillAction: 'type-switch',
     previousRecipeId: 'lemon-juice',
     previousRecipeName: '檸檬汁',
+    receiver: 'carried-jar',
   },
 ]
 
