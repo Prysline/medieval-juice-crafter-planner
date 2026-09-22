@@ -114,6 +114,7 @@ function App() {
   const [savedRecipes, setSavedRecipes] = useState<SavedRecipe[]>(() =>
     readSavedRecipes(window.localStorage),
   )
+  const [comparisonCustomerIds, setComparisonCustomerIds] = useState<string[]>([])
   const [showSuppliedToday, setShowSuppliedToday] = useState(true)
 
   const normalizedQuery = query.trim().toLocaleLowerCase('zh-Hant')
@@ -397,6 +398,30 @@ function App() {
     })
   }
 
+  function addComparisonCustomer(customerId: string) {
+    setComparisonCustomerIds((current) =>
+      current.includes(customerId) ? current : [...current, customerId],
+    )
+  }
+
+  function removeComparisonCustomer(customerId: string) {
+    setComparisonCustomerIds((current) =>
+      current.filter((id) => id !== customerId),
+    )
+  }
+
+  function toggleComparisonCustomer(customerId: string) {
+    setComparisonCustomerIds((current) =>
+      current.includes(customerId)
+        ? current.filter((id) => id !== customerId)
+        : [...current, customerId],
+    )
+  }
+
+  function clearComparisonCustomers() {
+    setComparisonCustomerIds([])
+  }
+
   return (
     <main className="app-shell">
       <header className="hero">
@@ -602,8 +627,10 @@ function App() {
                 unlocked={unlocked}
                 formal={isFormalCustomer(customer.id, formalCustomerIds)}
                 suppliedToday={suppliedCustomerIds.includes(customer.id)}
+                comparisonSelected={comparisonCustomerIds.includes(customer.id)}
                 onToggleFormal={() => toggleFormalCustomer(customer.id)}
                 onToggleSupplied={() => toggleSuppliedToday(customer.id)}
+                onToggleComparison={() => toggleComparisonCustomer(customer.id)}
               />
             ),
           )}
@@ -727,7 +754,11 @@ function App() {
           currentProgress={currentProgress}
           satisfactionByVillage={satisfactionByVillage}
           savedRecipes={savedRecipes}
+          comparisonCustomerIds={comparisonCustomerIds}
           onSavedRecipesChange={setSavedRecipes}
+          onAddComparisonCustomer={addComparisonCustomer}
+          onRemoveComparisonCustomer={removeComparisonCustomer}
+          onClearComparisonCustomers={clearComparisonCustomers}
         />
       ) : null}
 
@@ -741,6 +772,18 @@ function App() {
           onSuppliedCustomerIdsCommitted={setSuppliedCustomerIds}
         />
       </div>
+
+      {comparisonCustomerIds.length > 0 && (
+        <ComparisonDock
+          customers={comparisonCustomerIds.flatMap((customerId) => {
+            const customer = customers.find((item) => item.id === customerId)
+            return customer ? [customer] : []
+          })}
+          onOpenTools={() => setTab('tools')}
+          onRemove={removeComparisonCustomer}
+          onClear={clearComparisonCustomers}
+        />
+      )}
 
       <footer>
         預測配方不自行推導售價；同分 cutoff 未確認時不宣稱完全匹配。
@@ -786,8 +829,10 @@ function CustomerRow({
   unlocked,
   formal,
   suppliedToday,
+  comparisonSelected,
   onToggleFormal,
   onToggleSupplied,
+  onToggleComparison,
 }: {
   customer: Customer
   matches: RecipeCandidate[]
@@ -795,8 +840,10 @@ function CustomerRow({
   unlocked: boolean
   formal: boolean
   suppliedToday: boolean
+  comparisonSelected: boolean
   onToggleFormal: () => void
   onToggleSupplied: () => void
+  onToggleComparison: () => void
 }) {
   const bestMatch = matches[0]
   const preferencesKnown = customer.preferences !== null
@@ -815,7 +862,13 @@ function CustomerRow({
         <div className="primary-cell">
           <strong>{customer.name}</strong>
           <span className="cell-secondary">{customer.occupation}</span>
-          <FormalToggle formal={formal} onToggle={onToggleFormal} />
+          <div className="customer-quick-actions">
+            <FormalToggle formal={formal} onToggle={onToggleFormal} />
+            <CompareToggle
+              selected={comparisonSelected}
+              onToggle={onToggleComparison}
+            />
+          </div>
           <span className="mobile-customer-meta">
             {villageNames[customer.villageId]} · {customer.satisfactionRequired > 0
               ? `解鎖 ${customer.satisfactionRequired}`
@@ -976,6 +1029,28 @@ function FormalToggle({
   )
 }
 
+function CompareToggle({
+  selected,
+  onToggle,
+}: {
+  selected: boolean
+  onToggle: () => void
+}) {
+  return (
+    <button
+      type="button"
+      className={`comparison-toggle${selected ? ' selected' : ''}`}
+      aria-pressed={selected}
+      onClick={(event) => {
+        event.stopPropagation()
+        onToggle()
+      }}
+    >
+      {selected ? '✓ 比較中' : '＋ 比較'}
+    </button>
+  )
+}
+
 function SupplyToggle({
   supplied,
   onToggle,
@@ -1100,6 +1175,46 @@ function formatRecipeCost(cost: RecipeIngredientCost): string {
   return formatRecipeIngredientCost(
     cost.batchIngredientCost,
     cost.unitIngredientCost,
+  )
+}
+
+export function ComparisonDock({
+  customers: selectedCustomers,
+  onOpenTools,
+  onRemove,
+  onClear,
+}: {
+  customers: Customer[]
+  onOpenTools: () => void
+  onRemove: (customerId: string) => void
+  onClear: () => void
+}) {
+  return (
+    <aside className="comparison-dock" aria-label="比較顧客">
+      <div className="comparison-dock-heading">
+        <strong>比較顧客 {selectedCustomers.length} 人</strong>
+        <button type="button" onClick={onClear}>全部清除</button>
+      </div>
+      <div className="comparison-dock-list">
+        {selectedCustomers.map((customer) => (
+          <button
+            type="button"
+            key={customer.id}
+            onClick={() => onRemove(customer.id)}
+            title="點擊移除"
+          >
+            {customer.name}（{customer.occupation}） ×
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        className="comparison-dock-open"
+        onClick={onOpenTools}
+      >
+        前往配方工具比較
+      </button>
+    </aside>
   )
 }
 
