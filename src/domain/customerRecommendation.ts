@@ -1,10 +1,9 @@
 import { recipeCandidateMatchesCustomer } from './matching'
 import { calculateRecipeIngredientCost } from './recipeCost'
+import type { ProgressiveRecipeSearchPolicy } from './recipeSearch'
 import type { Customer, RecipeCandidate } from '../types'
 
-export type RecommendationPolicy =
-  | 'observed-only'
-  | 'allow-unambiguous-computed'
+export type RecommendationPolicy = ProgressiveRecipeSearchPolicy
 
 export interface CostedRecipeCandidate {
   candidate: RecipeCandidate
@@ -36,7 +35,7 @@ function eligibleForPolicy(
 }
 
 export function cheapestFullMatchRecommendation(
-  candidates: RecipeCandidate[],
+  candidates: readonly RecipeCandidate[],
   customer: Customer,
   policy: RecommendationPolicy,
 ): CheapestRecipeRecommendation | null {
@@ -76,20 +75,32 @@ export function cheapestFullMatchRecommendation(
   }
 }
 
-export function customerRecipeRecommendations(
-  candidates: RecipeCandidate[],
+export function customerRecipeRecommendationsFromSearch(
+  observedOnlyCandidates: readonly RecipeCandidate[],
+  allowComputedCandidates: readonly RecipeCandidate[],
   customer: Customer,
 ): CustomerRecipeRecommendations {
   return {
     observedOnly: cheapestFullMatchRecommendation(
-      candidates,
+      observedOnlyCandidates,
       customer,
       'observed-only',
     ),
     allowComputed: cheapestFullMatchRecommendation(
-      candidates,
+      allowComputedCandidates,
       customer,
       'allow-unambiguous-computed',
     ),
   }
+}
+
+export function customerRecipeRecommendations(
+  candidates: readonly RecipeCandidate[],
+  customer: Customer,
+): CustomerRecipeRecommendations {
+  return customerRecipeRecommendationsFromSearch(
+    candidates,
+    candidates,
+    customer,
+  )
 }
