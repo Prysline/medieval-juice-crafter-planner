@@ -32,7 +32,7 @@ import type { PlanApplicationTransactionDraft } from './domain/planApplicationTr
 import type { PlanApplicationBasisMismatchField } from './domain/planApplicationValidation'
 import {
   buildInventoryCapacitySummary,
-  selectCarriedJuiceJars,
+  selectAccessibleJuiceJars,
 } from './domain/inventoryCapacity'
 import {
   readInventoryState,
@@ -252,9 +252,9 @@ export default function OptimizerTools({
     [recipeCandidates],
   )
 
-  const carriedJuiceJars = useMemo(
-    () => selectCarriedJuiceJars(inventoryState, plannerSettings),
-    [inventoryState, plannerSettings],
+  const accessibleJuiceJars = useMemo(
+    () => selectAccessibleJuiceJars(inventoryState),
+    [inventoryState],
   )
 
   const capacitySummary = useMemo(
@@ -273,24 +273,9 @@ export default function OptimizerTools({
   }
 
   function setPhysicalJuiceJarCount(count: number) {
-    const nextInventory = resizeJuiceJarInventory(inventoryState, count)
-    persistInventory(nextInventory)
-
-    const ownedIds = new Set(
-      nextInventory.juiceJars.map((jar) => jar.id),
+    persistInventory(
+      resizeJuiceJarInventory(inventoryState, count),
     )
-    const nextCarriedIds = plannerSettings.carriedJuiceJarIds.filter(
-      (id) => ownedIds.has(id),
-    )
-    if (
-      nextCarriedIds.length !==
-      plannerSettings.carriedJuiceJarIds.length
-    ) {
-      persistPlannerSettings({
-        ...plannerSettings,
-        carriedJuiceJarIds: nextCarriedIds,
-      })
-    }
   }
 
   function setIngredientInventory(
@@ -357,29 +342,6 @@ export default function OptimizerTools({
     )
   }
 
-  function toggleCarriedJuiceJar(
-    jarId: string,
-    checked: boolean,
-  ) {
-    const selected = new Set(
-      plannerSettings.carriedJuiceJarIds.filter((id) =>
-        inventoryState.juiceJars.some((jar) => jar.id === id),
-      ),
-    )
-    if (checked) {
-      if (selected.size >= 10) return
-      selected.add(jarId)
-    } else {
-      selected.delete(jarId)
-    }
-
-    persistPlannerSettings({
-      ...plannerSettings,
-      carriedJuiceJarIds: inventoryState.juiceJars
-        .filter((jar) => selected.has(jar.id))
-        .map((jar) => jar.id),
-    })
-  }
 
   const customerIds = useMemo(
     () =>
@@ -473,9 +435,17 @@ export default function OptimizerTools({
           ? undefined
           : Math.max(0, Math.floor(Number(maxJarTypeSwitches)))
 
-      if (capacitySummary.effectiveCarriedJuiceJarCount < 1) {
+      if (capacitySummary.physicalJuiceJarCount < 1) {
+        throw new Error('請先設定至少 1 個實際持有的果汁罐。')
+      }
+      if (capacitySummary.jarStorageCapacityExceeded) {
         throw new Error(
-          '請先設定至少 1 個實際持有且常駐攜帶的果汁罐。',
+          '目前持有的果汁罐超過果汁罐架與背包合計可容納的數量。',
+        )
+      }
+      if (capacitySummary.maxJuiceJarSlotsPerTrip < 1) {
+        throw new Error(
+          '固定果汁罐格數至少需要 1 格，或改用每趟自動計算。',
         )
       }
 
@@ -494,8 +464,8 @@ export default function OptimizerTools({
               : primaryCriterion,
           priorities,
           availableJuiceJarCount:
-            capacitySummary.effectiveCarriedJuiceJarCount,
-          initialCarriedJuiceJars: carriedJuiceJars.map((jar) => ({
+            capacitySummary.physicalJuiceJarCount,
+          initialAvailableJuiceJars: accessibleJuiceJars.map((jar) => ({
             recipeId: jar.recipeId,
             servings: jar.servings,
           })),
@@ -517,9 +487,6 @@ export default function OptimizerTools({
       const preparationShortfall = buildPreparationShortfall(
         preparationDemand,
         inventoryState,
-        {
-          finishedJuiceJarIds: carriedJuiceJars.map((jar) => jar.id),
-        },
       )
       const selectedPolicy: UsedCupTripPolicy =
         plannerSettings.allowUsedCupDropIfFull
@@ -536,12 +503,18 @@ export default function OptimizerTools({
         const plan = buildMultiTripReplenishmentPlan(
           preparationDemand,
           policy,
-          carriedJuiceJars,
+          accessibleJuiceJars,
           {
             cleanCups: inventoryState.cleanCups,
             usedCups: inventoryState.usedCups,
           },
           preparationShortfall,
+          {
+            mode: plannerSettings.juiceJarCarryMode,
+            reservedSlots: plannerSettings.reservedJuiceJarSlots,
+            minimumCarriedSlots:
+              capacitySummary.minimumCarriedJuiceJarSlots,
+          },
         )
         if (plan.jarTypeSwitches !== result.jarTypeSwitches) {
           throw new Error(
@@ -585,11 +558,7 @@ export default function OptimizerTools({
               satisfactionByVillage,
               formalCustomerIds,
               suppliedCustomerIds,
-              plannerSettings: {
-                ...plannerSettings,
-                carriedJuiceJarIds:
-                  capacitySummary.carriedJuiceJarIds,
-              },
+              plannerSettings,
             },
             result,
             preparationShortfall,
