@@ -8,7 +8,7 @@ import type {
 import { isAvailableAtProgress } from './availability'
 import { evaluateRecipeSequence } from './recipeEvaluator'
 import {
-  generateUniqueRecipeCandidateLayers,
+  generateProgressiveRecipeCandidateLayers,
   type RecipeCandidateSearchPhase,
 } from './recipeGenerator'
 
@@ -31,6 +31,8 @@ export interface RecipeCandidatePoolEntry {
 export interface RecipeCandidatePoolLayer {
   readonly phase: RecipeCandidateSearchPhase
   readonly seasoningDepth: number
+  readonly segmentCount: number
+  readonly ingredientCount: number
   readonly candidateIds: readonly string[]
   readonly totalSequenceCount: number
   readonly truncated: boolean
@@ -152,7 +154,7 @@ export function buildRecipeCandidatePool(
     })
   }
 
-  const generatedLayers = generateUniqueRecipeCandidateLayers(
+  const generatedLayers = generateProgressiveRecipeCandidateLayers(
     currentProgress,
   ).map((layer): RecipeCandidatePoolLayer => {
     const candidateIds: string[] = []
@@ -175,6 +177,8 @@ export function buildRecipeCandidatePool(
     return {
       phase: layer.phase,
       seasoningDepth: layer.seasoningDepth,
+      segmentCount: layer.segmentCount,
+      ingredientCount: layer.ingredientCount,
       candidateIds,
       totalSequenceCount: layer.totalSequenceCount,
       truncated: layer.truncated,
