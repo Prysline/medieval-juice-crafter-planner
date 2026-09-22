@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import { customers } from './data/customers'
 import { ingredients } from './data/ingredients'
 import { recipes } from './data/recipes'
@@ -26,7 +26,10 @@ import type {
   UsedCupTripPolicy,
 } from './domain/multiTripReplenishment'
 import type { PreparationShortfall } from './domain/preparationShortfall'
-import type { RecipeCandidatePool } from './domain/recipeCandidatePool'
+import {
+  recipeCandidatesForInventoryEditor,
+  type RecipeCandidatePool,
+} from './domain/recipeCandidatePool'
 import type { ProductionLogisticsPlan } from './domain/productionLogistics'
 import type { PlanApplicationTransactionDraft } from './domain/planApplicationTransaction'
 import type { PlanApplicationBasisMismatchField } from './domain/planApplicationValidation'
@@ -62,7 +65,6 @@ interface OptimizerToolsProps {
   satisfactionByVillage: SatisfactionByVillage
   suppliedCustomerIds: string[]
   formalCustomerIds: string[]
-  recipeCandidates: RecipeCandidate[]
   recipeCandidatePool: RecipeCandidatePool
   onSuppliedCustomerIdsCommitted: (customerIds: string[]) => void
 }
@@ -211,12 +213,11 @@ function uniquePriorities(
   )
 }
 
-export default function OptimizerTools({
+function OptimizerTools({
   currentProgress,
   satisfactionByVillage,
   suppliedCustomerIds,
   formalCustomerIds,
-  recipeCandidates,
   recipeCandidatePool,
   onSuppliedCustomerIdsCommitted,
 }: OptimizerToolsProps) {
@@ -249,12 +250,12 @@ export default function OptimizerTools({
 
   const inventoryRecipeCandidates = useMemo(
     () =>
-      [...recipeCandidates].sort(
+      recipeCandidatesForInventoryEditor(recipeCandidatePool).sort(
         (a, b) =>
           a.name.localeCompare(b.name, 'zh-Hant') ||
           a.id.localeCompare(b.id),
       ),
-    [recipeCandidates],
+    [recipeCandidatePool],
   )
 
   const accessibleJuiceJars = useMemo(
@@ -909,6 +910,10 @@ export default function OptimizerTools({
                 </p>
               )}
 
+            <p className="optimizer-inventory-empty">
+              果汁罐內容選單只列目前可用的實測配方與個人已保存配方；若要登記未實測組合，請先到「配方工具」保存，避免把數千個暫時計算候選全部塞進每個果汁罐選單。
+            </p>
+
             {inventoryState.juiceJars.length === 0 ? (
               <p className="optimizer-inventory-empty">
                 目前沒有實體果汁罐。
@@ -1088,6 +1093,8 @@ export default function OptimizerTools({
     </section>
   )
 }
+
+export default memo(OptimizerTools)
 
 export function PlanningErrorBlock({
   presentation,

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import OptimizerTools from './OptimizerTools'
 import RecipeTools from './RecipeTools'
 import { customers } from './data/customers'
@@ -65,7 +65,11 @@ import type {
 
 type Tab = 'customers' | 'recipes' | 'tools' | 'optimizer'
 type RecipeSortKey = 'name' | 'salePrice'
+type RecipeSourceFilter = 'all' | 'observed' | 'computed'
+type RecipePriceFilter = 'all' | 'known' | 'unknown'
 type CustomerVisibility = 'available' | 'all'
+
+const RECIPE_PAGE_SIZE = 50
 
 const scheduleLabels = {
   leave_home: '出家門',
@@ -96,6 +100,11 @@ function App() {
   const [recipeSortKey, setRecipeSortKey] = useState<RecipeSortKey>('salePrice')
   const [recipeSortDirection, setRecipeSortDirection] =
     useState<SortDirection>('desc')
+  const [recipeSourceFilter, setRecipeSourceFilter] =
+    useState<RecipeSourceFilter>('all')
+  const [recipePriceFilter, setRecipePriceFilter] =
+    useState<RecipePriceFilter>('all')
+  const [recipePage, setRecipePage] = useState(1)
   const [suppliedCustomerIds, setSuppliedCustomerIds] = useState<string[]>(() =>
     readSuppliedCustomerIds(window.localStorage),
   )
@@ -231,6 +240,24 @@ function App() {
   const recipeRows = useMemo(() => {
     const rows = recipeCandidates
       .filter((recipe) => {
+        if (
+          recipeSourceFilter !== 'all' &&
+          recipe.source !== recipeSourceFilter
+        ) {
+          return false
+        }
+        if (
+          recipePriceFilter === 'known' &&
+          recipe.salePrice === null
+        ) {
+          return false
+        }
+        if (
+          recipePriceFilter === 'unknown' &&
+          recipe.salePrice !== null
+        ) {
+          return false
+        }
         if (!normalizedQuery) return true
         return [
           recipe.name,
@@ -269,9 +296,36 @@ function App() {
     normalizedQuery,
     recipeCandidates,
     recipeOrder,
+    recipePriceFilter,
     recipeSortDirection,
     recipeSortKey,
+    recipeSourceFilter,
   ])
+
+  const recipePageCount = Math.max(
+    1,
+    Math.ceil(recipeRows.length / RECIPE_PAGE_SIZE),
+  )
+  const boundedRecipePage = Math.min(recipePage, recipePageCount)
+  const pagedRecipeRows = useMemo(() => {
+    const start = (boundedRecipePage - 1) * RECIPE_PAGE_SIZE
+    return recipeRows.slice(start, start + RECIPE_PAGE_SIZE)
+  }, [boundedRecipePage, recipeRows])
+
+  useEffect(() => {
+    setRecipePage(1)
+  }, [
+    currentProgress,
+    normalizedQuery,
+    recipePriceFilter,
+    recipeSourceFilter,
+  ])
+
+  useEffect(() => {
+    if (recipePage > recipePageCount) {
+      setRecipePage(recipePageCount)
+    }
+  }, [recipePage, recipePageCount])
 
   function updateProgress(value: ProgressMilestoneId) {
     setCurrentProgress(value)
@@ -550,35 +604,118 @@ function App() {
           </section>
         </>
       ) : tab === 'recipes' ? (
-        <section className="table-list recipe-table" aria-label="配方">
-          <div className="table-head recipe-columns">
-            <SortableHeader
-              label="配方"
-              active={recipeSortKey === 'name'}
-              direction={recipeSortDirection}
-              onClick={() => toggleRecipeSort('name')}
-            />
-            <span>原料</span>
-            <span>成品特性</span>
-            <span>原料成本</span>
-            <SortableHeader
-              label="售價"
-              active={recipeSortKey === 'salePrice'}
-              direction={recipeSortDirection}
-              alignEnd
-              onClick={() => toggleRecipeSort('salePrice')}
-            />
+        <>
+          <div className="recipe-toolbar" aria-label="配方篩選">
+            <label>
+              <span>來源</span>
+              <select
+                value={recipeSourceFilter}
+                onChange={(event) =>
+                  setRecipeSourceFilter(
+                    event.target.value as RecipeSourceFilter,
+                  )
+                }
+              >
+                <option value="all">全部</option>
+                <option value="observed">實測</option>
+                <option value="computed">預測</option>
+              </select>
+            </label>
+            <label>
+              <span>售價</span>
+              <select
+                value={recipePriceFilter}
+                onChange={(event) =>
+                  setRecipePriceFilter(
+                    event.target.value as RecipePriceFilter,
+                  )
+                }
+              >
+                <option value="all">全部</option>
+                <option value="known">已有實測售價</option>
+                <option value="unknown">售價未知</option>
+              </select>
+            </label>
+            <span>
+              符合 {recipeRows.length} 筆 · 每頁最多 {RECIPE_PAGE_SIZE} 筆
+            </span>
           </div>
 
-          {recipeRows.map((recipe) => (
-            <RecipeRow
-              key={recipe.id}
-              recipe={recipe}
-              currentProgress={currentProgress}
-              satisfactionByVillage={satisfactionByVillage}
-            />
-          ))}
-        </section>
+          <section className="table-list recipe-table" aria-label="配方">
+            <div className="table-head recipe-columns">
+              <SortableHeader
+                label="配方"
+                active={recipeSortKey === 'name'}
+                direction={recipeSortDirection}
+                onClick={() => toggleRecipeSort('name')}
+              />
+              <span>原料</span>
+              <span>成品特性</span>
+              <span>原料成本</span>
+              <SortableHeader
+                label="售價"
+                active={recipeSortKey === 'salePrice'}
+                direction={recipeSortDirection}
+                alignEnd
+                onClick={() => toggleRecipeSort('salePrice')}
+              />
+            </div>
+
+            {pagedRecipeRows.map((recipe) => (
+              <RecipeRow
+                key={recipe.id}
+                recipe={recipe}
+                currentProgress={currentProgress}
+                satisfactionByVillage={satisfactionByVillage}
+              />
+            ))}
+          </section>
+
+          <nav className="recipe-pagination" aria-label="配方換頁">
+            <button
+              type="button"
+              disabled={boundedRecipePage <= 1}
+              onClick={() =>
+                setRecipePage((current) => Math.max(1, current - 1))
+              }
+            >
+              上一頁
+            </button>
+            <label>
+              <span>第</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={recipePageCount}
+                value={boundedRecipePage}
+                onChange={(event) =>
+                  setRecipePage(
+                    Math.min(
+                      recipePageCount,
+                      Math.max(
+                        1,
+                        Math.floor(Number(event.target.value) || 1),
+                      ),
+                    ),
+                  )
+                }
+              />
+              <span>/ {recipePageCount} 頁</span>
+            </label>
+            <button
+              type="button"
+              disabled={boundedRecipePage >= recipePageCount}
+              onClick={() =>
+                setRecipePage((current) =>
+                  Math.min(recipePageCount, current + 1),
+                )
+              }
+            >
+              下一頁
+            </button>
+          </nav>
+        </>
       ) : tab === 'tools' ? (
         <RecipeTools
           currentProgress={currentProgress}
@@ -594,7 +731,6 @@ function App() {
           satisfactionByVillage={satisfactionByVillage}
           suppliedCustomerIds={suppliedCustomerIds}
           formalCustomerIds={formalCustomerIds}
-          recipeCandidates={recipeCandidates}
           recipeCandidatePool={recipeCandidatePool}
           onSuppliedCustomerIdsCommitted={setSuppliedCustomerIds}
         />
