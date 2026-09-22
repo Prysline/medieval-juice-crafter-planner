@@ -170,7 +170,12 @@ describe('shared recipe candidate pool', () => {
           candidate.ingredients.join(' → ') === '香蕉 → 糖',
       ),
     ).toBe(true)
-    expect(ids.has('computed-lemon-pear')).toBe(false)
+    expect(
+      choices.some(
+        (candidate) =>
+          candidate.ingredients.join(' → ') === '檸檬 → 梨',
+      ),
+    ).toBe(false)
     expect(
       choices.every((candidate) => {
         const entry = pool.entries.find(
