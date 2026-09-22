@@ -28,10 +28,6 @@ function inventory(
   }
 }
 
-function carriedIds(count: number): string[] {
-  return Array.from({ length: count }, (_, index) => `jar-${index + 1}`)
-}
-
 function settings(
   patch: Partial<PlannerSettings> = {},
 ): PlannerSettings {
@@ -103,6 +99,7 @@ function shortfall(
 function receiverTimeline(
   juiceUnitsToPrepare: number,
   physicalJarId = 'jar-1',
+  receiver: MultiTripProductionJarFill['receiver'] = 'carried-jar',
 ): MultiTripProductionJarFill[] {
   const fills: MultiTripProductionJarFill[] = []
   let remaining = Math.max(0, Math.floor(juiceUnitsToPrepare))
@@ -125,7 +122,7 @@ function receiverTimeline(
         tripNumber === 1 ? null : 'recipe',
       previousRecipeName:
         tripNumber === 1 ? null : 'Recipe',
-      receiver: 'carried-jar',
+      receiver,
     })
     remaining -= juiceUnits
     tripNumber += 1
@@ -282,8 +279,8 @@ describe('production logistics', () => {
         waterUnits: 1,
         jarRackCount: 1,
       }),
-      settings({ carriedJuiceJarIds: [] }),
-      receiverTimeline(1),
+      settings(),
+      receiverTimeline(1, 'jar-1', 'jar-rack'),
     )
 
     expect(result.feasible).toBe(true)
@@ -315,19 +312,19 @@ describe('production logistics', () => {
         shelfCount: 10,
         jarRackCount: 0,
       }),
-      settings({ carriedJuiceJarIds: [] }),
-      receiverTimeline(1),
+      settings(),
+      receiverTimeline(1, 'jar-1', 'jar-rack'),
     )
 
     expect(result.feasible).toBe(false)
     expect(result.initialSnapshot).toMatchObject({
       shelfSlotsAvailable: 90,
-      carriedOutputJarSlots: 0,
+      carriedOutputJarSlots: 1,
       rackOutputJarSlots: 0,
-      outputJarReceiverSlots: 0,
+      outputJarReceiverSlots: 1,
     })
     expect(result.issues.join(' ')).toContain(
-      '不是常駐攜帶罐，且目前沒有可用的果汁罐架 staging slot',
+      '需要放在果汁罐架，但目前沒有可用的果汁罐架 slot',
     )
     expect(
       result.actions.some((action) => action.kind === 'handoff-finished'),
@@ -374,7 +371,10 @@ describe('production logistics', () => {
         shelfCount: 0,
         juiceJars: jars,
       }),
-      settings({ carriedJuiceJarIds: carriedIds(9) }),
+      settings({
+        juiceJarCarryMode: 'fixed-slots',
+        reservedJuiceJarSlots: 9,
+      }),
       receiverTimeline(1),
     )
 
@@ -404,13 +404,16 @@ describe('production logistics', () => {
         ingredientUnits: { lemon: 1 },
         juiceJars: jars,
       }),
-      settings({ carriedJuiceJarIds: carriedIds(10) }),
+      settings({
+        juiceJarCarryMode: 'fixed-slots',
+        reservedJuiceJarSlots: 10,
+      }),
       receiverTimeline(1),
     )
 
     expect(result.feasible).toBe(false)
     expect(result.issues.join(' ')).toContain(
-      '沒有可供 shelf ↔ machine 搬運使用的暫時 slot',
+      '沒有可供架子 ↔ 機器搬運使用的暫時格',
     )
   })
 
@@ -429,13 +432,16 @@ describe('production logistics', () => {
           servings: 0,
         })),
       }),
-      settings({ carriedJuiceJarIds: carriedIds(9) }),
+      settings({
+        juiceJarCarryMode: 'fixed-slots',
+        reservedJuiceJarSlots: 9,
+      }),
       receiverTimeline(1),
     )
 
     expect(result.feasible).toBe(false)
     expect(result.issues.join(' ')).toContain(
-      '現有 production materials 無法放入目前一般架',
+      '現有製作物資無法放入目前一般架',
     )
   })
 })
