@@ -155,6 +155,7 @@ export function presentPlanningError(
           suggestions: [
             '增加實體果汁罐。',
             '調整初始果汁罐內容，或減少需要同時使用的不同果汁種類。',
+            '如果目前罐內果汁可以丟棄，可勾選「必要時允許倒掉既有果汁以騰出果汁罐」；此選項預設關閉。',
           ],
           technicalDetails: details,
         }
