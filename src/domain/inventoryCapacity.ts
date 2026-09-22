@@ -17,24 +17,21 @@ export interface InventoryCapacitySummary {
   jarRackStagingCapacity: number
   physicalJuiceJarCount: number
   physicalCupCount: number
-  requestedCarriedJuiceJarCount: number
-  effectiveCarriedJuiceJarCount: number
-  carriedJuiceJarIds: string[]
+  juiceJarCarryMode: PlannerSettings['juiceJarCarryMode']
+  requestedReservedJuiceJarSlots: number
+  minimumCarriedJuiceJarSlots: number
+  effectiveReservedJuiceJarSlots: number
+  maxJuiceJarSlotsPerTrip: number
   carriedJarSlotCost: number
   backpackSlotsRemainingAfterCarriedJars: number
-  carriedJarRequestExceedsOwned: boolean
+  allOwnedJarsMustBeCarried: boolean
+  jarStorageCapacityExceeded: boolean
 }
 
-export function selectCarriedJuiceJars(
+export function selectAccessibleJuiceJars(
   inventory: InventoryState,
-  settings: PlannerSettings,
 ): JuiceJarInventoryItem[] {
-  const selectedIds = new Set(settings.carriedJuiceJarIds)
-
-  return inventory.juiceJars
-    .filter((jar) => selectedIds.has(jar.id))
-    .slice(0, BACKPACK_SLOT_CAPACITY)
-    .map((jar) => ({ ...jar }))
+  return inventory.juiceJars.map((jar) => ({ ...jar }))
 }
 
 export function buildInventoryCapacitySummary(
@@ -42,33 +39,58 @@ export function buildInventoryCapacitySummary(
   settings: PlannerSettings,
 ): InventoryCapacitySummary {
   const physicalJuiceJarCount = inventory.juiceJars.length
-  const requestedCarriedJuiceJarCount =
-    new Set(settings.carriedJuiceJarIds).size
-  const carriedJuiceJars = selectCarriedJuiceJars(
-    inventory,
-    settings,
+  const jarRackStagingCapacity =
+    inventory.jarRackCount * JUICE_JAR_RACK_SLOT_CAPACITY
+  const minimumCarriedJuiceJarSlots = Math.max(
+    0,
+    physicalJuiceJarCount - jarRackStagingCapacity,
   )
-  const effectiveCarriedJuiceJarCount =
-    carriedJuiceJars.length
+  const requestedReservedJuiceJarSlots =
+    settings.juiceJarCarryMode === 'fixed-slots'
+      ? Math.min(
+          BACKPACK_SLOT_CAPACITY,
+          Math.max(0, Math.floor(settings.reservedJuiceJarSlots)),
+        )
+      : 0
+  const effectiveReservedJuiceJarSlots =
+    settings.juiceJarCarryMode === 'fixed-slots'
+      ? Math.max(
+          minimumCarriedJuiceJarSlots,
+          requestedReservedJuiceJarSlots,
+        )
+      : minimumCarriedJuiceJarSlots
+  const maxJuiceJarSlotsPerTrip =
+    settings.juiceJarCarryMode === 'fixed-slots'
+      ? Math.min(
+          physicalJuiceJarCount,
+          effectiveReservedJuiceJarSlots,
+        )
+      : Math.min(
+          physicalJuiceJarCount,
+          BACKPACK_SLOT_CAPACITY,
+        )
   const carriedJarSlotCost =
-    effectiveCarriedJuiceJarCount * JUICE_JAR_SLOT_COST
+    effectiveReservedJuiceJarSlots * JUICE_JAR_SLOT_COST
 
   return {
     shelfCount: inventory.shelfCount,
     shelfSlotCapacity:
       inventory.shelfCount * GENERAL_SHELF_SLOT_CAPACITY,
     jarRackCount: inventory.jarRackCount,
-    jarRackStagingCapacity:
-      inventory.jarRackCount * JUICE_JAR_RACK_SLOT_CAPACITY,
+    jarRackStagingCapacity,
     physicalJuiceJarCount,
     physicalCupCount: inventory.cleanCups + inventory.usedCups,
-    requestedCarriedJuiceJarCount,
-    effectiveCarriedJuiceJarCount,
-    carriedJuiceJarIds: carriedJuiceJars.map((jar) => jar.id),
+    juiceJarCarryMode: settings.juiceJarCarryMode,
+    requestedReservedJuiceJarSlots,
+    minimumCarriedJuiceJarSlots,
+    effectiveReservedJuiceJarSlots,
+    maxJuiceJarSlotsPerTrip,
     carriedJarSlotCost,
     backpackSlotsRemainingAfterCarriedJars:
       BACKPACK_SLOT_CAPACITY - carriedJarSlotCost,
-    carriedJarRequestExceedsOwned:
-      effectiveCarriedJuiceJarCount < requestedCarriedJuiceJarCount,
+    allOwnedJarsMustBeCarried:
+      inventory.jarRackCount === 0 && physicalJuiceJarCount > 0,
+    jarStorageCapacityExceeded:
+      minimumCarriedJuiceJarSlots > BACKPACK_SLOT_CAPACITY,
   }
 }
