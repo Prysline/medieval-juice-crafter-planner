@@ -9,6 +9,7 @@ import {
   buildRecipeCandidatePool,
   recipeCandidatesInCurrentSearchScope,
 } from './recipeCandidatePool'
+import { searchRecipeCandidatesForCustomer } from './recipeSearch'
 
 function saved(
   id: string,
@@ -153,10 +154,8 @@ describe('shared recipe candidate pool', () => {
     ])
   })
 
-  it('feeds customer matching and optimizer modeling the same candidate ids and eligibility decisions', () => {
-    const candidates = recipeCandidatesInCurrentSearchScope(
-      buildRecipeCandidatePool('seasoner-unlocked'),
-    )
+  it('feeds customer matching and optimizer modeling the same progressive candidate ids and eligibility decisions', () => {
+    const pool = buildRecipeCandidatePool('seasoner-unlocked')
     const customer: Customer = {
       id: 'fixture',
       name: '測試顧客',
@@ -165,9 +164,15 @@ describe('shared recipe candidate pool', () => {
       satisfactionRequired: 0,
       preferences: [{ kind: 'effect', value: '甜味' }],
     }
+    const search = searchRecipeCandidatesForCustomer(
+      pool,
+      'seasoner-unlocked',
+      customer,
+      { candidatePolicy: 'allow-unambiguous-computed' },
+    )
 
     const matchingIds = matchingRecipeCandidatesForCustomer(
-      candidates,
+      [...search.candidates],
       customer,
     ).map((candidate) => candidate.id).sort()
 
@@ -185,7 +190,7 @@ describe('shared recipe candidate pool', () => {
     }
     const model = buildOptimizationModel(request, {
       customers: [customer],
-      candidates,
+      candidatePool: pool,
     })
     const optimizerIds = model.recipes
       .map((recipe) => recipe.candidate.id)
