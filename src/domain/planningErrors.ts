@@ -142,9 +142,9 @@ export function presentPlanningError(
   }
 
   return {
-    title: '規劃資料發生不一致',
+    title: '規劃處理發生問題',
     message:
-      '目前無法安全完成這次規劃。請重新產生規劃；若持續發生，可查看下方技術資訊協助除錯。',
+      '目前無法安全完成這次規劃或套用操作。請重新確認設定後再試；若持續發生，可查看下方技術資訊協助除錯。',
     suggestions: ['確認庫存與規劃設定後重新執行。'],
     technicalDetails: technicalDetails(error),
   }
