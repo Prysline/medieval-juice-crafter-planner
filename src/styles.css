@@ -906,6 +906,14 @@ footer {
   font-size: 0.68rem;
 }
 
+.ingredient-effect-summary {
+  color: #746652;
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 .ingredient-palette button:disabled {
   cursor: default;
   opacity: 0.45;
@@ -1009,6 +1017,79 @@ footer {
 .simulator-inputs select:disabled {
   cursor: default;
   opacity: 0.58;
+}
+
+.target-customer-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  border: 1px solid #d8cbb6;
+  border-radius: 12px;
+  background: #fffaf1;
+  padding: 12px;
+}
+
+.target-customer-panel .section-title {
+  align-items: baseline;
+}
+
+.target-customer-panel .section-title span {
+  color: #877762;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.target-customer-panel label {
+  display: grid;
+  gap: 5px;
+  color: #6d604d;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.target-customer-panel select {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid #d6c8b3;
+  border-radius: 9px;
+  background: #fffdf8;
+  color: #2f2a22;
+  padding: 8px 10px;
+}
+
+.target-customer-result {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(180px, 0.8fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.target-customer-result > div:first-child {
+  display: grid;
+  gap: 7px;
+}
+
+.target-preferences {
+  align-items: flex-start;
+}
+
+.target-match-status {
+  display: grid;
+  gap: 4px;
+  border-radius: 9px;
+  background: #f3eadb;
+  padding: 9px 10px;
+}
+
+.target-match-status strong {
+  color: #38502f;
+  font-size: 0.8rem;
+}
+
+.target-match-status span {
+  color: #746652;
+  font-size: 0.72rem;
+  line-height: 1.45;
 }
 
 .evaluation-panel {
@@ -1231,6 +1312,10 @@ footer {
   .evaluation-title,
   .saved-recipe-summary {
     display: grid;
+  }
+
+  .target-customer-result {
+    grid-template-columns: 1fr;
   }
 
   .saved-recipe-summary > span {
@@ -1535,6 +1620,30 @@ footer {
   margin: 0;
   font-size: 0.8rem;
   line-height: 1.5;
+}
+
+.optimizer-error-suggestions {
+  margin: 2px 0 0;
+  padding-left: 20px;
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+.optimizer-error-details {
+  margin-top: 3px;
+  font-size: 0.7rem;
+}
+
+.optimizer-error-details summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.optimizer-error-details code {
+  display: block;
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .optimizer-metrics {
