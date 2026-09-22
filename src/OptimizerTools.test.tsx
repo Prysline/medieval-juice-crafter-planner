@@ -10,6 +10,7 @@ import {
   criterionLabel,
   moveInventoryRecipeSearchIndex,
   optimizerCriterionOptions,
+  optimizerInventoryIngredients,
   searchInventoryRecipeEntries,
 } from './OptimizerTools'
 import {
@@ -206,6 +207,27 @@ describe('juice jar recipe search UX', () => {
     expect(html).toContain('既有內容：legacy:unknown-recipe')
     expect(html).toContain('清空')
     expect(html).not.toContain('<option')
+  })
+})
+
+describe('optimizer inventory availability', () => {
+  it('hides tranquil-fountain ingredients until that milestone is unlocked', () => {
+    expect(
+      optimizerInventoryIngredients('seasoner-unlocked').map(
+        (ingredient) => ingredient.id,
+      ),
+    ).not.toContain('cinnamon')
+    expect(
+      optimizerInventoryIngredients('seasoner-unlocked').map(
+        (ingredient) => ingredient.id,
+      ),
+    ).not.toContain('banana')
+
+    expect(
+      optimizerInventoryIngredients('tranquil-fountain-unlocked').map(
+        (ingredient) => ingredient.id,
+      ),
+    ).toEqual(expect.arrayContaining(['cinnamon', 'banana']))
   })
 })
 

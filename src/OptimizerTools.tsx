@@ -2,6 +2,7 @@ import { memo, useEffect, useId, useMemo, useState } from 'react'
 import { customers } from './data/customers'
 import { ingredients } from './data/ingredients'
 import { recipes } from './data/recipes'
+import { ingredientIsAvailable } from './domain/availability'
 import {
   optimizerCustomerIds,
   optimizerCustomerLabel,
@@ -160,6 +161,14 @@ export function criterionLabel(criterion: OptimizationCriterion): string {
 }
 
 export const INVENTORY_RECIPE_SEARCH_RESULT_LIMIT = 8
+
+export function optimizerInventoryIngredients(
+  currentProgress: ProgressMilestoneId,
+) {
+  return ingredients.filter((ingredient) =>
+    ingredientIsAvailable(ingredient, currentProgress),
+  )
+}
 
 function inventoryRecipeSourceLabel(
   entry: RecipeCandidatePoolEntry,
@@ -545,6 +554,11 @@ function OptimizerTools({
   const priorities = useMemo(
     () => uniquePriorities(primaryCriterion, secondaryOne, secondaryTwo),
     [primaryCriterion, secondaryOne, secondaryTwo],
+  )
+
+  const availableInventoryIngredients = useMemo(
+    () => optimizerInventoryIngredients(currentProgress),
+    [currentProgress],
   )
 
   const inventoryRecipeEntries = useMemo(
@@ -1131,7 +1145,7 @@ function OptimizerTools({
           <div className="optimizer-inventory-subsection">
             <strong>原料庫存</strong>
             <div className="optimizer-ingredient-inventory">
-              {ingredients.map((ingredient) => (
+              {availableInventoryIngredients.map((ingredient) => (
                 <label key={ingredient.id}>
                   <span>{ingredient.name}</span>
                   <input

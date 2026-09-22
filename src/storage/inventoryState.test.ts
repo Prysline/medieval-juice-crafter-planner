@@ -59,6 +59,29 @@ describe('inventory storage', () => {
     })
   })
 
+  it('preserves currently locked ingredient quantities in storage', () => {
+    const storage = new MemoryStorage()
+    writeInventoryState(storage, {
+      ingredientUnits: {
+        lemon: 2,
+        cinnamon: 4,
+        banana: 3,
+      },
+      waterUnits: 0,
+      cleanCups: 0,
+      usedCups: 0,
+      juiceJars: [],
+      shelfCount: 0,
+      jarRackCount: 0,
+    })
+
+    expect(readInventoryState(storage).ingredientUnits).toEqual({
+      lemon: 2,
+      cinnamon: 4,
+      banana: 3,
+    })
+  })
+
   it('enforces jar capacity and one recipe identity per non-empty jar', () => {
     expect(
       normalizeInventoryState({
