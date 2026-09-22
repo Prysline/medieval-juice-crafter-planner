@@ -27,7 +27,10 @@ import {
   matchingRecipeCandidatesForCustomer,
   recipeCandidateMatchesCustomer,
 } from './domain/matching'
-import { generateRecipeCandidates } from './domain/recipeGenerator'
+import {
+  buildRecipeCandidatePool,
+  recipeCandidatesInCurrentSearchScope,
+} from './domain/recipeCandidatePool'
 import {
   calculateRecipeIngredientCost,
   type RecipeIngredientCost,
@@ -48,11 +51,13 @@ import {
   writeSatisfactionByVillage,
   writeSuppliedCustomerIds,
 } from './storage/plannerState'
+import { readSavedRecipes } from './storage/savedRecipes'
 import type {
   Customer,
   EffectValue,
   ProgressMilestoneId,
   RecipeCandidate,
+  SavedRecipe,
   SatisfactionByVillage,
   VillageId,
 } from './types'
@@ -96,6 +101,9 @@ function App() {
   const [formalCustomerIds, setFormalCustomerIds] = useState<string[]>(() =>
     readFormalCustomerIds(window.localStorage),
   )
+  const [savedRecipes, setSavedRecipes] = useState<SavedRecipe[]>(() =>
+    readSavedRecipes(window.localStorage),
+  )
   const [showSuppliedToday, setShowSuppliedToday] = useState(true)
 
   const normalizedQuery = query.trim().toLocaleLowerCase('zh-Hant')
@@ -103,9 +111,13 @@ function App() {
     'tranquil-fountain',
     currentProgress,
   )
+  const recipeCandidatePool = useMemo(
+    () => buildRecipeCandidatePool(currentProgress, savedRecipes),
+    [currentProgress, savedRecipes],
+  )
   const recipeCandidates = useMemo(
-    () => generateRecipeCandidates(currentProgress),
-    [currentProgress],
+    () => recipeCandidatesInCurrentSearchScope(recipeCandidatePool),
+    [recipeCandidatePool],
   )
   const recipeOrder = useMemo(
     () =>
@@ -541,6 +553,8 @@ function App() {
         <RecipeTools
           currentProgress={currentProgress}
           satisfactionByVillage={satisfactionByVillage}
+          savedRecipes={savedRecipes}
+          onSavedRecipesChange={setSavedRecipes}
         />
       ) : null}
 
@@ -550,6 +564,7 @@ function App() {
           satisfactionByVillage={satisfactionByVillage}
           suppliedCustomerIds={suppliedCustomerIds}
           formalCustomerIds={formalCustomerIds}
+          recipeCandidates={recipeCandidates}
           onSuppliedCustomerIdsCommitted={setSuppliedCustomerIds}
         />
       </div>
