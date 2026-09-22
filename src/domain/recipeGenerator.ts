@@ -92,14 +92,43 @@ function availableSingleSegmentCapabilities(
   }
 }
 
-function seasoningTails(
+function permutationCount(
+  optionCount: number,
+  depth: number,
+): number {
+  if (depth > optionCount) return 0
+  let result = 1
+  for (let index = 0; index < depth; index += 1) {
+    result *= optionCount - index
+  }
+  return result
+}
+
+function seasoningTailCount(
+  seasoningCount: number,
+  depth: number,
+  allowRepeats: boolean,
+): number {
+  if (!allowRepeats) {
+    return permutationCount(seasoningCount, depth)
+  }
+  return (
+    seasoningCount ** depth -
+    permutationCount(seasoningCount, depth)
+  )
+}
+
+function collectSeasoningTails(
   seasoningIds: readonly string[],
   depth: number,
   allowRepeats: boolean,
+  limit: number,
 ): string[][] {
   const result: string[][] = []
 
   function visit(prefix: string[]) {
+    if (result.length >= limit) return
+
     if (prefix.length === depth) {
       if (
         !allowRepeats ||
@@ -111,6 +140,7 @@ function seasoningTails(
     }
 
     for (const seasoningId of seasoningIds) {
+      if (result.length >= limit) return
       if (!allowRepeats && prefix.includes(seasoningId)) {
         continue
       }
@@ -128,6 +158,7 @@ function sequenceLayer(
   currentProgress: ProgressMilestoneId,
   phase: RecipeCandidateSearchPhase,
   seasoningDepth: number,
+  candidateLimit = RECIPE_SEARCH_LAYER_CANDIDATE_LIMIT,
 ): RecipeCandidateGenerationLayer {
   const { bases, seasonings } =
     availableSingleSegmentCapabilities(currentProgress)
@@ -135,27 +166,37 @@ function sequenceLayer(
     .map((capability) => capability.ingredientId)
     .sort(compareIds)
   const allowRepeats = phase === 'repeat-fallback'
-  const tails = seasoningTails(
-    seasoningIds,
+  const tailCount = seasoningTailCount(
+    seasoningIds.length,
     seasoningDepth,
     allowRepeats,
   )
-  const sequences = bases.flatMap((base) =>
-    tails.map((tail) => [base.ingredientId, ...tail]),
-  )
-  const selected = sequences.slice(
-    0,
-    RECIPE_SEARCH_LAYER_CANDIDATE_LIMIT,
-  )
+  const totalSequenceCount = bases.length * tailCount
+  const selectedSequences: string[][] = []
+
+  for (const base of bases) {
+    const remaining = candidateLimit - selectedSequences.length
+    if (remaining <= 0) break
+
+    const tails = collectSeasoningTails(
+      seasoningIds,
+      seasoningDepth,
+      allowRepeats,
+      remaining,
+    )
+    selectedSequences.push(
+      ...tails.map((tail) => [base.ingredientId, ...tail]),
+    )
+  }
 
   return {
     phase,
     seasoningDepth,
-    candidates: selected.map((sequence) =>
+    candidates: selectedSequences.map((sequence) =>
       evaluatedCandidate(sequence, currentProgress),
     ),
-    totalSequenceCount: sequences.length,
-    truncated: selected.length < sequences.length,
+    totalSequenceCount,
+    truncated: selectedSequences.length < totalSequenceCount,
   }
 }
 
@@ -174,17 +215,17 @@ export function generateUniqueRecipeCandidateLayers(
         currentProgress,
         'unique',
         seasoningDepth,
+        Math.min(
+          RECIPE_SEARCH_LAYER_CANDIDATE_LIMIT,
+          remaining,
+        ),
       )
-      const candidates = layer.candidates.slice(0, remaining)
-      const truncated =
-        layer.truncated || candidates.length < layer.candidates.length
-      remaining = Math.max(0, remaining - candidates.length)
+      remaining = Math.max(
+        0,
+        remaining - layer.candidates.length,
+      )
 
-      return {
-        ...layer,
-        candidates,
-        truncated,
-      }
+      return layer
     },
   )
 }
