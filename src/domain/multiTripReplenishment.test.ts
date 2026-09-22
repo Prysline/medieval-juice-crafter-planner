@@ -865,7 +865,7 @@ describe('multi-trip replenishment', () => {
       {
         mode: 'fixed-slots',
         reservedSlots: 1,
-        minimumCarriedSlots: 0,
+        minimumCarriedSlots: 1,
       },
     )
 
