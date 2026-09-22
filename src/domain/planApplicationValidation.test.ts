@@ -38,7 +38,8 @@ function basis(): PlanApplicationBasisState {
     formalCustomerIds: ['jack', 'nanette'],
     suppliedCustomerIds: ['ulrich', 'alia'],
     plannerSettings: {
-      carriedJuiceJarIds: ['jar-a', 'jar-b'],
+      juiceJarCarryMode: 'fixed-slots',
+      reservedJuiceJarSlots: 2,
       allowUsedCupDropIfFull: false,
     },
   }
@@ -68,9 +69,9 @@ function draftFromBasis(
       formalCustomerIds: [...source.formalCustomerIds],
       suppliedCustomerIds: [...source.suppliedCustomerIds],
       plannerSettings: {
-        carriedJuiceJarIds: [
-          ...source.plannerSettings.carriedJuiceJarIds,
-        ],
+        juiceJarCarryMode: source.plannerSettings.juiceJarCarryMode,
+        reservedJuiceJarSlots:
+          source.plannerSettings.reservedJuiceJarSlots,
         allowUsedCupDropIfFull:
           source.plannerSettings.allowUsedCupDropIfFull,
       },
@@ -94,9 +95,9 @@ function draftFromBasis(
       formalCustomerIds: [...source.formalCustomerIds],
       suppliedCustomerIds: [...source.suppliedCustomerIds],
       plannerSettings: {
-        carriedJuiceJarIds: [
-          ...source.plannerSettings.carriedJuiceJarIds,
-        ],
+        juiceJarCarryMode: source.plannerSettings.juiceJarCarryMode,
+        reservedJuiceJarSlots:
+          source.plannerSettings.reservedJuiceJarSlots,
         allowUsedCupDropIfFull:
           source.plannerSettings.allowUsedCupDropIfFull,
       },
@@ -186,11 +187,11 @@ describe('plan application transaction basis validation', () => {
     })
   })
 
-  it('treats physical jar order and carried jar order as planning dependencies', () => {
+  it('treats physical jar order and slot carry policy as planning dependencies', () => {
     const original = basis()
     const changed = basis()
     changed.inventory.juiceJars.reverse()
-    changed.plannerSettings.carriedJuiceJarIds.reverse()
+    changed.plannerSettings.reservedJuiceJarSlots = 1
 
     expect(
       validatePlanApplicationTransactionBasis(
