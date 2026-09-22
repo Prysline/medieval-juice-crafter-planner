@@ -1996,10 +1996,10 @@ function SalesTripPlanBlock({
         </div>
         <p>
           販售排程使用 {plan.physicalJarsUsed} / {plan.carriedJuiceJarCount}{' '}
-          個常駐攜帶果汁罐；單趟最多帶出 {plan.maxJuiceJarSlotsCarried} 個。
+          個實體果汁罐；單趟最多使用 {plan.maxJuiceJarSlotsCarried} 個果汁罐格。
         </p>
         <p>
-          本次 persistent jars：{' '}
+          本日可用實體罐：{' '}
           {plan.carriedJuiceJars
             .map((jar) => {
               const initial =
@@ -2031,7 +2031,7 @@ function SalesTripPlanBlock({
           {plan.totalLeftoverServings > 0
             ? ' 剩餘成品只會留在該 recipe 最後販售的同一 persistent physical jar；目前仍不寫回 inventory，跨日 commit 留待 Apply Plan。'
             : ''}
-          {' '}初始 jar contents 已納入實際販售來源與第一次補裝／換裝判定；未被今日需求喝空的既有內容不會為了減少換裝而自動丟棄。
+          {' '}所有持有果汁罐的既有內容都會納入今日販售來源；有果汁罐架時可在趟次之間整罐上架／換罐，未被今日需求喝空的既有內容不會為了減少換裝而自動丟棄。
         </small>
       </article>
 
@@ -2043,9 +2043,14 @@ function SalesTripPlanBlock({
           <div>
             <strong>第 {trip.tripNumber} 趟</strong>
             <span>
-              {trip.totalServings} 杯 · {trip.juiceJars.length} 罐
+              {trip.totalServings} 杯 · 販售用 {trip.juiceJars.length} 罐 ·
+              實際隨身 {trip.carriedPhysicalJarIds.length} 罐
             </span>
           </div>
+          <p>
+            隨身果汁罐：{trip.carriedPhysicalJarIds.join('、')}
+            {' · '}果汁罐占用／預留 {trip.juiceJarSlotsCarried} 格
+          </p>
           <p>
             帶出 clean cup {trip.cleanCupsCarried} 個 / {trip.cleanCupStacks} 疊
             {' · '}出發占用 {trip.departureSlots} / {trip.effectiveDepartureSlotLimit} slots
