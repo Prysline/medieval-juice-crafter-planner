@@ -121,6 +121,8 @@ function draftFromBasis(
         source.plannerSettings.reservedJuiceJarSlots,
       allowUsedCupDropIfFull:
         source.plannerSettings.allowUsedCupDropIfFull,
+      allowDiscardRetainedJuice:
+        source.plannerSettings.allowDiscardRetainedJuice,
     },
   }
 
