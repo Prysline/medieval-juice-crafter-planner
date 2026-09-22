@@ -1,6 +1,9 @@
 import { customers as canonicalCustomers } from '../data/customers'
 import { ingredients } from '../data/ingredients'
-import { generateRecipeCandidates } from './recipeGenerator'
+import {
+  buildRecipeCandidatePool,
+  recipeCandidatesInCurrentSearchScope,
+} from './recipeCandidatePool'
 import { highsSolverAdapter } from './optimizerHighsSolver'
 import type { BatchOptimizerSolver } from './optimizerSolver'
 import {
@@ -160,7 +163,9 @@ export async function optimizeBatchPlan(
 ): Promise<OptimizationResult> {
   const source = options.source ?? {
     customers: canonicalCustomers,
-    candidates: generateRecipeCandidates(request.currentProgress),
+    candidates: recipeCandidatesInCurrentSearchScope(
+      buildRecipeCandidatePool(request.currentProgress),
+    ),
   }
   const model = buildOptimizationModel(request, source)
   const solver = options.solver ?? highsSolverAdapter
