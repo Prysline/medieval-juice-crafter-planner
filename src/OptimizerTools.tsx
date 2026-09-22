@@ -203,9 +203,18 @@ export function searchInventoryRecipeEntries(
 
       let score = 0
       if (normalizedQuery) {
-        if (normalizedName === normalizedQuery) {
+        if (
+          normalizedName === normalizedQuery ||
+          ingredientNames === normalizedQuery ||
+          ingredientIds === normalizedQuery ||
+          candidateId === normalizedQuery
+        ) {
           score = 0
-        } else if (normalizedName.startsWith(normalizedQuery)) {
+        } else if (
+          normalizedName.startsWith(normalizedQuery) ||
+          ingredientNames.startsWith(normalizedQuery) ||
+          ingredientIds.startsWith(normalizedQuery)
+        ) {
           score = 1
         } else if (normalizedName.includes(normalizedQuery)) {
           score = 2
