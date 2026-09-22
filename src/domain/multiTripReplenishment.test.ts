@@ -836,8 +836,48 @@ describe('multi-trip replenishment', () => {
         { cleanCups: 2, usedCups: 0 },
       ),
     ).toThrow(
-      'Not enough terminal sales-jar capacity to preserve 1 leftover serving(s) without switching away from retained juice',
+      'Terminal leftovers require 2 reusable jars, but only 1 are available',
     )
+  })
+
+  it('reacts to terminal jar count: four jars fail for five leftover recipes, while five jars succeed', () => {
+    const salesDemand = demand(
+      ['A', 'B', 'C', 'D', 'E'].map((name) => ({
+        recipeId: name.toLowerCase(),
+        recipeName: name,
+        assignedServings: 1,
+        leftoverServings: 1,
+      })),
+    )
+
+    expect(() =>
+      buildPlan(
+        salesDemand,
+        'retain-and-wash',
+        4,
+        { cleanCups: 5, usedCups: 0 },
+      ),
+    ).toThrow(
+      'Terminal leftovers require 5 reusable jars, but only 4 are available',
+    )
+
+    const result = buildPlan(
+      salesDemand,
+      'retain-and-wash',
+      5,
+      { cleanCups: 5, usedCups: 0 },
+    )
+
+    expect(result.totalLeftoverServings).toBe(5)
+    expect(result.leftoverJarContents).toHaveLength(5)
+    expect(
+      new Set(
+        result.leftoverJarContents.map(
+          (item) => item.physicalJarId,
+        ),
+      ).size,
+    ).toBe(5)
+    expectScheduleConsistency(result)
   })
 
   it('swaps rack-stored physical jars between trips so separate leftovers remain feasible', () => {
