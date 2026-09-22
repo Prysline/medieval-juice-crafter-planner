@@ -18,7 +18,6 @@ import {
   formatRecipeSequence,
 } from './domain/displayFormat'
 import {
-  readSavedRecipes,
   removeSavedRecipe,
   upsertSavedRecipe,
   writeSavedRecipes,
@@ -33,6 +32,8 @@ import type {
 interface RecipeToolsProps {
   currentProgress: ProgressMilestoneId
   satisfactionByVillage: SatisfactionByVillage
+  savedRecipes: SavedRecipe[]
+  onSavedRecipesChange: (recipes: SavedRecipe[]) => void
 }
 
 const ingredientById = new Map(
@@ -75,13 +76,12 @@ function makeSavedRecipeId(): string {
 export function RecipeTools({
   currentProgress,
   satisfactionByVillage,
+  savedRecipes,
+  onSavedRecipesChange,
 }: RecipeToolsProps) {
   const [ingredientIds, setIngredientIds] = useState<string[]>([])
   const [blenderFrontIds, setBlenderFrontIds] = useState<string[]>([])
   const [blenderBackIds, setBlenderBackIds] = useState<string[]>([])
-  const [savedRecipes, setSavedRecipes] = useState<SavedRecipe[]>(() =>
-    readSavedRecipes(window.localStorage),
-  )
   const [saveName, setSaveName] = useState('')
   const [saveNote, setSaveNote] = useState('')
 
@@ -126,7 +126,7 @@ export function RecipeTools({
   }
 
   function persistSavedRecipes(next: SavedRecipe[]) {
-    setSavedRecipes(next)
+    onSavedRecipesChange(next)
     writeSavedRecipes(window.localStorage, next)
   }
 
