@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { customers } from './data/customers'
 import { ingredients } from './data/ingredients'
 import { recipes } from './data/recipes'
-import { generateRecipeCandidates } from './domain/recipeGenerator'
 import {
   optimizerCustomerIds,
   optimizerCustomerLabel,
@@ -48,6 +47,7 @@ import type {
   InventoryState,
   PlannerSettings,
   ProgressMilestoneId,
+  RecipeCandidate,
   SatisfactionByVillage,
 } from './types'
 
@@ -56,6 +56,7 @@ interface OptimizerToolsProps {
   satisfactionByVillage: SatisfactionByVillage
   suppliedCustomerIds: string[]
   formalCustomerIds: string[]
+  recipeCandidates: RecipeCandidate[]
   onSuppliedCustomerIdsCommitted: (customerIds: string[]) => void
 }
 
@@ -208,6 +209,7 @@ export default function OptimizerTools({
   satisfactionByVillage,
   suppliedCustomerIds,
   formalCustomerIds,
+  recipeCandidates,
   onSuppliedCustomerIdsCommitted,
 }: OptimizerToolsProps) {
   const [scope, setScope] = useState<OptimizerCustomerScope>('all')
@@ -239,12 +241,12 @@ export default function OptimizerTools({
 
   const inventoryRecipeCandidates = useMemo(
     () =>
-      generateRecipeCandidates(currentProgress).sort(
+      [...recipeCandidates].sort(
         (a, b) =>
           a.name.localeCompare(b.name, 'zh-Hant') ||
           a.id.localeCompare(b.id),
       ),
-    [currentProgress],
+    [recipeCandidates],
   )
 
   const carriedJuiceJars = useMemo(
@@ -473,31 +475,39 @@ export default function OptimizerTools({
         )
       }
 
-      const result = await optimizeBatchPlan({
-        customerIds,
-        currentProgress,
-        suppliedCustomerIds,
-        satisfactionByVillage,
-        formalCustomerIds,
-        candidatePolicy,
-        objective:
-          primaryCriterion === 'minimum-machine-operations' ||
-          primaryCriterion === 'minimum-jar-switches'
-            ? 'minimum-cost'
-            : primaryCriterion,
-        priorities,
-        availableJuiceJarCount:
-          capacitySummary.effectiveCarriedJuiceJarCount,
-        initialCarriedJuiceJars: carriedJuiceJars.map((jar) => ({
-          recipeId: jar.recipeId,
-          servings: jar.servings,
-        })),
-        constraints:
-          parsedMaxSwitches === undefined ||
-          !Number.isFinite(parsedMaxSwitches)
-            ? undefined
-            : { maxJarTypeSwitches: parsedMaxSwitches },
-      })
+      const result = await optimizeBatchPlan(
+        {
+          customerIds,
+          currentProgress,
+          suppliedCustomerIds,
+          satisfactionByVillage,
+          formalCustomerIds,
+          candidatePolicy,
+          objective:
+            primaryCriterion === 'minimum-machine-operations' ||
+            primaryCriterion === 'minimum-jar-switches'
+              ? 'minimum-cost'
+              : primaryCriterion,
+          priorities,
+          availableJuiceJarCount:
+            capacitySummary.effectiveCarriedJuiceJarCount,
+          initialCarriedJuiceJars: carriedJuiceJars.map((jar) => ({
+            recipeId: jar.recipeId,
+            servings: jar.servings,
+          })),
+          constraints:
+            parsedMaxSwitches === undefined ||
+            !Number.isFinite(parsedMaxSwitches)
+              ? undefined
+              : { maxJarTypeSwitches: parsedMaxSwitches },
+        },
+        {
+          source: {
+            customers,
+            candidates: recipeCandidates,
+          },
+        },
+      )
 
       const preparationDemand = buildPreparationDemand(result)
       const preparationShortfall = buildPreparationShortfall(
