@@ -316,6 +316,8 @@ describe('optimizer model', () => {
         {
           phase: 'unique',
           seasoningDepth: 1,
+          segmentCount: 1,
+          ingredientCount: 2,
           candidateIds: [computed.id],
           totalSequenceCount: 1,
           truncated: false,
@@ -323,6 +325,8 @@ describe('optimizer model', () => {
         {
           phase: 'unique',
           seasoningDepth: 2,
+          segmentCount: 1,
+          ingredientCount: 3,
           candidateIds: [observed.id],
           totalSequenceCount: 1,
           truncated: false,
