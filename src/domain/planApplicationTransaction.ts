@@ -281,6 +281,14 @@ function validatePlanBasis(
       'Sales plan retained-juice discard policy does not match the transaction basis',
     )
   }
+  if (
+    !salesPlan.allowDiscardRetainedJuice &&
+    salesPlan.discardedInitialJuice.length > 0
+  ) {
+    throw new Error(
+      'Sales plan cannot discard retained juice without explicit opt-in',
+    )
+  }
 
   if (
     preparationShortfall.waterUnitsAvailable !==
