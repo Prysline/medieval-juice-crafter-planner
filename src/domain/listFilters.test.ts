@@ -145,6 +145,37 @@ describe('recipe research filters', () => {
     ).toBe(true)
   })
 
+  it('can filter a saved provenance independently from computed/observed source', () => {
+    const savedPool = buildRecipeCandidatePool(
+      'juice-blender-unlocked',
+      [
+        {
+          id: 'saved-lemon',
+          name: '我的檸檬',
+          ingredientIds: ['lemon'],
+          createdAt: '2026-09-22T00:00:00.000Z',
+        },
+      ],
+    )
+    const savedObserved = entryBySequence(
+      savedPool.entries,
+      ['lemon'],
+    )
+
+    expect(savedObserved.sources).toContain('observed')
+    expect(savedObserved.sources).toContain('saved')
+    expect(
+      recipeEntryMatchesResearchFilters(savedObserved, {
+        ingredientCount: null,
+        ingredientId: null,
+        confirmedEffect: null,
+        possibleEffect: null,
+        source: 'saved',
+        price: 'all',
+      }),
+    ).toBe(true)
+  })
+
   it('filters by merged provenance and known-price state', () => {
     const observed = entryBySequence(entries, ['lemon'])
     const computed = entries.find(
