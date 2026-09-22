@@ -32,7 +32,8 @@ export interface PlanApplicationInventorySnapshot {
 }
 
 export interface PlanApplicationSettingsSnapshot {
-  readonly carriedJuiceJarIds: readonly string[]
+  readonly juiceJarCarryMode: PlannerSettings['juiceJarCarryMode']
+  readonly reservedJuiceJarSlots: number
   readonly allowUsedCupDropIfFull: boolean
 }
 
@@ -166,7 +167,9 @@ function snapshotState(
     formalCustomerIds: [...basis.formalCustomerIds],
     suppliedCustomerIds: [...suppliedCustomerIds],
     plannerSettings: {
-      carriedJuiceJarIds: [...basis.plannerSettings.carriedJuiceJarIds],
+      juiceJarCarryMode: basis.plannerSettings.juiceJarCarryMode,
+      reservedJuiceJarSlots:
+        basis.plannerSettings.reservedJuiceJarSlots,
       allowUsedCupDropIfFull:
         basis.plannerSettings.allowUsedCupDropIfFull,
     },
@@ -189,7 +192,6 @@ function freezeStateSnapshot(
   Object.freeze(snapshot.satisfactionByVillage)
   Object.freeze(snapshot.formalCustomerIds)
   Object.freeze(snapshot.suppliedCustomerIds)
-  Object.freeze(snapshot.plannerSettings.carriedJuiceJarIds)
   Object.freeze(snapshot.plannerSettings)
   return Object.freeze(snapshot)
 }
@@ -256,22 +258,6 @@ function validatePlanBasis(
   if (salesPlan.policy !== expectedPolicy) {
     throw new Error(
       'Sales plan cup policy does not match the transaction basis',
-    )
-  }
-
-  const plannedCarriedJarIds = salesPlan.carriedJuiceJars.map(
-    (jar) => jar.physicalJarId,
-  )
-  if (
-    plannedCarriedJarIds.length !==
-      basis.plannerSettings.carriedJuiceJarIds.length ||
-    plannedCarriedJarIds.some(
-      (id, index) =>
-        id !== basis.plannerSettings.carriedJuiceJarIds[index],
-    )
-  ) {
-    throw new Error(
-      'Sales plan carried jars do not match the transaction basis',
     )
   }
 
