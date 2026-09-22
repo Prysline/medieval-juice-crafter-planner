@@ -180,6 +180,27 @@ describe('progressive recipe search', () => {
     ).toBe(true)
   })
 
+  it('does not invoke repeated seasoning when a mixed preference still requires an unavailable ingredient', () => {
+    const pool = buildRecipeCandidatePool('seasoner-unlocked')
+    const result = searchRecipeCandidatesForCustomer(
+      pool,
+      'seasoner-unlocked',
+      customer([
+        { kind: 'ingredient', value: '肉桂' },
+        { kind: 'effect', value: '舒緩腸胃' },
+      ]),
+      { candidatePolicy: 'allow-unambiguous-computed' },
+    )
+
+    expect(result.guaranteedFullMatchFound).toBe(false)
+    expect(result.usedRepeatedSeasoningFallback).toBe(false)
+    expect(
+      result.exploredLayers.every(
+        (layer) => layer.phase === 'unique',
+      ),
+    ).toBe(true)
+  })
+
   it('uses the consumer policy when deciding whether a layer can stop the search', () => {
     const computed = fixtureCandidate(
       'computed',
@@ -267,6 +288,9 @@ describe('progressive recipe search', () => {
     expect(first.candidates.map((candidate) => candidate.id)).toEqual(
       second.candidates.map((candidate) => candidate.id),
     )
+    expect(
+      new Set(first.candidates.map((candidate) => candidate.id)).size,
+    ).toBe(first.candidates.length)
     expect(first.candidates.length).toBeLessThanOrEqual(
       RECIPE_SEARCH_TOTAL_CANDIDATE_LIMIT,
     )
