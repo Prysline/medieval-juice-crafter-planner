@@ -1064,7 +1064,7 @@ function allocateLeftoverJarContents(
   return contents
 }
 
-export function buildProductionJarFillsFromSchedule(
+export export function buildProductionJarFillsFromSchedule(
   trips: MultiTripSalesTrip[],
   initialJars: MultiTripPhysicalJar[] = [],
 ): MultiTripProductionJarFill[] {
