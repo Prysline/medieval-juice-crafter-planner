@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Customer, RecipeCandidate } from '../types'
+import type { RecipeCandidatePool } from './recipeCandidatePool'
 import {
   buildOptimizationModel,
   type OptimizationRequest,
@@ -275,6 +276,79 @@ describe('optimizer model', () => {
     expect(potentialRevenue.recipes.map((recipe) => recipe.candidate.id)).toEqual([
       'computed',
     ])
+  })
+
+  it('continues progressive search past an unknown-price computed match for a formal revenue objective', () => {
+    const computed = candidate(
+      'computed-shallow',
+      'computed',
+      ['檸檬', '糖'],
+      [{ name: '甜味', value: 5 }],
+    )
+    const observed = candidate(
+      'observed-deeper',
+      'observed',
+      ['橙子', '糖', '薄荷'],
+      [{ name: '甜味', value: 5 }],
+    )
+    const pool: RecipeCandidatePool = {
+      entries: [
+        {
+          id: computed.id,
+          ingredientIds: ['lemon', 'sugar'],
+          candidate: computed,
+          sources: ['computed'],
+          savedRecipeIds: [],
+          availableAtCurrentProgress: true,
+          inGeneratedSearchScope: true,
+        },
+        {
+          id: observed.id,
+          ingredientIds: ['orange', 'sugar', 'mint'],
+          candidate: observed,
+          sources: ['observed'],
+          savedRecipeIds: [],
+          availableAtCurrentProgress: true,
+          inGeneratedSearchScope: true,
+        },
+      ],
+      generatedLayers: [
+        {
+          phase: 'unique',
+          seasoningDepth: 1,
+          candidateIds: [computed.id],
+          totalSequenceCount: 1,
+          truncated: false,
+        },
+        {
+          phase: 'unique',
+          seasoningDepth: 2,
+          candidateIds: [observed.id],
+          totalSequenceCount: 1,
+          truncated: false,
+        },
+      ],
+      rejectedSavedRecipes: [],
+    }
+
+    const model = buildOptimizationModel(
+      {
+        ...baseRequest,
+        customerIds: ['a'],
+        formalCustomerIds: ['a'],
+        candidatePolicy: 'allow-unambiguous-computed',
+        objective: 'maximum-known-revenue',
+      },
+      {
+        customers,
+        candidatePool: pool,
+      },
+    )
+
+    expect(model.serviceableCustomerIds).toEqual(['a'])
+    expect(
+      model.recipes.map((recipe) => recipe.candidate.id),
+    ).toEqual(['observed-deeper'])
   })
 
   it('keeps future-progress candidates out of the eligible matrix', () => {
