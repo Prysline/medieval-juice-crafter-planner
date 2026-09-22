@@ -10,6 +10,9 @@ export type PlanningUserErrorCode =
 
 export interface PlanningUserErrorContext {
   remainingServings?: number
+  requiredTerminalJarCount?: number
+  reusableTerminalJarCount?: number
+  retainedJarCount?: number
   policy?: string
   solverStatus?: string
 }
@@ -102,16 +105,33 @@ export function presentPlanningError(
         }
       case 'leftover-storage': {
         const remaining = error.context.remainingServings
+        const required = error.context.requiredTerminalJarCount
+        const reusable = error.context.reusableTerminalJarCount
+        const retained = error.context.retainedJarCount
+        const capacityDetail =
+          typeof required === 'number' && typeof reusable === 'number'
+            ? `這份規劃有 ${required} 種不同配方需要在販售結束後各自保留成品，因此需要至少 ${required} 個可作終局容器的實體果汁罐；目前只有 ${reusable} 個可重用。`
+            : ''
+        const retainedDetail =
+          typeof retained === 'number' && retained > 0
+            ? `另有 ${retained} 個果汁罐因既有內容必須保留，不能拿來換裝其他配方。`
+            : ''
+
         return {
           title: '剩餘果汁沒有足夠的實體罐可保留',
-          message:
+          message: [
+            capacityDetail,
+            retainedDetail,
             remaining && remaining > 0
-              ? `還有 ${remaining} 杯剩餘果汁需要保留，但目前的實體罐配置無法在不倒掉其他剩餘果汁的前提下保存。`
-              : '剩餘果汁需要保留，但目前的實體罐配置無法在不倒掉其他剩餘果汁的前提下保存。',
+              ? `目前仍有 ${remaining} 杯剩餘果汁無法安排合法終局容器。`
+              : '目前仍有剩餘果汁無法安排合法終局容器。',
+          ]
+            .filter(Boolean)
+            .join(' '),
           suggestions: [
-            '增加實體果汁罐，或調整各罐的初始內容。',
-            '已有果汁罐架時，可改用「每趟自動計算」或增加固定果汁罐格數。',
-            '也可以改用較少果汁種類或較少剩餘量的規劃條件。',
+            '不同配方的剩餘果汁不能共用同一個未空果汁罐；請先比較「需要的終局罐數」與「可重用罐數」。',
+            '增加足夠的實體果汁罐，或調整既有果汁罐內容，讓更多罐可在當天結束時留給新配方。',
+            '若不想增加果汁罐，可改用會產生較少不同剩餘配方的規劃條件。',
           ],
           technicalDetails: details,
         }
