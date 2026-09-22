@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { ingredients } from '../data/ingredients'
 import {
+  BLEND_SEARCH_LAYER_CANDIDATE_LIMIT,
+  BLEND_SEARCH_TOTAL_CANDIDATE_LIMIT,
   effectSlotCount,
+  generateBlendedRecipeCandidateLayers,
+  generateProgressiveRecipeCandidateLayers,
   generateRecipeCandidates,
   generateUniqueRecipeCandidateLayers,
   predictRecipeEffects,
@@ -201,6 +205,141 @@ describe('recipe generator', () => {
     expect(first.every((layer) => layer.truncated === false)).toBe(true)
   })
 
+  it('generates deterministic bounded blend layers by legal ordered segments', () => {
+    const first = generateBlendedRecipeCandidateLayers(
+      'juice-blender-unlocked',
+    )
+    const second = generateBlendedRecipeCandidateLayers(
+      'juice-blender-unlocked',
+    )
+
+    expect(
+      first.map((layer) => [
+        layer.ingredientCount,
+        layer.segmentCount,
+        layer.seasoningDepth,
+        layer.candidates.length,
+      ]),
+    ).toEqual([
+      [2, 2, 0, 25],
+      [3, 2, 1, 150],
+      [3, 3, 0, 125],
+      [4, 2, 2, 525],
+      [4, 3, 1, 1125],
+      [5, 2, 3, 1200],
+      [5, 3, 2, 5625],
+      [6, 2, 4, 1800],
+    ])
+    expect(
+      first.reduce(
+        (sum, layer) => sum + layer.candidates.length,
+        0,
+      ),
+    ).toBeLessThanOrEqual(BLEND_SEARCH_TOTAL_CANDIDATE_LIMIT)
+    expect(
+      first.every(
+        (layer) =>
+          layer.candidates.length <=
+            BLEND_SEARCH_LAYER_CANDIDATE_LIMIT &&
+          layer.truncated === false,
+      ),
+    ).toBe(true)
+    expect(
+      first.flatMap((layer) =>
+        layer.candidates.map((candidate) => candidate.id),
+      ),
+    ).toEqual(
+      second.flatMap((layer) =>
+        layer.candidates.map((candidate) => candidate.id),
+      ),
+    )
+  })
+
+  it('preserves Blender left-right order instead of treating inputs as commutative', () => {
+    const candidates = generateBlendedRecipeCandidateLayers(
+      'juice-blender-unlocked',
+    ).flatMap((layer) => layer.candidates)
+    const lemonPear = candidates.find(
+      (candidate) =>
+        candidate.ingredients.join(' → ') === '檸檬 → 梨',
+    )
+    const pearLemon = candidates.find(
+      (candidate) =>
+        candidate.ingredients.join(' → ') === '梨 → 檸檬',
+    )
+
+    expect(lemonPear).toBeDefined()
+    expect(pearLemon).toBeDefined()
+    expect(lemonPear?.id).not.toBe(pearLemon?.id)
+    expect(lemonPear).toMatchObject({
+      source: 'computed',
+      salePrice: null,
+    })
+    expect(lemonPear?.equipment).toContain('果汁調和器')
+  })
+
+  it('uses exact observed Blender overlays inside generated blend structures', () => {
+    const candidates = generateBlendedRecipeCandidateLayers(
+      'juice-blender-unlocked',
+    ).flatMap((layer) => layer.candidates)
+    const twoSegmentObserved = candidates.find(
+      (candidate) =>
+        candidate.ingredients.join(' → ') ===
+        '檸檬 → 糖 → 薄荷 → 橙子 → 薄荷 → 糖',
+    )
+    const threeSegmentObserved = candidates.find(
+      (candidate) =>
+        candidate.ingredients.join(' → ') ===
+        '檸檬 → 紅蘿蔔 → 薄荷 → 糖 → 梨',
+    )
+
+    expect(twoSegmentObserved).toMatchObject({
+      id: 'lemon-sugar-mint-orange-mint-sugar-blend',
+      source: 'observed',
+      salePrice: 57,
+    })
+    expect(threeSegmentObserved).toMatchObject({
+      id: 'lemon-carrot-mint-sugar-pear-blend',
+      source: 'observed',
+      salePrice: 80,
+    })
+    expect(threeSegmentObserved?.equipment).toEqual(
+      expect.arrayContaining([
+        '柑橘榨汁機',
+        '榨汁機',
+        '調味器',
+        '果汁調和器',
+        '果汁成品台',
+      ]),
+    )
+  })
+
+  it('orders single and blended unique layers by total ingredient complexity', () => {
+    const layers = generateProgressiveRecipeCandidateLayers(
+      'juice-blender-unlocked',
+    )
+
+    expect(
+      layers.map((layer) => [
+        layer.ingredientCount,
+        layer.segmentCount,
+      ]),
+    ).toEqual([
+      [1, 1],
+      [2, 1],
+      [2, 2],
+      [3, 1],
+      [3, 2],
+      [3, 3],
+      [4, 1],
+      [4, 2],
+      [4, 3],
+      [5, 2],
+      [5, 3],
+      [6, 2],
+    ])
+  })
+
   it('keeps all pre-fountain valid sequences on observed data', () => {
     const seasonerCandidates = generateRecipeCandidates('seasoner-unlocked')
     const juicerCandidates = generateRecipeCandidates('juicer-unlocked')
@@ -211,7 +350,7 @@ describe('recipe generator', () => {
     expect(juicerCandidates.every((candidate) => candidate.source === 'observed')).toBe(true)
   })
 
-  it('does not invent juice-blender combinations when stage five unlocks', () => {
+  it('keeps the legacy single-segment generator stable when stage five unlocks', () => {
     const beforeBlender = generateRecipeCandidates('tranquil-fountain-unlocked')
       .map((candidate) => candidate.ingredients.join(' → '))
       .sort()
