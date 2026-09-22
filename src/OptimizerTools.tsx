@@ -32,7 +32,7 @@ import type { PlanApplicationTransactionDraft } from './domain/planApplicationTr
 import type { PlanApplicationBasisMismatchField } from './domain/planApplicationValidation'
 import {
   buildInventoryCapacitySummary,
-  selectCarriedJuiceJars,
+  selectAccessibleJuiceJars,
 } from './domain/inventoryCapacity'
 import {
   readInventoryState,
@@ -252,9 +252,9 @@ export default function OptimizerTools({
     [recipeCandidates],
   )
 
-  const carriedJuiceJars = useMemo(
-    () => selectCarriedJuiceJars(inventoryState, plannerSettings),
-    [inventoryState, plannerSettings],
+  const accessibleJuiceJars = useMemo(
+    () => selectAccessibleJuiceJars(inventoryState),
+    [inventoryState],
   )
 
   const capacitySummary = useMemo(
@@ -273,24 +273,9 @@ export default function OptimizerTools({
   }
 
   function setPhysicalJuiceJarCount(count: number) {
-    const nextInventory = resizeJuiceJarInventory(inventoryState, count)
-    persistInventory(nextInventory)
-
-    const ownedIds = new Set(
-      nextInventory.juiceJars.map((jar) => jar.id),
+    persistInventory(
+      resizeJuiceJarInventory(inventoryState, count),
     )
-    const nextCarriedIds = plannerSettings.carriedJuiceJarIds.filter(
-      (id) => ownedIds.has(id),
-    )
-    if (
-      nextCarriedIds.length !==
-      plannerSettings.carriedJuiceJarIds.length
-    ) {
-      persistPlannerSettings({
-        ...plannerSettings,
-        carriedJuiceJarIds: nextCarriedIds,
-      })
-    }
   }
 
   function setIngredientInventory(
@@ -357,29 +342,6 @@ export default function OptimizerTools({
     )
   }
 
-  function toggleCarriedJuiceJar(
-    jarId: string,
-    checked: boolean,
-  ) {
-    const selected = new Set(
-      plannerSettings.carriedJuiceJarIds.filter((id) =>
-        inventoryState.juiceJars.some((jar) => jar.id === id),
-      ),
-    )
-    if (checked) {
-      if (selected.size >= 10) return
-      selected.add(jarId)
-    } else {
-      selected.delete(jarId)
-    }
-
-    persistPlannerSettings({
-      ...plannerSettings,
-      carriedJuiceJarIds: inventoryState.juiceJars
-        .filter((jar) => selected.has(jar.id))
-        .map((jar) => jar.id),
-    })
-  }
 
   const customerIds = useMemo(
     () =>
@@ -473,9 +435,17 @@ export default function OptimizerTools({
           ? undefined
           : Math.max(0, Math.floor(Number(maxJarTypeSwitches)))
 
-      if (capacitySummary.effectiveCarriedJuiceJarCount < 1) {
+      if (capacitySummary.physicalJuiceJarCount < 1) {
+        throw new Error('請先設定至少 1 個實際持有的果汁罐。')
+      }
+      if (capacitySummary.jarStorageCapacityExceeded) {
         throw new Error(
-          '請先設定至少 1 個實際持有且常駐攜帶的果汁罐。',
+          '目前持有的果汁罐超過果汁罐架與背包合計可容納的數量。',
+        )
+      }
+      if (capacitySummary.maxJuiceJarSlotsPerTrip < 1) {
+        throw new Error(
+          '固定果汁罐格數至少需要 1 格，或改用每趟自動計算。',
         )
       }
 
@@ -494,8 +464,8 @@ export default function OptimizerTools({
               : primaryCriterion,
           priorities,
           availableJuiceJarCount:
-            capacitySummary.effectiveCarriedJuiceJarCount,
-          initialCarriedJuiceJars: carriedJuiceJars.map((jar) => ({
+            capacitySummary.physicalJuiceJarCount,
+          initialAvailableJuiceJars: accessibleJuiceJars.map((jar) => ({
             recipeId: jar.recipeId,
             servings: jar.servings,
           })),
@@ -517,9 +487,6 @@ export default function OptimizerTools({
       const preparationShortfall = buildPreparationShortfall(
         preparationDemand,
         inventoryState,
-        {
-          finishedJuiceJarIds: carriedJuiceJars.map((jar) => jar.id),
-        },
       )
       const selectedPolicy: UsedCupTripPolicy =
         plannerSettings.allowUsedCupDropIfFull
@@ -536,12 +503,18 @@ export default function OptimizerTools({
         const plan = buildMultiTripReplenishmentPlan(
           preparationDemand,
           policy,
-          carriedJuiceJars,
+          accessibleJuiceJars,
           {
             cleanCups: inventoryState.cleanCups,
             usedCups: inventoryState.usedCups,
           },
           preparationShortfall,
+          {
+            mode: plannerSettings.juiceJarCarryMode,
+            reservedSlots: plannerSettings.reservedJuiceJarSlots,
+            minimumCarriedSlots:
+              capacitySummary.minimumCarriedJuiceJarSlots,
+          },
         )
         if (plan.jarTypeSwitches !== result.jarTypeSwitches) {
           throw new Error(
@@ -585,11 +558,7 @@ export default function OptimizerTools({
               satisfactionByVillage,
               formalCustomerIds,
               suppliedCustomerIds,
-              plannerSettings: {
-                ...plannerSettings,
-                carriedJuiceJarIds:
-                  capacitySummary.carriedJuiceJarIds,
-              },
+              plannerSettings,
             },
             result,
             preparationShortfall,
@@ -876,18 +845,82 @@ export default function OptimizerTools({
             <div className="optimizer-inventory-subheading">
               <strong>果汁罐</strong>
               <span>
-                常駐攜帶 {capacitySummary.effectiveCarriedJuiceJarCount} / 10
+                {inventoryState.jarRackCount === 0
+                  ? `無果汁罐架：${capacitySummary.physicalJuiceJarCount} 個都必須隨身`
+                  : plannerSettings.juiceJarCarryMode === 'auto'
+                    ? '每趟自動計算攜帶數量'
+                    : `固定使用 ${capacitySummary.effectiveReservedJuiceJarSlots} 個果汁罐格`}
               </span>
             </div>
+
+            {inventoryState.jarRackCount > 0 && (
+              <div className="optimizer-inventory-grid">
+                <label>
+                  <span>出門果汁罐格</span>
+                  <select
+                    value={plannerSettings.juiceJarCarryMode}
+                    onChange={(event) =>
+                      persistPlannerSettings({
+                        ...plannerSettings,
+                        juiceJarCarryMode:
+                          event.target.value === 'fixed-slots'
+                            ? 'fixed-slots'
+                            : 'auto',
+                      })
+                    }
+                  >
+                    <option value="auto">每趟自動計算</option>
+                    <option value="fixed-slots">固定格數</option>
+                  </select>
+                </label>
+                {plannerSettings.juiceJarCarryMode === 'fixed-slots' && (
+                  <label>
+                    <span>固定果汁罐格數</span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      max={Math.min(
+                        10,
+                        capacitySummary.physicalJuiceJarCount,
+                      )}
+                      value={plannerSettings.reservedJuiceJarSlots}
+                      onChange={(event) =>
+                        persistPlannerSettings({
+                          ...plannerSettings,
+                          reservedJuiceJarSlots: Math.min(
+                            10,
+                            Math.max(
+                              0,
+                              Math.floor(
+                                Number(event.target.value) || 0,
+                              ),
+                            ),
+                          ),
+                        })
+                      }
+                    />
+                  </label>
+                )}
+              </div>
+            )}
+
+            {capacitySummary.minimumCarriedJuiceJarSlots > 0 &&
+              inventoryState.jarRackCount > 0 && (
+                <p className="optimizer-inventory-empty">
+                  果汁罐架目前最多能放
+                  {' '}{capacitySummary.jarRackStagingCapacity} 個罐子，因此至少
+                  {' '}{capacitySummary.minimumCarriedJuiceJarSlots} 個果汁罐必須留在背包。
+                </p>
+              )}
+
             {inventoryState.juiceJars.length === 0 ? (
               <p className="optimizer-inventory-empty">
-                目前沒有 physical juice jar。
+                目前沒有實體果汁罐。
               </p>
             ) : (
               <div className="optimizer-jar-inventory">
                 {inventoryState.juiceJars.map((jar) => {
-                  const carried =
-                    capacitySummary.carriedJuiceJarIds.includes(jar.id)
                   const knownCurrentRecipe =
                     inventoryRecipeCandidates.some(
                       (candidate) => candidate.id === jar.recipeId,
@@ -897,24 +930,6 @@ export default function OptimizerTools({
                     <article className="optimizer-jar-card" key={jar.id}>
                       <div className="optimizer-jar-heading">
                         <strong>{jar.id}</strong>
-                        <label className="optimizer-jar-carry-toggle">
-                          <input
-                            type="checkbox"
-                            checked={carried}
-                            disabled={
-                              !carried &&
-                              capacitySummary.effectiveCarriedJuiceJarCount >=
-                                10
-                            }
-                            onChange={(event) =>
-                              toggleCarriedJuiceJar(
-                                jar.id,
-                                event.target.checked,
-                              )
-                            }
-                          />
-                          <span>常駐攜帶</span>
-                        </label>
                       </div>
                       <label>
                         <span>內容</span>
@@ -969,32 +984,48 @@ export default function OptimizerTools({
           <strong>本次需求：{customerIds.length} 人</strong>
           <span>最佳化順序：{priorities.map(criterionLabel).join(' → ')}</span>
           <span>
-            果汁罐：持有 {capacitySummary.physicalJuiceJarCount} · 常駐攜帶{' '}
-            {capacitySummary.effectiveCarriedJuiceJarCount}
-            {capacitySummary.carriedJuiceJarIds.length > 0
-              ? '（' + capacitySummary.carriedJuiceJarIds.join('、') + '）'
-              : ''}
+            果汁罐：持有 {capacitySummary.physicalJuiceJarCount}
+            {' · '}
+            {inventoryState.jarRackCount === 0
+              ? `無果汁罐架，全部 ${capacitySummary.physicalJuiceJarCount} 個必須隨身`
+              : plannerSettings.juiceJarCarryMode === 'auto'
+                ? `每趟自動計算（最低隨身 ${capacitySummary.minimumCarriedJuiceJarSlots} 個）`
+                : `固定使用 ${capacitySummary.effectiveReservedJuiceJarSlots} 個果汁罐格`}
             {maxJarTypeSwitches.trim() !== ''
               ? ' · 最多換裝 ' + maxJarTypeSwitches + ' 次'
               : ' · 換裝不限'}
           </span>
           <span>
             一般架子 {inventoryState.shelfCount} 架 /{' '}
-            {capacitySummary.shelfSlotCapacity} slots · 果汁罐架{' '}
+            {capacitySummary.shelfSlotCapacity} 格 · 果汁罐架{' '}
             {inventoryState.jarRackCount} 架 /{' '}
-            {capacitySummary.jarRackStagingCapacity} slots
+            {capacitySummary.jarRackStagingCapacity} 格
           </span>
           <span>
-            常駐果汁罐占 {capacitySummary.carriedJarSlotCost} / 10 背包 slots；
-            其他搬運剩 {capacitySummary.backpackSlotsRemainingAfterCarriedJars} 格
+            目前至少占用／固定使用
+            {' '}{capacitySummary.effectiveReservedJuiceJarSlots} / 10 個背包格；
+            其他搬運至少剩
+            {' '}{capacitySummary.backpackSlotsRemainingAfterCarriedJars} 格
           </span>
         </div>
 
-        {capacitySummary.effectiveCarriedJuiceJarCount < 1 && (
+        {capacitySummary.physicalJuiceJarCount < 1 && (
           <p className="optimizer-capacity-warning" role="status">
-            請先設定至少 1 個「實際持有果汁罐」，並將「常駐攜帶果汁罐」設為至少 1。
+            請先設定至少 1 個實際持有的果汁罐。
           </p>
         )}
+        {capacitySummary.jarStorageCapacityExceeded && (
+          <p className="optimizer-capacity-warning" role="status">
+            目前持有的果汁罐超過果汁罐架與背包合計可容納的數量。
+          </p>
+        )}
+        {capacitySummary.physicalJuiceJarCount > 0 &&
+          !capacitySummary.jarStorageCapacityExceeded &&
+          capacitySummary.maxJuiceJarSlotsPerTrip < 1 && (
+            <p className="optimizer-capacity-warning" role="status">
+              固定果汁罐格數至少需要 1 格，或改用「每趟自動計算」。
+            </p>
+          )}
 
         <button
           type="button"
@@ -1002,7 +1033,9 @@ export default function OptimizerTools({
           disabled={
             customerIds.length === 0 ||
             runState.status === 'loading' ||
-            capacitySummary.effectiveCarriedJuiceJarCount < 1
+            capacitySummary.physicalJuiceJarCount < 1 ||
+            capacitySummary.jarStorageCapacityExceeded ||
+            capacitySummary.maxJuiceJarSlotsPerTrip < 1
           }
           onClick={runOptimizer}
         >
@@ -1580,7 +1613,7 @@ function OptimizerResultPanel({
           {productionLogistics.productionPlan.machineOperations.finalizing}）
         </span>
         <span>
-          常駐攜帶果汁罐 {result.availableJuiceJarCount} 個；同罐改裝成另一種果汁才計入換裝。
+          本日可用實體果汁罐 {result.availableJuiceJarCount} 個；有果汁罐架時可跨趟換罐，同罐改裝成另一種果汁才計入換裝。
         </span>
         <span>
           販售摘要採「{tripPolicyLabel(selectedSalesTripPlan)}」；杯具依實際持有量與 clean → used stack transition 計算，果汁成品台接收罐也依這份販售排程的 physical jar 時序安排；替代 policy 可在販售排程展開比較。
@@ -1801,12 +1834,12 @@ function OptimizerResultPanel({
           </span>
           <span>
             初始一般架 {productionLogistics.initialSnapshot.shelfSlotsUsed}/
-            {productionLogistics.initialSnapshot.shelfSlotsAvailable} slots · 背包一般物品{' '}
+            {productionLogistics.initialSnapshot.shelfSlotsAvailable} 格 · 背包一般物品{' '}
             {productionLogistics.initialSnapshot.backpackSlotsUsed}/
-            {productionLogistics.initialSnapshot.backpackSlotsAvailable} slots · 常駐果汁罐{' '}
-            {productionLogistics.initialSnapshot.carriedJarSlots} slots · 成品罐接手{' '}
-            {productionLogistics.initialSnapshot.outputJarReceiverSlots} 個 physical jars
-            （背包 {productionLogistics.initialSnapshot.carriedOutputJarSlots} · rack{' '}
+            {productionLogistics.initialSnapshot.backpackSlotsAvailable} 格 · 強制隨身／固定使用的果汁罐格{' '}
+            {productionLogistics.initialSnapshot.carriedJarSlots} 格 · 可接手成品的實體罐{' '}
+            {productionLogistics.initialSnapshot.outputJarReceiverSlots} 個
+            （背包 {productionLogistics.initialSnapshot.carriedOutputJarSlots} · 果汁罐架{' '}
             {productionLogistics.initialSnapshot.rackOutputJarSlots}）
           </span>
         </div>
@@ -1963,10 +1996,10 @@ function SalesTripPlanBlock({
         </div>
         <p>
           販售排程使用 {plan.physicalJarsUsed} / {plan.carriedJuiceJarCount}{' '}
-          個常駐攜帶果汁罐；單趟最多帶出 {plan.maxJuiceJarSlotsCarried} 個。
+          個實體果汁罐；單趟最多使用 {plan.maxJuiceJarSlotsCarried} 個果汁罐格。
         </p>
         <p>
-          本次 persistent jars：{' '}
+          本日可用實體罐：{' '}
           {plan.carriedJuiceJars
             .map((jar) => {
               const initial =
@@ -1998,7 +2031,7 @@ function SalesTripPlanBlock({
           {plan.totalLeftoverServings > 0
             ? ' 剩餘成品只會留在該 recipe 最後販售的同一 persistent physical jar；目前仍不寫回 inventory，跨日 commit 留待 Apply Plan。'
             : ''}
-          {' '}初始 jar contents 已納入實際販售來源與第一次補裝／換裝判定；未被今日需求喝空的既有內容不會為了減少換裝而自動丟棄。
+          {' '}所有持有果汁罐的既有內容都會納入今日販售來源；有果汁罐架時可在趟次之間整罐上架／換罐，未被今日需求喝空的既有內容不會為了減少換裝而自動丟棄。
         </small>
       </article>
 
@@ -2010,9 +2043,14 @@ function SalesTripPlanBlock({
           <div>
             <strong>第 {trip.tripNumber} 趟</strong>
             <span>
-              {trip.totalServings} 杯 · {trip.juiceJars.length} 罐
+              {trip.totalServings} 杯 · 販售用 {trip.juiceJars.length} 罐 ·
+              實際隨身 {trip.carriedPhysicalJarIds.length} 罐
             </span>
           </div>
+          <p>
+            隨身果汁罐：{trip.carriedPhysicalJarIds.join('、')}
+            {' · '}果汁罐占用／預留 {trip.juiceJarSlotsCarried} 格
+          </p>
           <p>
             帶出 clean cup {trip.cleanCupsCarried} 個 / {trip.cleanCupStacks} 疊
             {' · '}出發占用 {trip.departureSlots} / {trip.effectiveDepartureSlotLimit} slots

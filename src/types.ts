@@ -219,9 +219,17 @@ export interface InventoryState {
   jarRackCount: number
 }
 
+export type JuiceJarCarryMode = 'auto' | 'fixed-slots'
+
 export interface PlannerSettings {
-  /** 本次規劃明確選中的常駐 physical juice jar identities。 */
-  carriedJuiceJarIds: string[]
+  /**
+   * auto：有果汁罐架時由規劃器逐趟決定要帶幾罐。
+   * fixed-slots：固定保留指定數量的背包格給果汁罐，但不綁定 physical jar identity。
+   * 沒有足夠果汁罐架空間時，實體罐的最低隨身數量仍是硬限制。
+   */
+  juiceJarCarryMode: JuiceJarCarryMode
+  /** fixed-slots 模式下保留給果汁罐的背包格數，0～10。 */
+  reservedJuiceJarSlots: number
   /** opt-in：接受背包滿時 used cup 可能掉落。 */
   allowUsedCupDropIfFull: boolean
 }

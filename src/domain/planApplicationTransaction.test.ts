@@ -49,7 +49,8 @@ function basis(): PlanApplicationBasisState {
     formalCustomerIds: ['customer-1', 'customer-2'],
     suppliedCustomerIds: ['already-supplied'],
     plannerSettings: {
-      carriedJuiceJarIds: ['jar-a'],
+      juiceJarCarryMode: 'fixed-slots',
+      reservedJuiceJarSlots: 1,
       allowUsedCupDropIfFull: false,
     },
   }
@@ -215,6 +216,7 @@ function salesTrip(
   return {
     tripNumber,
     juiceJars: [],
+    carriedPhysicalJarIds: [],
     totalServings: 0,
     cleanCupStacks: 0,
     cleanCupsCarried: 0,
@@ -241,6 +243,9 @@ function salesTrip(
 function salesPlan(): MultiTripReplenishmentPlan {
   return {
     policy: 'retain-and-wash',
+    jarCarryMode: 'fixed-slots',
+    reservedJuiceJarSlots: 1,
+    minimumCarriedJuiceJarSlots: 1,
     carriedJuiceJarCount: 1,
     carriedJuiceJars: [
       {
@@ -270,6 +275,7 @@ function salesPlan(): MultiTripReplenishmentPlan {
             previousRecipeName: 'A',
           },
         ],
+        carriedPhysicalJarIds: ['jar-a'],
         totalServings: 2,
         cleanCupStacks: 1,
         cleanCupsCarried: 2,
@@ -299,6 +305,7 @@ function salesPlan(): MultiTripReplenishmentPlan {
             previousRecipeName: 'A',
           },
         ],
+        carriedPhysicalJarIds: ['jar-a'],
         totalServings: 1,
         cleanCupStacks: 1,
         cleanCupsCarried: 1,
@@ -334,9 +341,11 @@ function salesPlan(): MultiTripReplenishmentPlan {
         recipeName: 'B',
         beforeTripNumber: 2,
         servings: 2,
+        servingsAfterFill: 2,
         fillAction: 'type-switch',
         previousRecipeId: 'recipe-a',
         previousRecipeName: 'A',
+        receiver: 'carried-jar',
       },
     ],
     maxJuiceJarSlotsCarried: 1,

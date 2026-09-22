@@ -84,7 +84,8 @@ function basis(): PlanApplicationBasisState {
     formalCustomerIds: ['jack'],
     suppliedCustomerIds: ['ulrich'],
     plannerSettings: {
-      carriedJuiceJarIds: ['jar-1', 'jar-2'],
+      juiceJarCarryMode: 'fixed-slots',
+      reservedJuiceJarSlots: 2,
       allowUsedCupDropIfFull: false,
     },
   }
@@ -114,7 +115,9 @@ function draftFromBasis(
     satisfactionByVillage: { ...source.satisfactionByVillage },
     formalCustomerIds: [...source.formalCustomerIds],
     plannerSettings: {
-      carriedJuiceJarIds: [...source.plannerSettings.carriedJuiceJarIds],
+      juiceJarCarryMode: source.plannerSettings.juiceJarCarryMode,
+      reservedJuiceJarSlots:
+        source.plannerSettings.reservedJuiceJarSlots,
       allowUsedCupDropIfFull:
         source.plannerSettings.allowUsedCupDropIfFull,
     },

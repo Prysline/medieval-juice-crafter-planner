@@ -1,4 +1,3 @@
-import { selectCarriedJuiceJars } from '../domain/inventoryCapacity'
 import type {
   PlanApplicationBasisState,
   PlanApplicationTransactionDraft,
@@ -133,14 +132,7 @@ function readPlannerSettingsReadonly(
     }
   }
 
-  const normalized = normalizePlannerSettings(parsed, inventory)
-  return {
-    ...normalized,
-    carriedJuiceJarIds: selectCarriedJuiceJars(
-      inventory,
-      normalized,
-    ).map((jar) => jar.id),
-  }
+  return normalizePlannerSettings(parsed, inventory)
 }
 
 export function readPlanApplicationBasisState(

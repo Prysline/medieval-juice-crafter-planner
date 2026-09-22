@@ -61,10 +61,22 @@ export interface MultiTripProductionJarFill {
   recipeId: string
   recipeName: string
   beforeTripNumber: number
+  /** 本次由果汁成品台新增的杯數。 */
   servings: number
+  /** 補裝完成後此 physical jar 內的總杯數。 */
+  servingsAfterFill: number
   fillAction: 'initial-fill' | 'refill-same-type' | 'type-switch'
   previousRecipeId: string | null
   previousRecipeName: string | null
+  receiver: 'carried-jar' | 'jar-rack'
+}
+
+export interface MultiTripJarCarryPolicy {
+  mode: 'auto' | 'fixed-slots'
+  /** fixed-slots 模式下保留的背包格數。 */
+  reservedSlots: number
+  /** 因果汁罐架容量不足而必須實際隨身的果汁罐數。 */
+  minimumCarriedSlots: number
 }
 
 export interface CupInventoryInput {
@@ -75,6 +87,8 @@ export interface CupInventoryInput {
 export interface MultiTripSalesTrip {
   tripNumber: number
   juiceJars: MultiTripJuiceJarLoad[]
+  /** 本趟實際在玩家身上的 physical jar identities；可包含沒有販售 load 的強制隨身罐。 */
+  carriedPhysicalJarIds: string[]
   totalServings: number
   cleanCupStacks: number
   cleanCupsCarried: number
@@ -98,7 +112,12 @@ export interface MultiTripSalesTrip {
 
 export interface MultiTripReplenishmentPlan {
   policy: UsedCupTripPolicy
+  jarCarryMode: MultiTripJarCarryPolicy['mode']
+  reservedJuiceJarSlots: number
+  minimumCarriedJuiceJarSlots: number
+  /** 可供整日規劃使用的 physical jar 數量。 */
   carriedJuiceJarCount: number
+  /** 可供整日規劃使用的 physical jars；名稱保留供既有 transaction contract 相容。 */
   carriedJuiceJars: MultiTripPhysicalJar[]
   physicalJarsUsed: number
   totalJarLoads: number
@@ -150,13 +169,12 @@ interface JarQueue {
 function normalizeCarriedJuiceJars(
   jars: JuiceJarInventoryItem[],
 ): MultiTripPhysicalJar[] {
-  const limited = jars.slice(0, BACKPACK_SLOT_CAPACITY)
   const seen = new Set<string>()
 
-  return limited.map((jar) => {
+  return jars.map((jar) => {
     if (!jar.id || seen.has(jar.id)) {
       throw new Error(
-        'Carried physical juice jars require unique persistent inventory IDs',
+        'Available physical juice jars require unique persistent inventory IDs',
       )
     }
     seen.add(jar.id)
@@ -675,6 +693,8 @@ interface CupTripTransition {
 
 interface MutableTrip {
   juiceJars: MultiTripJuiceJarLoad[]
+  carriedPhysicalJarIds: string[]
+  juiceJarSlotsCarried: number
   totalServings: number
   cupTransition: CupTripTransition
 }
@@ -778,7 +798,7 @@ function simulateCupTrip(
 function buildTrips(
   queues: JarQueue[],
   policy: UsedCupTripPolicy,
-  carriedJuiceJarCount: number,
+  carryPolicy: MultiTripJarCarryPolicy,
   initialCupState: CupState,
 ): {
   trips: MutableTrip[]
@@ -792,7 +812,55 @@ function buildTrips(
     })),
   }))
   const trips: MutableTrip[] = []
-  const maxConcurrentJars = carriedJuiceJarCount
+  const allPhysicalJarIds = queues.map((queue) => queue.physicalJarId)
+  const minimumCarriedSlots = Math.max(
+    0,
+    Math.floor(carryPolicy.minimumCarriedSlots),
+  )
+  const reservedSlots = Math.max(
+    0,
+    Math.min(
+      BACKPACK_SLOT_CAPACITY,
+      Math.floor(carryPolicy.reservedSlots),
+    ),
+  )
+  if (minimumCarriedSlots > BACKPACK_SLOT_CAPACITY) {
+    throw new Error(
+      'Owned physical juice jars exceed combined jar-rack and backpack capacity',
+    )
+  }
+
+  const fixedSlotCost = Math.max(
+    minimumCarriedSlots,
+    reservedSlots,
+  )
+  const maxConcurrentJars =
+    carryPolicy.mode === 'fixed-slots'
+      ? Math.min(queues.length, fixedSlotCost)
+      : Math.min(queues.length, BACKPACK_SLOT_CAPACITY)
+
+  const jarSlotsFor = (activeJarCount: number): number =>
+    carryPolicy.mode === 'fixed-slots'
+      ? fixedSlotCost
+      : Math.max(minimumCarriedSlots, activeJarCount)
+
+  const carriedIdsFor = (activeIds: string[]): string[] => {
+    const carried = [...activeIds]
+    const requiredPhysicalCount = Math.max(
+      minimumCarriedSlots,
+      activeIds.length,
+    )
+    if (carried.length >= requiredPhysicalCount) return carried
+
+    const activeSet = new Set(activeIds)
+    for (const physicalJarId of allPhysicalJarIds) {
+      if (activeSet.has(physicalJarId)) continue
+      carried.push(physicalJarId)
+      if (carried.length >= requiredPhysicalCount) break
+    }
+    return carried
+  }
+
   let cupState: CupState = {
     cleanCups: normalizedCupCount(initialCupState.cleanCups),
     usedCups: normalizedCupCount(initialCupState.usedCups),
@@ -821,7 +889,13 @@ function buildTrips(
     const selectedServingsByJarId = new Map<string, number>()
 
     for (const jar of candidates) {
+      if (trip.juiceJars.length >= maxConcurrentJars) continue
+
       let servingsToTake = 0
+      const proposedJarSlots = jarSlotsFor(
+        trip.juiceJars.length + 1,
+      )
+      if (proposedJarSlots > BACKPACK_SLOT_CAPACITY) continue
 
       for (
         let candidateServings = jar.servings;
@@ -832,7 +906,7 @@ function buildTrips(
           cupState,
           trip.totalServings + candidateServings,
           policy,
-          maxConcurrentJars,
+          proposedJarSlots,
         )
         if (transition) {
           servingsToTake = candidateServings
@@ -864,16 +938,27 @@ function buildTrips(
           'Sales planning requires at least one physical cup',
         )
       }
+      if (maxConcurrentJars < 1) {
+        throw new Error(
+          'Sales planning requires at least one usable juice-jar slot',
+        )
+      }
       throw new Error(
         `No remaining sales load can fit the ${policy} trip policy with the current cups and backpack slots`,
       )
     }
 
+    const juiceJarSlotsCarried = jarSlotsFor(
+      trip.juiceJars.length,
+    )
+    const carriedPhysicalJarIds = carriedIdsFor(
+      trip.juiceJars.map((load) => load.physicalJarId),
+    )
     const cupTransition = simulateCupTrip(
       cupState,
       trip.totalServings,
       policy,
-      maxConcurrentJars,
+      juiceJarSlotsCarried,
     )
     if (!cupTransition) {
       throw new Error(
@@ -913,6 +998,8 @@ function buildTrips(
 
     trips.push({
       ...trip,
+      carriedPhysicalJarIds,
+      juiceJarSlotsCarried,
       cupTransition,
     })
   }
@@ -1023,9 +1110,12 @@ export function buildProductionJarFillsFromSchedule(
             `Jar ${load.physicalJarId} cannot load newly produced juice with action ${load.fillAction}`,
           )
         }
-        if (state.servings > 0) {
+        if (
+          state.servings > 0 &&
+          state.currentRecipeId !== load.recipeId
+        ) {
           throw new Error(
-            `Jar ${load.physicalJarId} still contains ${state.servings} serving(s) before trip ${trip.tripNumber}`,
+            `Jar ${load.physicalJarId} still contains a different recipe before trip ${trip.tripNumber}`,
           )
         }
 
@@ -1041,7 +1131,10 @@ export function buildProductionJarFillsFromSchedule(
             `Jar ${load.physicalJarId} has inconsistent production fill action before trip ${trip.tripNumber}`,
           )
         }
-        if (load.plannedFillServings > JUICE_JAR_CAPACITY) {
+        if (
+          state.servings + load.plannedFillServings >
+          JUICE_JAR_CAPACITY
+        ) {
           throw new Error(
             `Physical jar ${load.physicalJarId} exceeds juice capacity before trip ${trip.tripNumber}`,
           )
@@ -1053,13 +1146,20 @@ export function buildProductionJarFillsFromSchedule(
           recipeName: load.recipeName,
           beforeTripNumber: trip.tripNumber,
           servings: load.plannedFillServings,
+          servingsAfterFill:
+            state.servings + load.plannedFillServings,
           fillAction: load.fillAction,
           previousRecipeId: load.previousRecipeId,
           previousRecipeName: load.previousRecipeName,
+          receiver: trip.carriedPhysicalJarIds.includes(
+            load.physicalJarId,
+          )
+            ? 'carried-jar'
+            : 'jar-rack',
         })
         state.currentRecipeId = load.recipeId
         state.lastRecipeId = load.recipeId
-        state.servings = load.plannedFillServings
+        state.servings += load.plannedFillServings
       } else {
         if (
           load.fillAction !== 'use-existing' &&
@@ -1176,16 +1276,20 @@ export function countJarTypeSwitchesFromSchedule(
 export function buildMultiTripReplenishmentPlan(
   demand: PreparationDemand,
   policy: UsedCupTripPolicy,
-  carriedJuiceJarInventory: JuiceJarInventoryItem[],
+  availableJuiceJarInventory: JuiceJarInventoryItem[],
   cups: CupInventoryInput,
   shortfall: PreparationShortfall,
+  carryPolicy?: MultiTripJarCarryPolicy,
 ): MultiTripReplenishmentPlan {
   const carriedJuiceJars =
-    normalizeCarriedJuiceJars(carriedJuiceJarInventory)
-  const carriedJuiceJarIds = carriedJuiceJars.map(
-    (jar) => jar.physicalJarId,
-  )
-  const normalizedJarCount = carriedJuiceJarIds.length
+    normalizeCarriedJuiceJars(availableJuiceJarInventory)
+  const normalizedJarCount = carriedJuiceJars.length
+  const normalizedCarryPolicy: MultiTripJarCarryPolicy =
+    carryPolicy ?? {
+      mode: 'fixed-slots',
+      reservedSlots: normalizedJarCount,
+      minimumCarriedSlots: normalizedJarCount,
+    }
   const initialCupState: CupState = {
     cleanCups: normalizedCupCount(cups.cleanCups),
     usedCups: normalizedCupCount(cups.usedCups),
@@ -1197,7 +1301,7 @@ export function buildMultiTripReplenishmentPlan(
 
   if (salesRecipes.length > 0 && normalizedJarCount < 1) {
     throw new Error(
-      'Sales planning requires at least one carried physical juice jar',
+      'Sales planning requires at least one physical juice jar',
     )
   }
   if (
@@ -1222,20 +1326,20 @@ export function buildMultiTripReplenishmentPlan(
   const { trips: mutableTrips, finalCupState } = buildTrips(
     queues,
     policy,
-    normalizedJarCount,
+    normalizedCarryPolicy,
     initialCupState,
   )
   const trips: MultiTripSalesTrip[] = mutableTrips.map(
     (trip, index) => {
       const transition = trip.cupTransition
-      const cleanCupStacks =
-        transition.departureCupSlots
+      const cleanCupStacks = transition.departureCupSlots
       const departureSlots =
-        normalizedJarCount + cleanCupStacks
+        trip.juiceJarSlotsCarried + cleanCupStacks
 
       return {
         tripNumber: index + 1,
         juiceJars: trip.juiceJars,
+        carriedPhysicalJarIds: trip.carriedPhysicalJarIds,
         totalServings: trip.totalServings,
         cleanCupStacks,
         cleanCupsCarried: transition.cleanCupsCarried,
@@ -1268,8 +1372,8 @@ export function buildMultiTripReplenishmentPlan(
           transition.usedCupsAfterTrip,
         peakCupSlots: transition.peakCupSlots,
         peakOccupiedSlots:
-          normalizedJarCount + transition.peakCupSlots,
-        juiceJarSlotsCarried: normalizedJarCount,
+          trip.juiceJarSlotsCarried + transition.peakCupSlots,
+        juiceJarSlotsCarried: trip.juiceJarSlotsCarried,
       }
     },
   )
@@ -1375,6 +1479,16 @@ export function buildMultiTripReplenishmentPlan(
 
   return {
     policy,
+    jarCarryMode: normalizedCarryPolicy.mode,
+    reservedJuiceJarSlots:
+      normalizedCarryPolicy.mode === 'fixed-slots'
+        ? Math.max(
+            normalizedCarryPolicy.minimumCarriedSlots,
+            normalizedCarryPolicy.reservedSlots,
+          )
+        : 0,
+    minimumCarriedJuiceJarSlots:
+      normalizedCarryPolicy.minimumCarriedSlots,
     carriedJuiceJarCount: normalizedJarCount,
     carriedJuiceJars,
     physicalJarsUsed: physicalJarIdsUsed.size,
@@ -1415,3 +1529,4 @@ export function buildMultiTripReplenishmentPlan(
     returnsHomeBetweenTrips: trips.length > 1,
   }
 }
+
