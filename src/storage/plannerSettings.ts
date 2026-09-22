@@ -5,44 +5,77 @@ import type { StorageLike } from './plannerState'
 export const PLANNER_SETTINGS_STORAGE_KEY = 'mjc-planner-settings'
 
 export const DEFAULT_PLANNER_SETTINGS: PlannerSettings = {
-  carriedJuiceJarIds: [],
+  juiceJarCarryMode: 'auto',
+  reservedJuiceJarSlots: 0,
   allowUsedCupDropIfFull: false,
 }
 
-function normalizeJarIds(value: unknown): string[] {
+function normalizeSlotCount(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.min(
+        BACKPACK_SLOT_CAPACITY,
+        Math.max(0, Math.floor(value)),
+      )
+    : 0
+}
+
+function normalizeLegacyJarIds(
+  value: unknown,
+  inventory?: InventoryState,
+): string[] {
   if (!Array.isArray(value)) return []
 
+  const ownedIds = inventory
+    ? new Set(inventory.juiceJars.map((jar) => jar.id))
+    : null
   const seen = new Set<string>()
   const result: string[] = []
+
   for (const item of value) {
     if (typeof item !== 'string') continue
     const id = item.trim()
-    if (!id || seen.has(id)) continue
+    if (
+      !id ||
+      seen.has(id) ||
+      (ownedIds && !ownedIds.has(id))
+    ) {
+      continue
+    }
     seen.add(id)
     result.push(id)
     if (result.length >= BACKPACK_SLOT_CAPACITY) break
   }
+
   return result
 }
 
-function legacyCarriedJarIds(
-  value: unknown,
+function legacyCarriedSlotCount(
+  settings: {
+    carriedJuiceJarIds?: unknown
+    carriedJuiceJarCount?: unknown
+  },
   inventory?: InventoryState,
-): string[] {
-  if (
-    typeof value !== 'number' ||
-    !Number.isFinite(value) ||
-    !inventory
-  ) {
-    return []
+): number | null {
+  if (Array.isArray(settings.carriedJuiceJarIds)) {
+    return normalizeLegacyJarIds(
+      settings.carriedJuiceJarIds,
+      inventory,
+    ).length
   }
 
-  const count = Math.min(
-    BACKPACK_SLOT_CAPACITY,
-    inventory.juiceJars.length,
-    Math.max(0, Math.floor(value)),
-  )
-  return inventory.juiceJars.slice(0, count).map((jar) => jar.id)
+  if (
+    typeof settings.carriedJuiceJarCount === 'number' &&
+    Number.isFinite(settings.carriedJuiceJarCount)
+  ) {
+    const requested = normalizeSlotCount(
+      settings.carriedJuiceJarCount,
+    )
+    return inventory
+      ? Math.min(requested, inventory.juiceJars.length)
+      : requested
+  }
+
+  return null
 }
 
 export function normalizePlannerSettings(
@@ -54,20 +87,41 @@ export function normalizePlannerSettings(
   }
 
   const settings = value as Partial<PlannerSettings> & {
+    carriedJuiceJarIds?: unknown
     carriedJuiceJarCount?: unknown
   }
-  const hasCanonicalIds = Array.isArray(settings.carriedJuiceJarIds)
 
-  return {
-    carriedJuiceJarIds: hasCanonicalIds
-      ? normalizeJarIds(settings.carriedJuiceJarIds)
-      : legacyCarriedJarIds(
-          settings.carriedJuiceJarCount,
-          inventory,
-        ),
-    allowUsedCupDropIfFull:
-      settings.allowUsedCupDropIfFull === true,
+  if (
+    settings.juiceJarCarryMode === 'auto' ||
+    settings.juiceJarCarryMode === 'fixed-slots'
+  ) {
+    return {
+      juiceJarCarryMode: settings.juiceJarCarryMode,
+      reservedJuiceJarSlots: normalizeSlotCount(
+        settings.reservedJuiceJarSlots,
+      ),
+      allowUsedCupDropIfFull:
+        settings.allowUsedCupDropIfFull === true,
+    }
   }
+
+  const legacySlots = legacyCarriedSlotCount(
+    settings,
+    inventory,
+  )
+
+  return legacySlots === null
+    ? {
+        ...DEFAULT_PLANNER_SETTINGS,
+        allowUsedCupDropIfFull:
+          settings.allowUsedCupDropIfFull === true,
+      }
+    : {
+        juiceJarCarryMode: 'fixed-slots',
+        reservedJuiceJarSlots: legacySlots,
+        allowUsedCupDropIfFull:
+          settings.allowUsedCupDropIfFull === true,
+      }
 }
 
 export function readPlannerSettings(
@@ -80,22 +134,19 @@ export function readPlannerSettings(
   try {
     const parsed = JSON.parse(raw)
     const normalized = normalizePlannerSettings(parsed, inventory)
-    const legacy =
+    const isCanonical =
       parsed &&
       typeof parsed === 'object' &&
-      !Array.isArray(
-        (parsed as { carriedJuiceJarIds?: unknown })
-          .carriedJuiceJarIds,
-      ) &&
-      typeof (parsed as { carriedJuiceJarCount?: unknown })
-        .carriedJuiceJarCount === 'number'
+      (parsed as { juiceJarCarryMode?: unknown })
+        .juiceJarCarryMode !== undefined
 
-    if (legacy && inventory) {
+    if (!isCanonical) {
       storage.setItem(
         PLANNER_SETTINGS_STORAGE_KEY,
         JSON.stringify(normalized),
       )
     }
+
     return normalized
   } catch {
     return { ...DEFAULT_PLANNER_SETTINGS }
