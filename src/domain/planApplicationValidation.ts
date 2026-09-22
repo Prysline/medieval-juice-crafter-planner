@@ -95,10 +95,9 @@ function samePlannerSettings(
   return (
     draft.allowUsedCupDropIfFull ===
       current.allowUsedCupDropIfFull &&
-    sameOrderedStrings(
-      draft.carriedJuiceJarIds,
-      current.carriedJuiceJarIds,
-    )
+    draft.juiceJarCarryMode === current.juiceJarCarryMode &&
+    draft.reservedJuiceJarSlots ===
+      current.reservedJuiceJarSlots
   )
 }
 
