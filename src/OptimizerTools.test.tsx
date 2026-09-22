@@ -5,6 +5,8 @@ import type { PlanApplicationTransactionDraft } from './domain/planApplicationTr
 import {
   PlanApplicationPreview,
   PlanningErrorBlock,
+  criterionLabel,
+  optimizerCriterionOptions,
 } from './OptimizerTools'
 import {
   PlanningUserError,
@@ -142,6 +144,16 @@ const fills: MultiTripProductionJarFill[] = [
     receiver: 'carried-jar',
   },
 ]
+
+describe('optimizer criteria UI', () => {
+  it('offers maximum ingredient cost as the same primary/secondary criterion source', () => {
+    expect(optimizerCriterionOptions).toContainEqual({
+      value: 'maximum-ingredient-cost',
+      label: '最高原料成本',
+    })
+    expect(criterionLabel('maximum-ingredient-cost')).toBe('最高原料成本')
+  })
+})
 
 describe('planner error UX', () => {
   it('renders a Chinese actionable summary while keeping raw details secondary', () => {
