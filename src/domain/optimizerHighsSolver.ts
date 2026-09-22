@@ -16,6 +16,7 @@ type ObjectiveKey =
   | 'cost'
   | 'productionUnits'
   | 'kinds'
+  | 'negativeAssignedIngredientCost'
   | 'negativeKnownRevenue'
   | 'negativeKnownGrossProfit'
   | 'machineOperations'
@@ -44,6 +45,9 @@ function criterionKey(
 ): ObjectiveKey {
   if (criterion === 'minimum-cost') return 'cost'
   if (criterion === 'minimum-waste') return 'productionUnits'
+  if (criterion === 'maximum-ingredient-cost') {
+    return 'negativeAssignedIngredientCost'
+  }
   if (criterion === 'maximum-known-revenue') return 'negativeKnownRevenue'
   if (criterion === 'maximum-known-gross-profit') {
     return 'negativeKnownGrossProfit'
@@ -207,6 +211,17 @@ function buildHighsStage(
     ...operationByEdgeKey.values(),
   )
 
+  const assignedIngredientCostExpression = sum(
+    ...domain.serviceableCustomerIds.flatMap((customerId) =>
+      domain.recipes.flatMap((recipe) => {
+        const y = yByCustomerRecipe.get(
+          `${customerId}\u001f${recipe.candidate.id}`,
+        )
+        return y ? [y.times(recipe.juiceUnitIngredientCost)] : []
+      }),
+    ),
+  )
+
   const formalCustomerIds = new Set(domain.request.formalCustomerIds)
   const knownRevenueExpression = sum(
     ...domain.serviceableCustomerIds.flatMap((customerId) => {
@@ -324,6 +339,8 @@ function buildHighsStage(
     cost: costExpression,
     productionUnits: productionUnitsExpression,
     kinds: kindExpression,
+    negativeAssignedIngredientCost:
+      assignedIngredientCostExpression.times(-1),
     negativeKnownRevenue: knownRevenueExpression.times(-1),
     negativeKnownGrossProfit: costExpression.minus(knownRevenueExpression),
     machineOperations: machineOperationsExpression,
