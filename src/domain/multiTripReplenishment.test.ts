@@ -733,7 +733,7 @@ describe('multi-trip replenishment', () => {
         0,
       ),
     ).toThrow(
-      'Sales planning requires at least one carried physical juice jar',
+      'Sales planning requires at least one physical juice jar',
     )
   })
 
