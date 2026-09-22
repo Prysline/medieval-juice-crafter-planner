@@ -517,6 +517,7 @@ function OptimizerTools({
             minimumCarriedSlots:
               capacitySummary.minimumCarriedJuiceJarSlots,
           },
+          plannerSettings.allowDiscardRetainedJuice,
         )
         if (plan.jarTypeSwitches !== result.jarTypeSwitches) {
           throw new Error(
@@ -683,6 +684,20 @@ function OptimizerTools({
               }
             />
             <span>接受背包滿時 used cup 可能掉落</span>
+          </label>
+
+          <label className="optimizer-checkbox-control">
+            <input
+              type="checkbox"
+              checked={plannerSettings.allowDiscardRetainedJuice}
+              onChange={(event) =>
+                persistPlannerSettings({
+                  ...plannerSettings,
+                  allowDiscardRetainedJuice: event.target.checked,
+                })
+              }
+            />
+            <span>必要時允許倒掉既有果汁以騰出果汁罐</span>
           </label>
 
           <label>
@@ -994,6 +1009,9 @@ function OptimizerTools({
             {maxJarTypeSwitches.trim() !== ''
               ? ' · 最多換裝 ' + maxJarTypeSwitches + ' 次'
               : ' · 換裝不限'}
+            {plannerSettings.allowDiscardRetainedJuice
+              ? ' · 必要時可倒掉既有果汁'
+              : ' · 保留既有果汁'}
           </span>
           <span>
             一般架子 {inventoryState.shelfCount} 架 /{' '}
@@ -1484,6 +1502,35 @@ export function PlanApplicationPreview({
           )}
         </article>
       </div>
+
+      {changes.discardedJuice.length > 0 && (
+        <article className="optimizer-transaction-card optimizer-transaction-jars">
+          <div className="optimizer-transaction-card-heading">
+            <strong>將倒掉的既有果汁</strong>
+            <span>{changes.discardedJuice.length} 個果汁罐</span>
+          </div>
+          <div className="optimizer-transaction-list">
+            {changes.discardedJuice.map((discarded) => (
+              <div
+                className="optimizer-transaction-row"
+                key={discarded.physicalJarId}
+              >
+                <strong>果汁罐 {discarded.physicalJarId}</strong>
+                <span>倒掉 {discarded.servings} 杯</span>
+                <small>
+                  {transactionRecipeLabel(
+                    discarded.recipeId,
+                    productionJarFills,
+                  )}
+                </small>
+              </div>
+            ))}
+          </div>
+          <p className="optimizer-transaction-note">
+            只有因這份規劃確實需要釋放實體果汁罐而被選中的內容會倒掉；未列出的既有果汁會保留。
+          </p>
+        </article>
+      )}
 
       <article className="optimizer-transaction-card optimizer-transaction-jars">
         <div className="optimizer-transaction-card-heading">
