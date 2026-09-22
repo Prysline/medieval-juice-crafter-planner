@@ -268,7 +268,10 @@ describe('shared recipe candidate pool', () => {
       pool,
       'seasoner-unlocked',
       customer,
-      { candidatePolicy: 'allow-unambiguous-computed' },
+      {
+        candidatePolicy: 'allow-unambiguous-computed',
+        mode: 'bounded-exhaustive',
+      },
     )
 
     expect(search.usedRepeatedSeasoningFallback).toBe(true)
