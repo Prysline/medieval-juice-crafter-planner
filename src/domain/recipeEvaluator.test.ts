@@ -93,6 +93,24 @@ describe('recipe sequence evaluator', () => {
     expect(result.candidate.ingredients).toEqual(['香蕉', '糖'])
   })
 
+  it('uses ordered ingredient ids as the stable computed persistence identity', () => {
+    const first = evaluateRecipeSequence(
+      ['banana', 'sugar'],
+      'tranquil-fountain-unlocked',
+    )
+    const second = evaluateRecipeSequence(
+      ['banana', 'sugar'],
+      'juice-blender-unlocked',
+    )
+
+    expect(first.valid).toBe(true)
+    expect(second.valid).toBe(true)
+    if (!first.valid || !second.valid) return
+
+    expect(first.candidate.id).toBe('computed:banana+sugar')
+    expect(second.candidate.id).toBe('computed:banana+sugar')
+  })
+
   it('preserves seasoning order as recipe identity', () => {
     const sugarMint = evaluateRecipeSequence(
       ['orange', 'sugar', 'mint'],
