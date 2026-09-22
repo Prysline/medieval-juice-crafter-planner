@@ -229,15 +229,23 @@ export function recipeCandidatesInCurrentSearchScope(
     .map((entry) => entry.candidate)
 }
 
+export function recipeCandidateEntriesForInventoryEditor(
+  pool: RecipeCandidatePool,
+): RecipeCandidatePoolEntry[] {
+  return pool.entries.filter(
+    (entry) =>
+      entry.availableAtCurrentProgress &&
+      (
+        entry.sources.includes('observed') ||
+        entry.sources.includes('saved') ||
+        entry.sources.includes('computed')
+      ),
+  )
+}
+
 export function recipeCandidatesForInventoryEditor(
   pool: RecipeCandidatePool,
 ): RecipeCandidate[] {
-  return pool.entries
-    .filter(
-      (entry) =>
-        entry.availableAtCurrentProgress &&
-        (entry.sources.includes('observed') ||
-          entry.sources.includes('saved')),
-    )
+  return recipeCandidateEntriesForInventoryEditor(pool)
     .map((entry) => entry.candidate)
 }
