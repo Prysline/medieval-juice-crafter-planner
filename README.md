@@ -63,7 +63,7 @@ src/
     recipeEvaluator.ts # 單一有序序列 validation / observed overlay / computed evaluation
     recipeGenerator.ts # Candidate-2A/2B：建立單一果汁段與合法多果汁段搜尋層，再交由 evaluator 評估
     recipeSearch.ts    # 共用漸進搜尋：依候選政策逐層探索單段／調和候選，再決定是否啟用重複調味後備
-    recipeCandidatePool.ts # Candidate-1/2A：依完整有序序列合併來源，並保存 generated layer metadata
+    recipeCandidatePool.ts # Candidate-1/2A/2B：依完整有序序列合併來源、保存搜尋層資訊，並提供庫存編輯器的實測／已保存配方集合
     optimizerModel.ts  # optimizer request、customer→recipe eligible matrix 與 gating
     optimizerSolver.ts # 可替換的 async solver adapter contract
     optimizerHighsSolver.ts # HiGHS WASM lexicographic MIP adapter
