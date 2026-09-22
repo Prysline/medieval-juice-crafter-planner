@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { customers } from './data/customers'
 import { evaluateRecipeSequence } from './domain/recipeEvaluator'
 import {
+  EvaluationPanel,
   RecipeTools,
   TargetCustomerPanel,
 } from './RecipeTools'
@@ -33,6 +34,61 @@ describe('recipe simulator UX', () => {
     expect(html).toContain('只供本次模擬參考，不會寫入玩家資料')
     expect(html).toContain('加莉安娜（麵包師）')
     expect(savedRecipeChanges).toBe(0)
+  })
+
+  it('shows full pre-cutoff effect totals without treating them as final product effects', () => {
+    const evaluation = evaluateRecipeSequence(
+      ['lemon'],
+      'opening',
+    )
+    expect(evaluation.valid).toBe(true)
+    if (!evaluation.valid) return
+
+    const html = renderToStaticMarkup(
+      <EvaluationPanel
+        evaluation={evaluation}
+        matchingCustomers={[]}
+      />,
+    )
+
+    expect(html).toContain('成品特性（實測）')
+    expect(html).toContain('完整特性累計（截斷前）')
+    expect(html).toContain('保護心臟（1）')
+    expect(html).toContain('輔助瘦身（1）')
+    expect(html).toContain('不代表每項都會出現在最終成品欄位')
+  })
+
+  it('shows concrete saved-recipe effects and keeps ambiguous effects visibly separate', () => {
+    const html = renderToStaticMarkup(
+      <RecipeTools
+        currentProgress="tranquil-fountain-unlocked"
+        satisfactionByVillage={satisfaction}
+        savedRecipes={[
+          {
+            id: 'saved-lemon',
+            name: '我的檸檬汁',
+            ingredientIds: ['lemon'],
+            createdAt: '2026-09-22T00:00:00.000Z',
+          },
+          {
+            id: 'saved-ambiguous',
+            name: '待研究配方',
+            ingredientIds: ['lemon', 'cinnamon', 'mint'],
+            createdAt: '2026-09-22T00:00:00.000Z',
+          },
+        ]}
+        onSavedRecipesChange={() => {}}
+      />,
+    )
+
+    expect(html).toContain('我的檸檬汁')
+    expect(html).toContain('成品特性（實測）')
+    expect(html).toContain('酸味（4）')
+    expect(html).toContain('增強免疫（3）')
+    expect(html).toContain('待研究配方')
+    expect(html).toContain('確定成品特性（預測）')
+    expect(html).toContain('可能特性：剩')
+    expect(html).toContain('可能特性不視為確定成品特性')
   })
 
   it('routes target-customer changes only through the temporary selection callback', () => {
