@@ -189,6 +189,13 @@ function App() {
       ),
     [recipeCandidates],
   )
+  const recipeListOrder = useMemo(
+    () =>
+      new Map(
+        recipeListEntries.map((entry, index) => [entry.id, index]),
+      ),
+    [recipeListEntries],
+  )
   const eastHarborFormalCount = countFormalCustomersByVillage(
     customers,
     formalCustomerIds,
@@ -393,8 +400,8 @@ function App() {
       if (recipeSortKey === 'salePrice') {
         if (left.salePrice === null && right.salePrice === null) {
           return (
-            ((recipeOrder.get(left.id) ?? 0) -
-              (recipeOrder.get(right.id) ?? 0)) *
+            ((recipeListOrder.get(a.id) ?? 0) -
+              (recipeListOrder.get(b.id) ?? 0)) *
             direction
           )
         }
@@ -402,8 +409,8 @@ function App() {
         if (right.salePrice === null) return -1
         return (
           (left.salePrice - right.salePrice) * direction ||
-          (recipeOrder.get(left.id) ?? 0) -
-            (recipeOrder.get(right.id) ?? 0)
+          (recipeListOrder.get(a.id) ?? 0) -
+            (recipeListOrder.get(b.id) ?? 0)
         )
       }
 
@@ -412,7 +419,7 @@ function App() {
   }, [
     normalizedQuery,
     recipeListEntries,
-    recipeOrder,
+    recipeListOrder,
     recipeIngredientCountFilter,
     recipeIngredientFilter,
     recipeConfirmedEffectFilter,
