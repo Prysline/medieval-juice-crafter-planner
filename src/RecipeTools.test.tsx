@@ -35,6 +35,48 @@ describe('recipe simulator UX', () => {
     expect(savedRecipeChanges).toBe(0)
   })
 
+  it('routes target-customer changes only through the temporary selection callback', () => {
+    const nanette = customers.find(
+      (customer) => customer.id === 'nanette',
+    )
+    expect(nanette).toBeDefined()
+
+    const evaluation = evaluateRecipeSequence(
+      ['lemon'],
+      'opening',
+    )
+    let selected = ''
+    const element = TargetCustomerPanel({
+      customers: [nanette!],
+      selectedCustomer: null,
+      selectedCustomerId: '',
+      onSelect: (customerId) => {
+        selected = customerId
+      },
+      evaluation,
+    })
+
+    const children = Array.isArray(element.props.children)
+      ? element.props.children
+      : [element.props.children]
+    const label = children.find(
+      (child) => child?.type === 'label',
+    )
+    expect(label).toBeDefined()
+    const labelChildren = Array.isArray(label.props.children)
+      ? label.props.children
+      : [label.props.children]
+    const select = labelChildren.find(
+      (child) => child?.type === 'select',
+    )
+    expect(select).toBeDefined()
+
+    select.props.onChange({
+      target: { value: nanette!.id },
+    })
+    expect(selected).toBe('nanette')
+  })
+
   it('shows customer preferences and the current recipe match level', () => {
     const nanette = customers.find(
       (customer) => customer.id === 'nanette',
