@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { MultiTripProductionJarFill } from './domain/multiTripReplenishment'
 import type { PlanApplicationTransactionDraft } from './domain/planApplicationTransaction'
-import { PlanApplicationPreview } from './OptimizerTools'
+import {
+  PlanApplicationPreview,
+  PlanningErrorBlock,
+} from './OptimizerTools'
+import {
+  PlanningUserError,
+  presentPlanningError,
+} from './domain/planningErrors'
 
 function transactionDraft(): PlanApplicationTransactionDraft {
   return {
@@ -126,6 +133,27 @@ const fills: MultiTripProductionJarFill[] = [
     receiver: 'carried-jar',
   },
 ]
+
+describe('planner error UX', () => {
+  it('renders a Chinese actionable summary while keeping raw details secondary', () => {
+    const presentation = presentPlanningError(
+      new PlanningUserError(
+        'leftover-storage',
+        { remainingServings: 2 },
+        'Not enough terminal sales-jar capacity',
+      ),
+    )
+    const html = renderToStaticMarkup(
+      <PlanningErrorBlock presentation={presentation} />,
+    )
+
+    expect(html).toContain('剩餘果汁沒有足夠的實體罐可保留')
+    expect(html).toContain('2 杯')
+    expect(html).toContain('增加實體果汁罐')
+    expect(html).toContain('技術資訊')
+    expect(html).toContain('Not enough terminal sales-jar capacity')
+  })
+})
 
 describe('plan application preview', () => {
   it('renders before/after state and the Phase 5C-4 apply control', () => {
