@@ -37,7 +37,7 @@ function inventory(ids: string[]): InventoryState {
 }
 
 describe('planner settings storage', () => {
-  it('defaults to no carried jars and drop opt-in disabled', () => {
+  it('defaults to automatic jar carry planning and drop opt-in disabled', () => {
     const storage = new MemoryStorage()
     expect(readPlannerSettings(storage)).toEqual(
       DEFAULT_PLANNER_SETTINGS,
@@ -49,37 +49,43 @@ describe('planner settings storage', () => {
     )
   })
 
-  it('normalizes unique persistent jar IDs and explicit drop policy', () => {
+  it('normalizes canonical carry mode, reserved slots and drop policy', () => {
     expect(
       normalizePlannerSettings({
-        carriedJuiceJarIds: [
-          ' jar-2 ',
-          'jar-2',
-          '',
-          3,
-          'jar-1',
-        ],
+        juiceJarCarryMode: 'fixed-slots',
+        reservedJuiceJarSlots: 12.9,
         allowUsedCupDropIfFull: true,
       }),
     ).toEqual({
-      carriedJuiceJarIds: ['jar-2', 'jar-1'],
+      juiceJarCarryMode: 'fixed-slots',
+      reservedJuiceJarSlots: 10,
       allowUsedCupDropIfFull: true,
     })
 
     expect(
       normalizePlannerSettings({
-        carriedJuiceJarIds: 'jar-1',
-        allowUsedCupDropIfFull: 'yes',
+        juiceJarCarryMode: 'auto',
+        reservedJuiceJarSlots: 7,
+        allowUsedCupDropIfFull: false,
       }),
-    ).toEqual(DEFAULT_PLANNER_SETTINGS)
+    ).toEqual({
+      juiceJarCarryMode: 'auto',
+      reservedJuiceJarSlots: 7,
+      allowUsedCupDropIfFull: false,
+    })
   })
 
-  it('migrates legacy carried count using stable inventory order', () => {
+  it('migrates legacy carried jar IDs to a fixed slot count without retaining identities', () => {
     const storage = new MemoryStorage()
     storage.setItem(
       PLANNER_SETTINGS_STORAGE_KEY,
       JSON.stringify({
-        carriedJuiceJarCount: 2.9,
+        carriedJuiceJarIds: [
+          'owned-b',
+          'owned-b',
+          'missing',
+          'owned-a',
+        ],
         allowUsedCupDropIfFull: true,
       }),
     )
@@ -90,28 +96,49 @@ describe('planner settings storage', () => {
         inventory(['owned-a', 'owned-b', 'owned-c']),
       ),
     ).toEqual({
-      carriedJuiceJarIds: ['owned-a', 'owned-b'],
+      juiceJarCarryMode: 'fixed-slots',
+      reservedJuiceJarSlots: 2,
       allowUsedCupDropIfFull: true,
     })
+
     expect(
       JSON.parse(
         storage.getItem(PLANNER_SETTINGS_STORAGE_KEY) ?? '{}',
       ),
     ).toEqual({
-      carriedJuiceJarIds: ['owned-a', 'owned-b'],
+      juiceJarCarryMode: 'fixed-slots',
+      reservedJuiceJarSlots: 2,
       allowUsedCupDropIfFull: true,
     })
   })
 
-  it('round-trips canonical ID settings', () => {
+  it('migrates the older carried count using current ownership as the effective legacy count', () => {
+    expect(
+      normalizePlannerSettings(
+        {
+          carriedJuiceJarCount: 5,
+          allowUsedCupDropIfFull: false,
+        },
+        inventory(['owned-a', 'owned-b', 'owned-c']),
+      ),
+    ).toEqual({
+      juiceJarCarryMode: 'fixed-slots',
+      reservedJuiceJarSlots: 3,
+      allowUsedCupDropIfFull: false,
+    })
+  })
+
+  it('round-trips canonical slot settings', () => {
     const storage = new MemoryStorage()
     writePlannerSettings(storage, {
-      carriedJuiceJarIds: ['jar-2', 'jar-1', 'jar-2'],
+      juiceJarCarryMode: 'fixed-slots',
+      reservedJuiceJarSlots: 4,
       allowUsedCupDropIfFull: true,
     })
 
     expect(readPlannerSettings(storage)).toEqual({
-      carriedJuiceJarIds: ['jar-2', 'jar-1'],
+      juiceJarCarryMode: 'fixed-slots',
+      reservedJuiceJarSlots: 4,
       allowUsedCupDropIfFull: true,
     })
   })
