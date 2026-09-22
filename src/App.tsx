@@ -42,10 +42,11 @@ import {
   readCurrentProgress,
   readFormalCustomerIds,
   readSatisfactionByVillage,
-  STORAGE_KEYS,
+  readSuppliedCustomerIds,
   writeCurrentProgress,
   writeFormalCustomerIds,
   writeSatisfactionByVillage,
+  writeSuppliedCustomerIds,
 } from './storage/plannerState'
 import type {
   Customer,
@@ -65,20 +66,6 @@ const scheduleLabels = {
   outside_village_by: '已在村外',
   return_village: '回村',
 } as const
-
-function readStoredStringArray(key: string): string[] {
-  const raw = window.localStorage.getItem(key)
-  if (raw === null) return []
-
-  try {
-    const value = JSON.parse(raw)
-    return Array.isArray(value)
-      ? value.filter((item): item is string => typeof item === 'string')
-      : []
-  } catch {
-    return []
-  }
-}
 
 function formatEffect(effect: EffectValue) {
   return `${effect.name}（${effect.value}）`
@@ -104,7 +91,7 @@ function App() {
   const [recipeSortDirection, setRecipeSortDirection] =
     useState<SortDirection>('desc')
   const [suppliedCustomerIds, setSuppliedCustomerIds] = useState<string[]>(() =>
-    readStoredStringArray(STORAGE_KEYS.suppliedToday),
+    readSuppliedCustomerIds(window.localStorage),
   )
   const [formalCustomerIds, setFormalCustomerIds] = useState<string[]>(() =>
     readFormalCustomerIds(window.localStorage),
@@ -287,14 +274,14 @@ function App() {
         ? current.filter((id) => id !== customerId)
         : [...current, customerId]
 
-      window.localStorage.setItem(STORAGE_KEYS.suppliedToday, JSON.stringify(next))
+      writeSuppliedCustomerIds(window.localStorage, next)
       return next
     })
   }
 
   function resetSuppliedToday() {
     setSuppliedCustomerIds([])
-    window.localStorage.removeItem(STORAGE_KEYS.suppliedToday)
+    writeSuppliedCustomerIds(window.localStorage, [])
   }
 
   function toggleFormalCustomer(customerId: string) {
@@ -563,6 +550,7 @@ function App() {
           satisfactionByVillage={satisfactionByVillage}
           suppliedCustomerIds={suppliedCustomerIds}
           formalCustomerIds={formalCustomerIds}
+          onSuppliedCustomerIdsCommitted={setSuppliedCustomerIds}
         />
       </div>
 

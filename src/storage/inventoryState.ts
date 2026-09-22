@@ -3,6 +3,10 @@ import type {
   InventoryState,
   JuiceJarInventoryItem,
 } from '../types'
+import {
+  readPlanApplicationStoredState,
+  updateStoredPlanApplicationInventory,
+} from './planApplicationState'
 import type { StorageLike } from './plannerState'
 
 export const INVENTORY_STORAGE_KEY = 'mjc-inventory'
@@ -112,6 +116,11 @@ export function normalizeInventoryState(value: unknown): InventoryState {
 }
 
 export function readInventoryState(storage: StorageLike): InventoryState {
+  const storedPlanState = readPlanApplicationStoredState(storage)
+  if (storedPlanState) {
+    return normalizeInventoryState(storedPlanState.inventory)
+  }
+
   const raw = storage.getItem(INVENTORY_STORAGE_KEY)
   if (raw === null) return createEmptyInventoryState()
 
@@ -126,9 +135,14 @@ export function writeInventoryState(
   storage: StorageLike,
   state: InventoryState,
 ): void {
+  const normalized = normalizeInventoryState(state)
+  if (updateStoredPlanApplicationInventory(storage, normalized)) {
+    return
+  }
+
   storage.setItem(
     INVENTORY_STORAGE_KEY,
-    JSON.stringify(normalizeInventoryState(state)),
+    JSON.stringify(normalized),
   )
 }
 

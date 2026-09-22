@@ -29,6 +29,7 @@ import type {
 import type { PreparationShortfall } from './domain/preparationShortfall'
 import type { ProductionLogisticsPlan } from './domain/productionLogistics'
 import type { PlanApplicationTransactionDraft } from './domain/planApplicationTransaction'
+import type { PlanApplicationBasisMismatchField } from './domain/planApplicationValidation'
 import {
   buildInventoryCapacitySummary,
   selectCarriedJuiceJars,
@@ -42,6 +43,7 @@ import {
   readPlannerSettings,
   writePlannerSettings,
 } from './storage/plannerSettings'
+import { commitPlanApplicationTransaction } from './storage/planApplicationCommit'
 import type {
   InventoryState,
   PlannerSettings,
@@ -54,6 +56,7 @@ interface OptimizerToolsProps {
   satisfactionByVillage: SatisfactionByVillage
   suppliedCustomerIds: string[]
   formalCustomerIds: string[]
+  onSuppliedCustomerIdsCommitted: (customerIds: string[]) => void
 }
 
 interface SalesTripPlans {
@@ -76,7 +79,28 @@ type OptimizerRunState =
     }
   | { status: 'error'; message: string }
 
+type PlanApplicationUiState =
+  | { status: 'idle' }
+  | { status: 'applied' }
+  | {
+      status: 'stale'
+      mismatches: readonly PlanApplicationBasisMismatchField[]
+    }
+  | { status: 'error'; message: string }
+
 type OptionalCriterion = OptimizationCriterion | 'none'
+
+const planApplicationMismatchLabels: Record<
+  PlanApplicationBasisMismatchField,
+  string
+> = {
+  inventory: '庫存',
+  'current-progress': '主線進度',
+  satisfaction: '村莊滿意度',
+  'formal-customers': '正式顧客',
+  'supplied-customers': '今日已供應',
+  'planner-settings': '規劃器設定',
+}
 
 const customerById = new Map(
   customers.map((customer) => [customer.id, customer]),
@@ -184,6 +208,7 @@ export default function OptimizerTools({
   satisfactionByVillage,
   suppliedCustomerIds,
   formalCustomerIds,
+  onSuppliedCustomerIdsCommitted,
 }: OptimizerToolsProps) {
   const [scope, setScope] = useState<OptimizerCustomerScope>('all')
   const [candidatePolicy, setCandidatePolicy] =
@@ -204,6 +229,8 @@ export default function OptimizerTools({
   const [runState, setRunState] = useState<OptimizerRunState>({
     status: 'idle',
   })
+  const [applicationState, setApplicationState] =
+    useState<PlanApplicationUiState>({ status: 'idle' })
 
   const priorities = useMemo(
     () => uniquePriorities(primaryCriterion, secondaryOne, secondaryTwo),
@@ -383,7 +410,39 @@ export default function OptimizerTools({
     maxJarTypeSwitches,
   ])
 
+  function applyTransactionDraft(
+    draft: PlanApplicationTransactionDraft,
+  ) {
+    const result = commitPlanApplicationTransaction(
+      draft,
+      window.localStorage,
+    )
+
+    if (result.status === 'stale') {
+      setApplicationState({
+        status: 'stale',
+        mismatches: result.mismatches,
+      })
+      return
+    }
+
+    if (result.status === 'error') {
+      setApplicationState({
+        status: 'error',
+        message: result.message,
+      })
+      return
+    }
+
+    setInventoryState(result.inventory)
+    onSuppliedCustomerIdsCommitted([
+      ...result.suppliedCustomerIds,
+    ])
+    setApplicationState({ status: 'applied' })
+  }
+
   async function runOptimizer() {
+    setApplicationState({ status: 'idle' })
     setRunState({ status: 'loading' })
 
     try {
@@ -949,6 +1008,35 @@ export default function OptimizerTools({
         </div>
       )}
 
+      {applicationState.status === 'applied' && (
+        <div className="optimizer-result-note" role="status">
+          <strong>規劃已完整寫入。</strong>
+          <span>
+            庫存與今日已供應狀態已透過同一筆持久狀態提交；請重新產生規劃後再進行下一次套用。
+          </span>
+        </div>
+      )}
+
+      {applicationState.status === 'stale' && (
+        <div className="optimizer-error" role="alert">
+          <strong>規劃已過期，未寫入任何變更</strong>
+          <span>
+            已變更：
+            {applicationState.mismatches
+              .map((field) => planApplicationMismatchLabels[field])
+              .join('、')}
+            。請重新產生最佳化規劃。
+          </span>
+        </div>
+      )}
+
+      {applicationState.status === 'error' && (
+        <div className="optimizer-error" role="alert">
+          <strong>套用規劃失敗，未完成提交</strong>
+          <span>{applicationState.message}</span>
+        </div>
+      )}
+
       {runState.status === 'success' && (
         <OptimizerResultPanel
           result={runState.result}
@@ -957,6 +1045,7 @@ export default function OptimizerTools({
           priorities={priorities}
           salesTripPlans={runState.salesTripPlans}
           transactionDraft={runState.transactionDraft}
+          onApplyTransaction={applyTransactionDraft}
         />
       )}
     </section>
@@ -1184,9 +1273,11 @@ function transactionFillActionLabel(
 export function PlanApplicationPreview({
   draft,
   productionJarFills,
+  onApply,
 }: {
   draft: PlanApplicationTransactionDraft
   productionJarFills: readonly MultiTripProductionJarFill[]
+  onApply: (draft: PlanApplicationTransactionDraft) => void
 }) {
   const changes = draft.changes
 
@@ -1197,14 +1288,22 @@ export function PlanApplicationPreview({
     >
       <div className="section-title">
         <strong>套用規劃預覽</strong>
-        <span>只預覽，不會修改庫存</span>
+        <span>確認後才會寫入</span>
       </div>
 
       <p className="optimizer-transaction-note">
-        以下是目前規劃若日後正式套用時的變更前 → 變更後。這一步尚未寫入
-        localStorage，也沒有「確認套用」按鈕；過期檢查與一次性寫入留給
-        Phase 5C-3～5。
+        以下是這份規劃的變更前 → 變更後。按下確認時會重新讀取目前 canonical
+        basis；只要庫存、進度、滿意度、正式顧客、今日已供應或規劃器設定有任一項改變，
+        就會拒絕提交。驗證通過後，庫存與今日已供應狀態會以單一持久狀態一次寫入。
       </p>
+
+      <button
+        type="button"
+        className="optimizer-run-button"
+        onClick={() => onApply(draft)}
+      >
+        確認套用這份規劃
+      </button>
 
       <div className="optimizer-transaction-grid">
         <article className="optimizer-transaction-card">
@@ -1382,6 +1481,7 @@ function OptimizerResultPanel({
   priorities,
   salesTripPlans,
   transactionDraft,
+  onApplyTransaction,
 }: {
   result: OptimizationResult
   preparationShortfall: PreparationShortfall
@@ -1389,6 +1489,7 @@ function OptimizerResultPanel({
   priorities: OptimizationCriterion[]
   salesTripPlans: SalesTripPlans
   transactionDraft: PlanApplicationTransactionDraft | null
+  onApplyTransaction: (draft: PlanApplicationTransactionDraft) => void
 }) {
   const selectedSalesTripPlan = salesTripPlans.selected
   const alternateSalesTripPlan = salesTripPlans.alternate
@@ -1490,6 +1591,7 @@ function OptimizerResultPanel({
         <PlanApplicationPreview
           draft={transactionDraft}
           productionJarFills={selectedSalesTripPlan.productionJarFills}
+          onApply={onApplyTransaction}
         />
       ) : (
         <section

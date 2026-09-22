@@ -3,6 +3,10 @@ import type {
   ProgressMilestoneId,
   SatisfactionByVillage,
 } from '../types'
+import {
+  readPlanApplicationStoredState,
+  updateStoredPlanApplicationSuppliedCustomers,
+} from './planApplicationState'
 
 type LegacyRuntimeStageId = 1 | 2 | 3 | 4
 
@@ -137,6 +141,35 @@ function readStoredStringArray(
 
 export function readFormalCustomerIds(storage: StorageLike): string[] {
   return readStoredStringArray(storage, STORAGE_KEYS.formalCustomers)
+}
+
+export function readSuppliedCustomerIds(storage: StorageLike): string[] {
+  const storedPlanState = readPlanApplicationStoredState(storage)
+  if (storedPlanState) {
+    return [...storedPlanState.suppliedCustomerIds]
+  }
+
+  return readStoredStringArray(storage, STORAGE_KEYS.suppliedToday)
+}
+
+export function writeSuppliedCustomerIds(
+  storage: StorageLike,
+  customerIds: string[],
+): void {
+  const normalized = [...new Set(customerIds)]
+  if (
+    updateStoredPlanApplicationSuppliedCustomers(
+      storage,
+      normalized,
+    )
+  ) {
+    return
+  }
+
+  storage.setItem(
+    STORAGE_KEYS.suppliedToday,
+    JSON.stringify(normalized),
+  )
 }
 
 export function writeFormalCustomerIds(
