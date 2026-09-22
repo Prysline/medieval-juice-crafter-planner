@@ -189,6 +189,42 @@ describe('production optimizer', () => {
     expect(leastWaste.leftoverServings).toBe(1)
   })
 
+  it('maximizes assigned recipe ingredient cost without inflating production units', async () => {
+    const source = {
+      customers: [
+        customer('a', 'A'),
+        customer('b', 'B'),
+        customer('c', 'B'),
+      ],
+      candidates: [
+        recipe('a-cheap', ['檸檬'], ['A']),
+        recipe('a-expensive', ['檸檬', '糖', '薄荷'], ['A']),
+        recipe('b-shared', ['橙子'], ['B']),
+      ],
+    }
+
+    const result = await optimizeBatchPlan(
+      request(['a', 'b', 'c'], 'maximum-ingredient-cost'),
+      { source },
+    )
+
+    expect(
+      result.assignments.find((assignment) => assignment.customerId === 'a')
+        ?.recipeId,
+    ).toBe('a-expensive')
+    expect(result.recipePlans.map((plan) => plan.recipeId).sort()).toEqual([
+      'a-expensive',
+      'b-shared',
+    ])
+    expect(
+      result.recipePlans.reduce((sum, plan) => sum + plan.juiceUnits, 0),
+    ).toBe(2)
+    expect(result.totalIngredientCost).toBe(41)
+    expect(result.assignedServings).toBe(3)
+    expect(result.producedServings).toBe(4)
+    expect(result.leftoverServings).toBe(1)
+  })
+
   it('maximum-known-revenue and maximum-known-gross-profit can choose different plans', async () => {
     const source = {
       customers: [customer('a', '甜味')],
