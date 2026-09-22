@@ -232,4 +232,9 @@ export interface PlannerSettings {
   reservedJuiceJarSlots: number
   /** opt-in：接受背包滿時 used cup 可能掉落。 */
   allowUsedCupDropIfFull: boolean
+  /**
+   * opt-in：規劃器可在確有需要時倒掉既有果汁，釋放實體罐給其他配方。
+   * 預設 false；不代表允許跨罐轉移果汁。
+   */
+  allowDiscardRetainedJuice: boolean
 }
