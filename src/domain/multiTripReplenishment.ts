@@ -840,12 +840,14 @@ function assignNewProductionLeftovers(
 
     const candidates = queues
       .flatMap((queue) => {
-        const load = queue.loads.at(-1)
-        return load &&
-          load.recipeId === recipe.recipeId &&
-          load.plannedFillServings > 0
-          ? [{ queue, load }]
-          : []
+        const load = [...queue.loads]
+          .reverse()
+          .find(
+            (item) =>
+              item.recipeId === recipe.recipeId &&
+              item.plannedFillServings > 0,
+          )
+        return load ? [{ queue, load }] : []
       })
       .sort(
         (a, b) =>
