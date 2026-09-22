@@ -193,6 +193,23 @@ describe('plan application transaction basis validation', () => {
     })
   })
 
+  it('treats retained-juice discard opt-in as a stale-validation dependency', () => {
+    const original = basis()
+    const changed = basis()
+    changed.plannerSettings.allowDiscardRetainedJuice = true
+
+    expect(
+      validatePlanApplicationTransactionBasis(
+        draftFromBasis(original),
+        changed,
+      ),
+    ).toEqual({
+      valid: false,
+      stale: true,
+      mismatches: ['planner-settings'],
+    })
+  })
+
   it('treats physical jar order and slot carry policy as planning dependencies', () => {
     const original = basis()
     const changed = basis()
