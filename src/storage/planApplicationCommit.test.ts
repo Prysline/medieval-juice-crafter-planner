@@ -87,6 +87,7 @@ function basis(): PlanApplicationBasisState {
       juiceJarCarryMode: 'fixed-slots',
       reservedJuiceJarSlots: 2,
       allowUsedCupDropIfFull: false,
+      allowDiscardRetainedJuice: false,
     },
   }
 }
@@ -161,6 +162,7 @@ function draftFromBasis(
         droppedUsedCups: 0,
       },
       juiceJars: [],
+      discardedJuice: [],
       newlySuppliedCustomerIds: ['alia'],
     },
   }
