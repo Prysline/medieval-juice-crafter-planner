@@ -26,6 +26,7 @@ import type {
   UsedCupTripPolicy,
 } from './domain/multiTripReplenishment'
 import type { PreparationShortfall } from './domain/preparationShortfall'
+import type { RecipeCandidatePool } from './domain/recipeCandidatePool'
 import type { ProductionLogisticsPlan } from './domain/productionLogistics'
 import type { PlanApplicationTransactionDraft } from './domain/planApplicationTransaction'
 import type { PlanApplicationBasisMismatchField } from './domain/planApplicationValidation'
@@ -57,6 +58,7 @@ interface OptimizerToolsProps {
   suppliedCustomerIds: string[]
   formalCustomerIds: string[]
   recipeCandidates: RecipeCandidate[]
+  recipeCandidatePool: RecipeCandidatePool
   onSuppliedCustomerIdsCommitted: (customerIds: string[]) => void
 }
 
@@ -210,6 +212,7 @@ export default function OptimizerTools({
   suppliedCustomerIds,
   formalCustomerIds,
   recipeCandidates,
+  recipeCandidatePool,
   onSuppliedCustomerIdsCommitted,
 }: OptimizerToolsProps) {
   const [scope, setScope] = useState<OptimizerCustomerScope>('all')
@@ -410,6 +413,7 @@ export default function OptimizerTools({
     inventoryState,
     plannerSettings,
     maxJarTypeSwitches,
+    recipeCandidatePool,
   ])
 
   function applyTransactionDraft(
@@ -504,7 +508,7 @@ export default function OptimizerTools({
         {
           source: {
             customers,
-            candidates: recipeCandidates,
+            candidatePool: recipeCandidatePool,
           },
         },
       )
