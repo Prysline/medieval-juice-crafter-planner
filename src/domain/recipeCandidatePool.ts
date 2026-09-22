@@ -7,7 +7,10 @@ import type {
 } from '../types'
 import { isAvailableAtProgress } from './availability'
 import { evaluateRecipeSequence } from './recipeEvaluator'
-import { generateRecipeCandidates } from './recipeGenerator'
+import {
+  generateUniqueRecipeCandidateLayers,
+  type RecipeCandidateSearchPhase,
+} from './recipeGenerator'
 
 export type RecipeCandidatePoolSource =
   | 'observed'
@@ -25,6 +28,14 @@ export interface RecipeCandidatePoolEntry {
   readonly inGeneratedSearchScope: boolean
 }
 
+export interface RecipeCandidatePoolLayer {
+  readonly phase: RecipeCandidateSearchPhase
+  readonly seasoningDepth: number
+  readonly candidateIds: readonly string[]
+  readonly totalSequenceCount: number
+  readonly truncated: boolean
+}
+
 export interface RejectedSavedRecipeCandidate {
   readonly savedRecipeId: string
   readonly issues: readonly RecipeSequenceIssue[]
@@ -32,6 +43,7 @@ export interface RejectedSavedRecipeCandidate {
 
 export interface RecipeCandidatePool {
   readonly entries: readonly RecipeCandidatePoolEntry[]
+  readonly generatedLayers: readonly RecipeCandidatePoolLayer[]
   readonly rejectedSavedRecipes: readonly RejectedSavedRecipeCandidate[]
 }
 
@@ -140,19 +152,34 @@ export function buildRecipeCandidatePool(
     })
   }
 
-  for (const candidate of generateRecipeCandidates(currentProgress)) {
-    const ingredientIds = ingredientIdsForCandidate(candidate)
-    mergeEntry({
-      ingredientIds,
-      candidate,
-      sources: [derivedSource(candidate)],
-      availableAtCurrentProgress: isAvailableAtProgress(
-        candidate.unlockedAt,
-        currentProgress,
-      ),
-      inGeneratedSearchScope: true,
-    })
-  }
+  const generatedLayers = generateUniqueRecipeCandidateLayers(
+    currentProgress,
+  ).map((layer): RecipeCandidatePoolLayer => {
+    const candidateIds: string[] = []
+
+    for (const candidate of layer.candidates) {
+      const ingredientIds = ingredientIdsForCandidate(candidate)
+      mergeEntry({
+        ingredientIds,
+        candidate,
+        sources: [derivedSource(candidate)],
+        availableAtCurrentProgress: isAvailableAtProgress(
+          candidate.unlockedAt,
+          currentProgress,
+        ),
+        inGeneratedSearchScope: true,
+      })
+      candidateIds.push(candidate.id)
+    }
+
+    return {
+      phase: layer.phase,
+      seasoningDepth: layer.seasoningDepth,
+      candidateIds,
+      totalSequenceCount: layer.totalSequenceCount,
+      truncated: layer.truncated,
+    }
+  })
 
   for (const savedRecipe of savedRecipes) {
     const evaluation = evaluateRecipeSequence(
@@ -181,6 +208,7 @@ export function buildRecipeCandidatePool(
 
   return {
     entries: order.map((key) => entriesBySequence.get(key)!),
+    generatedLayers,
     rejectedSavedRecipes,
   }
 }
