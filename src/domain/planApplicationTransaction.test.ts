@@ -52,6 +52,7 @@ function basis(): PlanApplicationBasisState {
       juiceJarCarryMode: 'fixed-slots',
       reservedJuiceJarSlots: 1,
       allowUsedCupDropIfFull: false,
+      allowDiscardRetainedJuice: false,
     },
   }
 }
@@ -334,6 +335,8 @@ function salesPlan(): MultiTripReplenishmentPlan {
         tripNumber: 2,
       },
     ],
+    allowDiscardRetainedJuice: false,
+    discardedInitialJuice: [],
     productionJarFills: [
       {
         physicalJarId: 'jar-a',
