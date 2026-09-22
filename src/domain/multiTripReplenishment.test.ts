@@ -387,6 +387,99 @@ describe('multi-trip replenishment', () => {
     expectScheduleConsistency(result)
   })
 
+  it('rejects unplaceable new-production leftovers when discard opt-in is off', () => {
+    const salesDemand = namedRecipes(['A', 'B'], 1)
+
+    expect(() =>
+      buildPlanWithJars(
+        salesDemand,
+        'retain-and-wash',
+        [{ id: 'only', recipeId: null, servings: 0 }],
+        { cleanCups: 2, usedCups: 0 },
+        false,
+      ),
+    ).toThrow(/Terminal leftovers require 2 reusable jars/)
+  })
+
+  it('discards only the minimum unplaceable new-production leftover when explicitly enabled', () => {
+    const salesDemand = namedRecipes(['A', 'B'], 1)
+    const result = buildPlanWithJars(
+      salesDemand,
+      'retain-and-wash',
+      [{ id: 'only', recipeId: null, servings: 0 }],
+      { cleanCups: 2, usedCups: 0 },
+      true,
+    )
+
+    expect(result.totalAssignedServings).toBe(2)
+    expect(result.discardedInitialJuice).toEqual([])
+    expect(result.discardedNewProductionJuice).toEqual([
+      {
+        physicalJarId: 'only',
+        recipeId: 'b',
+        recipeName: 'B',
+        servings: 1,
+        afterTripNumber: 1,
+      },
+    ])
+    expect(result.totalLeftoverServings).toBe(1)
+    expect(result.leftoverJarContents).toEqual([
+      expect.objectContaining({
+        physicalJarId: 'only',
+        recipeId: 'a',
+        servings: 1,
+      }),
+    ])
+    expect(
+      result.productionJarFills.map((fill) => fill.servings),
+    ).toEqual([2, 2])
+    expectScheduleConsistency(result)
+  })
+
+  it('discards one of three new leftovers when only two terminal jars exist', () => {
+    const salesDemand = namedRecipes(['A', 'B', 'C'], 1)
+    const result = buildPlanWithJars(
+      salesDemand,
+      'retain-and-wash',
+      carriedJars(2),
+      { cleanCups: 3, usedCups: 0 },
+      true,
+    )
+
+    expect(result.discardedNewProductionJuice).toHaveLength(1)
+    expect(
+      result.discardedNewProductionJuice.reduce(
+        (sum, item) => sum + item.servings,
+        0,
+      ),
+    ).toBe(1)
+    expect(result.totalLeftoverServings).toBe(2)
+    expectScheduleConsistency(result)
+  })
+
+  it('can discard retained initial juice and a new-production leftover in the same plan', () => {
+    const salesDemand = namedRecipes(['A', 'B', 'C'], 1)
+    const result = buildPlanWithJars(
+      salesDemand,
+      'retain-and-wash',
+      [{ id: 'shared', recipeId: 'a', servings: 2 }],
+      { cleanCups: 3, usedCups: 0 },
+      true,
+    )
+
+    expect(result.discardedInitialJuice).toEqual([
+      {
+        physicalJarId: 'shared',
+        recipeId: 'a',
+        servings: 1,
+      },
+    ])
+    expect(result.discardedNewProductionJuice).toHaveLength(1)
+    expect(result.discardedNewProductionJuice[0].servings).toBe(1)
+    expect(result.totalAssignedServings).toBe(3)
+    expectScheduleConsistency(result)
+  })
+
   it('keeps a prefilled unrelated jar locked while an empty jar handles later recipe switches', () => {
     const salesDemand = namedRecipes(['B', 'C'], 2)
     const result = buildPlanWithJars(
