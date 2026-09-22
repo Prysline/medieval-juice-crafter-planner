@@ -7,6 +7,7 @@ import {
 import type { JuiceJarInventoryItem } from '../types'
 import type { PreparationDemand } from './preparationDemand'
 import type { PreparationShortfall } from './preparationShortfall'
+import { minimumJarTypeSwitchesForInitialJars } from './jarSwitches'
 import { PlanningUserError } from './planningErrors'
 
 export type UsedCupTripPolicy =
@@ -534,77 +535,88 @@ function buildJarQueuesWithoutSwitches(
   const availableQueues = queues.filter(
     (queue) => !queue.lockedByRetainedInitialContents,
   )
-  const totalJarLoads = recipes.reduce(
-    (sum, recipe) => sum + recipe.chunks.length,
-    0,
-  )
-  const jarsToUse = Math.min(
-    availableQueues.length,
-    totalJarLoads,
-  )
-  const allocatedByRecipeId = new Map(
-    recipes.map((recipe) => [recipe.recipeId, 1]),
-  )
-  let remaining = jarsToUse - recipes.length
+  const pool = [...availableQueues]
+  const queuesByRecipeId = new Map<string, JarQueue[]>()
 
-  while (remaining > 0) {
-    const candidate = [...recipes]
-      .filter(
-        (recipe) =>
-          (allocatedByRecipeId.get(recipe.recipeId) ?? 1) <
-          recipe.chunks.length,
-      )
-      .sort((a, b) => {
-        const allocatedA =
-          allocatedByRecipeId.get(a.recipeId) ?? 1
-        const allocatedB =
-          allocatedByRecipeId.get(b.recipeId) ?? 1
-        const pressureA = Math.ceil(
-          a.chunks.length / allocatedA,
-        )
-        const pressureB = Math.ceil(
-          b.chunks.length / allocatedB,
-        )
-
-        return (
-          pressureB - pressureA ||
-          b.chunks.length / allocatedB -
-            a.chunks.length / allocatedA ||
-          b.servings - a.servings ||
-          a.recipeName.localeCompare(
-            b.recipeName,
-            'zh-Hant',
-          ) ||
-          a.recipeId.localeCompare(b.recipeId)
-        )
-      })[0]
-
-    if (!candidate) break
-    allocatedByRecipeId.set(
-      candidate.recipeId,
-      (allocatedByRecipeId.get(candidate.recipeId) ?? 1) + 1,
+  // Reserve one physical jar per recipe first. Matching existing contents are
+  // preferred, then initially empty jars, then a true type switch.
+  for (const recipe of recipes) {
+    pool.sort((a, b) =>
+      queueSelectionSort(recipe.recipeId, a, b),
     )
-    remaining -= 1
+    const target = pool.shift()
+    if (!target) {
+      throw new Error(
+        'Physical jar queue allocation exceeded reusable carried jar identities',
+      )
+    }
+    queuesByRecipeId.set(recipe.recipeId, [target])
   }
 
-  const pool = [...availableQueues]
+  // Additional jars are only useful when they do not increase the minimum
+  // switch count. A jar whose last recipe is another type would create a
+  // duplicate switch for the same recipe merely to parallelize chunks.
+  while (pool.length > 0) {
+    const candidate = recipes
+      .flatMap((recipe) => {
+        const assigned = queuesByRecipeId.get(recipe.recipeId) ?? []
+        if (assigned.length >= recipe.chunks.length) return []
+
+        const compatible = pool
+          .filter((queue) => {
+            const current = queueCurrentRecipeId(queue)
+            return current === null || current === recipe.recipeId
+          })
+          .sort((a, b) =>
+            queueSelectionSort(recipe.recipeId, a, b),
+          )
+        const target = compatible[0]
+        if (!target) return []
+
+        return [{
+          recipe,
+          target,
+          assignedCount: assigned.length,
+          pressure: Math.ceil(
+            recipe.chunks.length / Math.max(1, assigned.length),
+          ),
+        }]
+      })
+      .sort(
+        (a, b) =>
+          b.pressure - a.pressure ||
+          b.recipe.chunks.length / Math.max(1, b.assignedCount) -
+            a.recipe.chunks.length / Math.max(1, a.assignedCount) ||
+          b.recipe.servings - a.recipe.servings ||
+          a.recipe.recipeName.localeCompare(
+            b.recipe.recipeName,
+            'zh-Hant',
+          ) ||
+          a.recipe.recipeId.localeCompare(b.recipe.recipeId),
+      )[0]
+
+    if (!candidate) break
+
+    const targetIndex = pool.indexOf(candidate.target)
+    if (targetIndex < 0) {
+      throw new Error(
+        'Compatible physical jar disappeared during queue allocation',
+      )
+    }
+    pool.splice(targetIndex, 1)
+    const assigned =
+      queuesByRecipeId.get(candidate.recipe.recipeId) ?? []
+    assigned.push(candidate.target)
+    queuesByRecipeId.set(candidate.recipe.recipeId, assigned)
+  }
 
   for (const recipe of recipes) {
-    const count =
-      allocatedByRecipeId.get(recipe.recipeId) ?? 1
-    const recipeQueues: JarQueue[] = []
-
-    for (let index = 0; index < count; index += 1) {
-      pool.sort((a, b) =>
-        queueSelectionSort(recipe.recipeId, a, b),
+    const recipeQueues =
+      queuesByRecipeId.get(recipe.recipeId) ?? []
+    if (recipeQueues.length === 0) {
+      throw new Error(
+        'Recipe lost its reserved physical jar during queue allocation',
       )
-      const target = pool.shift()
-      if (!target) {
-        throw new Error(
-          'Physical jar queue allocation exceeded reusable carried jar identities',
-        )
-      }
-      recipeQueues.push(target)
     }
 
     recipe.chunks.forEach((chunk, index) => {
@@ -1603,27 +1615,23 @@ export function buildMultiTripReplenishmentPlan(
   )
   const jarTypeSwitches =
     countJarTypeSwitchesFromSchedule(trips, carriedJuiceJars)
-  const initialRecipeIds = new Set(
-    carriedJuiceJars.flatMap((jar) =>
-      jar.initialRecipeId && jar.initialServings > 0
-        ? [jar.initialRecipeId]
-        : [],
-    ),
-  )
-  const initiallyEmptyJarCount = carriedJuiceJars.filter(
-    (jar) => !jar.initialRecipeId || jar.initialServings <= 0,
-  ).length
-  const unmatchedFinalJuiceTypes = salesRecipes.filter(
-    (recipe) => !initialRecipeIds.has(recipe.recipeId),
-  ).length
-  const expectedMinimumSwitches = Math.max(
-    0,
-    unmatchedFinalJuiceTypes - initiallyEmptyJarCount,
-  )
+  const expectedMinimumSwitches =
+    minimumJarTypeSwitchesForInitialJars(
+      carriedJuiceJars.map((jar) => ({
+        recipeId: jar.initialRecipeId,
+        servings: jar.initialServings,
+      })),
+      salesRecipes.map((recipe) => recipe.recipeId),
+    )
 
   if (jarTypeSwitches !== expectedMinimumSwitches) {
-    throw new Error(
-      'Physical jar schedule does not realize the initial-content-aware minimum jar-switch count',
+    throw new PlanningUserError(
+      'jar-schedule-inconsistency',
+      {
+        expectedJarTypeSwitches: expectedMinimumSwitches,
+        actualJarTypeSwitches: jarTypeSwitches,
+      },
+      `Physical jar schedule realized ${jarTypeSwitches} switch(es), expected the initial-content-aware minimum ${expectedMinimumSwitches}`,
     )
   }
 
