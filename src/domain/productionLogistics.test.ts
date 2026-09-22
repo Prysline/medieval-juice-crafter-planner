@@ -340,7 +340,7 @@ describe('production logistics', () => {
         juiceJars: [],
         jarRackCount: 1,
       }),
-      settings({ carriedJuiceJarIds: [] }),
+      settings(),
       receiverTimeline(1),
     )
 
