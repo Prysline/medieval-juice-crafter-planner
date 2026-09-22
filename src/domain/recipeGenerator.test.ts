@@ -3,6 +3,7 @@ import { ingredients } from '../data/ingredients'
 import {
   effectSlotCount,
   generateRecipeCandidates,
+  generateUniqueRecipeCandidateLayers,
   predictRecipeEffects,
 } from './recipeGenerator'
 
@@ -156,13 +157,48 @@ describe('recipe generator', () => {
     expect(sequences).not.toContain('檸檬 → 橙子')
   })
 
-  it('uses at most three unique ingredients and never repeats seasoning in v1', () => {
+  it('expands ordinary single-segment search through four unique ingredients without repeated seasoning', () => {
     const candidates = generateRecipeCandidates('tranquil-fountain-unlocked')
 
+    expect(candidates).toHaveLength(80)
+    expect(
+      candidates.some(
+        (candidate) =>
+          candidate.ingredients.join(' → ') ===
+          '橙子 → 糖 → 薄荷 → 肉桂',
+      ),
+    ).toBe(true)
+
     for (const candidate of candidates) {
-      expect(candidate.ingredients.length).toBeLessThanOrEqual(3)
+      expect(candidate.ingredients.length).toBeLessThanOrEqual(4)
       expect(new Set(candidate.ingredients).size).toBe(candidate.ingredients.length)
     }
+  })
+
+  it('uses deterministic unique-layer sizes and ordering across repeated calls', () => {
+    const first = generateUniqueRecipeCandidateLayers(
+      'tranquil-fountain-unlocked',
+    )
+    const second = generateUniqueRecipeCandidateLayers(
+      'tranquil-fountain-unlocked',
+    )
+
+    expect(first.map((layer) => layer.candidates.length)).toEqual([
+      5,
+      15,
+      30,
+      30,
+    ])
+    expect(
+      first.flatMap((layer) =>
+        layer.candidates.map((candidate) => candidate.id),
+      ),
+    ).toEqual(
+      second.flatMap((layer) =>
+        layer.candidates.map((candidate) => candidate.id),
+      ),
+    )
+    expect(first.every((layer) => layer.truncated === false)).toBe(true)
   })
 
   it('keeps all pre-fountain valid sequences on observed data', () => {
