@@ -17,7 +17,7 @@
 - 配方仍顯示「1 份果汁基準單位」的原料成本與單杯原料成本；果汁成品台 1 份果汁可產出 2 杯，但實際一次機器操作可處理 1～5 份，不再把「2 杯」視為一次固定製作批次。
 - 「配方工具」已改為有序原料編排：點原料直接加入，可重複調味、四原料以上、逐項刪除／清空；精確原料順序已有實測資料時以實測結果優先，否則顯示推導結果或歧義。
 - 個人配方只保存自訂名稱、有序 ingredient IDs、備註與建立時間；effects、cost、equipment、matching 每次由目前 domain 重新計算。
-- 「批次規劃」已重構為 production optimizer：可依序指定主要／次要 lexicographic 目標，包含最低成本、最少浪費、最高已知銷售總額、最高已知毛利、最少機器操作與最少果汁罐換裝。Phase 1 結果資訊架構已完成：閱讀順序為 **規劃摘要 → 所需物資 → 製作步驟 → 果汁分配 → 販售排程**；水會以免費取得需求顯示。PR #33 後製作步驟以機器為獨立區塊，每次 1～5 份製作拆成各批 slot flow；原料／果汁／水／output 各自用膠囊顯示，`▸` 只代表配方內部順序，`→` 只代表加工／狀態轉換。
+- 「批次規劃」已重構為 production optimizer：可依序指定主要／次要 lexicographic 目標，包含最低成本、最少浪費、**最高原料成本**、最高已知銷售總額、最高已知毛利、最少機器操作與最少果汁罐換裝。Objective-1 / PR #76 後，「最高原料成本」以實際 customer → recipe assignment 所選配方的原料成本計分，不以 production units 灌高成本；它是配方研究目標，不代表最高售價或最高毛利。Phase 1 結果資訊架構已完成：閱讀順序為 **規劃摘要 → 所需物資 → 製作步驟 → 果汁分配 → 販售排程**；水會以免費取得需求顯示。PR #33 後製作步驟以機器為獨立區塊，每次 1～5 份製作拆成各批 slot flow；原料／果汁／水／output 各自用膠囊顯示，`▸` 只代表配方內部順序，`→` 只代表加工／狀態轉換。
 - Core model correction 2B 已把 physical jar identity 接進多趟販售 schedule。Phase 2 capacity contract 也已完成：`mjc-inventory` 保存原料、水、clean / used cups、一般架子數、果汁罐架數與每個 physical jar；PR #39 / Phase 5B1 後批次規劃已有實際 Inventory editor，可逐罐設定 recipe identity / servings。`mjc-planner-settings` 現在保存果汁罐攜帶策略 `juiceJarCarryMode`、固定格數 `reservedJuiceJarSlots` 與 used-cup drop opt-in；舊的 `carriedJuiceJarIds`／count 只會遷移成固定格數，不再保留特定實體罐綁定。沒有果汁罐架時，所有持有的實體果汁罐都必須隨身；有果汁罐架後，規劃器可在各趟之間整罐上架／取出，固定模式只固定果汁罐占用格數，自動模式則依每趟需求計算攜帶數。
 - Inventory / packing D1～D4 與 Phase 4 cup lifecycle 已建立：`PreparationDemand` 消費 production-unit optimizer 結果，已有 stock offset、single-trip packing 與 physical-jar-aware multi-trip replenishment；販售排程現在會用玩家實際持有的 clean / used cups，逐杯追蹤 clean → used stack transition，不再固定預留 1 slot。PR #32 先把 optimizer `leftoverServings` 保留在同一實體罐；PR #37 再把 sales schedule 的 plan-local 罐號改成 persistent `mjc-inventory` jar ID，並攜帶該罐規劃前的 `recipeId / servings` metadata。剩餘成品仍只能留在同一 physical jar，不允許跨罐倒果汁；果汁罐只能整罐移動，居家放置只使用果汁罐架，不把一般架當果汁罐 storage。
 - 特性同分時會先套用已確認的順序規則：**較晚加入原料所提供／最後貢獻的特性排序較高**；只有套用此規則後，cutoff 候選仍同分且最後貢獻位置相同時才保留 ambiguous，且 ambiguous computed candidate 不參與完全匹配推薦。
@@ -133,10 +133,13 @@ HiGHS solver 使用真正的 lexicographic repeated solve，不使用隱藏權�
 
 - `minimum-cost`
 - `minimum-waste`
+- `maximum-ingredient-cost`
 - `maximum-known-revenue`
 - `maximum-known-gross-profit`
 - `minimum-machine-operations`
 - `minimum-jar-switches`
+
+`maximum-ingredient-cost` 是研究／擴充實測配方用 criterion：solver 以實際 customer → recipe 的 assignment 變數乘上所選配方原料成本來計分，不直接最大化 production `x × ingredientCost`。因此額外製作沒有顧客需求的果汁不會提高此目標；主要目標固定後仍沿用既有 lexicographic fallback，優先壓低實際 production cost／production units。此 criterion 不推導售價，也不等同最高已知銷售額或最高已知毛利。
 
 果汁罐換裝定義為「同一罐從一種最終果汁改裝成另一種」；空罐第一次裝入與補裝相同配方不算。Correctness-1 / PR #64 後，optimizer 與販售排程會讀取本日可用的所有實體果汁罐初始 `recipeId / servings`：有果汁罐架時，可在返家後把整罐放回架上並換另一罐出門；未喝空內容仍不能為了降低換裝數而自動倒掉或跨罐轉移。果汁成品台若面對仍有相同配方內容的未滿罐，可以直接補裝，只要補裝後不超過 10 份；不同配方仍必須先讓舊內容合法耗盡。販售排程會依同一份逐罐時序重算換裝數，並與 optimizer 結果檢查一致；`maxJarTypeSwitches` 也使用這套初始內容感知的換裝語意。
 
@@ -260,7 +263,7 @@ Phase 4 已完成：
 19. PR #62 完成 **Candidate-2A｜單一果汁段漸進搜尋**：不重複原料由淺到深搜尋；顧客頁與批次最佳化共用同一停止規則；只有不重複候選無法保證完全匹配且重複可能改變特性時，才啟用有界的重複調味後備搜尋。
 20. PR #64 完成 **Correctness-1｜跨趟果汁罐交換與同配方直接補裝**：planner settings 從 persistent jar ID 綁定改為 `auto`／`fixed-slots`；無果汁罐架時所有持有罐強制隨身，有架時可跨趟整罐上架／換罐，架上既有成品也會納入今日需求；同配方未空罐可直接補裝至容量 10，不同配方仍禁止直接混裝。
 21. PR #66 完成 **UX-1｜配方模擬器與批次規劃可讀性**：原料卡直接顯示特性與數值；模擬器可暫選目標顧客並顯示匹配狀態；批次規劃的常見可修正錯誤改用穩定 code + context，UI 顯示中文摘要、限制原因、可操作建議與次要技術資訊。
-22. PR #68 完成 **Candidate-2B｜多層果汁調和搜尋**；PR #69 完成 **Correctness-2｜剩餘果汁終局罐需求診斷**；PR #70 完成 **Performance-1｜配方分頁／篩選與批次規劃 render 降載**；PR #72 完成 **Correctness-2B｜明確允許倒掉既有果汁**；PR #74 完成 **Correctness-3｜候選搜尋 consumer 語意拆分**。Correctness-3 保留 `first-feasible` 的提前停止，並讓顧客完整列表／最低成本推薦／optimizer 改用既有搜尋預算內的 `bounded-exhaustive`；Candidate-2A / 2B 的候選產生器、搜尋上限、排序、果汁調和器進度 gate、歧義與未知售價邊界都未改動。下一步是 **Objective-1｜批次規劃「最高原料成本」**，之後依序處理果汁罐即時搜尋、配方／顧客研究 UX，再回 Candidate-3 / Candidate-4。路線最佳化仍等待跨村移動時間、位置資訊、完整顧客服務時段與商店營業時間資料。
+22. PR #68 完成 **Candidate-2B｜多層果汁調和搜尋**；PR #69 完成 **Correctness-2｜剩餘果汁終局罐需求診斷**；PR #70 完成 **Performance-1｜配方分頁／篩選與批次規劃 render 降載**；PR #72 完成 **Correctness-2B｜明確允許倒掉既有果汁**；PR #74 完成 **Correctness-3｜候選搜尋 consumer 語意拆分**；PR #76 完成 **Objective-1｜批次規劃「最高原料成本」**。Correctness-3 保留 `first-feasible` 的提前停止，並讓顧客完整列表／最低成本推薦／optimizer 改用既有搜尋預算內的 `bounded-exhaustive`；Objective-1 再以實際 customer → recipe assignment 的配方原料成本作研究目標，不以 production `x × ingredientCost` 灌高成本，也不宣稱最高售價／毛利。Candidate-2A / 2B 的候選產生器、搜尋上限、排序、果汁調和器進度 gate、歧義與未知售價邊界都未改動。下一步是 **UX-2A｜果汁罐內容即時搜尋**，之後依序處理 UX-2B｜配方研究與顧客比較介面 → Candidate-3 → Candidate-4。路線最佳化仍等待跨村移動時間、位置資訊、完整顧客服務時段與商店營業時間資料。
 
 
 ## Schedule / route readiness boundary
