@@ -6,6 +6,7 @@ export type PlanningUserErrorCode =
   | 'trip-capacity'
   | 'leftover-storage'
   | 'retained-juice-conflict'
+  | 'jar-schedule-inconsistency'
   | 'optimizer-no-solution'
 
 export interface PlanningUserErrorContext {
@@ -14,6 +15,8 @@ export interface PlanningUserErrorContext {
   reusableTerminalJarCount?: number
   retainedJarCount?: number
   policy?: string
+  expectedJarTypeSwitches?: number
+  actualJarTypeSwitches?: number
   solverStatus?: string
 }
 
@@ -159,6 +162,25 @@ export function presentPlanningError(
           ],
           technicalDetails: details,
         }
+      case 'jar-schedule-inconsistency': {
+        const expected = error.context.expectedJarTypeSwitches
+        const actual = error.context.actualJarTypeSwitches
+        const detail =
+          typeof expected === 'number' && typeof actual === 'number'
+            ? `最佳化預期 ${expected} 次換裝，但實體排程產生 ${actual} 次。`
+            : '最佳化結果與實體果汁罐排程的換裝次數不一致。'
+
+        return {
+          title: '果汁罐排程發生內部不一致',
+          message:
+            `${detail} 這是網站內部規劃錯誤，不是庫存輸入本身能修正的問題。`,
+          suggestions: [
+            '可保留目前庫存與規劃設定，將下方技術資訊提供給網站除錯。',
+            '不需要反覆修改庫存來嘗試避開這個錯誤。',
+          ],
+          technicalDetails: details,
+        }
+      }
       case 'optimizer-no-solution':
         return {
           title: '目前條件找不到可行的批次規劃',

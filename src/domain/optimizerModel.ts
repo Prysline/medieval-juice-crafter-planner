@@ -1,4 +1,5 @@
 import { customerIsUnlocked, isAvailableAtProgress } from './availability'
+import { minimumJarTypeSwitchesForInitialJars } from './jarSwitches'
 import { recipeCandidateMatchesCustomer } from './matching'
 import { calculateRecipeIngredientCost } from './recipeCost'
 import type { RecipeCandidatePool } from './recipeCandidatePool'
@@ -159,18 +160,10 @@ export function minimumJarTypeSwitchesForRecipeIds(
   request: OptimizationRequest,
   recipeIds: string[],
 ): number {
-  const jars = normalizedInitialCarriedJuiceJars(request)
-  const initialRecipeIds = new Set(
-    jars.flatMap((jar) => (jar.recipeId && jar.servings > 0 ? [jar.recipeId] : [])),
+  return minimumJarTypeSwitchesForInitialJars(
+    normalizedInitialCarriedJuiceJars(request),
+    recipeIds,
   )
-  const emptyJarCount = jars.filter(
-    (jar) => !jar.recipeId || jar.servings <= 0,
-  ).length
-  const unmatchedRecipeKinds = [...new Set(recipeIds)].filter(
-    (recipeId) => !initialRecipeIds.has(recipeId),
-  ).length
-
-  return Math.max(0, unmatchedRecipeKinds - emptyJarCount)
 }
 
 export function isRevenueCriterion(

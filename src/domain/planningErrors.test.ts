@@ -30,6 +30,30 @@ describe('planning error presentation', () => {
     )
   })
 
+  it('presents jar schedule mismatch as an internal planning error', () => {
+    const result = presentPlanningError(
+      new PlanningUserError(
+        'jar-schedule-inconsistency',
+        {
+          expectedJarTypeSwitches: 1,
+          actualJarTypeSwitches: 2,
+        },
+        'Physical jar schedule realized 2 switch(es), expected 1',
+      ),
+    )
+
+    expect(result.title).toBe('果汁罐排程發生內部不一致')
+    expect(result.message).toContain('最佳化預期 1 次換裝')
+    expect(result.message).toContain('實體排程產生 2 次')
+    expect(result.message).toContain('網站內部規劃錯誤')
+    expect(result.suggestions.join(' ')).not.toContain(
+      '確認庫存與規劃設定後重新執行',
+    )
+    expect(result.technicalDetails).toContain(
+      'Physical jar schedule realized 2',
+    )
+  })
+
   it('keeps unknown invariant details secondary to a Chinese summary', () => {
     const result = presentPlanningError(
       new Error('Physical jar timeline drifted'),
