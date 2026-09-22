@@ -16,7 +16,7 @@ import {
   type SortDirection,
 } from './domain/customerList'
 import {
-  customerRecipeRecommendations,
+  customerRecipeRecommendationsFromSearch,
   type CustomerRecipeRecommendations,
 } from './domain/customerRecommendation'
 import {
@@ -31,6 +31,7 @@ import {
   buildRecipeCandidatePool,
   recipeCandidatesInCurrentSearchScope,
 } from './domain/recipeCandidatePool'
+import { searchRecipeCandidatesForCustomer } from './domain/recipeSearch'
 import {
   calculateRecipeIngredientCost,
   type RecipeIngredientCost,
@@ -138,20 +139,45 @@ function App() {
   )
 
   const customerRows = useMemo(() => {
+    const searchesByCustomerId = new Map(
+      customers.map((customer) => [
+        customer.id,
+        {
+          observedOnly: searchRecipeCandidatesForCustomer(
+            recipeCandidatePool,
+            currentProgress,
+            customer,
+            { candidatePolicy: 'observed-only' },
+          ),
+          allowComputed: searchRecipeCandidatesForCustomer(
+            recipeCandidatePool,
+            currentProgress,
+            customer,
+            { candidatePolicy: 'allow-unambiguous-computed' },
+          ),
+        },
+      ]),
+    )
+
     const rows = customers
       .filter((customer) => customerVillageIsAvailable(customer, currentProgress))
-      .map((customer) => ({
-        customer,
-        unlocked: customerIsUnlocked(
+      .map((customer) => {
+        const searches = searchesByCustomerId.get(customer.id)
+        const candidates = searches?.allowComputed.candidates ?? []
+
+        return {
           customer,
-          currentProgress,
-          satisfactionByVillage,
-        ),
-        matches: matchingRecipeCandidatesForCustomer(
-          recipeCandidates,
-          customer,
-        ),
-      }))
+          unlocked: customerIsUnlocked(
+            customer,
+            currentProgress,
+            satisfactionByVillage,
+          ),
+          matches: matchingRecipeCandidatesForCustomer(
+            [...candidates],
+            customer,
+          ),
+        }
+      })
       .filter(({ unlocked }) => customerVisibility === 'all' || unlocked)
 
     const suppliedFilteredRows = filterSuppliedCustomerRows(
@@ -178,18 +204,22 @@ function App() {
       customerSortKey,
       customerSortDirection,
       recipeOrder,
-    ).map((row) => ({
-      ...row,
-      recommendations: customerRecipeRecommendations(
-        recipeCandidates,
-        row.customer,
-      ),
-    }))
+    ).map((row) => {
+      const searches = searchesByCustomerId.get(row.customer.id)
+      return {
+        ...row,
+        recommendations: customerRecipeRecommendationsFromSearch(
+          searches?.observedOnly.candidates ?? [],
+          searches?.allowComputed.candidates ?? [],
+          row.customer,
+        ),
+      }
+    })
   }, [
     normalizedQuery,
     currentProgress,
     satisfactionByVillage,
-    recipeCandidates,
+    recipeCandidatePool,
     recipeOrder,
     customerVisibility,
     showSuppliedToday,
@@ -565,6 +595,7 @@ function App() {
           suppliedCustomerIds={suppliedCustomerIds}
           formalCustomerIds={formalCustomerIds}
           recipeCandidates={recipeCandidates}
+          recipeCandidatePool={recipeCandidatePool}
           onSuppliedCustomerIdsCommitted={setSuppliedCustomerIds}
         />
       </div>

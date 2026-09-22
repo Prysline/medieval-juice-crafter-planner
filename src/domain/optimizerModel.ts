@@ -1,6 +1,11 @@
 import { customerIsUnlocked, isAvailableAtProgress } from './availability'
 import { recipeCandidateMatchesCustomer } from './matching'
 import { calculateRecipeIngredientCost } from './recipeCost'
+import type { RecipeCandidatePool } from './recipeCandidatePool'
+import {
+  searchRecipeCandidatesForCustomer,
+  type ProgressiveRecipeSearchPolicy,
+} from './recipeSearch'
 import {
   productionPathForCandidate,
   type RecipeProductionPath,
@@ -12,9 +17,7 @@ import type {
   SatisfactionByVillage,
 } from '../types'
 
-export type OptimizationCandidatePolicy =
-  | 'observed-only'
-  | 'allow-unambiguous-computed'
+export type OptimizationCandidatePolicy = ProgressiveRecipeSearchPolicy
 
 export type OptimizationObjective =
   | 'minimum-cost'
@@ -59,7 +62,13 @@ export interface OptimizationRequest {
 
 export interface OptimizationSource {
   customers: Customer[]
-  candidates: RecipeCandidate[]
+  /**
+   * 保留 flat candidates 給聚焦單元測試與明確指定來源的 caller。
+   * Candidate-2A runtime 使用 candidatePool，讓每位顧客共用同一套
+   * progressive search contract。
+   */
+  candidates?: readonly RecipeCandidate[]
+  candidatePool?: RecipeCandidatePool
 }
 
 export interface EligibleOptimizationRecipe {
@@ -69,6 +78,11 @@ export interface EligibleOptimizationRecipe {
   eligibleCustomerIds: string[]
   productionPath: RecipeProductionPath
 }
+
+type EligibleOptimizationRecipeCore = Omit<
+  EligibleOptimizationRecipe,
+  'eligibleCustomerIds'
+>
 
 export interface BatchOptimizationModel {
   request: OptimizationRequest
@@ -185,6 +199,27 @@ function candidateIsEligible(
   )
 }
 
+function eligibleOptimizationRecipe(
+  candidate: RecipeCandidate,
+  request: OptimizationRequest,
+): EligibleOptimizationRecipeCore | null {
+  if (!candidateIsEligible(candidate, request)) return null
+
+  const cost = calculateRecipeIngredientCost(candidate)
+  if (cost.batchIngredientCost === null) return null
+
+  // 製作可行性仍由 production graph 負責。Candidate-2A 只自動產生
+  // 單一果汁段；明確提供的 multi-base fixture 仍沿用既有 Blender path 支援。
+  const productionPath = productionPathForCandidate(candidate)
+  if (!productionPath) return null
+
+  return {
+    candidate,
+    juiceUnitIngredientCost: cost.batchIngredientCost,
+    productionPath,
+  }
+}
+
 export function buildOptimizationModel(
   request: OptimizationRequest,
   source: OptimizationSource,
@@ -199,30 +234,30 @@ export function buildOptimizationModel(
   const customerById = new Map(
     source.customers.map((customer) => [customer.id, customer]),
   )
+  const revenueSensitive = requestUsesRevenueCriterion(request)
+  const eligibleEntryCache = new Map<
+    string,
+    EligibleOptimizationRecipeCore | null
+  >()
+  const selectedEntriesById = new Map<
+    string,
+    EligibleOptimizationRecipeCore
+  >()
 
-  const eligibleCandidates = source.candidates.flatMap((candidate) => {
-    if (!candidateIsEligible(candidate, request)) return []
-
-    const cost = calculateRecipeIngredientCost(candidate)
-    if (cost.batchIngredientCost === null) return []
-
-    // Production eligibility is delegated to the production graph. Multi-base
-    // candidates are allowed once they can be expressed as confirmed Blender
-    // segment edges; unknown Blender sale/effect rules remain outside this layer.
-    const productionPath = productionPathForCandidate(candidate)
-    if (!productionPath) return []
-
-    return [{
-      candidate,
-      juiceUnitIngredientCost: cost.batchIngredientCost,
-      productionPath,
-    }]
-  })
+  function cachedEligibleEntry(
+    candidate: RecipeCandidate,
+  ): EligibleOptimizationRecipeCore | null {
+    if (eligibleEntryCache.has(candidate.id)) {
+      return eligibleEntryCache.get(candidate.id) ?? null
+    }
+    const entry = eligibleOptimizationRecipe(candidate, request)
+    eligibleEntryCache.set(candidate.id, entry)
+    return entry
+  }
 
   const unresolvedCustomerIds: string[] = []
   const serviceableCustomerIds: string[] = []
   const eligibleRecipeIdsByCustomer = new Map<string, string[]>()
-  const revenueSensitive = requestUsesRevenueCriterion(request)
 
   for (const customerId of demandIds) {
     const customer = customerById.get(customerId)
@@ -238,23 +273,48 @@ export function buildOptimizationModel(
       continue
     }
 
-    const recipeIds = eligibleCandidates
-      .filter(({ candidate }) => {
-        if (!recipeCandidateMatchesCustomer(candidate, customer)) {
-          return false
-        }
+    const candidateSource = source.candidatePool
+      ? searchRecipeCandidatesForCustomer(
+          source.candidatePool,
+          request.currentProgress,
+          customer,
+          {
+            candidatePolicy: request.candidatePolicy,
+            additionalCandidateEligibility: (candidate) => {
+              if (!cachedEligibleEntry(candidate)) return false
+              if (
+                revenueSensitive &&
+                formalIds.has(customerId) &&
+                candidate.salePrice === null
+              ) {
+                return false
+              }
+              return true
+            },
+          },
+        ).candidates
+      : (source.candidates ?? [])
 
-        if (
-          revenueSensitive &&
-          formalIds.has(customerId) &&
-          candidate.salePrice === null
-        ) {
-          return false
-        }
+    const recipeIds: string[] = []
+    for (const candidate of candidateSource) {
+      const entry = cachedEligibleEntry(candidate)
+      if (!entry) continue
+      if (!recipeCandidateMatchesCustomer(candidate, customer)) {
+        continue
+      }
+      if (
+        revenueSensitive &&
+        formalIds.has(customerId) &&
+        candidate.salePrice === null
+      ) {
+        continue
+      }
 
-        return true
-      })
-      .map(({ candidate }) => candidate.id)
+      recipeIds.push(candidate.id)
+      if (!selectedEntriesById.has(candidate.id)) {
+        selectedEntriesById.set(candidate.id, entry)
+      }
+    }
 
     if (recipeIds.length === 0) {
       unresolvedCustomerIds.push(customerId)
@@ -265,7 +325,7 @@ export function buildOptimizationModel(
     eligibleRecipeIdsByCustomer.set(customerId, recipeIds)
   }
 
-  const recipes = eligibleCandidates.flatMap((entry) => {
+  const recipes = [...selectedEntriesById.values()].flatMap((entry) => {
     const eligibleCustomerIds = serviceableCustomerIds.filter((customerId) =>
       eligibleRecipeIdsByCustomer.get(customerId)?.includes(entry.candidate.id),
     )
