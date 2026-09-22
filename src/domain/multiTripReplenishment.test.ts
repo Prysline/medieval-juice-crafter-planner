@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { InventoryState, JuiceJarInventoryItem } from '../types'
 import type { PreparationDemand } from './preparationDemand'
+import { minimumJarTypeSwitchesForInitialJars } from './jarSwitches'
 import { buildPreparationShortfall } from './preparationShortfall'
 import {
   buildMultiTripReplenishmentPlan as buildMultiTripReplenishmentPlanWithCups,
@@ -506,6 +507,126 @@ describe('multi-trip replenishment', () => {
       'type-switch',
     ])
     expectScheduleConsistency(result)
+  })
+
+  it('does not duplicate a type switch merely to parallelize same-recipe chunks', () => {
+    const salesDemand = demand([
+      {
+        recipeId: 'a',
+        recipeName: 'A',
+        assignedServings: 1,
+      },
+      {
+        recipeId: 'b',
+        recipeName: 'B',
+        assignedServings: 1,
+      },
+      {
+        recipeId: 'c',
+        recipeName: 'C',
+        assignedServings: 11,
+        leftoverServings: 1,
+      },
+    ])
+    const jars: JuiceJarInventoryItem[] = [
+      { id: 'jar-a', recipeId: 'a', servings: 1 },
+      { id: 'jar-b', recipeId: 'b', servings: 1 },
+    ]
+
+    const result = buildPlanWithJars(
+      salesDemand,
+      'retain-and-wash',
+      jars,
+      { cleanCups: 13, usedCups: 0 },
+    )
+
+    expect(result.jarTypeSwitches).toBe(1)
+    expect(result.jarTypeSwitches).toBe(
+      minimumJarTypeSwitchesForInitialJars(
+        jars,
+        ['a', 'b', 'c'],
+      ),
+    )
+    expect(
+      result.trips
+        .flatMap((trip) => trip.juiceJars)
+        .filter((load) => load.recipeId === 'c')
+        .map((load) => load.physicalJarId),
+    ).toEqual(['jar-a', 'jar-a'])
+    expectScheduleConsistency(result)
+  })
+
+  it('keeps a bounded small-state matrix aligned with the shared jar-switch lower bound', () => {
+    const initialStates: Array<JuiceJarInventoryItem['recipeId']> = [
+      null,
+      'a',
+      'b',
+    ]
+    const demandCases = [
+      [
+        { recipeId: 'a', recipeName: 'A', assignedServings: 1 },
+        { recipeId: 'c', recipeName: 'C', assignedServings: 1, leftoverServings: 1 },
+      ],
+      [
+        { recipeId: 'a', recipeName: 'A', assignedServings: 1 },
+        { recipeId: 'b', recipeName: 'B', assignedServings: 1 },
+        { recipeId: 'c', recipeName: 'C', assignedServings: 11, leftoverServings: 1 },
+      ],
+      [
+        { recipeId: 'a', recipeName: 'A', assignedServings: 1 },
+        { recipeId: 'b', recipeName: 'B', assignedServings: 1 },
+        { recipeId: 'c', recipeName: 'C', assignedServings: 1, leftoverServings: 1 },
+        { recipeId: 'd', recipeName: 'D', assignedServings: 1, leftoverServings: 1 },
+      ],
+    ]
+
+    for (const first of initialStates) {
+      for (const second of initialStates) {
+        const jars: JuiceJarInventoryItem[] = [
+          {
+            id: 'jar-1',
+            recipeId: first,
+            servings: first ? 1 : 0,
+          },
+          {
+            id: 'jar-2',
+            recipeId: second,
+            servings: second ? 1 : 0,
+          },
+        ]
+
+        for (const demandCase of demandCases) {
+          const salesDemand = demand(demandCase)
+          const assigned = salesDemand.assignedServings
+
+          try {
+            const result = buildPlanWithJars(
+              salesDemand,
+              'retain-and-wash',
+              jars,
+              { cleanCups: assigned, usedCups: 0 },
+            )
+
+            expect(result.jarTypeSwitches).toBe(
+              minimumJarTypeSwitchesForInitialJars(
+                jars,
+                salesDemand.recipes.map((recipe) => recipe.recipeId),
+              ),
+            )
+            expectScheduleConsistency(result)
+          } catch (error) {
+            if (
+              error instanceof Error &&
+              error.message.includes(
+                'initial-content-aware minimum',
+              )
+            ) {
+              throw error
+            }
+          }
+        }
+      }
+    }
   })
 
   it('uses two physical jars for four juice types in two trips with two switches', () => {
