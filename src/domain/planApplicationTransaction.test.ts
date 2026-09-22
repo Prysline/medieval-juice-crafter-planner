@@ -49,7 +49,8 @@ function basis(): PlanApplicationBasisState {
     formalCustomerIds: ['customer-1', 'customer-2'],
     suppliedCustomerIds: ['already-supplied'],
     plannerSettings: {
-      carriedJuiceJarIds: ['jar-a'],
+      juiceJarCarryMode: 'fixed-slots',
+      reservedJuiceJarSlots: 1,
       allowUsedCupDropIfFull: false,
     },
   }
