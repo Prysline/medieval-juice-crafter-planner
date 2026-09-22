@@ -619,6 +619,35 @@ function buildPhysicalJarQueues(
     )
   }
 
+  const terminalRecipes = recipes
+    .filter((recipe) => recipe.leftoverServings > 0)
+    .sort(
+      (a, b) =>
+        b.leftoverServings - a.leftoverServings ||
+        a.recipeName.localeCompare(b.recipeName, 'zh-Hant') ||
+        a.recipeId.localeCompare(b.recipeId),
+    )
+
+  if (terminalRecipes.length > reusableQueueCount) {
+    const unplaceableLeftovers = terminalRecipes
+      .slice(reusableQueueCount)
+      .reduce(
+        (sum, recipe) => sum + recipe.leftoverServings,
+        0,
+      )
+
+    throw new PlanningUserError(
+      'leftover-storage',
+      {
+        remainingServings: unplaceableLeftovers,
+        requiredTerminalJarCount: terminalRecipes.length,
+        reusableTerminalJarCount: reusableQueueCount,
+        retainedJarCount: queues.length - reusableQueueCount,
+      },
+      `Terminal leftovers require ${terminalRecipes.length} reusable jars, but only ${reusableQueueCount} are available`,
+    )
+  }
+
   return recipes.length > reusableQueueCount
     ? buildJarQueuesWithSwitches(recipes, queues)
     : buildJarQueuesWithoutSwitches(recipes, queues)
@@ -667,9 +696,22 @@ function assignNewProductionLeftovers(
     }
 
     if (remaining > 0) {
+      const reusableTerminalJarCount = queues.filter(
+        (queue) => !queue.lockedByRetainedInitialContents,
+      ).length
+      const requiredTerminalJarCount = shortfall.recipes.filter(
+        (item) => item.newProductionLeftoverServings > 0,
+      ).length
+
       throw new PlanningUserError(
         'leftover-storage',
-        { remainingServings: remaining },
+        {
+          remainingServings: remaining,
+          requiredTerminalJarCount,
+          reusableTerminalJarCount,
+          retainedJarCount:
+            queues.length - reusableTerminalJarCount,
+        },
         `Not enough terminal sales-jar capacity to preserve ${remaining} leftover serving(s) without switching away from retained juice`,
       )
     }
