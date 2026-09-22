@@ -60,14 +60,14 @@ describe('recipe simulator UX', () => {
       ? element.props.children
       : [element.props.children]
     const label = children.find(
-      (child) => child?.type === 'label',
+      (child: { type?: unknown }) => child?.type === 'label',
     )
     expect(label).toBeDefined()
     const labelChildren = Array.isArray(label.props.children)
       ? label.props.children
       : [label.props.children]
     const select = labelChildren.find(
-      (child) => child?.type === 'select',
+      (child: { type?: unknown }) => child?.type === 'select',
     )
     expect(select).toBeDefined()
 
