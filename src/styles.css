@@ -485,6 +485,30 @@ h1 {
   padding: 2px 6px;
 }
 
+.customer-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+
+.comparison-toggle {
+  width: fit-content;
+  border: 1px solid #cfc0aa;
+  border-radius: 999px;
+  background: #fffdf8;
+  color: #6b5e4d;
+  padding: 3px 7px;
+  font-size: 0.7rem;
+  font-weight: 900;
+}
+
+.comparison-toggle.selected {
+  border-color: #4f6744;
+  background: #dfeadb;
+  color: #406136;
+}
+
 .formal-check.formal {
   background: #dfeadb;
   color: #406136;
@@ -1151,6 +1175,131 @@ footer {
   padding: 8px 10px;
 }
 
+.comparison-add-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.comparison-add-row > button {
+  min-height: 40px;
+  border: 1px solid #cfc0aa;
+  border-radius: 9px;
+  background: #f3eadc;
+  color: #655640;
+  padding: 8px 10px;
+  font-weight: 900;
+}
+
+.comparison-add-row > button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.comparison-empty {
+  margin: 0;
+  color: #786b59;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.comparison-customer-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.comparison-customer-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid #e2d7c5;
+  border-radius: 10px;
+  background: #fffdf8;
+  padding: 9px;
+}
+
+.comparison-customer-heading {
+  display: flex;
+  gap: 8px;
+  align-items: start;
+  justify-content: space-between;
+}
+
+.comparison-customer-heading strong {
+  color: #38502f;
+  font-size: 0.8rem;
+}
+
+.comparison-customer-heading button {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border: 1px solid #dbcbb5;
+  border-radius: 999px;
+  background: #f5eee3;
+  color: #7b6049;
+  font-weight: 900;
+}
+
+.comparison-dock {
+  position: fixed;
+  z-index: 50;
+  right: 16px;
+  bottom: 16px;
+  display: grid;
+  gap: 8px;
+  width: min(360px, calc(100vw - 32px));
+  max-height: min(50vh, 420px);
+  overflow: auto;
+  border: 1px solid #cfc0aa;
+  border-radius: 14px;
+  background: rgba(255, 253, 248, 0.98);
+  box-shadow: 0 16px 38px rgba(68, 53, 35, 0.2);
+  padding: 10px;
+}
+
+.comparison-dock-heading {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.comparison-dock-heading strong {
+  color: #38502f;
+  font-size: 0.82rem;
+}
+
+.comparison-dock-heading button,
+.comparison-dock-open,
+.comparison-dock-list button {
+  border: 1px solid #d6c8b3;
+  border-radius: 9px;
+  background: #f5eee3;
+  color: #655640;
+  padding: 6px 8px;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.comparison-dock-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.comparison-dock-list button {
+  background: #fffaf1;
+}
+
+.comparison-dock-open {
+  border-color: #4f6744;
+  background: #4f6744;
+  color: white;
+}
+
 .target-customer-result {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(180px, 0.8fr);
@@ -1440,6 +1589,17 @@ footer {
 
   .target-customer-result {
     grid-template-columns: 1fr;
+  }
+
+  .comparison-add-row,
+  .comparison-customer-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .comparison-dock {
+    right: 8px;
+    bottom: 8px;
+    width: calc(100vw - 16px);
   }
 
   .saved-recipe-summary > span {
