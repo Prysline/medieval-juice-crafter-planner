@@ -970,6 +970,27 @@ describe('multi-trip replenishment', () => {
     ])
   })
 
+  it('keeps rack-stored physical jars beyond the ten-slot backpack limit available to the day plan', () => {
+    const salesDemand = demand([])
+    const jars = carriedJars(12)
+    const result = buildMultiTripReplenishmentPlanWithCups(
+      salesDemand,
+      'retain-and-wash',
+      jars,
+      { cleanCups: 0, usedCups: 0 },
+      shortfallFor(salesDemand, jars),
+      {
+        mode: 'auto',
+        reservedSlots: 0,
+        minimumCarriedSlots: 2,
+      },
+    )
+
+    expect(result.carriedJuiceJarCount).toBe(12)
+    expect(result.carriedJuiceJars).toHaveLength(12)
+    expect(result.trips).toEqual([])
+  })
+
   it.each<UsedCupTripPolicy>([
     'retain-and-wash',
     'allow-drop-if-full',
