@@ -236,6 +236,82 @@ h1 {
   font-weight: 800;
 }
 
+.recipe-toolbar,
+.recipe-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.recipe-toolbar {
+  margin-bottom: 8px;
+  border: 1px solid rgba(82, 66, 44, 0.16);
+  border-radius: 13px;
+  background: rgba(255, 253, 248, 0.94);
+  padding: 8px 10px;
+}
+
+.recipe-toolbar label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: #6d604d;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.recipe-toolbar select,
+.recipe-pagination input {
+  min-height: 34px;
+  border: 1px solid #d6c8b3;
+  border-radius: 9px;
+  background: #fffdf8;
+  color: #2f2a22;
+  padding: 5px 8px;
+}
+
+.recipe-toolbar > span {
+  margin-left: auto;
+  color: #786b59;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.recipe-pagination {
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.recipe-pagination button {
+  min-height: 34px;
+  border: 1px solid #d6c8b3;
+  border-radius: 9px;
+  background: #fffdf8;
+  color: #5c4d39;
+  padding: 5px 12px;
+  font-weight: 800;
+}
+
+.recipe-pagination button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.recipe-pagination label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: #6d604d;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.recipe-pagination input {
+  width: 64px;
+  text-align: center;
+}
+
 .table-list {
   overflow: hidden;
   border-radius: 13px;
@@ -636,6 +712,24 @@ footer {
 
   .table-list {
     overflow: hidden;
+  }
+
+  .recipe-toolbar {
+    align-items: stretch;
+  }
+
+  .recipe-toolbar label {
+    flex: 1 1 140px;
+    justify-content: space-between;
+  }
+
+  .recipe-toolbar > span {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .recipe-pagination {
+    justify-content: space-between;
   }
 
   .customer-columns {
