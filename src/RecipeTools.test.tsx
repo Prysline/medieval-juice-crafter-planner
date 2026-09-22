@@ -3,9 +3,9 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { customers } from './data/customers'
 import { evaluateRecipeSequence } from './domain/recipeEvaluator'
 import {
+  CustomerComparisonPanel,
   EvaluationPanel,
   RecipeTools,
-  TargetCustomerPanel,
 } from './RecipeTools'
 
 const satisfaction = {
@@ -21,6 +21,10 @@ describe('recipe simulator UX', () => {
         currentProgress="opening"
         satisfactionByVillage={satisfaction}
         savedRecipes={[]}
+        comparisonCustomerIds={[]}
+        onAddComparisonCustomer={() => {}}
+        onRemoveComparisonCustomer={() => {}}
+        onClearComparisonCustomers={() => {}}
         onSavedRecipesChange={() => {
           savedRecipeChanges += 1
         }}
@@ -30,8 +34,8 @@ describe('recipe simulator UX', () => {
     expect(html).toContain('配方模擬器')
     expect(html).toContain('酸味 4')
     expect(html).toContain('增強免疫 3')
-    expect(html).toContain('目標顧客')
-    expect(html).toContain('只供本次模擬參考，不會寫入玩家資料')
+    expect(html).toContain('比較顧客')
+    expect(html).toContain('同一頁面工作階段保留，不會寫入玩家持久資料')
     expect(html).toContain('加莉安娜（麵包師）')
     expect(savedRecipeChanges).toBe(0)
   })
@@ -77,7 +81,11 @@ describe('recipe simulator UX', () => {
             createdAt: '2026-09-22T00:00:00.000Z',
           },
         ]}
+        comparisonCustomerIds={[]}
         onSavedRecipesChange={() => {}}
+        onAddComparisonCustomer={() => {}}
+        onRemoveComparisonCustomer={() => {}}
+        onClearComparisonCustomers={() => {}}
       />,
     )
 
@@ -91,53 +99,15 @@ describe('recipe simulator UX', () => {
     expect(html).toContain('可能特性不視為確定成品特性')
   })
 
-  it('routes target-customer changes only through the temporary selection callback', () => {
+  it('shows multiple comparison customers and their independent match states', () => {
     const nanette = customers.find(
       (customer) => customer.id === 'nanette',
     )
-    expect(nanette).toBeDefined()
-
-    const evaluation = evaluateRecipeSequence(
-      ['lemon'],
-      'opening',
-    )
-    let selected = ''
-    const element = TargetCustomerPanel({
-      customers: [nanette!],
-      selectedCustomer: null,
-      selectedCustomerId: '',
-      onSelect: (customerId) => {
-        selected = customerId
-      },
-      evaluation,
-    })
-
-    const children = Array.isArray(element.props.children)
-      ? element.props.children
-      : [element.props.children]
-    const label = children.find(
-      (child: { type?: unknown }) => child?.type === 'label',
-    )
-    expect(label).toBeDefined()
-    const labelChildren = Array.isArray(label.props.children)
-      ? label.props.children
-      : [label.props.children]
-    const select = labelChildren.find(
-      (child: { type?: unknown }) => child?.type === 'select',
-    )
-    expect(select).toBeDefined()
-
-    select.props.onChange({
-      target: { value: nanette!.id },
-    })
-    expect(selected).toBe('nanette')
-  })
-
-  it('shows customer preferences and the current recipe match level', () => {
-    const nanette = customers.find(
-      (customer) => customer.id === 'nanette',
+    const jack = customers.find(
+      (customer) => customer.id === 'jack',
     )
     expect(nanette).toBeDefined()
+    expect(jack).toBeDefined()
 
     const evaluation = evaluateRecipeSequence(
       ['lemon'],
@@ -146,18 +116,55 @@ describe('recipe simulator UX', () => {
     expect(evaluation.valid).toBe(true)
 
     const html = renderToStaticMarkup(
-      <TargetCustomerPanel
-        customers={[nanette!]}
-        selectedCustomer={nanette!}
-        selectedCustomerId={nanette!.id}
-        onSelect={() => {}}
+      <CustomerComparisonPanel
+        availableCustomers={[nanette!, jack!]}
+        comparisonCustomerIds={[nanette!.id, jack!.id]}
         evaluation={evaluation}
+        onAdd={() => {}}
+        onRemove={() => {}}
+        onClear={() => {}}
       />,
     )
 
     expect(html).toContain('娜內特（魚販）')
+    expect(html).toContain('傑克（帽匠）')
     expect(html).toContain('原料：檸檬')
     expect(html).toContain('特性：增強免疫')
     expect(html).toContain('完全匹配')
+    expect(html).toContain('未匹配')
+    expect(html).toContain('全部清除')
+    expect(html).toContain('移除 娜內特 比較')
+    expect(html).toContain('移除 傑克 比較')
   })
+
+  it('does not re-offer customers already in the comparison list', () => {
+    const nanette = customers.find(
+      (customer) => customer.id === 'nanette',
+    )
+    const jack = customers.find(
+      (customer) => customer.id === 'jack',
+    )
+    expect(nanette).toBeDefined()
+    expect(jack).toBeDefined()
+
+    const evaluation = evaluateRecipeSequence(
+      ['lemon'],
+      'opening',
+    )
+
+    const html = renderToStaticMarkup(
+      <CustomerComparisonPanel
+        availableCustomers={[nanette!, jack!]}
+        comparisonCustomerIds={[nanette!.id]}
+        evaluation={evaluation}
+        onAdd={() => {}}
+        onRemove={() => {}}
+        onClear={() => {}}
+      />,
+    )
+
+    expect(html).toContain('<option value="jack">傑克（帽匠）</option>')
+    expect(html).not.toContain('<option value="nanette">娜內特（魚販）</option>')
+  })
+
 })

@@ -39,7 +39,11 @@ interface RecipeToolsProps {
   currentProgress: ProgressMilestoneId
   satisfactionByVillage: SatisfactionByVillage
   savedRecipes: SavedRecipe[]
+  comparisonCustomerIds: string[]
   onSavedRecipesChange: (recipes: SavedRecipe[]) => void
+  onAddComparisonCustomer: (customerId: string) => void
+  onRemoveComparisonCustomer: (customerId: string) => void
+  onClearComparisonCustomers: () => void
 }
 
 const ingredientById = new Map(
@@ -117,14 +121,17 @@ export function RecipeTools({
   currentProgress,
   satisfactionByVillage,
   savedRecipes,
+  comparisonCustomerIds,
   onSavedRecipesChange,
+  onAddComparisonCustomer,
+  onRemoveComparisonCustomer,
+  onClearComparisonCustomers,
 }: RecipeToolsProps) {
   const [ingredientIds, setIngredientIds] = useState<string[]>([])
   const [blenderFrontIds, setBlenderFrontIds] = useState<string[]>([])
   const [blenderBackIds, setBlenderBackIds] = useState<string[]>([])
   const [saveName, setSaveName] = useState('')
   const [saveNote, setSaveNote] = useState('')
-  const [targetCustomerId, setTargetCustomerId] = useState('')
 
   const evaluation = useMemo(
     () => evaluateRecipeSequence(ingredientIds, currentProgress),
@@ -148,10 +155,6 @@ export function RecipeTools({
         ),
     [currentProgress, satisfactionByVillage],
   )
-  const targetCustomer =
-    targetCustomers.find((customer) => customer.id === targetCustomerId) ??
-    null
-
   const matchingCustomers = useMemo(() => {
     if (
       !evaluation.valid ||
@@ -408,12 +411,13 @@ export function RecipeTools({
           </div>
         </div>
 
-        <TargetCustomerPanel
-          customers={targetCustomers}
-          selectedCustomer={targetCustomer}
-          selectedCustomerId={targetCustomerId}
-          onSelect={setTargetCustomerId}
+        <CustomerComparisonPanel
+          availableCustomers={targetCustomers}
+          comparisonCustomerIds={comparisonCustomerIds}
           evaluation={evaluation}
+          onAdd={onAddComparisonCustomer}
+          onRemove={onRemoveComparisonCustomer}
+          onClear={onClearComparisonCustomers}
         />
 
         <EvaluationPanel
@@ -483,98 +487,134 @@ export function RecipeTools({
   )
 }
 
-export function TargetCustomerPanel({
-  customers: availableCustomers,
-  selectedCustomer,
-  selectedCustomerId,
-  onSelect,
+export function CustomerComparisonPanel({
+  availableCustomers,
+  comparisonCustomerIds,
   evaluation,
+  onAdd,
+  onRemove,
+  onClear,
 }: {
-  customers: Customer[]
-  selectedCustomer: Customer | null
-  selectedCustomerId: string
-  onSelect: (customerId: string) => void
+  availableCustomers: Customer[]
+  comparisonCustomerIds: string[]
   evaluation: RecipeSequenceEvaluation
+  onAdd: (customerId: string) => void
+  onRemove: (customerId: string) => void
+  onClear: () => void
 }) {
-  const level =
-    selectedCustomer && evaluation.valid
-      ? recipeCandidateMatchLevel(
-          evaluation.candidate,
-          selectedCustomer,
-        )
-      : null
-  const hasAmbiguity =
-    evaluation.valid && Boolean(evaluation.candidate.effectAmbiguity)
+  const selectedCustomers = comparisonCustomerIds.flatMap((customerId) => {
+    const customer = customers.find((item) => item.id === customerId)
+    return customer ? [customer] : []
+  })
+  const availableToAdd = availableCustomers.filter(
+    (customer) => !comparisonCustomerIds.includes(customer.id),
+  )
 
   return (
-    <div className="target-customer-panel">
+    <div className="target-customer-panel customer-comparison-panel">
       <div className="section-title">
-        <strong>目標顧客</strong>
-        <span>只供本次模擬參考，不會寫入玩家資料</span>
+        <strong>比較顧客</strong>
+        <span>同一頁面工作階段保留，不會寫入玩家持久資料</span>
       </div>
-      <label>
-        <span>暫選顧客</span>
-        <select
-          value={
-            selectedCustomer ? selectedCustomerId : ''
-          }
-          onChange={(event) => onSelect(event.target.value)}
+
+      <div className="comparison-add-row">
+        <label>
+          <span>加入顧客</span>
+          <select
+            value=""
+            onChange={(event) => {
+              const customerId = event.target.value
+              if (customerId) onAdd(customerId)
+            }}
+          >
+            <option value="">選擇顧客……</option>
+            {availableToAdd.map((customer) => (
+              <option value={customer.id} key={customer.id}>
+                {customer.name}（{customer.occupation}）
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          disabled={selectedCustomers.length === 0}
+          onClick={onClear}
         >
-          <option value="">不指定</option>
-          {availableCustomers.map((customer) => (
-            <option value={customer.id} key={customer.id}>
-              {customer.name}（{customer.occupation}）
-            </option>
-          ))}
-        </select>
-      </label>
+          全部清除
+        </button>
+      </div>
 
-      {selectedCustomer && (
-        <div className="target-customer-result">
-          <div>
-            <strong>
-              {selectedCustomer.name}（{selectedCustomer.occupation}）
-            </strong>
-            <div className="tags target-preferences">
-              {selectedCustomer.preferences === null ? (
-                <span className="tag">喜好：？（尚未確認）</span>
-              ) : selectedCustomer.preferences.length > 0 ? (
-                selectedCustomer.preferences.map((preference) => (
-                  <span
-                    className="tag"
-                    key={`${preference.kind}:${preference.value}`}
+      {selectedCustomers.length === 0 ? (
+        <p className="comparison-empty">
+          尚未加入比較顧客；可從顧客列表按「＋ 比較」，或在這裡加入。
+        </p>
+      ) : (
+        <div className="comparison-customer-grid">
+          {selectedCustomers.map((customer) => {
+            const level = evaluation.valid
+              ? recipeCandidateMatchLevel(evaluation.candidate, customer)
+              : null
+            const hasAmbiguity =
+              evaluation.valid &&
+              Boolean(evaluation.candidate.effectAmbiguity)
+
+            return (
+              <article className="comparison-customer-card" key={customer.id}>
+                <div className="comparison-customer-heading">
+                  <strong>
+                    {customer.name}（{customer.occupation}）
+                  </strong>
+                  <button
+                    type="button"
+                    onClick={() => onRemove(customer.id)}
+                    aria-label={`移除 ${customer.name} 比較`}
                   >
-                    {preferenceLabel(preference)}
-                  </span>
-                ))
-              ) : (
-                <span className="tag">沒有已知喜好</span>
-              )}
-            </div>
-          </div>
+                    ×
+                  </button>
+                </div>
 
-          <div className="target-match-status">
-            {!evaluation.valid ? (
-              <>
-                <strong>目前無法判定</strong>
-                <span>先建立可評估的配方序列。</span>
-              </>
-            ) : hasAmbiguity ? (
-              <>
-                <strong>匹配狀態有歧義</strong>
-                <span>
-                  目前已知條件為
-                  {level ? `「${matchLevelLabel(level)}」` : '未知'}；
-                  成品特性仍有同分歧義，因此暫不宣稱完全匹配。
-                </span>
-              </>
-            ) : (
-              <>
-                <strong>{level ? matchLevelLabel(level) : '未匹配'}</strong>
-                <span>依目前配方的原料與成品特性判定。</span>
-              </>
-            )}
-          </div>
+                <div className="tags target-preferences">
+                  {customer.preferences === null ? (
+                    <span className="tag">喜好：？（尚未確認）</span>
+                  ) : customer.preferences.length > 0 ? (
+                    customer.preferences.map((preference) => (
+                      <span
+                        className="tag"
+                        key={`${preference.kind}:${preference.value}`}
+                      >
+                        {preferenceLabel(preference)}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="tag">沒有已知喜好</span>
+                  )}
+                </div>
+
+                <div className="target-match-status">
+                  {!evaluation.valid ? (
+                    <>
+                      <strong>目前無法判定</strong>
+                      <span>先建立可評估的配方序列。</span>
+                    </>
+                  ) : hasAmbiguity ? (
+                    <>
+                      <strong>匹配狀態有歧義</strong>
+                      <span>
+                        目前已知條件為
+                        {level ? `「${matchLevelLabel(level)}」` : '未知'}；
+                        成品特性仍有同分歧義，因此暫不宣稱完全匹配。
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <strong>{level ? matchLevelLabel(level) : '未匹配'}</strong>
+                      <span>依目前配方的原料與成品特性判定。</span>
+                    </>
+                  )}
+                </div>
+              </article>
+            )
+          })}
         </div>
       )}
     </div>
