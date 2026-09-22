@@ -54,9 +54,12 @@ export function buildInventoryCapacitySummary(
       : 0
   const effectiveReservedJuiceJarSlots =
     settings.juiceJarCarryMode === 'fixed-slots'
-      ? Math.max(
-          minimumCarriedJuiceJarSlots,
-          requestedReservedJuiceJarSlots,
+      ? Math.min(
+          physicalJuiceJarCount,
+          Math.max(
+            minimumCarriedJuiceJarSlots,
+            requestedReservedJuiceJarSlots,
+          ),
         )
       : minimumCarriedJuiceJarSlots
   const maxJuiceJarSlotsPerTrip =
