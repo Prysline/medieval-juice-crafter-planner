@@ -8,6 +8,7 @@ import type { OptimizationResult } from './optimizer'
 import type { PreparationShortfall } from './preparationShortfall'
 import type {
   MultiTripDiscardedInitialJuice,
+  MultiTripDiscardedNewProductionJuice,
   MultiTripLeftoverJarContent,
   MultiTripReplenishmentPlan,
 } from './multiTripReplenishment'
@@ -82,9 +83,11 @@ export interface JuiceJarTransactionChange {
 }
 
 export interface DiscardedJuiceTransactionChange {
+  readonly source: 'initial-contents' | 'new-production-leftover'
   readonly physicalJarId: string
   readonly recipeId: string
   readonly servings: number
+  readonly afterTripNumber?: number
 }
 
 export interface PlanApplicationTransactionChanges {
@@ -283,10 +286,13 @@ function validatePlanBasis(
   }
   if (
     !salesPlan.allowDiscardRetainedJuice &&
-    salesPlan.discardedInitialJuice.length > 0
+    (
+      salesPlan.discardedInitialJuice.length > 0 ||
+      salesPlan.discardedNewProductionJuice.length > 0
+    )
   ) {
     throw new Error(
-      'Sales plan cannot discard retained juice without explicit opt-in',
+      'Sales plan cannot discard juice without explicit opt-in',
     )
   }
 
@@ -327,6 +333,62 @@ function validatePlanBasis(
     ) {
       throw new Error(
         `Discarded juice does not match initial contents for physical jar ${discarded.physicalJarId}`,
+      )
+    }
+  }
+
+  const shortfallByRecipeId = new Map(
+    preparationShortfall.recipes.map((recipe) => [
+      recipe.recipeId,
+      recipe,
+    ]),
+  )
+  const discardedNewByRecipeId = new Map<string, number>()
+  for (const discarded of salesPlan.discardedNewProductionJuice) {
+    const recipe = shortfallByRecipeId.get(discarded.recipeId)
+    if (!recipe) {
+      throw new Error(
+        `Discarded new-production juice references unknown recipe ${discarded.recipeId}`,
+      )
+    }
+    if (
+      discarded.servings < 1 ||
+      discarded.afterTripNumber < 1 ||
+      discarded.afterTripNumber > salesPlan.trips.length
+    ) {
+      throw new Error(
+        `Discarded new-production juice has invalid timing or quantity for ${discarded.recipeId}`,
+      )
+    }
+
+    const trip = salesPlan.trips.find(
+      (item) => item.tripNumber === discarded.afterTripNumber,
+    )
+    const matchingLoad = trip?.juiceJars.find(
+      (load) =>
+        load.physicalJarId === discarded.physicalJarId &&
+        load.recipeId === discarded.recipeId,
+    )
+    if (!matchingLoad) {
+      throw new Error(
+        `Discarded new-production juice does not match a physical sales load for ${discarded.recipeId}`,
+      )
+    }
+
+    discardedNewByRecipeId.set(
+      discarded.recipeId,
+      (discardedNewByRecipeId.get(discarded.recipeId) ?? 0) +
+        discarded.servings,
+    )
+  }
+  for (const [recipeId, servings] of discardedNewByRecipeId) {
+    const recipe = shortfallByRecipeId.get(recipeId)
+    if (
+      !recipe ||
+      servings > recipe.newProductionLeftoverServings
+    ) {
+      throw new Error(
+        `Discarded new-production juice exceeds produced leftovers for ${recipeId}`,
       )
     }
   }
@@ -687,13 +749,25 @@ export function buildPlanApplicationTransactionDraft(
       beforeInventory.juiceJars,
       afterJars,
     ),
-    discardedJuice: salesPlan.discardedInitialJuice.map(
-      (item: MultiTripDiscardedInitialJuice) => ({
-        physicalJarId: item.physicalJarId,
-        recipeId: item.recipeId,
-        servings: item.servings,
-      }),
-    ),
+    discardedJuice: [
+      ...salesPlan.discardedInitialJuice.map(
+        (item: MultiTripDiscardedInitialJuice) => ({
+          source: 'initial-contents' as const,
+          physicalJarId: item.physicalJarId,
+          recipeId: item.recipeId,
+          servings: item.servings,
+        }),
+      ),
+      ...salesPlan.discardedNewProductionJuice.map(
+        (item: MultiTripDiscardedNewProductionJuice) => ({
+          source: 'new-production-leftover' as const,
+          physicalJarId: item.physicalJarId,
+          recipeId: item.recipeId,
+          servings: item.servings,
+          afterTripNumber: item.afterTripNumber,
+        }),
+      ),
+    ],
     newlySuppliedCustomerIds,
   }
 

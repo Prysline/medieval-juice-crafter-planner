@@ -64,6 +64,21 @@ export interface MultiTripDiscardedInitialJuice {
   servings: number
 }
 
+export interface MultiTripDiscardedNewProductionJuice {
+  physicalJarId: string
+  recipeId: string
+  recipeName: string
+  servings: number
+  /** 販售完成後、切換此實體罐用途前倒掉。 */
+  afterTripNumber: number
+}
+
+interface PlannedNewProductionDiscard {
+  recipeId: string
+  recipeName: string
+  servings: number
+}
+
 export interface MultiTripProductionJarFill {
   physicalJarId: string
   recipeId: string
@@ -141,6 +156,8 @@ export interface MultiTripReplenishmentPlan {
   allowDiscardRetainedJuice: boolean
   /** 實際被倒掉的既有果汁；未需要釋放的罐不會出現在這裡。 */
   discardedInitialJuice: MultiTripDiscardedInitialJuice[]
+  /** 本次製作後、販售完仍無終局容器可保留而倒掉的殘餘。 */
+  discardedNewProductionJuice: MultiTripDiscardedNewProductionJuice[]
   maxJuiceJarSlotsCarried: number
   cleanCupUnitsRequiredWithoutMiddayWashing: number
   reusableCleanCupPoolSize: number | null
@@ -705,9 +722,14 @@ function buildPhysicalJarQueues(
 ): {
   queues: JarQueue[]
   discardedInitialJuice: MultiTripDiscardedInitialJuice[]
+  plannedNewProductionDiscards: PlannedNewProductionDiscard[]
 } {
   if (recipes.length === 0) {
-    return { queues, discardedInitialJuice: [] }
+    return {
+      queues,
+      discardedInitialJuice: [],
+      plannedNewProductionDiscards: [],
+    }
   }
 
   const discardedInitialJuice = releaseMinimumRetainedQueues(
@@ -735,10 +757,17 @@ function buildPhysicalJarQueues(
         a.recipeId.localeCompare(b.recipeId),
     )
 
-  if (terminalRecipes.length > reusableQueueCount) {
-    const unplaceableLeftovers = terminalRecipes
-      .slice(reusableQueueCount)
-      .reduce(
+  const unplaceableTerminalRecipes =
+    terminalRecipes.length > reusableQueueCount
+      ? terminalRecipes.slice(reusableQueueCount)
+      : []
+
+  if (
+    unplaceableTerminalRecipes.length > 0 &&
+    !allowDiscardRetainedJuice
+  ) {
+    const unplaceableLeftovers =
+      unplaceableTerminalRecipes.reduce(
         (sum, recipe) => sum + recipe.leftoverServings,
         0,
       )
@@ -755,36 +784,70 @@ function buildPhysicalJarQueues(
     )
   }
 
+  const plannedNewProductionDiscards =
+    unplaceableTerminalRecipes.map((recipe) => ({
+      recipeId: recipe.recipeId,
+      recipeName: recipe.recipeName,
+      servings: recipe.leftoverServings,
+    }))
+  const discardedRecipeIds = new Set(
+    plannedNewProductionDiscards.map((item) => item.recipeId),
+  )
+  const schedulableRecipes = recipes.map((recipe) =>
+    discardedRecipeIds.has(recipe.recipeId)
+      ? { ...recipe, leftoverServings: 0 }
+      : recipe,
+  )
+
   const builtQueues =
-    recipes.length > reusableQueueCount
-      ? buildJarQueuesWithSwitches(recipes, queues)
-      : buildJarQueuesWithoutSwitches(recipes, queues)
+    schedulableRecipes.length > reusableQueueCount
+      ? buildJarQueuesWithSwitches(schedulableRecipes, queues)
+      : buildJarQueuesWithoutSwitches(schedulableRecipes, queues)
 
   return {
     queues: builtQueues,
     discardedInitialJuice,
+    plannedNewProductionDiscards,
   }
 }
 
 function assignNewProductionLeftovers(
   shortfall: PreparationShortfall,
   queues: JarQueue[],
-): void {
+  plannedDiscards: readonly PlannedNewProductionDiscard[] = [],
+): Array<Omit<MultiTripDiscardedNewProductionJuice, 'afterTripNumber'>> {
+  const discardByRecipeId = new Map(
+    plannedDiscards.map((item) => [item.recipeId, item]),
+  )
+  const discarded: Array<
+    Omit<MultiTripDiscardedNewProductionJuice, 'afterTripNumber'>
+  > = []
+
   for (const recipe of shortfall.recipes) {
-    let remaining = Math.max(
+    const totalLeftover = Math.max(
       0,
       Math.floor(recipe.newProductionLeftoverServings),
     )
-    if (remaining === 0) continue
+    if (totalLeftover === 0) continue
+
+    const plannedDiscard = discardByRecipeId.get(recipe.recipeId)
+    const discardServings = Math.min(
+      totalLeftover,
+      Math.max(0, Math.floor(plannedDiscard?.servings ?? 0)),
+    )
+    let remainingToRetain = totalLeftover - discardServings
+    let remainingToDiscard = discardServings
 
     const candidates = queues
       .flatMap((queue) => {
-        const load = queue.loads.at(-1)
-        return load &&
-          load.recipeId === recipe.recipeId &&
-          load.plannedFillServings > 0
-          ? [{ queue, load }]
-          : []
+        const load = [...queue.loads]
+          .reverse()
+          .find(
+            (item) =>
+              item.recipeId === recipe.recipeId &&
+              item.plannedFillServings > 0,
+          )
+        return load ? [{ queue, load }] : []
       })
       .sort(
         (a, b) =>
@@ -795,20 +858,18 @@ function assignNewProductionLeftovers(
       )
 
     for (const candidate of candidates) {
-      if (remaining <= 0) break
+      if (remainingToRetain <= 0) break
       const freeCapacity =
-        JUICE_JAR_CAPACITY -
-        candidate.load.servings -
-        candidate.load.retainedLeftoverServings
-      const retained = Math.min(remaining, freeCapacity)
+        JUICE_JAR_CAPACITY - candidate.load.plannedFillServings
+      const retained = Math.min(remainingToRetain, freeCapacity)
       if (retained <= 0) continue
 
       candidate.load.retainedLeftoverServings += retained
       candidate.load.plannedFillServings += retained
-      remaining -= retained
+      remainingToRetain -= retained
     }
 
-    if (remaining > 0) {
+    if (remainingToRetain > 0) {
       const reusableTerminalJarCount = queues.filter(
         (queue) => !queue.lockedByRetainedInitialContents,
       ).length
@@ -819,16 +880,73 @@ function assignNewProductionLeftovers(
       throw new PlanningUserError(
         'leftover-storage',
         {
-          remainingServings: remaining,
+          remainingServings: remainingToRetain,
           requiredTerminalJarCount,
           reusableTerminalJarCount,
           retainedJarCount:
             queues.length - reusableTerminalJarCount,
         },
-        `Not enough terminal sales-jar capacity to preserve ${remaining} leftover serving(s) without switching away from retained juice`,
+        `Not enough terminal sales-jar capacity to preserve ${remainingToRetain} leftover serving(s) without switching away from retained juice`,
+      )
+    }
+
+    for (const candidate of candidates) {
+      if (remainingToDiscard <= 0) break
+      const freeCapacity =
+        JUICE_JAR_CAPACITY - candidate.load.plannedFillServings
+      const toDiscard = Math.min(
+        remainingToDiscard,
+        freeCapacity,
+      )
+      if (toDiscard <= 0) continue
+
+      candidate.load.plannedFillServings += toDiscard
+      discarded.push({
+        physicalJarId: candidate.queue.physicalJarId,
+        recipeId: recipe.recipeId,
+        recipeName: recipe.recipeName,
+        servings: toDiscard,
+      })
+      remainingToDiscard -= toDiscard
+    }
+
+    if (remainingToDiscard > 0) {
+      throw new Error(
+        `New-production discard for ${recipe.recipeId} could not be attached to its physical production jar`,
       )
     }
   }
+
+  return discarded
+}
+
+function resolveNewProductionDiscardTrips(
+  discards: readonly Omit<
+    MultiTripDiscardedNewProductionJuice,
+    'afterTripNumber'
+  >[],
+  trips: readonly MultiTripSalesTrip[],
+): MultiTripDiscardedNewProductionJuice[] {
+  return discards.map((discard) => {
+    const matchingTrips = trips.filter((trip) =>
+      trip.juiceJars.some(
+        (load) =>
+          load.physicalJarId === discard.physicalJarId &&
+          load.recipeId === discard.recipeId,
+      ),
+    )
+    const afterTripNumber = matchingTrips.at(-1)?.tripNumber
+    if (!afterTripNumber) {
+      throw new Error(
+        `New-production discard for ${discard.recipeId} has no matching sales trip`,
+      )
+    }
+
+    return {
+      ...discard,
+      afterTripNumber,
+    }
+  })
 }
 
 function cleanCupStacksFor(cups: number): number {
@@ -1184,6 +1302,7 @@ function allocateLeftoverJarContents(
   shortfall: PreparationShortfall,
   trips: MultiTripSalesTrip[],
   discardedInitialJuice: readonly MultiTripDiscardedInitialJuice[] = [],
+  discardedNewProductionJuice: readonly MultiTripDiscardedNewProductionJuice[] = [],
 ): MultiTripLeftoverJarContent[] {
   const contents = trips
     .flatMap((trip) =>
@@ -1212,10 +1331,22 @@ function allocateLeftoverJarContents(
       item.servings,
     ]),
   )
+  const discardedNewByRecipeId = new Map<string, number>()
+  for (const item of discardedNewProductionJuice) {
+    discardedNewByRecipeId.set(
+      item.recipeId,
+      (discardedNewByRecipeId.get(item.recipeId) ?? 0) +
+        item.servings,
+    )
+  }
   const expectedLeftovers = shortfall.recipes.reduce(
     (sum, recipe) =>
       sum +
-      recipe.newProductionLeftoverServings +
+      Math.max(
+        0,
+        recipe.newProductionLeftoverServings -
+          (discardedNewByRecipeId.get(recipe.recipeId) ?? 0),
+      ) +
       recipe.finishedStockSources.reduce(
         (sourceSum, source) =>
           sourceSum +
@@ -1248,6 +1379,7 @@ export function buildProductionJarFillsFromSchedule(
   trips: MultiTripSalesTrip[],
   initialJars: MultiTripPhysicalJar[] = [],
   discardedInitialJuice: readonly MultiTripDiscardedInitialJuice[] = [],
+  discardedNewProductionJuice: readonly MultiTripDiscardedNewProductionJuice[] = [],
 ): MultiTripProductionJarFill[] {
   const jarState = new Map<
     string,
@@ -1393,6 +1525,30 @@ export function buildProductionJarFillsFromSchedule(
         )
       }
     }
+
+    for (const discarded of discardedNewProductionJuice.filter(
+      (item) => item.afterTripNumber === trip.tripNumber,
+    )) {
+      const state = jarState.get(discarded.physicalJarId)
+      if (!state) {
+        throw new Error(
+          `New-production discard references unknown physical jar ${discarded.physicalJarId}`,
+        )
+      }
+      if (
+        state.currentRecipeId !== discarded.recipeId ||
+        state.servings < discarded.servings
+      ) {
+        throw new Error(
+          `New-production discard does not match jar ${discarded.physicalJarId} after trip ${trip.tripNumber}`,
+        )
+      }
+
+      state.servings -= discarded.servings
+      if (state.servings === 0) {
+        state.currentRecipeId = null
+      }
+    }
   }
 
   return fills
@@ -1530,7 +1686,12 @@ export function buildMultiTripReplenishmentPlan(
   const queues = queueBuild.queues
   const discardedInitialJuice =
     queueBuild.discardedInitialJuice
-  assignNewProductionLeftovers(shortfall, queues)
+  const pendingNewProductionDiscards =
+    assignNewProductionLeftovers(
+      shortfall,
+      queues,
+      queueBuild.plannedNewProductionDiscards,
+    )
   const { trips: mutableTrips, finalCupState } = buildTrips(
     queues,
     policy,
@@ -1585,16 +1746,23 @@ export function buildMultiTripReplenishmentPlan(
       }
     },
   )
+  const discardedNewProductionJuice =
+    resolveNewProductionDiscardTrips(
+      pendingNewProductionDiscards,
+      trips,
+    )
   const leftoverJarContents = allocateLeftoverJarContents(
     shortfall,
     trips,
     discardedInitialJuice,
+    discardedNewProductionJuice,
   )
   const productionJarFills =
     buildProductionJarFillsFromSchedule(
       trips,
       carriedJuiceJars,
       discardedInitialJuice,
+      discardedNewProductionJuice,
     )
   const expectedProducedServings = shortfall.recipes.reduce(
     (sum, recipe) => sum + recipe.newlyProducedServings,
@@ -1709,6 +1877,7 @@ export function buildMultiTripReplenishmentPlan(
     productionJarFills,
     allowDiscardRetainedJuice,
     discardedInitialJuice,
+    discardedNewProductionJuice,
     maxJuiceJarSlotsCarried: trips.reduce(
       (max, trip) =>
         Math.max(max, trip.juiceJarSlotsCarried),
