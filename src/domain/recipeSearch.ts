@@ -3,6 +3,7 @@ import type {
   ProgressMilestoneId,
   RecipeCandidate,
 } from '../types'
+import { isAvailableAtProgress } from './availability'
 import { recipeCandidateMatchesCustomer } from './matching'
 import type { RecipeCandidatePool } from './recipeCandidatePool'
 import {
@@ -19,6 +20,8 @@ export type ProgressiveRecipeSearchPolicy =
 export interface ProgressiveRecipeSearchLayerResult {
   readonly phase: RecipeCandidateSearchPhase
   readonly seasoningDepth: number
+  readonly segmentCount: number
+  readonly ingredientCount: number
   readonly candidateCount: number
   readonly totalSequenceCount: number
   readonly truncated: boolean
@@ -74,7 +77,7 @@ function layerHasGuaranteedFullMatch(
 
 function repeatFallbackMayChangeMatch(
   customer: Customer,
-  uniqueCandidates: readonly RecipeCandidate[],
+  singleSegmentCandidates: readonly RecipeCandidate[],
 ): boolean {
   const preferences = customer.preferences ?? []
   if (!preferences.some((preference) => preference.kind === 'effect')) {
@@ -86,7 +89,7 @@ function repeatFallbackMayChangeMatch(
   )
   if (ingredientPreferences.length === 0) return true
 
-  return uniqueCandidates.some((candidate) =>
+  return singleSegmentCandidates.some((candidate) =>
     ingredientPreferences.every((preference) =>
       candidate.ingredients.includes(preference.value),
     ),
@@ -126,10 +129,21 @@ export function searchRecipeCandidatesForCustomer(
     pool.entries.map((entry) => [entry.id, entry]),
   )
   const candidates: RecipeCandidate[] = []
+  const singleSegmentCandidates: RecipeCandidate[] = []
   const exploredLayers: ProgressiveRecipeSearchLayerResult[] = []
   let truncated = false
 
   for (const layer of pool.generatedLayers) {
+    if (
+      layer.phase === 'blend' &&
+      !isAvailableAtProgress(
+        'juice-blender-unlocked',
+        currentProgress,
+      )
+    ) {
+      continue
+    }
+
     const layerCandidates = layer.candidateIds.flatMap((candidateId) => {
       const entry = entryById.get(candidateId)
       return entry?.availableAtCurrentProgress
@@ -138,10 +152,15 @@ export function searchRecipeCandidatesForCustomer(
     })
 
     candidates.push(...layerCandidates)
+    if (layer.segmentCount === 1) {
+      singleSegmentCandidates.push(...layerCandidates)
+    }
     truncated ||= layer.truncated
     exploredLayers.push({
       phase: layer.phase,
       seasoningDepth: layer.seasoningDepth,
+      segmentCount: layer.segmentCount,
+      ingredientCount: layer.ingredientCount,
       candidateCount: layerCandidates.length,
       totalSequenceCount: layer.totalSequenceCount,
       truncated: layer.truncated,
@@ -177,7 +196,12 @@ export function searchRecipeCandidatesForCustomer(
     }
   }
 
-  if (!repeatFallbackMayChangeMatch(customer, candidates)) {
+  if (
+    !repeatFallbackMayChangeMatch(
+      customer,
+      singleSegmentCandidates,
+    )
+  ) {
     return resultWithStop({
       candidates,
       exploredLayers,
@@ -190,6 +214,7 @@ export function searchRecipeCandidatesForCustomer(
   const maximumRepeatedSeasoningDepth =
     MAX_REPEATED_RECIPE_INGREDIENT_COUNT - 1
   const usedRepeatedSeasoningFallback = true
+  let repeatedFallbackCandidateCount = 0
 
   for (
     let seasoningDepth = 2;
@@ -197,7 +222,8 @@ export function searchRecipeCandidatesForCustomer(
     seasoningDepth += 1
   ) {
     const remainingBudget =
-      RECIPE_SEARCH_TOTAL_CANDIDATE_LIMIT - candidates.length
+      RECIPE_SEARCH_TOTAL_CANDIDATE_LIMIT -
+      repeatedFallbackCandidateCount
     if (remainingBudget <= 0) {
       truncated = true
       break
@@ -216,10 +242,13 @@ export function searchRecipeCandidatesForCustomer(
       layerCandidates.length < generated.candidates.length
 
     candidates.push(...layerCandidates)
+    repeatedFallbackCandidateCount += layerCandidates.length
     truncated ||= layerTruncated
     exploredLayers.push({
       phase: generated.phase,
       seasoningDepth,
+      segmentCount: generated.segmentCount,
+      ingredientCount: generated.ingredientCount,
       candidateCount: layerCandidates.length,
       totalSequenceCount: generated.totalSequenceCount,
       truncated: layerTruncated,
