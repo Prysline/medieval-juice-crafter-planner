@@ -110,9 +110,10 @@ function draftFromBasis(
       formalCustomerIds: [...snapshot.formalCustomerIds],
       suppliedCustomerIds: [...snapshot.suppliedCustomerIds],
       plannerSettings: {
-        carriedJuiceJarIds: [
-          ...snapshot.plannerSettings.carriedJuiceJarIds,
-        ],
+        juiceJarCarryMode:
+          snapshot.plannerSettings.juiceJarCarryMode,
+        reservedJuiceJarSlots:
+          snapshot.plannerSettings.reservedJuiceJarSlots,
         allowUsedCupDropIfFull:
           snapshot.plannerSettings.allowUsedCupDropIfFull,
       },
