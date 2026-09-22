@@ -72,11 +72,24 @@ function layerHasGuaranteedFullMatch(
   )
 }
 
-function repeatFallbackMayChangeMatch(customer: Customer): boolean {
-  return (
-    customer.preferences?.some(
-      (preference) => preference.kind === 'effect',
-    ) ?? false
+function repeatFallbackMayChangeMatch(
+  customer: Customer,
+  uniqueCandidates: readonly RecipeCandidate[],
+): boolean {
+  const preferences = customer.preferences ?? []
+  if (!preferences.some((preference) => preference.kind === 'effect')) {
+    return false
+  }
+
+  const ingredientPreferences = preferences.filter(
+    (preference) => preference.kind === 'ingredient',
+  )
+  if (ingredientPreferences.length === 0) return true
+
+  return uniqueCandidates.some((candidate) =>
+    ingredientPreferences.every((preference) =>
+      candidate.ingredients.includes(preference.value),
+    ),
   )
 }
 
@@ -164,7 +177,7 @@ export function searchRecipeCandidatesForCustomer(
     }
   }
 
-  if (!repeatFallbackMayChangeMatch(customer)) {
+  if (!repeatFallbackMayChangeMatch(customer, candidates)) {
     return resultWithStop({
       candidates,
       exploredLayers,
@@ -176,7 +189,7 @@ export function searchRecipeCandidatesForCustomer(
 
   const maximumRepeatedSeasoningDepth =
     MAX_REPEATED_RECIPE_INGREDIENT_COUNT - 1
-  let usedRepeatedSeasoningFallback = true
+  const usedRepeatedSeasoningFallback = true
 
   for (
     let seasoningDepth = 2;
