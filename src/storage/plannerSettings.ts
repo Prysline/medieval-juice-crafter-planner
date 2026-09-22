@@ -8,6 +8,7 @@ export const DEFAULT_PLANNER_SETTINGS: PlannerSettings = {
   juiceJarCarryMode: 'auto',
   reservedJuiceJarSlots: 0,
   allowUsedCupDropIfFull: false,
+  allowDiscardRetainedJuice: false,
 }
 
 function normalizeSlotCount(value: unknown): number {
@@ -102,6 +103,8 @@ export function normalizePlannerSettings(
       ),
       allowUsedCupDropIfFull:
         settings.allowUsedCupDropIfFull === true,
+      allowDiscardRetainedJuice:
+        settings.allowDiscardRetainedJuice === true,
     }
   }
 
@@ -115,12 +118,16 @@ export function normalizePlannerSettings(
         ...DEFAULT_PLANNER_SETTINGS,
         allowUsedCupDropIfFull:
           settings.allowUsedCupDropIfFull === true,
+        allowDiscardRetainedJuice:
+          settings.allowDiscardRetainedJuice === true,
       }
     : {
         juiceJarCarryMode: 'fixed-slots',
         reservedJuiceJarSlots: legacySlots,
         allowUsedCupDropIfFull:
           settings.allowUsedCupDropIfFull === true,
+        allowDiscardRetainedJuice:
+          settings.allowDiscardRetainedJuice === true,
       }
 }
 
@@ -138,7 +145,9 @@ export function readPlannerSettings(
       parsed &&
       typeof parsed === 'object' &&
       (parsed as { juiceJarCarryMode?: unknown })
-        .juiceJarCarryMode !== undefined
+        .juiceJarCarryMode !== undefined &&
+      typeof (parsed as { allowDiscardRetainedJuice?: unknown })
+        .allowDiscardRetainedJuice === 'boolean'
 
     if (!isCanonical) {
       storage.setItem(
