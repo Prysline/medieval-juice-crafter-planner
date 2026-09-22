@@ -22,6 +22,7 @@ export type OptimizationCandidatePolicy = ProgressiveRecipeSearchPolicy
 export type OptimizationObjective =
   | 'minimum-cost'
   | 'minimum-waste'
+  | 'maximum-ingredient-cost'
   | 'maximum-known-revenue'
   | 'maximum-known-gross-profit'
 
