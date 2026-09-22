@@ -19,7 +19,7 @@
 - 個人配方只保存自訂名稱、有序 ingredient IDs、備註與建立時間；effects、cost、equipment、matching 每次由目前 domain 重新計算。UX-2B / PR #80 後，個人配方卡會直接顯示具體成品特性；有 effect ambiguity 時把「確定成品特性」與「可能特性」分開，不把可能值當成已確定結果。
 - 「批次規劃」已重構為 production optimizer：可依序指定主要／次要 lexicographic 目標，包含最低成本、最少浪費、**最高原料成本**、最高已知銷售總額、最高已知毛利、最少機器操作與最少果汁罐換裝。Objective-1 / PR #76 後，「最高原料成本」以實際 customer → recipe assignment 所選配方的原料成本計分，不以 production units 灌高成本；它是配方研究目標，不代表最高售價或最高毛利。Phase 1 結果資訊架構已完成：閱讀順序為 **規劃摘要 → 所需物資 → 製作步驟 → 果汁分配 → 販售排程**；水會以免費取得需求顯示。PR #33 後製作步驟以機器為獨立區塊，每次 1～5 份製作拆成各批 slot flow；原料／果汁／水／output 各自用膠囊顯示，`▸` 只代表配方內部順序，`→` 只代表加工／狀態轉換。
 - Core model correction 2B 已把 physical jar identity 接進多趟販售 schedule。Phase 2 capacity contract 也已完成：`mjc-inventory` 保存原料、水、clean / used cups、一般架子數、果汁罐架數與每個 physical jar；PR #39 / Phase 5B1 後批次規劃已有實際 Inventory editor，可逐罐設定 recipe identity / servings。`mjc-planner-settings` 現在保存果汁罐攜帶策略 `juiceJarCarryMode`、固定格數 `reservedJuiceJarSlots` 與 used-cup drop opt-in；舊的 `carriedJuiceJarIds`／count 只會遷移成固定格數，不再保留特定實體罐綁定。沒有果汁罐架時，所有持有的實體果汁罐都必須隨身；有果汁罐架後，規劃器可在各趟之間整罐上架／取出，固定模式只固定果汁罐占用格數，自動模式則依每趟需求計算攜帶數。
-- Inventory / packing D1～D4 與 Phase 4 cup lifecycle 已建立：`PreparationDemand` 消費 production-unit optimizer 結果，已有 stock offset、single-trip packing 與 physical-jar-aware multi-trip replenishment；販售排程現在會用玩家實際持有的 clean / used cups，逐杯追蹤 clean → used stack transition，不再固定預留 1 slot。PR #32 先把 optimizer `leftoverServings` 保留在同一實體罐；PR #37 再把 sales schedule 的 plan-local 罐號改成 persistent `mjc-inventory` jar ID，並攜帶該罐規劃前的 `recipeId / servings` metadata。剩餘成品仍只能留在同一 physical jar，不允許跨罐倒果汁；果汁罐只能整罐移動，居家放置只使用果汁罐架，不把一般架當果汁罐 storage。
+- Inventory / packing D1～D4 與 Phase 4 cup lifecycle 已建立：`PreparationDemand` 消費 production-unit optimizer 結果，已有 stock offset、single-trip packing 與 physical-jar-aware multi-trip replenishment；販售排程現在會用玩家實際持有的 clean / used cups，逐杯追蹤 clean → used stack transition，不再固定預留 1 slot。PR #32 先把 optimizer `leftoverServings` 保留在同一實體罐；PR #37 再把 sales schedule 的 plan-local 罐號改成 persistent `mjc-inventory` jar ID，並攜帶該罐規劃前的 `recipeId / servings` metadata。剩餘成品仍不能跨罐倒果汁；果汁罐只能整罐移動，居家放置只使用果汁罐架。Correctness-2B / PR #72 允許玩家明確 opt-in 時倒掉達成可行性所需的既有內容；Debug-C / PR #86 再把同一 opt-in 擴充到**本次新製作後無法保留的最少殘餘量**。顧客已分配杯數永遠不丟；成品台仍先依合法偶數產量完整裝入實體罐，販售後才在記錄的趟次結束時倒掉殘餘。transaction preview 會分開標示「既有內容」與「本次新製作殘餘」。
 - 特性同分時會先套用已確認的順序規則：**較晚加入原料所提供／最後貢獻的特性排序較高**；只有套用此規則後，cutoff 候選仍同分且最後貢獻位置相同時才保留 ambiguous，且 ambiguous computed candidate 不參與完全匹配推薦。
 - 舊版 `mjc-stage` / `mjc-satisfaction` localStorage 會保守遷移到新版進度資料。
 
@@ -66,7 +66,8 @@ src/
     recipeSearch.ts    # 共用搜尋：first-feasible 保留提前停止；bounded-exhaustive 在既有搜尋預算內收集比較候選，並沿用重複調味後備邊界
     recipeCandidatePool.ts # Candidate-1/2A/2B：依完整有序序列合併來源、保存搜尋層資訊；UX-2A 提供目前可用的實測／已保存／安全推導庫存搜尋集合
     listFilters.ts     # UX-2B：顧客／配方研究 filter 的純判定；確定特性與 ambiguity 可能特性分開
-    optimizerModel.ts  # optimizer request、customer→recipe eligible matrix 與 gating
+    optimizerModel.ts  # optimizer request、customer→recipe eligible matrix 與 gating；Debug-B 共用 jar-switch lower bound
+    jarSwitches.ts      # Debug-B：initial-content-aware minimum jar-switch 共用 authority
     optimizerSolver.ts # 可替換的 async solver adapter contract
     optimizerHighsSolver.ts # HiGHS WASM lexicographic MIP adapter
     optimizer.ts       # recipe production plan / shopping list / metrics normalization
@@ -77,11 +78,11 @@ src/
     preparationDemand.ts # OptimizationResult → 全天 gross 備料需求
     preparationShortfall.ts # 既有成品／raw inventory → 實際新製作與缺口
     productionLogistics.ts # stock-offset net production → backpack / shelf / machine / water / 指定實體果汁罐接收時序
-    planApplicationTransaction.ts # 規劃結果 → 不可變 before / after 交易草稿；不寫 storage
+    planApplicationTransaction.ts # 規劃結果 → 不可變 before / after 交易草稿；Debug-C 區分既有內容與本次新製作殘餘 discard；不寫 storage
     planApplicationValidation.ts # transaction basis 與目前 canonical 狀態的純 stale / mismatch 比對
     purchaseSources.ts # 已知購買來源、最低價／同價保留 decision
     singleTripPacking.ts # 販售趟 finished-drink jars + clean cups 最小必要 slot / overflow
-    multiTripReplenishment.ts # 持久果汁罐 ID、初始內容、多趟販售、實際裝罐時序、leftover 與杯具 policy
+    multiTripReplenishment.ts # 持久果汁罐 ID、初始內容、多趟販售、實際裝罐時序、leftover / discard 與杯具 policy；Debug-B/C
     scheduleRouteReadiness.ts # 作息觀察 normalization 與 route-data blockers
   storage/
     plannerState.ts    # localStorage 讀寫、正式顧客與 legacy migration
@@ -94,7 +95,7 @@ src/
   types.ts             # 共用 domain / data 型別
   App.tsx              # 顧客／配方／配方工具／批次規劃頁籤；UX-2B shared customer comparison + research filters
   RecipeTools.tsx      # Recipe Simulator + Personal Recipes UI；UX-2B 完整特性累計與多顧客比較
-  OptimizerTools.tsx   # lazy-load optimizer、控制項／結果 UI；UX-2A 果汁罐內容 searchable combobox
+  OptimizerTools.tsx   # lazy-load optimizer、控制項／結果 UI；UX-2A searchable jar content；Debug-A progress-gated inventory；Debug-C discard source preview
   styles.css
   main.tsx             # React 入口
   **/*.test.ts         # domain / storage regression tests
@@ -265,7 +266,7 @@ Phase 4 已完成：
 19. PR #62 完成 **Candidate-2A｜單一果汁段漸進搜尋**：不重複原料由淺到深搜尋；顧客頁與批次最佳化共用同一停止規則；只有不重複候選無法保證完全匹配且重複可能改變特性時，才啟用有界的重複調味後備搜尋。
 20. PR #64 完成 **Correctness-1｜跨趟果汁罐交換與同配方直接補裝**：planner settings 從 persistent jar ID 綁定改為 `auto`／`fixed-slots`；無果汁罐架時所有持有罐強制隨身，有架時可跨趟整罐上架／換罐，架上既有成品也會納入今日需求；同配方未空罐可直接補裝至容量 10，不同配方仍禁止直接混裝。
 21. PR #66 完成 **UX-1｜配方模擬器與批次規劃可讀性**：原料卡直接顯示特性與數值；模擬器可暫選目標顧客並顯示匹配狀態；批次規劃的常見可修正錯誤改用穩定 code + context，UI 顯示中文摘要、限制原因、可操作建議與次要技術資訊。
-22. PR #68 完成 **Candidate-2B｜多層果汁調和搜尋**；PR #69 完成 **Correctness-2｜剩餘果汁終局罐需求診斷**；PR #70 完成 **Performance-1｜配方分頁／篩選與批次規劃 render 降載**；PR #72 完成 **Correctness-2B｜明確允許倒掉既有果汁**；PR #74 完成 **Correctness-3｜候選搜尋 consumer 語意拆分**；PR #76 完成 **Objective-1｜批次規劃「最高原料成本」**；PR #78 完成 **UX-2A｜果汁罐內容即時搜尋**；PR #80～#82 完成 **UX-2B｜配方研究與顧客比較介面**。UX-2B 將截斷前完整特性累計與實際成品特性分離、加入 App session 多顧客比較，並重做顧客／配方研究篩選；研究列表可辨識實測／已保存／安全推導／歧義推導 provenance，但不改顧客搜尋或 optimizer 的候選准入。下一步是 **Candidate-3｜顧客頁動態推薦與狀態**，之後依序處理 Candidate-4 → Phase 6 → Candidate-5。路線最佳化仍等待跨村移動時間、位置資訊、完整顧客服務時段與商店營業時間資料。
+22. PR #68 完成 **Candidate-2B｜多層果汁調和搜尋**；PR #69 完成 **Correctness-2｜剩餘果汁終局罐需求診斷**；PR #70 完成 **Performance-1｜配方分頁／篩選與批次規劃 render 降載**；PR #72 完成 **Correctness-2B｜明確允許倒掉既有果汁**；PR #74 完成 **Correctness-3｜候選搜尋 consumer 語意拆分**；PR #76 完成 **Objective-1｜批次規劃「最高原料成本」**；PR #78 完成 **UX-2A｜果汁罐內容即時搜尋**；PR #80～#82 完成 **UX-2B｜配方研究與顧客比較介面**；PR #84～#86 完成 **Batch-Debug A～C**。Debug-A 修正原料庫存 availability；Debug-B 收斂 jar-switch lower bound / physical schedule authority 並補 internal error；Debug-C 讓明確 discard opt-in 也可處理無終局容器的新製作殘餘，且 transaction preview 區分來源。下一步是 **Debug-D｜computed + Blender optimizer 效能**，之後做 **Inventory-Intermediate｜中間果汁庫存**；完成後再回 Candidate-3 → Candidate-4 → Phase 6 → Candidate-5。路線最佳化仍等待跨村移動時間、位置資訊、完整顧客服務時段與商店營業時間資料。
 
 
 ## Schedule / route readiness boundary
