@@ -277,6 +277,12 @@ describe('plan application commit', () => {
 
     writeInventoryState(storage, {
       ...draft.after.inventory,
+      ingredientUnits: {
+        ...draft.after.inventory.ingredientUnits,
+      },
+      juiceJars: draft.after.inventory.juiceJars.map((jar) => ({
+        ...jar,
+      })),
       waterUnits: 9,
     })
     expect(storage.writes).toHaveLength(1)
