@@ -21,6 +21,7 @@ import {
 import {
   isProgressMilestoneId,
   legacyStageToProgress,
+  readSuppliedCustomerIds,
   STORAGE_KEYS,
   type StorageLike,
 } from './plannerState'
@@ -156,10 +157,7 @@ export function readPlanApplicationBasisState(
       storage,
       STORAGE_KEYS.formalCustomers,
     ),
-    suppliedCustomerIds: readStoredStringSet(
-      storage,
-      STORAGE_KEYS.suppliedToday,
-    ),
+    suppliedCustomerIds: readSuppliedCustomerIds(storage),
     plannerSettings: readPlannerSettingsReadonly(
       storage,
       inventory,
