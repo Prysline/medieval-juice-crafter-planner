@@ -970,6 +970,114 @@ describe('multi-trip replenishment', () => {
     ])
   })
 
+  it('rejects same-recipe top-up when the physical jar would exceed ten servings', () => {
+    const trip: MultiTripSalesTrip = {
+      tripNumber: 1,
+      juiceJars: [
+        {
+          physicalJarId: 'jar-1',
+          recipeId: 'a',
+          recipeName: 'A',
+          customerIds: ['customer-1'],
+          servings: 1,
+          retainedLeftoverServings: 0,
+          plannedFillServings: 4,
+          slotCost: 1,
+          fillAction: 'refill-same-type',
+          previousRecipeId: 'a',
+          previousRecipeName: 'A',
+        },
+      ],
+      carriedPhysicalJarIds: ['jar-1'],
+      totalServings: 1,
+      cleanCupStacks: 1,
+      cleanCupsCarried: 1,
+      departureSlots: 2,
+      effectiveDepartureSlotLimit: 10,
+      spareDepartureSlots: 8,
+      reservedTransientUsedCupSlot: 0,
+      usedCupDropMayOccur: false,
+      droppedUsedCups: 0,
+      cupsWashedBeforeTrip: 0,
+      cupWashWaterUnits: 0,
+      cleanCupsBeforeTrip: 1,
+      usedCupsBeforeTrip: 0,
+      cleanCupsAfterTrip: 0,
+      usedCupsAfterTrip: 1,
+      physicalCupsAfterTrip: 1,
+      peakCupSlots: 1,
+      peakOccupiedSlots: 2,
+      juiceJarSlotsCarried: 1,
+    }
+
+    expect(() =>
+      buildProductionJarFillsFromSchedule(
+        [trip],
+        [
+          {
+            physicalJarId: 'jar-1',
+            initialRecipeId: 'a',
+            initialServings: 7,
+          },
+        ],
+      ),
+    ).toThrow('exceeds juice capacity')
+  })
+
+  it('rejects filling a different recipe into a non-empty physical jar', () => {
+    const trip: MultiTripSalesTrip = {
+      tripNumber: 1,
+      juiceJars: [
+        {
+          physicalJarId: 'jar-1',
+          recipeId: 'b',
+          recipeName: 'B',
+          customerIds: ['customer-1'],
+          servings: 1,
+          retainedLeftoverServings: 0,
+          plannedFillServings: 2,
+          slotCost: 1,
+          fillAction: 'type-switch',
+          previousRecipeId: 'a',
+          previousRecipeName: 'A',
+        },
+      ],
+      carriedPhysicalJarIds: ['jar-1'],
+      totalServings: 1,
+      cleanCupStacks: 1,
+      cleanCupsCarried: 1,
+      departureSlots: 2,
+      effectiveDepartureSlotLimit: 10,
+      spareDepartureSlots: 8,
+      reservedTransientUsedCupSlot: 0,
+      usedCupDropMayOccur: false,
+      droppedUsedCups: 0,
+      cupsWashedBeforeTrip: 0,
+      cupWashWaterUnits: 0,
+      cleanCupsBeforeTrip: 1,
+      usedCupsBeforeTrip: 0,
+      cleanCupsAfterTrip: 0,
+      usedCupsAfterTrip: 1,
+      physicalCupsAfterTrip: 1,
+      peakCupSlots: 1,
+      peakOccupiedSlots: 2,
+      juiceJarSlotsCarried: 1,
+    }
+
+    expect(() =>
+      buildProductionJarFillsFromSchedule(
+        [trip],
+        [
+          {
+            physicalJarId: 'jar-1',
+            initialRecipeId: 'a',
+            initialServings: 3,
+          },
+        ],
+      ),
+    ).toThrow('still contains a different recipe')
+  })
+
   it('keeps rack-stored physical jars beyond the ten-slot backpack limit available to the day plan', () => {
     const salesDemand = demand([])
     const jars = carriedJars(12)
