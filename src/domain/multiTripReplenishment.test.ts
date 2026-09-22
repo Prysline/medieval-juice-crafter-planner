@@ -93,6 +93,7 @@ function buildPlanWithJars(
     cleanCups: salesDemand.assignedServings,
     usedCups: 0,
   },
+  allowDiscardRetainedJuice = false,
 ): MultiTripReplenishmentPlan {
   return buildMultiTripReplenishmentPlanWithCups(
     salesDemand,
@@ -100,6 +101,8 @@ function buildPlanWithJars(
     jars,
     cups,
     shortfallFor(salesDemand, jars),
+    undefined,
+    allowDiscardRetainedJuice,
   )
 }
 
@@ -299,6 +302,88 @@ describe('multi-trip replenishment', () => {
         { cleanCups: 1, usedCups: 0 },
       ),
     ).toThrow(/without discarding retained contents/)
+  })
+
+  it('discards retained juice only when explicitly enabled and only from the minimum required jar', () => {
+    const salesDemand = namedRecipes(['C'], 1)
+    const result = buildPlanWithJars(
+      salesDemand,
+      'retain-and-wash',
+      [
+        { id: 'keep-five', recipeId: 'a', servings: 5 },
+        { id: 'discard-one', recipeId: 'b', servings: 1 },
+      ],
+      { cleanCups: 1, usedCups: 0 },
+      true,
+    )
+
+    expect(result.allowDiscardRetainedJuice).toBe(true)
+    expect(result.discardedInitialJuice).toEqual([
+      {
+        physicalJarId: 'discard-one',
+        recipeId: 'b',
+        servings: 1,
+      },
+    ])
+    expect(
+      new Set(
+        result.trips.flatMap((trip) =>
+          trip.juiceJars.map((load) => load.physicalJarId),
+        ),
+      ),
+    ).toEqual(new Set(['discard-one']))
+    expect(result.jarTypeSwitches).toBe(1)
+    expectScheduleConsistency(result)
+  })
+
+  it('can serve useful initial juice first, then discard only the retained remainder before a type switch', () => {
+    const salesDemand = namedRecipes(['A', 'B'], 1)
+    const result = buildPlanWithJars(
+      salesDemand,
+      'retain-and-wash',
+      [{ id: 'shared', recipeId: 'a', servings: 2 }],
+      { cleanCups: 2, usedCups: 0 },
+      true,
+    )
+
+    expect(result.discardedInitialJuice).toEqual([
+      {
+        physicalJarId: 'shared',
+        recipeId: 'a',
+        servings: 1,
+      },
+    ])
+    expect(
+      result.trips.flatMap((trip) =>
+        trip.juiceJars.map((load) => ({
+          recipeId: load.recipeId,
+          servings: load.servings,
+          retainedLeftoverServings: load.retainedLeftoverServings,
+          fillAction: load.fillAction,
+        })),
+      ),
+    ).toEqual([
+      {
+        recipeId: 'a',
+        servings: 1,
+        retainedLeftoverServings: 0,
+        fillAction: 'use-existing',
+      },
+      {
+        recipeId: 'b',
+        servings: 1,
+        retainedLeftoverServings: 1,
+        fillAction: 'type-switch',
+      },
+    ])
+    expect(result.leftoverJarContents).toEqual([
+      expect.objectContaining({
+        physicalJarId: 'shared',
+        recipeId: 'b',
+        servings: 1,
+      }),
+    ])
+    expectScheduleConsistency(result)
   })
 
   it('keeps a prefilled unrelated jar locked while an empty jar handles later recipe switches', () => {
