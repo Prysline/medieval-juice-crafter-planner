@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import OptimizerTools from './OptimizerTools'
 import RecipeTools from './RecipeTools'
 import { customers } from './data/customers'
+import { ingredients } from './data/ingredients'
 import { progressMilestoneLabels, progressMilestones } from './data/progress'
 import { villageNames } from './data/villages'
 import {
@@ -30,7 +31,16 @@ import {
 import {
   buildRecipeCandidatePool,
   recipeCandidatesInCurrentSearchScope,
+  type RecipeCandidatePoolEntry,
+  type RecipeCandidatePoolSource,
 } from './domain/recipeCandidatePool'
+import {
+  customerMatchesResearchFilters,
+  recipeEntryMatchesResearchFilters,
+  type FilterMatchMode,
+  type RecipePriceFilter,
+  type RecipeSourceFilter,
+} from './domain/listFilters'
 import { searchRecipeCandidatesForCustomer } from './domain/recipeSearch'
 import {
   calculateRecipeIngredientCost,
@@ -65,8 +75,6 @@ import type {
 
 type Tab = 'customers' | 'recipes' | 'tools' | 'optimizer'
 type RecipeSortKey = 'name' | 'salePrice'
-type RecipeSourceFilter = 'all' | 'observed' | 'computed'
-type RecipePriceFilter = 'all' | 'known' | 'unknown'
 type CustomerVisibility = 'available' | 'all'
 
 const RECIPE_PAGE_SIZE = 50
@@ -97,6 +105,18 @@ function App() {
     useState<CustomerVisibility>('available')
   const [customerSortDirection, setCustomerSortDirection] =
     useState<SortDirection>('asc')
+  const [customerVillageFilter, setCustomerVillageFilter] =
+    useState<VillageId | null>(null)
+  const [
+    customerPreferenceIngredientFilter,
+    setCustomerPreferenceIngredientFilter,
+  ] = useState<string | null>(null)
+  const [
+    customerPreferenceEffectFilter,
+    setCustomerPreferenceEffectFilter,
+  ] = useState<string | null>(null)
+  const [customerPreferenceMode, setCustomerPreferenceMode] =
+    useState<FilterMatchMode>('all')
   const [recipeSortKey, setRecipeSortKey] = useState<RecipeSortKey>('salePrice')
   const [recipeSortDirection, setRecipeSortDirection] =
     useState<SortDirection>('desc')
@@ -104,6 +124,14 @@ function App() {
     useState<RecipeSourceFilter>('all')
   const [recipePriceFilter, setRecipePriceFilter] =
     useState<RecipePriceFilter>('all')
+  const [recipeIngredientCountFilter, setRecipeIngredientCountFilter] =
+    useState<number | null>(null)
+  const [recipeIngredientFilter, setRecipeIngredientFilter] =
+    useState<string | null>(null)
+  const [recipeConfirmedEffectFilter, setRecipeConfirmedEffectFilter] =
+    useState<string | null>(null)
+  const [recipePossibleEffectFilter, setRecipePossibleEffectFilter] =
+    useState<string | null>(null)
   const [recipePage, setRecipePage] = useState(1)
   const [suppliedCustomerIds, setSuppliedCustomerIds] = useState<string[]>(() =>
     readSuppliedCustomerIds(window.localStorage),
@@ -130,6 +158,19 @@ function App() {
     () => recipeCandidatesInCurrentSearchScope(recipeCandidatePool),
     [recipeCandidatePool],
   )
+  const recipeListEntries = useMemo(
+    () =>
+      recipeCandidatePool.entries.filter(
+        (entry) =>
+          entry.availableAtCurrentProgress &&
+          (
+            entry.inGeneratedSearchScope ||
+            entry.sources.includes('saved') ||
+            entry.sources.includes('observed')
+          ),
+      ),
+    [recipeCandidatePool],
+  )
   const recipeOrder = useMemo(
     () =>
       new Map(
@@ -146,6 +187,55 @@ function App() {
     customers,
     formalCustomerIds,
     'tranquil-fountain',
+  )
+
+  const customerPreferenceIngredientOptions = useMemo(
+    () =>
+      [...new Set(
+        customers.flatMap((customer) =>
+          (customer.preferences ?? [])
+            .filter((preference) => preference.kind === 'ingredient')
+            .map((preference) => preference.value),
+        ),
+      )].sort((a, b) => a.localeCompare(b, 'zh-Hant')),
+    [],
+  )
+  const customerPreferenceEffectOptions = useMemo(
+    () =>
+      [...new Set(
+        customers.flatMap((customer) =>
+          (customer.preferences ?? [])
+            .filter((preference) => preference.kind === 'effect')
+            .map((preference) => preference.value),
+        ),
+      )].sort((a, b) => a.localeCompare(b, 'zh-Hant')),
+    [],
+  )
+  const recipeIngredientCountOptions = useMemo(
+    () =>
+      [...new Set(recipeListEntries.map((entry) => entry.ingredientIds.length))]
+        .sort((a, b) => a - b),
+    [recipeListEntries],
+  )
+  const recipeConfirmedEffectOptions = useMemo(
+    () =>
+      [...new Set(
+        recipeListEntries.flatMap((entry) =>
+          entry.candidate.effects.map((effect) => effect.name),
+        ),
+      )].sort((a, b) => a.localeCompare(b, 'zh-Hant')),
+    [recipeListEntries],
+  )
+  const recipePossibleEffectOptions = useMemo(
+    () =>
+      [...new Set(
+        recipeListEntries.flatMap((entry) =>
+          entry.candidate.effectAmbiguity?.candidates.map(
+            (effect) => effect.name,
+          ) ?? [],
+        ),
+      )].sort((a, b) => a.localeCompare(b, 'zh-Hant')),
+    [recipeListEntries],
   )
 
   const customerRows = useMemo(() => {
@@ -195,6 +285,14 @@ function App() {
         }
       })
       .filter(({ unlocked }) => customerVisibility === 'all' || unlocked)
+      .filter(({ customer }) =>
+        customerMatchesResearchFilters(customer, {
+          villageId: customerVillageFilter,
+          preferenceIngredient: customerPreferenceIngredientFilter,
+          preferenceEffect: customerPreferenceEffectFilter,
+          preferenceMode: customerPreferenceMode,
+        }),
+      )
 
     const suppliedFilteredRows = filterSuppliedCustomerRows(
       rows,
@@ -238,6 +336,10 @@ function App() {
     recipeCandidatePool,
     recipeOrder,
     customerVisibility,
+    customerVillageFilter,
+    customerPreferenceIngredientFilter,
+    customerPreferenceEffectFilter,
+    customerPreferenceMode,
     showSuppliedToday,
     suppliedCustomerIds,
     customerSortDirection,
@@ -245,27 +347,20 @@ function App() {
   ])
 
   const recipeRows = useMemo(() => {
-    const rows = recipeCandidates
-      .filter((recipe) => {
-        if (
-          recipeSourceFilter !== 'all' &&
-          recipe.source !== recipeSourceFilter
-        ) {
-          return false
-        }
-        if (
-          recipePriceFilter === 'known' &&
-          recipe.salePrice === null
-        ) {
-          return false
-        }
-        if (
-          recipePriceFilter === 'unknown' &&
-          recipe.salePrice !== null
-        ) {
-          return false
-        }
+    const rows = recipeListEntries
+      .filter((entry) =>
+        recipeEntryMatchesResearchFilters(entry, {
+          ingredientCount: recipeIngredientCountFilter,
+          ingredientId: recipeIngredientFilter,
+          confirmedEffect: recipeConfirmedEffectFilter,
+          possibleEffect: recipePossibleEffectFilter,
+          source: recipeSourceFilter,
+          price: recipePriceFilter,
+        }),
+      )
+      .filter((entry) => {
         if (!normalizedQuery) return true
+        const recipe = entry.candidate
         return [
           recipe.name,
           ...recipe.ingredients,
@@ -280,29 +375,37 @@ function App() {
 
     const direction = recipeSortDirection === 'asc' ? 1 : -1
 
-    return rows.sort((a, b) => {
+    return [...rows].sort((a, b) => {
+      const left = a.candidate
+      const right = b.candidate
+
       if (recipeSortKey === 'salePrice') {
-        if (a.salePrice === null && b.salePrice === null) {
+        if (left.salePrice === null && right.salePrice === null) {
           return (
-            ((recipeOrder.get(a.id) ?? 0) -
-              (recipeOrder.get(b.id) ?? 0)) *
+            ((recipeOrder.get(left.id) ?? 0) -
+              (recipeOrder.get(right.id) ?? 0)) *
             direction
           )
         }
-        if (a.salePrice === null) return 1
-        if (b.salePrice === null) return -1
+        if (left.salePrice === null) return 1
+        if (right.salePrice === null) return -1
         return (
-          (a.salePrice - b.salePrice) * direction ||
-          (recipeOrder.get(a.id) ?? 0) - (recipeOrder.get(b.id) ?? 0)
+          (left.salePrice - right.salePrice) * direction ||
+          (recipeOrder.get(left.id) ?? 0) -
+            (recipeOrder.get(right.id) ?? 0)
         )
       }
 
-      return a.name.localeCompare(b.name, 'zh-Hant') * direction
+      return left.name.localeCompare(right.name, 'zh-Hant') * direction
     })
   }, [
     normalizedQuery,
-    recipeCandidates,
+    recipeListEntries,
     recipeOrder,
+    recipeIngredientCountFilter,
+    recipeIngredientFilter,
+    recipeConfirmedEffectFilter,
+    recipePossibleEffectFilter,
     recipePriceFilter,
     recipeSortDirection,
     recipeSortKey,
@@ -324,6 +427,10 @@ function App() {
   }, [
     currentProgress,
     normalizedQuery,
+    recipeIngredientCountFilter,
+    recipeIngredientFilter,
+    recipeConfirmedEffectFilter,
+    recipePossibleEffectFilter,
     recipePriceFilter,
     recipeSourceFilter,
   ])
@@ -420,6 +527,22 @@ function App() {
 
   function clearComparisonCustomers() {
     setComparisonCustomerIds([])
+  }
+
+  function clearCustomerResearchFilters() {
+    setCustomerVillageFilter(null)
+    setCustomerPreferenceIngredientFilter(null)
+    setCustomerPreferenceEffectFilter(null)
+    setCustomerPreferenceMode('all')
+  }
+
+  function clearRecipeResearchFilters() {
+    setRecipeIngredientCountFilter(null)
+    setRecipeIngredientFilter(null)
+    setRecipeConfirmedEffectFilter(null)
+    setRecipePossibleEffectFilter(null)
+    setRecipeSourceFilter('all')
+    setRecipePriceFilter('all')
   }
 
   return (
