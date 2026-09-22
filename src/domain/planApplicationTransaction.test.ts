@@ -337,6 +337,7 @@ function salesPlan(): MultiTripReplenishmentPlan {
     ],
     allowDiscardRetainedJuice: false,
     discardedInitialJuice: [],
+    discardedNewProductionJuice: [],
     productionJarFills: [
       {
         physicalJarId: 'jar-a',
@@ -605,7 +606,74 @@ describe('plan application transaction', () => {
         salesPlan: plan,
       }),
     ).toThrow(
-      'Sales plan cannot discard retained juice without explicit opt-in',
+      'Sales plan cannot discard juice without explicit opt-in',
+    )
+  })
+
+  it('records a new-production leftover discard separately from initial contents', () => {
+    const transactionBasis = basis()
+    transactionBasis.plannerSettings.allowDiscardRetainedJuice = true
+    const plan = salesPlan()
+    plan.allowDiscardRetainedJuice = true
+    plan.trips[1].juiceJars[0].retainedLeftoverServings = 0
+    plan.leftoverJarContents = []
+    plan.totalLeftoverServings = 0
+    plan.discardedNewProductionJuice = [
+      {
+        physicalJarId: 'jar-a',
+        recipeId: 'recipe-b',
+        recipeName: 'B',
+        servings: 1,
+        afterTripNumber: 2,
+      },
+    ]
+
+    const draft = buildPlanApplicationTransactionDraft({
+      basis: transactionBasis,
+      result: optimizationResult(),
+      preparationShortfall: shortfall(),
+      productionLogistics: productionLogistics(),
+      salesPlan: plan,
+    })
+
+    expect(draft.after.inventory.juiceJars).toContainEqual({
+      id: 'jar-a',
+      recipeId: null,
+      servings: 0,
+    })
+    expect(draft.changes.discardedJuice).toEqual([
+      {
+        source: 'new-production-leftover',
+        physicalJarId: 'jar-a',
+        recipeId: 'recipe-b',
+        servings: 1,
+        afterTripNumber: 2,
+      },
+    ])
+  })
+
+  it('rejects new-production discard events when explicit opt-in is off', () => {
+    const plan = salesPlan()
+    plan.discardedNewProductionJuice = [
+      {
+        physicalJarId: 'jar-a',
+        recipeId: 'recipe-b',
+        recipeName: 'B',
+        servings: 1,
+        afterTripNumber: 2,
+      },
+    ]
+
+    expect(() =>
+      buildPlanApplicationTransactionDraft({
+        basis: basis(),
+        result: optimizationResult(),
+        preparationShortfall: shortfall(),
+        productionLogistics: productionLogistics(),
+        salesPlan: plan,
+      }),
+    ).toThrow(
+      'Sales plan cannot discard juice without explicit opt-in',
     )
   })
 
