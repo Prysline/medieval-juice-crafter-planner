@@ -3,6 +3,10 @@ import type {
   ProgressMilestoneId,
   SatisfactionByVillage,
 } from '../types'
+import {
+  readPlanApplicationStoredState,
+  updateStoredPlanApplicationSuppliedCustomers,
+} from './planApplicationState'
 
 type LegacyRuntimeStageId = 1 | 2 | 3 | 4
 
