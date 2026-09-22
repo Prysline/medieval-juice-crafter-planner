@@ -86,6 +86,28 @@ describe('shared recipe candidate pool', () => {
     ).toBe(false)
   })
 
+  it('keeps future-progress saved recipes as metadata but out of the current search scope', () => {
+    const pool = buildRecipeCandidatePool(
+      'seasoner-unlocked',
+      [saved('saved-future', ['banana'])],
+    )
+
+    const entry = pool.entries.find(
+      (candidate) =>
+        candidate.savedRecipeIds.includes('saved-future'),
+    )
+
+    expect(entry).toBeDefined()
+    expect(entry?.sources).toContain('saved')
+    expect(entry?.availableAtCurrentProgress).toBe(false)
+    expect(entry?.inGeneratedSearchScope).toBe(false)
+    expect(
+      recipeCandidatesInCurrentSearchScope(pool).some(
+        (candidate) => candidate.id === entry?.candidate.id,
+      ),
+    ).toBe(false)
+  })
+
   it('keeps ambiguous computed provenance explicit instead of treating it as safe computed', () => {
     const pool = buildRecipeCandidatePool(
       'tranquil-fountain-unlocked',
