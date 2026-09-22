@@ -1264,6 +1264,8 @@ describe('multi-trip replenishment', () => {
         totalLeftoverServings: 0,
         leftoverJarContents: [],
         productionJarFills: [],
+        allowDiscardRetainedJuice: false,
+        discardedInitialJuice: [],
         maxJuiceJarSlotsCarried: 0,
         cleanCupUnitsRequiredWithoutMiddayWashing: 0,
         reusableCleanCupPoolSize:
