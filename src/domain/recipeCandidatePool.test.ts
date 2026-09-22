@@ -162,7 +162,10 @@ describe('shared recipe candidate pool', () => {
       occupation: '測試',
       villageId: 'east-harbor',
       satisfactionRequired: 0,
-      preferences: [{ kind: 'effect', value: '甜味' }],
+      preferences: [
+        { kind: 'effect', value: '舒緩腸胃' },
+        { kind: 'effect', value: '芳香' },
+      ],
     }
     const search = searchRecipeCandidatesForCustomer(
       pool,
@@ -170,6 +173,8 @@ describe('shared recipe candidate pool', () => {
       customer,
       { candidatePolicy: 'allow-unambiguous-computed' },
     )
+
+    expect(search.usedRepeatedSeasoningFallback).toBe(true)
 
     const matchingIds = matchingRecipeCandidatesForCustomer(
       [...search.candidates],
