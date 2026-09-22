@@ -7,6 +7,7 @@ import {
 } from './optimizerModel'
 import {
   buildRecipeCandidatePool,
+  recipeCandidatesForInventoryEditor,
   recipeCandidatesInCurrentSearchScope,
 } from './recipeCandidatePool'
 import { searchRecipeCandidatesForCustomer } from './recipeSearch'
@@ -152,6 +153,35 @@ describe('shared recipe candidate pool', () => {
         ],
       },
     ])
+  })
+
+  it('keeps inventory recipe choices bounded to current observed or saved identities', () => {
+    const pool = buildRecipeCandidatePool(
+      'juice-blender-unlocked',
+      [saved('saved-computed', ['banana', 'sugar'])],
+    )
+    const choices = recipeCandidatesForInventoryEditor(pool)
+    const ids = new Set(choices.map((candidate) => candidate.id))
+
+    expect(ids.has('lemon-juice')).toBe(true)
+    expect(
+      choices.some(
+        (candidate) =>
+          candidate.ingredients.join(' → ') === '香蕉 → 糖',
+      ),
+    ).toBe(true)
+    expect(ids.has('computed-lemon-pear')).toBe(false)
+    expect(
+      choices.every((candidate) => {
+        const entry = pool.entries.find(
+          (item) => item.id === candidate.id,
+        )
+        return Boolean(
+          entry?.sources.includes('observed') ||
+            entry?.sources.includes('saved'),
+        )
+      }),
+    ).toBe(true)
   })
 
   it('keeps generated Blender candidates as future metadata until the Blender unlock', () => {
