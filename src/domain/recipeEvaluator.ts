@@ -70,10 +70,11 @@ export function effectSlotCount(uniqueIngredientCount: number): number {
   return Math.min(5, uniqueIngredientCount + 1)
 }
 
-export function predictRecipeEffects(sequence: Ingredient[]): {
-  effects: EffectValue[]
-  effectAmbiguity?: RecipeCandidate['effectAmbiguity']
-} {
+interface RankedRecipeEffect extends EffectValue {
+  lastContributionIndex: number
+}
+
+function rankRecipeEffects(sequence: Ingredient[]): RankedRecipeEffect[] {
   const totals = new Map<
     string,
     {
@@ -92,7 +93,7 @@ export function predictRecipeEffects(sequence: Ingredient[]): {
     }
   })
 
-  const ranked = [...totals.entries()]
+  return [...totals.entries()]
     .map(([name, data]) => ({
       name,
       value: data.value,
@@ -104,6 +105,22 @@ export function predictRecipeEffects(sequence: Ingredient[]): {
         b.lastContributionIndex - a.lastContributionIndex ||
         a.name.localeCompare(b.name, 'zh-Hant'),
     )
+}
+
+export function calculateRecipeEffectTotals(
+  sequence: Ingredient[],
+): EffectValue[] {
+  return rankRecipeEffects(sequence).map(({ name, value }) => ({
+    name,
+    value,
+  }))
+}
+
+export function predictRecipeEffects(sequence: Ingredient[]): {
+  effects: EffectValue[]
+  effectAmbiguity?: RecipeCandidate['effectAmbiguity']
+} {
+  const ranked = rankRecipeEffects(sequence)
 
   const slotCount = effectSlotCount(
     new Set(sequence.map((item) => item.id)).size,
@@ -344,6 +361,7 @@ export function evaluateRecipeSequence(
     valid: true,
     ingredientIds: normalizedIds,
     candidate,
+    effectTotals: calculateRecipeEffectTotals(validation.ingredients),
     cost: calculateRecipeIngredientCost(candidate),
     availableAtCurrentProgress: isAvailableAtProgress(
       candidate.unlockedAt,

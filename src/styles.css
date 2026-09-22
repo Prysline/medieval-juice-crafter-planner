@@ -1300,6 +1300,36 @@ footer {
   font-size: 0.72rem;
 }
 
+.effect-total-box {
+  border-top: 1px solid #dfd2bd;
+  padding-top: 10px;
+}
+
+.effect-total-box small,
+.saved-recipe-effects small {
+  color: #786b59;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.saved-recipe-effects {
+  display: grid;
+  gap: 7px;
+  border-top: 1px solid #eadfce;
+  padding-top: 9px;
+}
+
+.saved-recipe-effects > strong {
+  color: #6a5b45;
+  font-size: 0.76rem;
+}
+
+.saved-recipe-ambiguity {
+  border-radius: 9px;
+  background: #fff5e7;
+  padding: 9px;
+}
+
 .save-recipe-form {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   align-items: end;

@@ -175,6 +175,11 @@ export interface RecipeSequenceEvaluationSuccess {
   valid: true
   ingredientIds: string[]
   candidate: RecipeCandidate
+  /**
+   * 依完整有序原料序列累加後、尚未套用 slot cutoff 的全部特性總值。
+   * 與 candidate.effects（實際／可確定成品特性）分開保存，供配方研究使用。
+   */
+  effectTotals: EffectValue[]
   cost: {
     batchIngredientCost: number | null
     unitIngredientCost: number | null

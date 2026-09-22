@@ -30,6 +30,27 @@ describe('recipe sequence evaluator', () => {
     })
   })
 
+  it('preserves full pre-cutoff effect totals separately from observed output effects', () => {
+    const result = evaluateRecipeSequence(
+      ['lemon'],
+      'opening',
+    )
+
+    expect(result.valid).toBe(true)
+    if (!result.valid) return
+
+    expect(result.candidate.effects).toEqual([
+      { name: '酸味', value: 4 },
+      { name: '增強免疫', value: 3 },
+    ])
+    expect(result.effectTotals).toEqual([
+      { name: '酸味', value: 4 },
+      { name: '增強免疫', value: 3 },
+      { name: '保護心臟', value: 1 },
+      { name: '輔助瘦身', value: 1 },
+    ])
+  })
+
   it('returns observed tranquil-fountain data for a newly synced sequence', () => {
     const result = evaluateRecipeSequence(
       ['banana', 'cinnamon'],
