@@ -461,7 +461,7 @@ export function RecipeTools({
   )
 }
 
-function TargetCustomerPanel({
+export function TargetCustomerPanel({
   customers: availableCustomers,
   selectedCustomer,
   selectedCustomerId,
@@ -515,7 +515,7 @@ function TargetCustomerPanel({
             </strong>
             <div className="tags target-preferences">
               {selectedCustomer.preferences === null ? (
-                <span className="tag">喜好仍顯示？</span>
+                <span className="tag">喜好：？（尚未確認）</span>
               ) : selectedCustomer.preferences.length > 0 ? (
                 selectedCustomer.preferences.map((preference) => (
                   <span
