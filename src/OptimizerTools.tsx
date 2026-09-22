@@ -1804,8 +1804,8 @@ export function PlanApplicationPreview({
       {changes.discardedJuice.length > 0 && (
         <article className="optimizer-transaction-card optimizer-transaction-jars">
           <div className="optimizer-transaction-card-heading">
-            <strong>將倒掉的既有果汁</strong>
-            <span>{changes.discardedJuice.length} 個果汁罐</span>
+            <strong>將倒掉的果汁</strong>
+            <span>{changes.discardedJuice.length} 筆</span>
           </div>
           <div className="optimizer-transaction-list">
             {changes.discardedJuice.map((discarded) => (
@@ -1816,6 +1816,9 @@ export function PlanApplicationPreview({
                 <strong>果汁罐 {discarded.physicalJarId}</strong>
                 <span>倒掉 {discarded.servings} 杯</span>
                 <small>
+                  {discarded.source === 'initial-contents'
+                    ? '既有內容 · '
+                    : `本次新製作殘餘 · 第 ${discarded.afterTripNumber} 趟後 · `}
                   {transactionRecipeLabel(
                     discarded.recipeId,
                     productionJarFills,
@@ -1825,7 +1828,7 @@ export function PlanApplicationPreview({
             ))}
           </div>
           <p className="optimizer-transaction-note">
-            只有因這份規劃確實需要釋放實體果汁罐而被選中的內容會倒掉；未列出的既有果汁會保留。
+            只有在已明確允許倒掉果汁時才會出現；既有內容與本次新製作後無法保存的殘餘會分開標示，顧客需要的杯數不會被倒掉。
           </p>
         </article>
       )}
