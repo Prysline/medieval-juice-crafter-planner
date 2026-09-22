@@ -355,6 +355,96 @@ describe('optimizer model', () => {
     ).toEqual(['observed-deeper'])
   })
 
+  it('keeps deeper legal full matches in the optimizer matrix for comparison objectives', () => {
+    const shallow = {
+      ...candidate(
+        'observed-shallow',
+        'observed',
+        ['橙子', '肉桂'],
+        [{ name: '甜味', value: 5 }],
+      ),
+      salePrice: 30,
+    }
+    const deeper = {
+      ...candidate(
+        'observed-deeper-comparable',
+        'observed',
+        ['檸檬', '糖'],
+        [{ name: '甜味', value: 5 }],
+      ),
+      salePrice: 40,
+    }
+    const pool: RecipeCandidatePool = {
+      entries: [
+        {
+          id: shallow.id,
+          ingredientIds: ['orange', 'cinnamon'],
+          candidate: shallow,
+          sources: ['observed'],
+          savedRecipeIds: [],
+          availableAtCurrentProgress: true,
+          inGeneratedSearchScope: true,
+        },
+        {
+          id: deeper.id,
+          ingredientIds: ['lemon', 'sugar'],
+          candidate: deeper,
+          sources: ['observed'],
+          savedRecipeIds: [],
+          availableAtCurrentProgress: true,
+          inGeneratedSearchScope: true,
+        },
+      ],
+      generatedLayers: [
+        {
+          phase: 'unique',
+          seasoningDepth: 0,
+          segmentCount: 1,
+          ingredientCount: 1,
+          candidateIds: [shallow.id],
+          totalSequenceCount: 1,
+          truncated: false,
+        },
+        {
+          phase: 'unique',
+          seasoningDepth: 1,
+          segmentCount: 1,
+          ingredientCount: 2,
+          candidateIds: [deeper.id],
+          totalSequenceCount: 1,
+          truncated: false,
+        },
+      ],
+      rejectedSavedRecipes: [],
+    }
+
+    for (const objective of [
+      'minimum-cost',
+      'maximum-known-revenue',
+      'maximum-known-gross-profit',
+    ] as const) {
+      const model = buildOptimizationModel(
+        {
+          ...baseRequest,
+          customerIds: ['a'],
+          formalCustomerIds: ['a'],
+          candidatePolicy: 'observed-only',
+          objective,
+        },
+        {
+          customers,
+          candidatePool: pool,
+        },
+      )
+
+      expect(model.serviceableCustomerIds).toEqual(['a'])
+      expect(model.recipes.map((recipe) => recipe.candidate.id)).toEqual([
+        shallow.id,
+        deeper.id,
+      ])
+    }
+  })
+
   it('keeps future-progress candidates out of the eligible matrix', () => {
     const model = buildOptimizationModel(
       {
