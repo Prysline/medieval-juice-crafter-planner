@@ -539,7 +539,7 @@ export function TargetCustomerPanel({
               </>
             ) : hasAmbiguity ? (
               <>
-                <strong>完全匹配待確認</strong>
+                <strong>匹配狀態有歧義</strong>
                 <span>
                   目前已知條件為
                   {level ? `「${matchLevelLabel(level)}」` : '未知'}；
