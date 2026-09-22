@@ -438,6 +438,7 @@ export default function OptimizerTools({
     onSuppliedCustomerIdsCommitted([
       ...result.suppliedCustomerIds,
     ])
+    setRunState({ status: 'idle' })
     setApplicationState({ status: 'applied' })
   }
 
@@ -1012,7 +1013,7 @@ export default function OptimizerTools({
         <div className="optimizer-result-note" role="status">
           <strong>規劃已完整寫入。</strong>
           <span>
-            庫存與今日已供應狀態已透過同一筆持久狀態提交；請重新產生規劃後再進行下一次套用。
+            庫存與今日已供應狀態已更新；舊規劃已清除。需要繼續安排剩餘顧客時，請重新產生最佳化規劃。
           </span>
         </div>
       )}
