@@ -1527,7 +1527,7 @@ footer {
 
 .optimizer-inventory-grid input,
 .optimizer-ingredient-inventory input,
-.optimizer-jar-card select,
+.optimizer-recipe-combobox input,
 .optimizer-jar-card > label > input {
   width: 100%;
   min-height: 38px;
@@ -1610,11 +1610,100 @@ footer {
   margin: 0;
 }
 
-.optimizer-jar-card select:disabled,
 .optimizer-jar-card input:disabled,
 .optimizer-jar-carry-toggle input:disabled {
   cursor: default;
   opacity: 0.48;
+}
+
+.optimizer-recipe-combobox {
+  position: relative;
+  min-width: 0;
+}
+
+.optimizer-recipe-combobox-input-row {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.optimizer-recipe-combobox-input-row input {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.optimizer-recipe-combobox-clear {
+  flex: 0 0 auto;
+  border: 1px solid #d6c8b3;
+  border-radius: 9px;
+  background: #f3eadc;
+  color: #655640;
+  padding: 5px 9px;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.optimizer-recipe-combobox-list {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  display: grid;
+  gap: 3px;
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid #cfc0aa;
+  border-radius: 10px;
+  background: #fffdf8;
+  box-shadow: 0 12px 28px rgba(68, 53, 35, 0.16);
+  padding: 5px;
+}
+
+.optimizer-recipe-combobox-option {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #4f463b;
+  padding: 7px 8px;
+  text-align: left;
+}
+
+.optimizer-recipe-combobox-option:hover,
+.optimizer-recipe-combobox-option.active {
+  background: #eee4d5;
+}
+
+.optimizer-recipe-combobox-option strong {
+  font-size: 0.78rem;
+}
+
+.optimizer-recipe-combobox-option span,
+.optimizer-recipe-combobox-option small {
+  color: #7a6d5d;
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.optimizer-recipe-combobox-option small {
+  color: #4f6744;
+  font-weight: 900;
+}
+
+.optimizer-recipe-combobox-empty,
+.optimizer-recipe-combobox-hint {
+  margin: 0;
+  padding: 7px 8px;
+  color: #7a6d5d;
+  font-size: 0.68rem;
+  line-height: 1.4;
+}
+
+.optimizer-recipe-combobox-hint {
+  border-top: 1px solid #eadfce;
 }
 
 .segmented-control {

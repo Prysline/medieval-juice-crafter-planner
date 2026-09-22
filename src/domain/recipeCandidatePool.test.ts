@@ -155,7 +155,7 @@ describe('shared recipe candidate pool', () => {
     ])
   })
 
-  it('keeps inventory recipe choices bounded to current observed or saved identities', () => {
+  it('offers current observed, saved, and safe computed recipes to inventory search', () => {
     const pool = buildRecipeCandidatePool(
       'juice-blender-unlocked',
       [saved('saved-computed', ['banana', 'sugar'])],
@@ -175,6 +175,12 @@ describe('shared recipe candidate pool', () => {
         (candidate) =>
           candidate.ingredients.join(' → ') === '檸檬 → 梨',
       ),
+    ).toBe(true)
+    expect(
+      choices.some(
+        (candidate) =>
+          candidate.ingredients.join(' → ') === '檸檬 → 肉桂 → 薄荷',
+      ),
     ).toBe(false)
     expect(
       choices.every((candidate) => {
@@ -183,7 +189,8 @@ describe('shared recipe candidate pool', () => {
         )
         return Boolean(
           entry?.sources.includes('observed') ||
-            entry?.sources.includes('saved'),
+            entry?.sources.includes('saved') ||
+            entry?.sources.includes('computed'),
         )
       }),
     ).toBe(true)

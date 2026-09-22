@@ -1,5 +1,6 @@
 import { isAvailableAtProgress } from './availability'
 import { calculateRecipeIngredientCost } from './recipeCost'
+import { computedRecipeIdentity } from './recipeIdentity'
 import { ingredients } from '../data/ingredients'
 import { progressMilestoneIndex } from '../data/progress'
 import {
@@ -224,7 +225,9 @@ function computedCandidate(
   ).length
 
   return {
-    id: `computed:${sequence.map((ingredient) => ingredient.id).join('+')}`,
+    id: computedRecipeIdentity(
+      sequence.map((ingredient) => ingredient.id),
+    ),
     name: `預測（${ingredientNames.join(' → ')}）`,
     source: 'computed',
     unlockedAt: latestUnlock(

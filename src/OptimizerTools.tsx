@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from 'react'
+import { memo, useEffect, useId, useMemo, useState } from 'react'
 import { customers } from './data/customers'
 import { ingredients } from './data/ingredients'
 import { recipes } from './data/recipes'
@@ -27,8 +27,9 @@ import type {
 } from './domain/multiTripReplenishment'
 import type { PreparationShortfall } from './domain/preparationShortfall'
 import {
-  recipeCandidatesForInventoryEditor,
+  recipeCandidateEntriesForInventoryEditor,
   type RecipeCandidatePool,
+  type RecipeCandidatePoolEntry,
 } from './domain/recipeCandidatePool'
 import type { ProductionLogisticsPlan } from './domain/productionLogistics'
 import type { PlanApplicationTransactionDraft } from './domain/planApplicationTransaction'
@@ -158,6 +159,302 @@ export function criterionLabel(criterion: OptimizationCriterion): string {
   return '最少果汁罐換裝'
 }
 
+export const INVENTORY_RECIPE_SEARCH_RESULT_LIMIT = 8
+
+function inventoryRecipeSourceLabel(
+  entry: RecipeCandidatePoolEntry,
+): string {
+  const labels: string[] = []
+  if (entry.sources.includes('observed')) labels.push('實測')
+  if (entry.sources.includes('saved')) labels.push('已保存')
+  if (
+    entry.sources.includes('computed') &&
+    !entry.sources.includes('observed')
+  ) {
+    labels.push('安全推導')
+  }
+  return labels.join('・')
+}
+
+function normalizeRecipeSearchText(value: string): string {
+  return value.trim().toLocaleLowerCase('zh-Hant')
+}
+
+export function searchInventoryRecipeEntries(
+  entries: readonly RecipeCandidatePoolEntry[],
+  query: string,
+  limit = INVENTORY_RECIPE_SEARCH_RESULT_LIMIT,
+): RecipeCandidatePoolEntry[] {
+  const normalizedQuery = normalizeRecipeSearchText(query)
+  const boundedLimit = Math.max(0, Math.floor(limit))
+  if (boundedLimit === 0) return []
+
+  return entries
+    .flatMap((entry) => {
+      const displayName = formatRecipeDisplayName(entry.candidate.name)
+      const normalizedName = normalizeRecipeSearchText(displayName)
+      const ingredientNames = normalizeRecipeSearchText(
+        entry.candidate.ingredients.join(' '),
+      )
+      const ingredientIds = normalizeRecipeSearchText(
+        entry.ingredientIds.join(' '),
+      )
+      const candidateId = normalizeRecipeSearchText(entry.candidate.id)
+
+      let score = 0
+      if (normalizedQuery) {
+        if (
+          normalizedName === normalizedQuery ||
+          ingredientNames === normalizedQuery ||
+          ingredientIds === normalizedQuery ||
+          candidateId === normalizedQuery
+        ) {
+          score = 0
+        } else if (
+          normalizedName.startsWith(normalizedQuery) ||
+          ingredientNames.startsWith(normalizedQuery) ||
+          ingredientIds.startsWith(normalizedQuery)
+        ) {
+          score = 1
+        } else if (normalizedName.includes(normalizedQuery)) {
+          score = 2
+        } else if (ingredientNames.includes(normalizedQuery)) {
+          score = 3
+        } else if (
+          ingredientIds.includes(normalizedQuery) ||
+          candidateId.includes(normalizedQuery)
+        ) {
+          score = 4
+        } else {
+          return []
+        }
+      }
+
+      const sourceRank = entry.sources.includes('observed')
+        ? 0
+        : entry.sources.includes('saved')
+          ? 1
+          : 2
+
+      return [{ entry, score, sourceRank, displayName }]
+    })
+    .sort(
+      (left, right) =>
+        left.score - right.score ||
+        left.sourceRank - right.sourceRank ||
+        left.displayName.localeCompare(right.displayName, 'zh-Hant') ||
+        left.entry.candidate.id.localeCompare(right.entry.candidate.id),
+    )
+    .slice(0, boundedLimit)
+    .map(({ entry }) => entry)
+}
+
+export function moveInventoryRecipeSearchIndex(
+  currentIndex: number,
+  direction: 'next' | 'previous',
+  itemCount: number,
+): number {
+  if (itemCount <= 0) return 0
+  if (direction === 'next') {
+    return (currentIndex + 1) % itemCount
+  }
+  return (currentIndex - 1 + itemCount) % itemCount
+}
+
+export function JuiceJarRecipeCombobox({
+  jarId,
+  recipeId,
+  entries,
+  onChange,
+}: {
+  jarId: string
+  recipeId: string | null
+  entries: readonly RecipeCandidatePoolEntry[]
+  onChange: (recipeId: string) => void
+}) {
+  const listboxId = useId()
+  const selectedEntry = recipeId
+    ? entries.find((entry) => entry.candidate.id === recipeId)
+    : undefined
+  const selectedLabel = selectedEntry
+    ? formatRecipeDisplayName(selectedEntry.candidate.name)
+    : recipeId
+      ? `既有內容：${recipeId}`
+      : '空罐'
+
+  const [query, setQuery] = useState(selectedLabel)
+  const [open, setOpen] = useState(false)
+  const [activeIndex, setActiveIndex] = useState(0)
+
+  const results = useMemo(
+    () =>
+      open
+        ? searchInventoryRecipeEntries(entries, query)
+        : [],
+    [entries, open, query],
+  )
+
+  useEffect(() => {
+    if (!open) setQuery(selectedLabel)
+  }, [open, selectedLabel])
+
+  useEffect(() => {
+    if (activeIndex >= results.length) setActiveIndex(0)
+  }, [activeIndex, results.length])
+
+  function choose(entry: RecipeCandidatePoolEntry) {
+    onChange(entry.candidate.id)
+    setQuery(formatRecipeDisplayName(entry.candidate.name))
+    setOpen(false)
+    setActiveIndex(0)
+  }
+
+  return (
+    <div
+      className="optimizer-recipe-combobox"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          setOpen(false)
+        }
+      }}
+    >
+      <div className="optimizer-recipe-combobox-input-row">
+        <input
+          aria-autocomplete="list"
+          aria-controls={open ? listboxId : undefined}
+          aria-expanded={open}
+          aria-label={`${jarId} 果汁罐內容`}
+          aria-activedescendant={
+            open && results[activeIndex]
+              ? `${listboxId}-option-${activeIndex}`
+              : undefined
+          }
+          role="combobox"
+          value={open ? query : selectedLabel}
+          onFocus={(event) => {
+            setQuery(selectedEntry ? selectedLabel : '')
+            setOpen(true)
+            setActiveIndex(0)
+            event.currentTarget.select()
+          }}
+          onChange={(event) => {
+            setQuery(event.target.value)
+            setOpen(true)
+            setActiveIndex(0)
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowDown') {
+              event.preventDefault()
+              if (!open) {
+                setOpen(true)
+                setActiveIndex(0)
+                return
+              }
+              setActiveIndex((current) =>
+                moveInventoryRecipeSearchIndex(
+                  current,
+                  'next',
+                  results.length,
+                ),
+              )
+              return
+            }
+
+            if (event.key === 'ArrowUp') {
+              event.preventDefault()
+              if (!open) {
+                setOpen(true)
+                setActiveIndex(0)
+                return
+              }
+              setActiveIndex((current) =>
+                moveInventoryRecipeSearchIndex(
+                  current,
+                  'previous',
+                  results.length,
+                ),
+              )
+              return
+            }
+
+            if (event.key === 'Enter' && open) {
+              const selected = results[activeIndex]
+              if (selected) {
+                event.preventDefault()
+                choose(selected)
+              }
+              return
+            }
+
+            if (event.key === 'Escape' && open) {
+              event.preventDefault()
+              setOpen(false)
+            }
+          }}
+        />
+        {recipeId ? (
+          <button
+            type="button"
+            className="optimizer-recipe-combobox-clear"
+            onClick={() => {
+              onChange('')
+              setQuery('空罐')
+              setOpen(false)
+              setActiveIndex(0)
+            }}
+          >
+            清空
+          </button>
+        ) : null}
+      </div>
+
+      {open ? (
+        <div
+          className="optimizer-recipe-combobox-list"
+          id={listboxId}
+          role="listbox"
+        >
+          {results.length > 0 ? (
+            results.map((entry, index) => (
+              <button
+                id={`${listboxId}-option-${index}`}
+                type="button"
+                role="option"
+                aria-selected={index === activeIndex}
+                className={
+                  index === activeIndex
+                    ? 'optimizer-recipe-combobox-option active'
+                    : 'optimizer-recipe-combobox-option'
+                }
+                key={entry.candidate.id}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => choose(entry)}
+              >
+                <strong>
+                  {formatRecipeDisplayName(entry.candidate.name)}
+                </strong>
+                <span>
+                  {formatRecipeSequence(entry.candidate.ingredients)}
+                </span>
+                <small>{inventoryRecipeSourceLabel(entry)}</small>
+              </button>
+            ))
+          ) : (
+            <p className="optimizer-recipe-combobox-empty">
+              找不到符合的配方。
+            </p>
+          )}
+          {results.length === INVENTORY_RECIPE_SEARCH_RESULT_LIMIT ? (
+            <p className="optimizer-recipe-combobox-hint">
+              最多顯示 {INVENTORY_RECIPE_SEARCH_RESULT_LIMIT} 筆；可繼續輸入縮小範圍。
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function jarFillActionLabel(load: MultiTripJuiceJarLoad): string {
   if (load.fillAction === 'use-existing') return '使用既有成品'
   if (load.fillAction === 'continue-loaded') return '沿用罐內成品'
@@ -250,12 +547,12 @@ function OptimizerTools({
     [primaryCriterion, secondaryOne, secondaryTwo],
   )
 
-  const inventoryRecipeCandidates = useMemo(
+  const inventoryRecipeEntries = useMemo(
     () =>
-      recipeCandidatesForInventoryEditor(recipeCandidatePool).sort(
+      recipeCandidateEntriesForInventoryEditor(recipeCandidatePool).sort(
         (a, b) =>
-          a.name.localeCompare(b.name, 'zh-Hant') ||
-          a.id.localeCompare(b.id),
+          a.candidate.name.localeCompare(b.candidate.name, 'zh-Hant') ||
+          a.candidate.id.localeCompare(b.candidate.id),
       ),
     [recipeCandidatePool],
   )
@@ -928,7 +1225,7 @@ function OptimizerTools({
               )}
 
             <p className="optimizer-inventory-empty">
-              果汁罐內容選單只列目前可用的實測配方與個人已保存配方；若要登記未實測組合，請先到「配方工具」保存，避免把數千個暫時計算候選全部塞進每個果汁罐選單。
+              果汁罐內容可搜尋目前可用的實測、個人已保存與安全推導配方；每次只顯示少量匹配結果，不會把數千個推導候選全部 render 成選項。
             </p>
 
             {inventoryState.juiceJars.length === 0 ? (
@@ -937,61 +1234,41 @@ function OptimizerTools({
               </p>
             ) : (
               <div className="optimizer-jar-inventory">
-                {inventoryState.juiceJars.map((jar) => {
-                  const knownCurrentRecipe =
-                    inventoryRecipeCandidates.some(
-                      (candidate) => candidate.id === jar.recipeId,
-                    )
-
-                  return (
-                    <article className="optimizer-jar-card" key={jar.id}>
-                      <div className="optimizer-jar-heading">
-                        <strong>{jar.id}</strong>
-                      </div>
-                      <label>
-                        <span>內容</span>
-                        <select
-                          value={jar.recipeId ?? ''}
-                          onChange={(event) =>
-                            setJuiceJarRecipe(jar.id, event.target.value)
-                          }
-                        >
-                          <option value="">空罐</option>
-                          {jar.recipeId && !knownCurrentRecipe ? (
-                            <option value={jar.recipeId}>
-                              既有內容：{jar.recipeId}
-                            </option>
-                          ) : null}
-                          {inventoryRecipeCandidates.map((candidate) => (
-                            <option value={candidate.id} key={candidate.id}>
-                              {formatRecipeDisplayName(candidate.name)}
-                              {candidate.source === 'computed'
-                                ? '（預測配方）'
-                                : ''}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label>
-                        <span>杯數</span>
-                        <input
-                          type="number"
-                          inputMode="numeric"
-                          min={jar.recipeId ? 1 : 0}
-                          max={10}
-                          disabled={!jar.recipeId}
-                          value={jar.servings}
-                          onChange={(event) =>
-                            setJuiceJarServings(
-                              jar.id,
-                              Number(event.target.value) || 0,
-                            )
-                          }
-                        />
-                      </label>
-                    </article>
-                  )
-                })}
+                {inventoryState.juiceJars.map((jar) => (
+                  <article className="optimizer-jar-card" key={jar.id}>
+                    <div className="optimizer-jar-heading">
+                      <strong>{jar.id}</strong>
+                    </div>
+                    <label>
+                      <span>內容</span>
+                      <JuiceJarRecipeCombobox
+                        jarId={jar.id}
+                        recipeId={jar.recipeId}
+                        entries={inventoryRecipeEntries}
+                        onChange={(recipeId) =>
+                          setJuiceJarRecipe(jar.id, recipeId)
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>杯數</span>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min={jar.recipeId ? 1 : 0}
+                        max={10}
+                        disabled={!jar.recipeId}
+                        value={jar.servings}
+                        onChange={(event) =>
+                          setJuiceJarServings(
+                            jar.id,
+                            Number(event.target.value) || 0,
+                          )
+                        }
+                      />
+                    </label>
+                  </article>
+                ))}
               </div>
             )}
           </div>
