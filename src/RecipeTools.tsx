@@ -581,7 +581,7 @@ export function TargetCustomerPanel({
   )
 }
 
-function EvaluationPanel({
+export function EvaluationPanel({
   evaluation,
   matchingCustomers,
 }: {
