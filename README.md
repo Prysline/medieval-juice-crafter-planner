@@ -85,6 +85,8 @@ src/
     inventoryState.ts  # mjc-inventory schema normalization / storage
     plannerSettings.ts # mjc-planner-settings：persistent carried jar IDs、legacy count migration 與 used-cup drop opt-in
     planApplicationBasis.ts # read-only canonical basis 重建與 stored transaction stale validation
+    planApplicationState.ts # inventory + supplied customers 的單一 canonical plan-application storage envelope
+    planApplicationCommit.ts # Phase 5C-4：commit 前 stale validation + single-write transaction commit
   types.ts             # 共用 domain / data 型別
   App.tsx              # 顧客／配方／配方工具／批次規劃頁籤
   RecipeTools.tsx      # Recipe Simulator + Personal Recipes UI
@@ -231,7 +233,7 @@ Phase 3 已完成：
 - 水依當下背包 free slots 取得，可先回到 home storage 再分批製作；沒有 route / seller distance 資料的原料取得只記 acquisition action，不假裝成已知往返趟數。
 - 果汁調和器已按 **1:1:1、q = 1～5** 接入製作圖；多個果汁段會分開製作再調和。
 - 果汁成品台每次操作產出 **2～10 份偶數成品**；Phase 5B2-4/5 / PR #47 後，成品不再交給任意接收罐，而是依選定的販售排程綁定到明確的實體果汁罐。常駐攜帶罐可直接接收；非攜帶罐只有在果汁罐架有暫存容量且該實體果汁罐真實存在時才能接手，rack 空位本身不會憑空生成罐子。
-- 同一實體果汁罐的裝罐／販售時序會驗證容量上限 10、配方相容性與前一內容已售完；跨多趟販售但仍是同一批罐內成品時不會重複計成補裝。現行 `mjc-inventory` 尚未保存每件製作材料的精確位置，因此 raw / water 仍視為 home supply。Phase 5C-1 / PR #50 已建立**純交易草稿**；Phase 5C-2 / PR #52 已提供唯讀交易預覽；Phase 5C-3 / PR #54 已加入**寫入前過期驗證能力**：以不觸發 migration write 的 read-only storage adapter 重建目前 canonical basis，再與交易草稿的 before snapshot 比對。**目前仍沒有確認套用按鈕，也不寫 transaction / localStorage**。
+- 同一實體果汁罐的裝罐／販售時序會驗證容量上限 10、配方相容性與前一內容已售完；跨多趟販售但仍是同一批罐內成品時不會重複計成補裝。現行 `mjc-inventory` 尚未保存每件製作材料的精確位置，因此 raw / water 仍視為 home supply。Phase 5C-1 / PR #50 已建立**純交易草稿**；Phase 5C-2 / PR #52 已提供交易預覽；Phase 5C-3 / PR #54 已加入**寫入前過期驗證能力**；Phase 5C-4 / PR #56 已加入正式確認套用入口。提交前會重新以 read-only storage adapter 重建 canonical basis；只有 basis 仍有效時，才把 inventory 與今日已供應狀態寫入單一 `mjc-plan-application-state` envelope。progress、satisfaction、formal customers 與 planner settings 仍只作 basis dependency，不由這次交易覆寫。
 
 Phase 4 已完成：
 
@@ -250,7 +252,8 @@ Phase 4 已完成：
 13. PR #50 完成 **Phase 5C-1｜純交易模型**：由已驗證的 optimizer、備料缺口、製作物流與販售排程建立不可變 before / after transaction draft；原料、水、杯具、實體果汁罐與今日供應顧客都有可重算終局，並保留進度／滿意度／正式顧客／planner settings 基準供後續過期驗證。此步驟不修改 storage。
 14. PR #52 完成 **Phase 5C-2｜交易預覽介面**：最佳化結果頁會顯示 transaction draft 的原料、水、乾淨／用過杯具、今日供應顧客與實體果汁罐變更前 → 變更後，並列出持久果汁罐的首次裝填／補裝同種／換裝事件與販售趟次前置條件；製作物流不可行時明確不建立交易草稿。預覽仍沒有正式寫入控制。
 15. PR #54 完成 **Phase 5C-3｜寫入前過期驗證**：新增純 basis validator 與 read-only stored-basis reader；可重新取得 inventory、進度、滿意度、正式／今日供應顧客與 planner settings 的 canonical 狀態，並固定回報哪些依賴已漂移。legacy progress / satisfaction / carried-jar count 會依現行 migration 等價規則解析，但驗證過程不寫 migration；顧客集合忽略無意義順序差異，而 physical jar / carried jar 穩定順序仍視為規劃依賴。
-16. **下一個最小切片是 Phase 5C-4｜一次性完整寫入**：正式套用入口必須先呼叫 5C-3 stale validation，只有 basis 仍有效時才能把 transaction draft 的 after 狀態一次性提交；若驗證失敗或任一步驟失敗，都不得留下部分更新。Phase 5C-5 再處理寫入後刷新與重複套用防護。路線最佳化仍等待跨村移動時間、位置資訊、完整顧客服務時段與商店營業時間資料。
+16. PR #56 完成 **Phase 5C-4｜一次性完整寫入**：正式套用會在 commit 前重新執行 5C-3 stored-basis validation；stale 時依類別回報並保持零寫入。basis 有效時，transaction after 的 inventory（原料、水、clean / used cups、持久 physical jar 內容與未改動 shelf / jar-rack 欄位）和今日已供應顧客會寫入單一 `mjc-plan-application-state` canonical envelope，只需一次 `localStorage.setItem()`，避免 inventory / supplied customers 跨 key 寫入中途失敗形成 partial state；其他 basis-only 狀態不覆寫。
+17. **下一個最小切片是 Phase 5C-5｜寫入後刷新與重複套用防護**。Candidate Engine 仍等 Phase 5C 全部完成後才開始；路線最佳化仍等待跨村移動時間、位置資訊、完整顧客服務時段與商店營業時間資料。
 
 
 ## Schedule / route readiness boundary
