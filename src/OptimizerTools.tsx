@@ -1089,7 +1089,7 @@ export default function OptimizerTools({
   )
 }
 
-function PlanningErrorBlock({
+export function PlanningErrorBlock({
   presentation,
 }: {
   presentation: PlanningErrorPresentation
@@ -1870,7 +1870,7 @@ function OptimizerResultPanel({
         {productionLogistics.actions.length > 0 && (
           <details className="optimizer-logistics-details">
             <summary>
-              展開 production logistics trace（{productionLogistics.actions.length} actions）
+              展開製作物流流程（{productionLogistics.actions.length} 個動作）
             </summary>
             <div className="optimizer-batch-list">
               {productionLogistics.actions.map((action) => (
@@ -1893,7 +1893,7 @@ function OptimizerResultPanel({
                     {action.snapshot.backpackSlotsAvailable} · 常駐罐{' '}
                     {action.snapshot.carriedJarSlots}
                     {action.snapshot.machineSlotsAvailable > 0
-                      ? ' · machine ' +
+                      ? ' · 機器 ' +
                         action.snapshot.machineSlotsUsed +
                         '/' +
                         action.snapshot.machineSlotsAvailable
