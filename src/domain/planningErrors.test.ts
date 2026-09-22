@@ -5,18 +5,26 @@ import {
 } from './planningErrors'
 
 describe('planning error presentation', () => {
-  it('turns leftover capacity into a Chinese actionable message', () => {
+  it('states how many terminal jars are required and how many more are needed', () => {
     const result = presentPlanningError(
       new PlanningUserError(
         'leftover-storage',
-        { remainingServings: 3 },
+        {
+          remainingServings: 1,
+          requiredTerminalJarCount: 5,
+          reusableTerminalJarCount: 4,
+          retainedJarCount: 1,
+        },
         'Not enough terminal sales-jar capacity',
       ),
     )
 
     expect(result.title).toBe('剩餘果汁沒有足夠的實體罐可保留')
-    expect(result.message).toContain('3 杯')
-    expect(result.suggestions.join(' ')).toContain('果汁罐架')
+    expect(result.message).toContain('需要至少 5 個')
+    expect(result.message).toContain('目前只有 4 個')
+    expect(result.message).toContain('還需要至少 1 個')
+    expect(result.message).toContain('另有 1 個果汁罐因既有內容必須保留')
+    expect(result.message).toContain('1 杯')
     expect(result.technicalDetails).toBe(
       'Not enough terminal sales-jar capacity',
     )
