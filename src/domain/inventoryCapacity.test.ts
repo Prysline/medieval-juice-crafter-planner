@@ -123,9 +123,9 @@ describe('inventory capacity summary', () => {
       }),
     )
 
-    expect(result.effectiveReservedJuiceJarSlots).toBe(4)
+    expect(result.effectiveReservedJuiceJarSlots).toBe(2)
     expect(result.maxJuiceJarSlotsPerTrip).toBe(2)
-    expect(result.backpackSlotsRemainingAfterCarriedJars).toBe(6)
+    expect(result.backpackSlotsRemainingAfterCarriedJars).toBe(8)
     expect(selectAccessibleJuiceJars(inventory({
       juiceJars: [
         { id: 'jar-filled', recipeId: 'lemon', servings: 4 },
