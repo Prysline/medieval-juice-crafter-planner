@@ -63,9 +63,9 @@ export interface OptimizationRequest {
 export interface OptimizationSource {
   customers: Customer[]
   /**
-   * Flat candidates remain supported for focused unit tests and explicit callers.
-   * Runtime Candidate-2A uses candidatePool so every customer shares the same
-   * progressive search contract.
+   * 保留 flat candidates 給聚焦單元測試與明確指定來源的 caller。
+   * Candidate-2A runtime 使用 candidatePool，讓每位顧客共用同一套
+   * progressive search contract。
    */
   candidates?: readonly RecipeCandidate[]
   candidatePool?: RecipeCandidatePool
@@ -208,9 +208,8 @@ function eligibleOptimizationRecipe(
   const cost = calculateRecipeIngredientCost(candidate)
   if (cost.batchIngredientCost === null) return null
 
-  // Production eligibility remains owned by the production graph. Candidate-2A
-  // only generates one juice segment; explicit multi-base fixtures still use
-  // the already-confirmed Blender production path support.
+  // 製作可行性仍由 production graph 負責。Candidate-2A 只自動產生
+  // 單一果汁段；明確提供的 multi-base fixture 仍沿用既有 Blender path 支援。
   const productionPath = productionPathForCandidate(candidate)
   if (!productionPath) return null
 
