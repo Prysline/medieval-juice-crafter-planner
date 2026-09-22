@@ -112,9 +112,17 @@ export function presentPlanningError(
           typeof required === 'number' && typeof reusable === 'number'
             ? `這份規劃有 ${required} 種不同配方需要在販售結束後各自保留成品，因此需要至少 ${required} 個可作終局容器的實體果汁罐；目前只有 ${reusable} 個可重用。`
             : ''
+        const additional =
+          typeof required === 'number' && typeof reusable === 'number'
+            ? Math.max(0, required - reusable)
+            : undefined
         const retainedDetail =
           typeof retained === 'number' && retained > 0
             ? `另有 ${retained} 個果汁罐因既有內容必須保留，不能拿來換裝其他配方。`
+            : ''
+        const additionalDetail =
+          typeof additional === 'number' && additional > 0
+            ? `在不倒掉既有果汁的前提下，還需要至少 ${additional} 個可用果汁罐。`
             : ''
 
         return {
@@ -122,6 +130,7 @@ export function presentPlanningError(
           message: [
             capacityDetail,
             retainedDetail,
+            additionalDetail,
             remaining && remaining > 0
               ? `目前仍有 ${remaining} 杯剩餘果汁無法安排合法終局容器。`
               : '目前仍有剩餘果汁無法安排合法終局容器。',
