@@ -100,7 +100,7 @@ src/
 
 Candidate-2A / PR #62 已把固定深度枚舉改成**單一果汁段漸進搜尋**。`recipeGenerator.ts` 先依固定 ingredient ID 順序建立不重複原料搜尋層：1 個果汁基底 + 0～3 種不同調味材料，也就是最多 4 種不重複原料；顧客頁與批次最佳化再共用 `recipeSearch.ts`，只在目前 consumer policy 下尚未找到保證完全匹配時才繼續下一層。仍有歧義的 computed candidate 不會觸發停止。只有所有不重複層都無法保證完全匹配、且重複調味可能改變／堆疊特性時，才啟用重複調味後備搜尋；目前後備搜尋最多到 6 個總原料、每層 2048 candidates、單次搜尋總計 4096 candidates。這些數字是網站搜尋預算，不是遊戲規則或 evaluator 能力上限。Candidate-1 / PR #60 的共用候選配方池仍以完整有序原料序列去重並保留實測／已保存／安全推導／仍有歧義等來源；SavedRecipe 仍經同一 evaluator 與進度檢查。
 
-手動配方模擬器使用有序原料順序：重複調味與四原料以上都可評估；每遇到新的需榨汁原料就開始下一個果汁段。兩杯果汁經果汁調和器組合時，網站只做 `front.sequence + back.sequence`，不另造果汁調和器專用配方格式。含多個需榨汁原料的序列至少需要實際程式進度 key `juice-blender-unlocked`，設備需求會包含果汁調和器。
+手動配方模擬器使用有序原料順序：重複調味與四原料以上都可評估；每遇到新的需榨汁原料就開始下一個果汁段。兩杯果汁經果汁調和器組合時，網站只做 `front.sequence + back.sequence`，不另造果汁調和器專用配方格式。含多個需榨汁原料的序列至少需要實際程式進度 key `juice-blender-unlocked`，設備需求會包含果汁調和器。UX-1 / PR #66 後，原料選取卡會直接顯示特性與數值；模擬器也可暫選目前已解鎖的目標顧客，顯示 `名字（職業）`、喜好與完全／部分／未匹配狀態。這個目標只存在於本次元件狀態，不會寫入正式顧客、今日供應或個人保存資料；若 computed 成品特性仍有歧義，只顯示目前可確定的匹配程度，並明確標示不能保證完全匹配。
 
 果汁調和器已確認 **1:1:1** 數量模型：果汁 A ×q + 果汁 B ×q → 調和果汁 ×q，q = 1～5；機器為 2 個輸入 + 1 個輸出，共 **3 個機器格位**。兩個輸入已確認只要是果汁類即可。直接實測也支持：完整原料順序串接後，成品特性沿用同名累加、`slotCount`、高值排序與最後貢獻位置優先；仍未知的是果汁調和器通用售價公式，以及同值且同最後貢獻位置時的次級排序規則。現行配方模擬器已能串接完整原料順序；Phase 3 已把多果汁段與果汁調和步驟接入製作圖。
 
@@ -142,7 +142,7 @@ HiGHS solver 使用真正的 lexicographic repeated solve，不使用隱藏權�
 
 收入相關 criterion 不推導 computed 售價。正式顧客若要參與 revenue / gross-profit criterion，只能使用 `salePrice !== null` 的 full-match 配方；潛在顧客仍可依 candidate policy 使用 computed full match，但試喝收入不計入已知銷售額。
 
-solver domain 為 async；UI 只有在玩家按下規劃時才 dynamic import optimizer / HiGHS WASM。
+solver domain 為 async；UI 只有在玩家按下規劃時才 dynamic import optimizer / HiGHS WASM。UX-1 / PR #66 另外建立 `PlanningUserError` 的穩定錯誤 code + 結構化 context：常見可修正失敗由 UI 產生中文摘要、限制說明與可操作建議；未知 invariant／solver 細節不再直接當主訊息，只保留在可展開的「技術資訊」。直接顯示於製作物流區的 issue 也已改成可讀中文，不再讓裸英文錯誤繞過這個邊界。
 
 ## 開發
 
@@ -259,7 +259,8 @@ Phase 4 已完成：
 18. PR #60 完成 **Candidate-1｜共用候選配方池**：以完整有序原料序列作去重邊界，保留既有 `RecipeCandidate.id`，同一 entry 可同時帶實測／已保存／安全推導／歧義來源；SavedRecipe 會經 canonical evaluator 與進度檢查，invalid saved rows 不進 pool。App、顧客推薦與批次最佳化共用同一份 current-search candidates；saved-only／future-progress entries 目前只保留 metadata，不提前擴大搜尋。
 19. PR #62 完成 **Candidate-2A｜單一果汁段漸進搜尋**：不重複原料由淺到深搜尋；顧客頁與批次最佳化共用同一停止規則；只有不重複候選無法保證完全匹配且重複可能改變特性時，才啟用有界的重複調味後備搜尋。
 20. PR #64 完成 **Correctness-1｜跨趟果汁罐交換與同配方直接補裝**：planner settings 從 persistent jar ID 綁定改為 `auto`／`fixed-slots`；無果汁罐架時所有持有罐強制隨身，有架時可跨趟整罐上架／換罐，架上既有成品也會納入今日需求；同配方未空罐可直接補裝至容量 10，不同配方仍禁止直接混裝。
-21. **下一個最小切片是 UX-1｜配方模擬器與批次規劃可讀性**：先補原料特性直接顯示、暫選目標顧客、批次錯誤中文化與可操作解法；完成後再進 Candidate-2B｜多層果汁調和搜尋。路線最佳化仍等待跨村移動時間、位置資訊、完整顧客服務時段與商店營業時間資料。
+21. PR #66 完成 **UX-1｜配方模擬器與批次規劃可讀性**：原料卡直接顯示特性與數值；模擬器可暫選目標顧客並顯示匹配狀態；批次規劃的常見可修正錯誤改用穩定 code + context，UI 顯示中文摘要、限制原因、可操作建議與次要技術資訊。
+22. **下一個最小切片是 Candidate-2B｜多層果汁調和搜尋**：在既有單一果汁段漸進搜尋上生成合法果汁段與調和樹；先定義調和深度／獨立果汁段上限、剪枝與固定排序，不把複數需榨汁原料當普通原料排列。路線最佳化仍等待跨村移動時間、位置資訊、完整顧客服務時段與商店營業時間資料。
 
 
 ## Schedule / route readiness boundary
