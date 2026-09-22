@@ -154,6 +154,68 @@ describe('shared recipe candidate pool', () => {
     ])
   })
 
+  it('keeps generated Blender candidates as future metadata until the Blender unlock', () => {
+    const beforeUnlock = buildRecipeCandidatePool(
+      'tranquil-fountain-unlocked',
+    )
+    const futureBlend = beforeUnlock.entries.find(
+      (entry) => entry.ingredientIds.join('>') === 'lemon>pear',
+    )
+
+    expect(futureBlend).toMatchObject({
+      sources: ['computed'],
+      inGeneratedSearchScope: true,
+      availableAtCurrentProgress: false,
+    })
+    expect(futureBlend?.candidate).toMatchObject({
+      source: 'computed',
+      salePrice: null,
+      unlockedAt: 'juice-blender-unlocked',
+    })
+    expect(
+      recipeCandidatesInCurrentSearchScope(beforeUnlock).some(
+        (candidate) => candidate.id === futureBlend?.id,
+      ),
+    ).toBe(false)
+
+    const afterUnlock = buildRecipeCandidatePool(
+      'juice-blender-unlocked',
+    )
+    const currentBlend = afterUnlock.entries.find(
+      (entry) => entry.ingredientIds.join('>') === 'lemon>pear',
+    )
+
+    expect(currentBlend).toMatchObject({
+      inGeneratedSearchScope: true,
+      availableAtCurrentProgress: true,
+    })
+    expect(
+      recipeCandidatesInCurrentSearchScope(afterUnlock).some(
+        (candidate) => candidate.id === currentBlend?.id,
+      ),
+    ).toBe(true)
+  })
+
+  it('keeps observed three-segment Blender provenance inside the generated pool', () => {
+    const pool = buildRecipeCandidatePool('juice-blender-unlocked')
+    const observed = pool.entries.find(
+      (entry) =>
+        entry.ingredientIds.join('>') ===
+        'lemon>carrot>mint>sugar>pear',
+    )
+
+    expect(observed).toMatchObject({
+      id: 'lemon-carrot-mint-sugar-pear-blend',
+      sources: ['observed'],
+      availableAtCurrentProgress: true,
+      inGeneratedSearchScope: true,
+    })
+    expect(observed?.candidate).toMatchObject({
+      source: 'observed',
+      salePrice: 80,
+    })
+  })
+
   it('feeds customer matching and optimizer modeling the same progressive candidate ids and eligibility decisions', () => {
     const pool = buildRecipeCandidatePool('seasoner-unlocked')
     const customer: Customer = {
