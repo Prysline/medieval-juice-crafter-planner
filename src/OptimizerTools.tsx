@@ -833,8 +833,13 @@ function OptimizerTools({
           plannerSettings.allowDiscardRetainedJuice,
         )
         if (plan.jarTypeSwitches !== result.jarTypeSwitches) {
-          throw new Error(
-            '果汁罐換裝與販售趟數排程不一致，已停止顯示結果。',
+          throw new PlanningUserError(
+            'jar-schedule-inconsistency',
+            {
+              expectedJarTypeSwitches: result.jarTypeSwitches,
+              actualJarTypeSwitches: plan.jarTypeSwitches,
+            },
+            `Optimizer reported ${result.jarTypeSwitches} jar switch(es), but the physical schedule realized ${plan.jarTypeSwitches}`,
           )
         }
         return plan
