@@ -41,6 +41,7 @@ function basis(): PlanApplicationBasisState {
       juiceJarCarryMode: 'fixed-slots',
       reservedJuiceJarSlots: 2,
       allowUsedCupDropIfFull: false,
+      allowDiscardRetainedJuice: false,
     },
   }
 }
@@ -74,6 +75,8 @@ function draftFromBasis(
           source.plannerSettings.reservedJuiceJarSlots,
         allowUsedCupDropIfFull:
           source.plannerSettings.allowUsedCupDropIfFull,
+        allowDiscardRetainedJuice:
+          source.plannerSettings.allowDiscardRetainedJuice,
       },
     },
     after: {
@@ -100,6 +103,8 @@ function draftFromBasis(
           source.plannerSettings.reservedJuiceJarSlots,
         allowUsedCupDropIfFull:
           source.plannerSettings.allowUsedCupDropIfFull,
+        allowDiscardRetainedJuice:
+          source.plannerSettings.allowDiscardRetainedJuice,
       },
     },
     changes: {
@@ -124,6 +129,7 @@ function draftFromBasis(
         droppedUsedCups: 0,
       },
       juiceJars: [],
+      discardedJuice: [],
       newlySuppliedCustomerIds: [],
     },
   }
@@ -184,6 +190,23 @@ describe('plan application transaction basis validation', () => {
         'supplied-customers',
         'planner-settings',
       ],
+    })
+  })
+
+  it('treats retained-juice discard opt-in as a stale-validation dependency', () => {
+    const original = basis()
+    const changed = basis()
+    changed.plannerSettings.allowDiscardRetainedJuice = true
+
+    expect(
+      validatePlanApplicationTransactionBasis(
+        draftFromBasis(original),
+        changed,
+      ),
+    ).toEqual({
+      valid: false,
+      stale: true,
+      mismatches: ['planner-settings'],
     })
   })
 

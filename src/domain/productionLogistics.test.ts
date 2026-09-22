@@ -35,6 +35,7 @@ function settings(
     juiceJarCarryMode: 'auto',
     reservedJuiceJarSlots: 0,
     allowUsedCupDropIfFull: false,
+    allowDiscardRetainedJuice: false,
     ...patch,
   }
 }

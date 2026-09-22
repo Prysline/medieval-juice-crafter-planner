@@ -7,6 +7,7 @@ import type {
 import type { OptimizationResult } from './optimizer'
 import type { PreparationShortfall } from './preparationShortfall'
 import type {
+  MultiTripDiscardedInitialJuice,
   MultiTripLeftoverJarContent,
   MultiTripReplenishmentPlan,
 } from './multiTripReplenishment'
@@ -35,6 +36,7 @@ export interface PlanApplicationSettingsSnapshot {
   readonly juiceJarCarryMode: PlannerSettings['juiceJarCarryMode']
   readonly reservedJuiceJarSlots: number
   readonly allowUsedCupDropIfFull: boolean
+  readonly allowDiscardRetainedJuice: boolean
 }
 
 export interface PlanApplicationStateSnapshot {
@@ -79,11 +81,18 @@ export interface JuiceJarTransactionChange {
   readonly after: PlanApplicationJarSnapshot
 }
 
+export interface DiscardedJuiceTransactionChange {
+  readonly physicalJarId: string
+  readonly recipeId: string
+  readonly servings: number
+}
+
 export interface PlanApplicationTransactionChanges {
   readonly ingredients: readonly IngredientTransactionChange[]
   readonly water: WaterTransactionChange
   readonly cups: CupTransactionChange
   readonly juiceJars: readonly JuiceJarTransactionChange[]
+  readonly discardedJuice: readonly DiscardedJuiceTransactionChange[]
   readonly newlySuppliedCustomerIds: readonly string[]
 }
 
@@ -172,6 +181,8 @@ function snapshotState(
         basis.plannerSettings.reservedJuiceJarSlots,
       allowUsedCupDropIfFull:
         basis.plannerSettings.allowUsedCupDropIfFull,
+      allowDiscardRetainedJuice:
+        basis.plannerSettings.allowDiscardRetainedJuice,
     },
   }
 }
@@ -209,6 +220,8 @@ function freezeChanges(
     Object.freeze(change)
   })
   Object.freeze(changes.juiceJars)
+  changes.discardedJuice.forEach((change) => Object.freeze(change))
+  Object.freeze(changes.discardedJuice)
   Object.freeze(changes.newlySuppliedCustomerIds)
   return Object.freeze(changes)
 }
@@ -260,6 +273,22 @@ function validatePlanBasis(
       'Sales plan cup policy does not match the transaction basis',
     )
   }
+  if (
+    salesPlan.allowDiscardRetainedJuice !==
+    basis.plannerSettings.allowDiscardRetainedJuice
+  ) {
+    throw new Error(
+      'Sales plan retained-juice discard policy does not match the transaction basis',
+    )
+  }
+  if (
+    !salesPlan.allowDiscardRetainedJuice &&
+    salesPlan.discardedInitialJuice.length > 0
+  ) {
+    throw new Error(
+      'Sales plan cannot discard retained juice without explicit opt-in',
+    )
+  }
 
   if (
     preparationShortfall.waterUnitsAvailable !==
@@ -284,6 +313,24 @@ function validatePlanBasis(
   const inventoryJarById = new Map(
     basis.inventory.juiceJars.map((jar) => [jar.id, jar]),
   )
+  for (const discarded of salesPlan.discardedInitialJuice) {
+    const jar = inventoryJarById.get(discarded.physicalJarId)
+    if (!jar) {
+      throw new Error(
+        `Discarded juice references missing physical jar ${discarded.physicalJarId}`,
+      )
+    }
+    if (
+      jar.recipeId !== discarded.recipeId ||
+      discarded.servings < 1 ||
+      discarded.servings > jar.servings
+    ) {
+      throw new Error(
+        `Discarded juice does not match initial contents for physical jar ${discarded.physicalJarId}`,
+      )
+    }
+  }
+
   for (const carried of salesPlan.carriedJuiceJars) {
     const jar = inventoryJarById.get(carried.physicalJarId)
     if (!jar) {
@@ -439,6 +486,23 @@ function finalJarContents(
   const jarById = new Map(
     before.juiceJars.map((jar) => [jar.id, cloneJar(jar)]),
   )
+
+  for (const discarded of salesPlan.discardedInitialJuice) {
+    const jar = jarById.get(discarded.physicalJarId)
+    if (!jar) {
+      throw new Error(
+        `Discarded juice references missing physical jar ${discarded.physicalJarId}`,
+      )
+    }
+    const remainingServings = jar.servings - discarded.servings
+    jarById.set(discarded.physicalJarId, {
+      id: jar.id,
+      recipeId:
+        remainingServings > 0 ? jar.recipeId : null,
+      servings: Math.max(0, remainingServings),
+    })
+  }
+
   const usedJarIds = new Set(
     salesPlan.trips.flatMap((trip) =>
       trip.juiceJars.map((load) => load.physicalJarId),
@@ -622,6 +686,13 @@ export function buildPlanApplicationTransactionDraft(
     juiceJars: buildJarChanges(
       beforeInventory.juiceJars,
       afterJars,
+    ),
+    discardedJuice: salesPlan.discardedInitialJuice.map(
+      (item: MultiTripDiscardedInitialJuice) => ({
+        physicalJarId: item.physicalJarId,
+        recipeId: item.recipeId,
+        servings: item.servings,
+      }),
     ),
     newlySuppliedCustomerIds,
   }

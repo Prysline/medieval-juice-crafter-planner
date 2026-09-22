@@ -41,6 +41,7 @@ function transactionDraft(): PlanApplicationTransactionDraft {
         juiceJarCarryMode: 'fixed-slots',
         reservedJuiceJarSlots: 1,
         allowUsedCupDropIfFull: false,
+        allowDiscardRetainedJuice: false,
       },
     },
     after: {
@@ -70,6 +71,7 @@ function transactionDraft(): PlanApplicationTransactionDraft {
         juiceJarCarryMode: 'fixed-slots',
         reservedJuiceJarSlots: 1,
         allowUsedCupDropIfFull: false,
+        allowDiscardRetainedJuice: false,
       },
     },
     changes: {
@@ -112,6 +114,13 @@ function transactionDraft(): PlanApplicationTransactionDraft {
             recipeId: 'orange-juice',
             servings: 1,
           },
+        },
+      ],
+      discardedJuice: [
+        {
+          physicalJarId: 'jar-1',
+          recipeId: 'lemon-juice',
+          servings: 1,
         },
       ],
       newlySuppliedCustomerIds: ['jack'],
@@ -176,6 +185,8 @@ describe('plan application preview', () => {
     expect(html).toContain('檸檬汁')
     expect(html).toContain('橙汁')
     expect(html).toContain('換裝')
+    expect(html).toContain('將倒掉的既有果汁')
+    expect(html).toContain('倒掉 1 杯')
     expect(html).toContain('第 2 趟販售前')
     expect(html).toContain('傑克')
     expect(html).toContain('帽匠')

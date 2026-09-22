@@ -52,6 +52,7 @@ function basis(): PlanApplicationBasisState {
       juiceJarCarryMode: 'fixed-slots',
       reservedJuiceJarSlots: 1,
       allowUsedCupDropIfFull: false,
+      allowDiscardRetainedJuice: false,
     },
   }
 }
@@ -334,6 +335,8 @@ function salesPlan(): MultiTripReplenishmentPlan {
         tripNumber: 2,
       },
     ],
+    allowDiscardRetainedJuice: false,
+    discardedInitialJuice: [],
     productionJarFills: [
       {
         physicalJarId: 'jar-a',
@@ -580,6 +583,29 @@ describe('plan application transaction', () => {
       }),
     ).toThrow(
       'Sales plan initial contents do not match physical jar jar-a',
+    )
+  })
+
+  it('rejects retained-juice discard events when explicit opt-in is off', () => {
+    const plan = salesPlan()
+    plan.discardedInitialJuice = [
+      {
+        physicalJarId: 'jar-a',
+        recipeId: 'recipe-a',
+        servings: 1,
+      },
+    ]
+
+    expect(() =>
+      buildPlanApplicationTransactionDraft({
+        basis: basis(),
+        result: optimizationResult(),
+        preparationShortfall: shortfall(),
+        productionLogistics: productionLogistics(),
+        salesPlan: plan,
+      }),
+    ).toThrow(
+      'Sales plan cannot discard retained juice without explicit opt-in',
     )
   })
 
