@@ -91,6 +91,28 @@ function makeSavedRecipeId(): string {
   return `saved-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
+function EffectTagList({
+  effects,
+  emptyLabel = '目前沒有',
+}: {
+  effects: readonly { name: string; value: number }[]
+  emptyLabel?: string
+}) {
+  if (effects.length === 0) {
+    return <span className="muted">{emptyLabel}</span>
+  }
+
+  return (
+    <div className="tags">
+      {effects.map((effect) => (
+        <span className="tag" key={effect.name}>
+          {effect.name}（{effect.value}）
+        </span>
+      ))}
+    </div>
+  )
+}
+
 export function RecipeTools({
   currentProgress,
   satisfactionByVillage,
@@ -654,34 +676,33 @@ function EvaluationPanel({
         <strong>
           {candidate.source === 'observed'
             ? '成品特性（實測）'
-            : '成品特性（預測）'}
+            : candidate.effectAmbiguity
+              ? '確定成品特性（預測）'
+              : '成品特性（預測）'}
         </strong>
-        <div className="tags">
-          {candidate.effects.map((effect) => (
-            <span className="tag" key={effect.name}>
-              {effect.name}（{effect.value}）
-            </span>
-          ))}
-        </div>
+        <EffectTagList effects={candidate.effects} />
       </div>
 
       {candidate.effectAmbiguity && (
         <div className="ambiguity-box">
           <strong>
-            同分候選：剩 {candidate.effectAmbiguity.remainingSlots} 格
+            可能進入成品特性的同分候選：剩{' '}
+            {candidate.effectAmbiguity.remainingSlots} 格
           </strong>
-          <div className="tags">
-            {candidate.effectAmbiguity.candidates.map((effect) => (
-              <span className="tag" key={effect.name}>
-                {effect.name}（{effect.value}）
-              </span>
-            ))}
-          </div>
+          <EffectTagList effects={candidate.effectAmbiguity.candidates} />
           <small>
-            tie-break 尚未確認；此配方可以保存，但不宣稱 full match。
+            次級同分規則尚未確認；這些是可能特性，不可當成確定成品特性或 full match 依據。
           </small>
         </div>
       )}
+
+      <div className="evaluation-effects effect-total-box">
+        <strong>完整特性累計（截斷前）</strong>
+        <EffectTagList effects={evaluation.effectTotals} />
+        <small>
+          將完整原料順序的同名特性先累加；這裡保留所有總值，供配方研究與改良比較，不代表每項都會出現在最終成品欄位。
+        </small>
+      </div>
     </div>
   )
 }
@@ -780,6 +801,32 @@ function SavedRecipeRow({
                   )}
             </span>
           </div>
+          <div className="saved-recipe-effects">
+            <strong>
+              {evaluation.candidate.source === 'observed'
+                ? '成品特性（實測）'
+                : evaluation.candidate.effectAmbiguity
+                  ? '確定成品特性（預測）'
+                  : '成品特性（預測）'}
+            </strong>
+            <EffectTagList effects={evaluation.candidate.effects} />
+          </div>
+
+          {evaluation.candidate.effectAmbiguity && (
+            <div className="saved-recipe-effects saved-recipe-ambiguity">
+              <strong>
+                可能特性：剩{' '}
+                {evaluation.candidate.effectAmbiguity.remainingSlots} 格
+              </strong>
+              <EffectTagList
+                effects={evaluation.candidate.effectAmbiguity.candidates}
+              />
+              <small>
+                同分規則未確認；可能特性不視為確定成品特性。
+              </small>
+            </div>
+          )}
+
           <p className="saved-recipe-meta">
             {evaluation.candidate.effectAmbiguity
               ? '同分 cutoff 待確認；暫不參與 full-match recommendation / optimizer。'
