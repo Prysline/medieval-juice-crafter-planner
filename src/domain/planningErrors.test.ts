@@ -27,7 +27,7 @@ describe('planning error presentation', () => {
       new Error('Physical jar timeline drifted'),
     )
 
-    expect(result.title).toBe('規劃資料發生不一致')
+    expect(result.title).toBe('規劃處理發生問題')
     expect(result.message).not.toContain('Physical jar')
     expect(result.technicalDetails).toBe(
       'Physical jar timeline drifted',
