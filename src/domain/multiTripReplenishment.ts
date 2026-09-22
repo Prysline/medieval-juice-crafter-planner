@@ -7,6 +7,7 @@ import {
 import type { JuiceJarInventoryItem } from '../types'
 import type { PreparationDemand } from './preparationDemand'
 import type { PreparationShortfall } from './preparationShortfall'
+import { PlanningUserError } from './planningErrors'
 
 export type UsedCupTripPolicy =
   | 'retain-and-wash'
@@ -456,8 +457,10 @@ function buildJarQueuesWithSwitches(
     (queue) => !queue.lockedByRetainedInitialContents,
   )
   if (recipes.length > 0 && availableQueues.length === 0) {
-    throw new Error(
-      'No carried physical juice jar can accept another recipe without discarding retained juice',
+    throw new PlanningUserError(
+      'retained-juice-conflict',
+      {},
+      'No available physical juice jar can accept another recipe without discarding retained juice',
     )
   }
 
@@ -609,8 +612,10 @@ function buildPhysicalJarQueues(
     (queue) => !queue.lockedByRetainedInitialContents,
   ).length
   if (reusableQueueCount < 1) {
-    throw new Error(
-      'No carried physical juice jar can accept newly produced juice without discarding retained contents',
+    throw new PlanningUserError(
+      'retained-juice-conflict',
+      {},
+      'No available physical juice jar can accept newly produced juice without discarding retained contents',
     )
   }
 
@@ -662,7 +667,9 @@ function assignNewProductionLeftovers(
     }
 
     if (remaining > 0) {
-      throw new Error(
+      throw new PlanningUserError(
+        'leftover-storage',
+        { remainingServings: remaining },
         `Not enough terminal sales-jar capacity to preserve ${remaining} leftover serving(s) without switching away from retained juice`,
       )
     }
@@ -825,7 +832,9 @@ function buildTrips(
     ),
   )
   if (minimumCarriedSlots > BACKPACK_SLOT_CAPACITY) {
-    throw new Error(
+    throw new PlanningUserError(
+      'jar-storage-overflow',
+      {},
       'Owned physical juice jars exceed combined jar-rack and backpack capacity',
     )
   }
@@ -934,16 +943,22 @@ function buildTrips(
 
     if (trip.juiceJars.length === 0) {
       if (cupState.cleanCups + cupState.usedCups < 1) {
-        throw new Error(
+        throw new PlanningUserError(
+          'missing-physical-cup',
+          {},
           'Sales planning requires at least one physical cup',
         )
       }
       if (maxConcurrentJars < 1) {
-        throw new Error(
+        throw new PlanningUserError(
+          'missing-jar-slot',
+          {},
           'Sales planning requires at least one usable juice-jar slot',
         )
       }
-      throw new Error(
+      throw new PlanningUserError(
+        'trip-capacity',
+        { policy },
         `No remaining sales load can fit the ${policy} trip policy with the current cups and backpack slots`,
       )
     }
@@ -1300,7 +1315,9 @@ export function buildMultiTripReplenishmentPlan(
   const recipes = recipeJarDemands(demand, shortfall)
 
   if (salesRecipes.length > 0 && normalizedJarCount < 1) {
-    throw new Error(
+    throw new PlanningUserError(
+      'missing-physical-jar',
+      {},
       'Sales planning requires at least one physical juice jar',
     )
   }
@@ -1308,7 +1325,9 @@ export function buildMultiTripReplenishmentPlan(
     salesRecipes.length > 0 &&
     initialCupState.cleanCups + initialCupState.usedCups < 1
   ) {
-    throw new Error(
+    throw new PlanningUserError(
+      'missing-physical-cup',
+      {},
       'Sales planning requires at least one physical cup',
     )
   }

@@ -45,12 +45,19 @@ export function recipeMatchesCustomer(recipe: Recipe, customer: Customer): boole
   return recipeMatchLevel(recipe, customer) === 'full'
 }
 
+export function recipeCandidateMatchLevel(
+  candidate: RecipeCandidate,
+  customer: Customer,
+): MatchLevel {
+  return matchLevel(candidate, customer)
+}
+
 export function recipeCandidateMatchesCustomer(
   candidate: RecipeCandidate,
   customer: Customer,
 ): boolean {
   if (candidate.effectAmbiguity) return false
-  return matchLevel(candidate, customer) === 'full'
+  return recipeCandidateMatchLevel(candidate, customer) === 'full'
 }
 
 export function availableRecipes(

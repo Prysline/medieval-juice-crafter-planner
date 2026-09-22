@@ -1,5 +1,6 @@
 import { Model, sum } from '@bubblyworld/highs-ts'
 import { PROCESSING_STACK_CAPACITY } from './inventoryRules'
+import { PlanningUserError } from './planningErrors'
 import type {
   BatchOptimizerSolver,
   BatchSolverSolution,
@@ -379,7 +380,9 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
       const solution = await built.model.solve()
 
       if (solution.status !== 'optimal') {
-        throw new Error(
+        throw new PlanningUserError(
+          'optimizer-no-solution',
+          { solverStatus: solution.status },
           `HiGHS optimizer ended with status: ${solution.status}`,
         )
       }

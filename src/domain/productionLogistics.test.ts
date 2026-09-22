@@ -324,7 +324,7 @@ describe('production logistics', () => {
       outputJarReceiverSlots: 1,
     })
     expect(result.issues.join(' ')).toContain(
-      '需要放在果汁罐架，但目前沒有可用的果汁罐架 slot',
+      '需要放在果汁罐架，但目前沒有可用的果汁罐架格',
     )
     expect(
       result.actions.some((action) => action.kind === 'handoff-finished'),
@@ -346,7 +346,7 @@ describe('production logistics', () => {
 
     expect(result.feasible).toBe(false)
     expect(result.issues.join(' ')).toContain(
-      'finalizer receiver jar-1 不存在',
+      '成品接收罐 jar-1 不存在',
     )
     expect(result.waterFetchTrips).toBe(0)
     expect(

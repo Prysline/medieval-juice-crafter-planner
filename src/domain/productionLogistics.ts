@@ -374,7 +374,7 @@ export function buildProductionLogisticsPlan(
   for (const fill of receiverTimeline) {
     if (!inventoryJarIds.has(fill.physicalJarId)) {
       issues.push(
-        `finalizer receiver ${fill.physicalJarId} 不存在於目前 physical juice jar inventory。`,
+        `成品接收罐 ${fill.physicalJarId} 不存在於目前的實體果汁罐庫存。`,
       )
       continue
     }
@@ -383,7 +383,7 @@ export function buildProductionLogisticsPlan(
       capacitySummary.jarRackStagingCapacity < 1
     ) {
       issues.push(
-        `finalizer receiver ${fill.physicalJarId} 需要放在果汁罐架，但目前沒有可用的果汁罐架 slot。`,
+        `成品接收罐 ${fill.physicalJarId} 需要放在果汁罐架，但目前沒有可用的果汁罐架格。`,
       )
     }
     if (
@@ -392,7 +392,7 @@ export function buildProductionLogisticsPlan(
       fill.servings % 2 !== 0
     ) {
       issues.push(
-        `finalizer receiver ${fill.physicalJarId} 的成品裝罐量 ${fill.servings} 無法由果汁成品台單次 2～10 份偶數產量解釋。`,
+        `成品接收罐 ${fill.physicalJarId} 的裝罐量 ${fill.servings} 份不符合果汁成品台單次 2～10 份、偶數產量的規則。`,
       )
     }
   }
@@ -438,7 +438,7 @@ export function buildProductionLogisticsPlan(
       )
       if (receiverJuiceUnits !== step.quantity) {
         issues.push(
-          `finalizer receiver timeline 與 ${step.key} 製作量不一致：需要 ${step.quantity} juice units，但 receiver timeline 對應 ${receiverJuiceUnits}。`,
+          `成品接收罐時序與 ${step.key} 製作量不一致：需要 ${step.quantity} 個製作單位，但接收時序只對應 ${receiverJuiceUnits} 個。`,
         )
       }
 
@@ -456,7 +456,7 @@ export function buildProductionLogisticsPlan(
 
   if (usedReceiverFills.size !== receiverTimeline.length) {
     issues.push(
-      'finalizer receiver timeline 含有無法對應到目前 production recipe 的裝罐事件。',
+      '成品接收罐時序含有無法對應到目前製作配方的裝罐事件。',
     )
   }
 
@@ -593,7 +593,7 @@ export function buildProductionLogisticsPlan(
   while (pending.length > 0 && issues.length === 0) {
     guard += 1
     if (guard > 10000) {
-      issues.push('Production logistics scheduler exceeded its safety limit.')
+      issues.push('製作物流排程超過安全迭代上限，已停止規劃。')
       break
     }
 
@@ -779,8 +779,8 @@ export function buildProductionLogisticsPlan(
 
       issues.push(
         finalizerReadyWithoutReceiver
-          ? 'finalizer output 無法依販售排程指定的 physical juice jar 時序完成裝罐；請檢查接收罐內容、容量與可用時點。'
-          : '目前 backpack / shelf capacity 無法在不使用地面 storage 的前提下完成下一個 production operation。',
+          ? '果汁成品台輸出無法依販售排程指定的實體果汁罐時序完成裝罐；請檢查接收罐內容、容量與可用時點。'
+          : '目前背包／一般架容量不足，無法在不使用地面暫存的前提下完成下一個製作操作。',
       )
     }
   }

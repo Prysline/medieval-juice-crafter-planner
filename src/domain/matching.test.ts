@@ -8,6 +8,7 @@ import {
   matchingRecipesForCustomer,
   matchingRecipeCandidatesForCustomer,
   partialMatchingRecipesForCustomer,
+  recipeCandidateMatchLevel,
   recipeCandidateMatchesCustomer,
   recipeMatchLevel,
 } from './matching'
@@ -189,7 +190,18 @@ describe('customer recipe matching', () => {
 
     expect(lemonCinnamonMint?.source).toBe('computed')
     expect(lemonCinnamonMint?.effectAmbiguity).toBeDefined()
-    expect(recipeCandidateMatchesCustomer(lemonCinnamonMint!, syntheticCustomer)).toBe(false)
+    expect(
+      recipeCandidateMatchLevel(
+        lemonCinnamonMint!,
+        syntheticCustomer,
+      ),
+    ).toBe('partial')
+    expect(
+      recipeCandidateMatchesCustomer(
+        lemonCinnamonMint!,
+        syntheticCustomer,
+      ),
+    ).toBe(false)
   })
 
   it('sorts known-price observed matches before unknown-price computed matches', () => {
