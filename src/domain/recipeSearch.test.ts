@@ -8,6 +8,8 @@ import {
   buildRecipeCandidatePool,
   type RecipeCandidatePool,
 } from './recipeCandidatePool'
+import { customerRecipeRecommendationsFromSearch } from './customerRecommendation'
+import { matchingRecipeCandidatesForCustomer } from './matching'
 import {
   RECIPE_SEARCH_LAYER_CANDIDATE_LIMIT,
   RECIPE_SEARCH_TOTAL_CANDIDATE_LIMIT,
@@ -107,6 +109,100 @@ describe('progressive recipe search', () => {
     })
     expect(result.exploredLayers).toHaveLength(1)
     expect(result.usedRepeatedSeasoningFallback).toBe(false)
+  })
+
+  it('keeps deeper comparable full matches in bounded-exhaustive mode', () => {
+    const shallow = {
+      ...fixtureCandidate(
+        'shallow-expensive',
+        ['橙子', '肉桂'],
+        'observed',
+        [{ name: '甜味', value: 5 }],
+      ),
+      salePrice: 20,
+    }
+    const deeper = {
+      ...fixtureCandidate(
+        'deeper-cheaper',
+        ['檸檬', '糖'],
+        'observed',
+        [{ name: '甜味', value: 5 }],
+      ),
+      salePrice: 40,
+    }
+    const pool = syntheticPool([
+      { seasoningDepth: 0, candidate: shallow },
+      { seasoningDepth: 1, candidate: deeper },
+    ])
+    const target = customer([{ kind: 'effect', value: '甜味' }])
+
+    const firstFeasible = searchRecipeCandidatesForCustomer(
+      pool,
+      'seasoner-unlocked',
+      target,
+      {
+        candidatePolicy: 'observed-only',
+        mode: 'first-feasible',
+      },
+    )
+    const exhaustive = searchRecipeCandidatesForCustomer(
+      pool,
+      'seasoner-unlocked',
+      target,
+      {
+        candidatePolicy: 'observed-only',
+        mode: 'bounded-exhaustive',
+      },
+    )
+
+    expect(firstFeasible.candidates.map((candidate) => candidate.id)).toEqual([
+      shallow.id,
+    ])
+    expect(firstFeasible.stoppedAt?.seasoningDepth).toBe(0)
+    expect(exhaustive.candidates.map((candidate) => candidate.id)).toEqual([
+      shallow.id,
+      deeper.id,
+    ])
+    expect(exhaustive.guaranteedFullMatchFound).toBe(true)
+    expect(exhaustive.stoppedAt).toBeNull()
+    expect(exhaustive.exploredLayers).toHaveLength(2)
+
+    const matches = matchingRecipeCandidatesForCustomer(
+      [...exhaustive.candidates],
+      target,
+    )
+    expect(matches[0].id).toBe(deeper.id)
+
+    const recommendations = customerRecipeRecommendationsFromSearch(
+      exhaustive.candidates,
+      exhaustive.candidates,
+      target,
+    )
+    expect(
+      recommendations.observedOnly?.candidates.map(
+        (item) => item.candidate.id,
+      ),
+    ).toEqual([deeper.id])
+  })
+
+  it('does not turn repeated seasoning into normal bounded enumeration after a unique match', () => {
+    const pool = buildRecipeCandidatePool('seasoner-unlocked')
+    const result = searchRecipeCandidatesForCustomer(
+      pool,
+      'seasoner-unlocked',
+      customer([{ kind: 'effect', value: '酸味' }]),
+      {
+        candidatePolicy: 'allow-unambiguous-computed',
+        mode: 'bounded-exhaustive',
+      },
+    )
+
+    expect(result.guaranteedFullMatchFound).toBe(true)
+    expect(result.stoppedAt).toBeNull()
+    expect(result.usedRepeatedSeasoningFallback).toBe(false)
+    expect(
+      result.exploredLayers.every((layer) => layer.phase === 'unique'),
+    ).toBe(true)
   })
 
   it('expands through the third unique-seasoning layer when shallower layers are insufficient', () => {

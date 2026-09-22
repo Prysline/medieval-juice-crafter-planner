@@ -156,13 +156,19 @@ function App() {
             recipeCandidatePool,
             currentProgress,
             customer,
-            { candidatePolicy: 'observed-only' },
+            {
+              candidatePolicy: 'observed-only',
+              mode: 'bounded-exhaustive',
+            },
           ),
           allowComputed: searchRecipeCandidatesForCustomer(
             recipeCandidatePool,
             currentProgress,
             customer,
-            { candidatePolicy: 'allow-unambiguous-computed' },
+            {
+              candidatePolicy: 'allow-unambiguous-computed',
+              mode: 'bounded-exhaustive',
+            },
           ),
         },
       ]),

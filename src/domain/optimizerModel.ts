@@ -286,6 +286,7 @@ export function buildOptimizationModel(
           customer,
           {
             candidatePolicy: request.candidatePolicy,
+            mode: 'bounded-exhaustive',
             additionalCandidateEligibility: (candidate) => {
               if (!cachedEligibleEntry(candidate)) return false
               if (
