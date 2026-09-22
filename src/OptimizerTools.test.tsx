@@ -124,16 +124,18 @@ const fills: MultiTripProductionJarFill[] = [
 ]
 
 describe('plan application preview', () => {
-  it('renders before/after inventory, jar events, and newly supplied customers without an apply control', () => {
+  it('renders before/after state and the Phase 5C-4 apply control', () => {
     const html = renderToStaticMarkup(
       <PlanApplicationPreview
         draft={transactionDraft()}
         productionJarFills={fills}
+        onApply={() => {}}
       />,
     )
 
     expect(html).toContain('套用規劃預覽')
-    expect(html).toContain('只預覽，不會修改庫存')
+    expect(html).toContain('確認後才會寫入')
+    expect(html).toContain('確認套用這份規劃')
     expect(html).toContain('檸檬')
     expect(html).toContain('庫存水量')
     expect(html).toContain('乾淨杯')
@@ -145,6 +147,6 @@ describe('plan application preview', () => {
     expect(html).toContain('第 2 趟販售前')
     expect(html).toContain('傑克')
     expect(html).toContain('帽匠')
-    expect(html).not.toContain('確認套用</button>')
+    expect(html).toContain('任一項改變')
   })
 })
