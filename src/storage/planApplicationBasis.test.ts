@@ -84,9 +84,9 @@ function draftFromBasis(
     formalCustomerIds: [...source.formalCustomerIds],
     suppliedCustomerIds: [...source.suppliedCustomerIds],
     plannerSettings: {
-      carriedJuiceJarIds: [
-        ...source.plannerSettings.carriedJuiceJarIds,
-      ],
+      juiceJarCarryMode: source.plannerSettings.juiceJarCarryMode,
+      reservedJuiceJarSlots:
+        source.plannerSettings.reservedJuiceJarSlots,
       allowUsedCupDropIfFull:
         source.plannerSettings.allowUsedCupDropIfFull,
     },
@@ -199,7 +199,8 @@ describe('stored plan application basis', () => {
       formalCustomerIds: ['jack', 'nanette'],
       suppliedCustomerIds: ['ulrich', 'alia'],
       plannerSettings: {
-        carriedJuiceJarIds: ['jar-b'],
+        juiceJarCarryMode: 'fixed-slots',
+        reservedJuiceJarSlots: 1,
         allowUsedCupDropIfFull: true,
       },
     })
@@ -247,7 +248,7 @@ describe('stored plan application basis', () => {
     expect(storage.writes).toEqual([])
   })
 
-  it('normalizes canonical carried jar selection to effective inventory order', () => {
+  it('normalizes legacy carried jar IDs to a slot count without retaining identities', () => {
     const storage = new MemoryStorage({
       [INVENTORY_STORAGE_KEY]: inventoryValue(),
       [STORAGE_KEYS.progress]: 'opening',
@@ -263,10 +264,11 @@ describe('stored plan application basis', () => {
 
     const basis = readPlanApplicationBasisState(storage)
 
-    expect(basis.plannerSettings.carriedJuiceJarIds).toEqual([
-      'jar-b',
-      'jar-a',
-    ])
+    expect(basis.plannerSettings).toEqual({
+      juiceJarCarryMode: 'fixed-slots',
+      reservedJuiceJarSlots: 2,
+      allowUsedCupDropIfFull: false,
+    })
     expect(storage.writes).toEqual([])
   })
 })
