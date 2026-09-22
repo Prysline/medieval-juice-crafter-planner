@@ -3,15 +3,23 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import type { MultiTripProductionJarFill } from './domain/multiTripReplenishment'
 import type { PlanApplicationTransactionDraft } from './domain/planApplicationTransaction'
 import {
+  INVENTORY_RECIPE_SEARCH_RESULT_LIMIT,
+  JuiceJarRecipeCombobox,
   PlanApplicationPreview,
   PlanningErrorBlock,
   criterionLabel,
+  moveInventoryRecipeSearchIndex,
   optimizerCriterionOptions,
+  searchInventoryRecipeEntries,
 } from './OptimizerTools'
 import {
   PlanningUserError,
   presentPlanningError,
 } from './domain/planningErrors'
+import {
+  buildRecipeCandidatePool,
+  recipeCandidateEntriesForInventoryEditor,
+} from './domain/recipeCandidatePool'
 
 function transactionDraft(): PlanApplicationTransactionDraft {
   return {
@@ -144,6 +152,62 @@ const fills: MultiTripProductionJarFill[] = [
     receiver: 'carried-jar',
   },
 ]
+
+describe('juice jar recipe search UX', () => {
+  const pool = buildRecipeCandidatePool('juice-blender-unlocked')
+  const entries = recipeCandidateEntriesForInventoryEditor(pool)
+
+  it('searches observed, saved-safe scope and safe computed recipes while bounding rendered results', () => {
+    expect(entries.length).toBeGreaterThan(
+      INVENTORY_RECIPE_SEARCH_RESULT_LIMIT,
+    )
+
+    const initial = searchInventoryRecipeEntries(entries, '')
+    expect(initial).toHaveLength(INVENTORY_RECIPE_SEARCH_RESULT_LIMIT)
+
+    const computed = searchInventoryRecipeEntries(
+      entries,
+      'lemon pear',
+    )
+    expect(computed.length).toBeGreaterThan(0)
+    expect(
+      computed.some(
+        (entry) =>
+          entry.ingredientIds.join('>') === 'lemon>pear' &&
+          entry.sources.includes('computed') &&
+          !entry.sources.includes('ambiguous-computed'),
+      ),
+    ).toBe(true)
+
+    expect(
+      searchInventoryRecipeEntries(entries, 'definitely-no-such-recipe'),
+    ).toEqual([])
+  })
+
+  it('wraps keyboard navigation across the bounded result list', () => {
+    expect(moveInventoryRecipeSearchIndex(0, 'next', 3)).toBe(1)
+    expect(moveInventoryRecipeSearchIndex(2, 'next', 3)).toBe(0)
+    expect(moveInventoryRecipeSearchIndex(0, 'previous', 3)).toBe(2)
+    expect(moveInventoryRecipeSearchIndex(1, 'previous', 3)).toBe(0)
+    expect(moveInventoryRecipeSearchIndex(4, 'next', 0)).toBe(0)
+  })
+
+  it('keeps unknown legacy jar content readable and exposes an explicit clear action', () => {
+    const html = renderToStaticMarkup(
+      <JuiceJarRecipeCombobox
+        jarId="jar-legacy"
+        recipeId="legacy:unknown-recipe"
+        entries={entries}
+        onChange={() => {}}
+      />,
+    )
+
+    expect(html).toContain('role="combobox"')
+    expect(html).toContain('既有內容：legacy:unknown-recipe')
+    expect(html).toContain('清空')
+    expect(html).not.toContain('<option')
+  })
+})
 
 describe('optimizer criteria UI', () => {
   it('offers maximum ingredient cost as the same primary/secondary criterion source', () => {
