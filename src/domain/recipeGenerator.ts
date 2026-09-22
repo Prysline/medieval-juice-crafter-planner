@@ -430,16 +430,11 @@ export function generateBlendedRecipeCandidateLayers(
     ingredientCount <= maximumIngredientCount;
     ingredientCount += 1
   ) {
-    for (
-      let segmentCount = 2 as 2 | 3;
-      segmentCount <= MAX_BLEND_SEGMENT_COUNT;
-      segmentCount += 1
-    ) {
-      const typedSegmentCount = segmentCount as 2 | 3
-      const seasoningDepth = ingredientCount - typedSegmentCount
+    for (const segmentCount of [2, 3] as const) {
+      const seasoningDepth = ingredientCount - segmentCount
       const maximumSeasoningDepth =
         MAX_BLEND_TOTAL_SEASONING_DEPTH_BY_SEGMENT_COUNT[
-          typedSegmentCount
+          segmentCount
         ]
 
       if (
@@ -450,7 +445,7 @@ export function generateBlendedRecipeCandidateLayers(
       }
 
       specs.push({
-        segmentCount: typedSegmentCount,
+        segmentCount,
         seasoningDepth,
       })
     }
