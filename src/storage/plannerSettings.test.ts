@@ -60,6 +60,7 @@ describe('planner settings storage', () => {
       juiceJarCarryMode: 'fixed-slots',
       reservedJuiceJarSlots: 10,
       allowUsedCupDropIfFull: true,
+      allowDiscardRetainedJuice: false,
     })
 
     expect(
@@ -72,6 +73,36 @@ describe('planner settings storage', () => {
       juiceJarCarryMode: 'auto',
       reservedJuiceJarSlots: 7,
       allowUsedCupDropIfFull: false,
+      allowDiscardRetainedJuice: false,
+    })
+  })
+
+  it('migrates previous canonical settings with discard opt-in defaulted off', () => {
+    const storage = new MemoryStorage()
+    storage.setItem(
+      PLANNER_SETTINGS_STORAGE_KEY,
+      JSON.stringify({
+        juiceJarCarryMode: 'auto',
+        reservedJuiceJarSlots: 0,
+        allowUsedCupDropIfFull: false,
+      }),
+    )
+
+    expect(readPlannerSettings(storage)).toEqual({
+      juiceJarCarryMode: 'auto',
+      reservedJuiceJarSlots: 0,
+      allowUsedCupDropIfFull: false,
+      allowDiscardRetainedJuice: false,
+    })
+    expect(
+      JSON.parse(
+        storage.getItem(PLANNER_SETTINGS_STORAGE_KEY) ?? '{}',
+      ),
+    ).toEqual({
+      juiceJarCarryMode: 'auto',
+      reservedJuiceJarSlots: 0,
+      allowUsedCupDropIfFull: false,
+      allowDiscardRetainedJuice: false,
     })
   })
 
@@ -99,6 +130,7 @@ describe('planner settings storage', () => {
       juiceJarCarryMode: 'fixed-slots',
       reservedJuiceJarSlots: 2,
       allowUsedCupDropIfFull: true,
+      allowDiscardRetainedJuice: false,
     })
 
     expect(
@@ -109,6 +141,7 @@ describe('planner settings storage', () => {
       juiceJarCarryMode: 'fixed-slots',
       reservedJuiceJarSlots: 2,
       allowUsedCupDropIfFull: true,
+      allowDiscardRetainedJuice: false,
     })
   })
 
@@ -125,6 +158,7 @@ describe('planner settings storage', () => {
       juiceJarCarryMode: 'fixed-slots',
       reservedJuiceJarSlots: 3,
       allowUsedCupDropIfFull: false,
+      allowDiscardRetainedJuice: false,
     })
   })
 
@@ -134,12 +168,14 @@ describe('planner settings storage', () => {
       juiceJarCarryMode: 'fixed-slots',
       reservedJuiceJarSlots: 4,
       allowUsedCupDropIfFull: true,
+      allowDiscardRetainedJuice: false,
     })
 
     expect(readPlannerSettings(storage)).toEqual({
       juiceJarCarryMode: 'fixed-slots',
       reservedJuiceJarSlots: 4,
       allowUsedCupDropIfFull: true,
+      allowDiscardRetainedJuice: false,
     })
   })
 })
