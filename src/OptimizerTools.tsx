@@ -44,6 +44,11 @@ import {
   writePlannerSettings,
 } from './storage/plannerSettings'
 import { commitPlanApplicationTransaction } from './storage/planApplicationCommit'
+import {
+  PlanningUserError,
+  presentPlanningError,
+  type PlanningErrorPresentation,
+} from './domain/planningErrors'
 import type {
   InventoryState,
   PlannerSettings,
@@ -80,7 +85,7 @@ type OptimizerRunState =
       salesTripPlans: SalesTripPlans
       transactionDraft: PlanApplicationTransactionDraft | null
     }
-  | { status: 'error'; message: string }
+  | { status: 'error'; error: PlanningErrorPresentation }
 
 type PlanApplicationUiState =
   | { status: 'idle' }
@@ -89,7 +94,7 @@ type PlanApplicationUiState =
       status: 'stale'
       mismatches: readonly PlanApplicationBasisMismatchField[]
     }
-  | { status: 'error'; message: string }
+  | { status: 'error'; error: PlanningErrorPresentation }
 
 type OptionalCriterion = OptimizationCriterion | 'none'
 
@@ -397,7 +402,7 @@ export default function OptimizerTools({
     if (result.status === 'error') {
       setApplicationState({
         status: 'error',
-        message: result.message,
+        error: presentPlanningError(result.message),
       })
       return
     }
@@ -436,17 +441,13 @@ export default function OptimizerTools({
           : Math.max(0, Math.floor(Number(maxJarTypeSwitches)))
 
       if (capacitySummary.physicalJuiceJarCount < 1) {
-        throw new Error('請先設定至少 1 個實際持有的果汁罐。')
+        throw new PlanningUserError('missing-physical-jar')
       }
       if (capacitySummary.jarStorageCapacityExceeded) {
-        throw new Error(
-          '目前持有的果汁罐超過果汁罐架與背包合計可容納的數量。',
-        )
+        throw new PlanningUserError('jar-storage-overflow')
       }
       if (capacitySummary.maxJuiceJarSlotsPerTrip < 1) {
-        throw new Error(
-          '固定果汁罐格數至少需要 1 格，或改用每趟自動計算。',
-        )
+        throw new PlanningUserError('missing-jar-slot')
       }
 
       const result = await optimizeBatchPlan(
@@ -538,10 +539,7 @@ export default function OptimizerTools({
         alternateSalesTripPlan =
           buildCheckedSalesTripPlan(alternatePolicy)
       } catch (error) {
-        alternateError =
-          error instanceof Error
-            ? error.message
-            : '替代杯具策略目前無法產生可行排程。'
+        alternateError = presentPlanningError(error).message
       }
 
       const salesTripPlans: SalesTripPlans = {
@@ -578,10 +576,7 @@ export default function OptimizerTools({
     } catch (error) {
       setRunState({
         status: 'error',
-        message:
-          error instanceof Error
-            ? error.message
-            : '最佳化規劃器發生未知錯誤。',
+        error: presentPlanningError(error),
       })
     }
   }
@@ -1050,10 +1045,7 @@ export default function OptimizerTools({
       </div>
 
       {runState.status === 'error' && (
-        <div className="optimizer-error" role="alert">
-          <strong>最佳化規劃失敗</strong>
-          <span>{runState.message}</span>
-        </div>
+        <PlanningErrorBlock presentation={runState.error} />
       )}
 
       {applicationState.status === 'applied' && (
@@ -1079,10 +1071,7 @@ export default function OptimizerTools({
       )}
 
       {applicationState.status === 'error' && (
-        <div className="optimizer-error" role="alert">
-          <strong>套用規劃失敗，未完成提交</strong>
-          <span>{applicationState.message}</span>
-        </div>
+        <PlanningErrorBlock presentation={applicationState.error} />
       )}
 
       {runState.status === 'success' && (
@@ -1097,6 +1086,32 @@ export default function OptimizerTools({
         />
       )}
     </section>
+  )
+}
+
+function PlanningErrorBlock({
+  presentation,
+}: {
+  presentation: PlanningErrorPresentation
+}) {
+  return (
+    <div className="optimizer-error" role="alert">
+      <strong>{presentation.title}</strong>
+      <span>{presentation.message}</span>
+      {presentation.suggestions.length > 0 && (
+        <ul className="optimizer-error-suggestions">
+          {presentation.suggestions.map((suggestion) => (
+            <li key={suggestion}>{suggestion}</li>
+          ))}
+        </ul>
+      )}
+      {presentation.technicalDetails && (
+        <details className="optimizer-error-details">
+          <summary>技術資訊</summary>
+          <code>{presentation.technicalDetails}</code>
+        </details>
+      )}
+    </div>
   )
 }
 
