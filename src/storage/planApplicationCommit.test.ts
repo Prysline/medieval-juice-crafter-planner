@@ -266,6 +266,29 @@ describe('plan application commit', () => {
     expect(storage.writes).toEqual([])
   })
 
+  it('rejects applying the same transaction twice without a second write', () => {
+    const storage = legacyStorage()
+    const draft = draftFromBasis(basis())
+
+    const first = commitPlanApplicationTransaction(draft, storage)
+    expect(first.status).toBe('applied')
+    expect(storage.writes).toHaveLength(1)
+
+    const committedInventory = readInventoryState(storage)
+    const committedSupplied = readSuppliedCustomerIds(storage)
+    storage.writes = []
+
+    const second = commitPlanApplicationTransaction(draft, storage)
+
+    expect(second).toEqual({
+      status: 'stale',
+      mismatches: ['inventory', 'supplied-customers'],
+    })
+    expect(storage.writes).toEqual([])
+    expect(readInventoryState(storage)).toEqual(committedInventory)
+    expect(readSuppliedCustomerIds(storage)).toEqual(committedSupplied)
+  })
+
   it('routes later inventory and supplied edits through the adopted envelope', () => {
     const storage = legacyStorage()
     const draft = draftFromBasis(basis())
