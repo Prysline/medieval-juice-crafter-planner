@@ -51,12 +51,15 @@ export interface OptimizationRequest {
   /** Ordered lexicographic criteria. Defaults to [objective]. */
   priorities?: OptimizationCriterion[]
   constraints?: OptimizationConstraints
-  /** Legacy empty-jar summary used when initialCarriedJuiceJars is omitted. */
+  /** Legacy empty-jar summary used when no initial jar-state list is supplied. */
   availableJuiceJarCount?: number
   /**
-   * Minimal container summary used only by jar-switch criteria/constraints.
-   * This is not a packing or route model.
+   * Minimal state for every physical juice jar that the day planner may use.
+   * With a jar rack, these jars may be swapped between trips; this is not a
+   * packing or route model.
    */
+  initialAvailableJuiceJars?: OptimizationCarriedJuiceJarState[]
+  /** Legacy alias retained for saved/tests callers during migration. */
   initialCarriedJuiceJars?: OptimizationCarriedJuiceJarState[]
 }
 
@@ -110,11 +113,14 @@ export function normalizedOptimizationPriorities(
 export function normalizedInitialCarriedJuiceJars(
   request: OptimizationRequest,
 ): OptimizationCarriedJuiceJarState[] {
-  if (
-    request.initialCarriedJuiceJars &&
-    request.initialCarriedJuiceJars.length > 0
-  ) {
-    return request.initialCarriedJuiceJars.map((jar) => {
+  const suppliedJars =
+    request.initialAvailableJuiceJars &&
+    request.initialAvailableJuiceJars.length > 0
+      ? request.initialAvailableJuiceJars
+      : request.initialCarriedJuiceJars
+
+  if (suppliedJars && suppliedJars.length > 0) {
+    return suppliedJars.map((jar) => {
       const servings =
         typeof jar.servings === 'number' && Number.isFinite(jar.servings)
           ? Math.max(0, Math.floor(jar.servings))
