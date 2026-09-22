@@ -122,7 +122,7 @@ const recipeNameById = new Map(
   recipes.map((recipe) => [recipe.id, recipe.name]),
 )
 
-const secondaryCriterionOptions: Array<{
+export const optimizerCriterionOptions: Array<{
   value: OptimizationCriterion
   label: string
 }> = [
@@ -130,6 +130,7 @@ const secondaryCriterionOptions: Array<{
   { value: 'minimum-jar-switches', label: '最少果汁罐換裝' },
   { value: 'minimum-cost', label: '最低原料成本' },
   { value: 'minimum-waste', label: '最少剩餘杯' },
+  { value: 'maximum-ingredient-cost', label: '最高原料成本' },
   { value: 'maximum-known-revenue', label: '最高已知銷售總額' },
   { value: 'maximum-known-gross-profit', label: '最高已知毛利' },
 ]
@@ -147,9 +148,10 @@ function sequenceLabel(ingredientIds: string[]): string {
   return formatRecipeSequence(ingredientIds.map(ingredientLabel))
 }
 
-function criterionLabel(criterion: OptimizationCriterion): string {
+export function criterionLabel(criterion: OptimizationCriterion): string {
   if (criterion === 'minimum-cost') return '最低原料成本'
   if (criterion === 'minimum-waste') return '最少剩餘杯'
+  if (criterion === 'maximum-ingredient-cost') return '最高原料成本'
   if (criterion === 'maximum-known-revenue') return '最高已知銷售總額'
   if (criterion === 'maximum-known-gross-profit') return '最高已知毛利'
   if (criterion === 'minimum-machine-operations') return '最少機器操作'
@@ -653,7 +655,7 @@ function OptimizerTools({
                 )
               }
             >
-              {secondaryCriterionOptions.map((option) => (
+              {optimizerCriterionOptions.map((option) => (
                 <option value={option.value} key={option.value}>
                   {option.label}
                 </option>
@@ -1159,7 +1161,7 @@ function PrioritySelect({
         }
       >
         <option value="none">不指定</option>
-        {secondaryCriterionOptions.map((option) => (
+        {optimizerCriterionOptions.map((option) => (
           <option value={option.value} key={option.value}>
             {option.label}
           </option>
