@@ -586,6 +586,29 @@ describe('plan application transaction', () => {
     )
   })
 
+  it('rejects retained-juice discard events when explicit opt-in is off', () => {
+    const plan = salesPlan()
+    plan.discardedInitialJuice = [
+      {
+        physicalJarId: 'jar-a',
+        recipeId: 'recipe-a',
+        servings: 1,
+      },
+    ]
+
+    expect(() =>
+      buildPlanApplicationTransactionDraft({
+        basis: basis(),
+        result: optimizationResult(),
+        preparationShortfall: shortfall(),
+        productionLogistics: productionLogistics(),
+        salesPlan: plan,
+      }),
+    ).toThrow(
+      'Sales plan cannot discard retained juice without explicit opt-in',
+    )
+  })
+
   it('rejects an infeasible production logistics plan', () => {
     expect(() =>
       buildPlanApplicationTransactionDraft({
