@@ -116,6 +116,8 @@ function draftFromBasis(
           snapshot.plannerSettings.reservedJuiceJarSlots,
         allowUsedCupDropIfFull:
           snapshot.plannerSettings.allowUsedCupDropIfFull,
+        allowDiscardRetainedJuice:
+          snapshot.plannerSettings.allowDiscardRetainedJuice,
       },
     },
     changes: {
@@ -138,6 +140,7 @@ function draftFromBasis(
         droppedUsedCups: 0,
       },
       juiceJars: [],
+      discardedJuice: [],
       newlySuppliedCustomerIds: [],
     },
   }
@@ -161,6 +164,7 @@ function legacyStorage(): MemoryStorage {
     [PLANNER_SETTINGS_STORAGE_KEY]: JSON.stringify({
       carriedJuiceJarCount: 1,
       allowUsedCupDropIfFull: true,
+      allowDiscardRetainedJuice: false,
     }),
   })
 }
@@ -203,6 +207,7 @@ describe('stored plan application basis', () => {
         juiceJarCarryMode: 'fixed-slots',
         reservedJuiceJarSlots: 1,
         allowUsedCupDropIfFull: true,
+      allowDiscardRetainedJuice: false,
       },
     })
     expect(storage.writes).toEqual([])
@@ -260,6 +265,7 @@ describe('stored plan application basis', () => {
       [PLANNER_SETTINGS_STORAGE_KEY]: JSON.stringify({
         carriedJuiceJarIds: ['jar-a', 'ghost', 'jar-b'],
         allowUsedCupDropIfFull: false,
+      allowDiscardRetainedJuice: false,
       }),
     })
 
@@ -269,6 +275,7 @@ describe('stored plan application basis', () => {
       juiceJarCarryMode: 'fixed-slots',
       reservedJuiceJarSlots: 2,
       allowUsedCupDropIfFull: false,
+      allowDiscardRetainedJuice: false,
     })
     expect(storage.writes).toEqual([])
   })
