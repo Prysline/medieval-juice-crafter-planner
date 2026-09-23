@@ -139,6 +139,30 @@ describe('production checklist storage', () => {
     expect(JSON.stringify(currentPlan)).toBe(before)
   })
 
+  it('writes only the checklist storage key and leaves domain inputs untouched', () => {
+    const storage = memoryStorage({
+      'mjc-inventory': '{"sentinel":true}',
+      'mjc-plan-application-state': '{"sentinel":true}',
+    })
+    const currentPlan = plan()
+    const before = JSON.stringify(currentPlan)
+
+    writeProductionChecklist(storage, currentPlan, [
+      'juice:lemon#1',
+    ])
+
+    expect(storage.values.get('mjc-inventory')).toBe(
+      '{"sentinel":true}',
+    )
+    expect(
+      storage.values.get('mjc-plan-application-state'),
+    ).toBe('{"sentinel":true}')
+    expect(
+      storage.values.has(PRODUCTION_CHECKLIST_STORAGE_KEY),
+    ).toBe(true)
+    expect(JSON.stringify(currentPlan)).toBe(before)
+  })
+
   it('persists a reset as an empty checklist for the same plan', () => {
     const storage = memoryStorage()
     const currentPlan = plan()
