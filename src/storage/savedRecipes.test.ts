@@ -42,6 +42,31 @@ describe('saved recipe storage', () => {
     expect(raw).not.toContain('equipment')
   })
 
+  it('round-trips an explicitly confirmed personal result without deriving it again', () => {
+    const storage = new MemoryStorage()
+    const confirmed: SavedRecipe = {
+      ...saved,
+      id: 'confirmed',
+      confirmedResult: {
+        effects: [
+          { name: '甜味', value: 9 },
+          { name: '芳香', value: 4 },
+        ],
+        salePrice: null,
+        confirmedAt: '2026-09-24T00:00:00.000Z',
+      },
+    }
+
+    writeSavedRecipes(storage, [confirmed])
+
+    expect(readSavedRecipes(storage)).toEqual([confirmed])
+    expect(
+      JSON.parse(
+        storage.getItem(SAVED_RECIPES_STORAGE_KEY) ?? '[]',
+      )[0].confirmedResult,
+    ).toEqual(confirmed.confirmedResult)
+  })
+
   it('drops malformed rows but preserves schema-valid stale ingredient ids', () => {
     const storage = new MemoryStorage()
     storage.setItem(

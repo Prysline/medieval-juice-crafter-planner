@@ -1587,6 +1587,35 @@ footer {
   margin-top: 14px;
 }
 
+.save-recipe-form .trusted-recipe-confirmation {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid #d6c8b3;
+  border-radius: 9px;
+  background: #fffdf8;
+  padding: 8px 10px;
+}
+
+.save-recipe-form .trusted-recipe-confirmation > input {
+  width: 18px;
+  min-height: 18px;
+  margin: 0;
+  padding: 0;
+}
+
+.save-recipe-form .trusted-recipe-confirmation > span {
+  margin: 0;
+}
+
+.trusted-recipe-note {
+  grid-column: 1 / -1;
+  color: #8a6549;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
 .save-recipe-form button,
 .saved-recipe-actions button {
   min-height: 40px;

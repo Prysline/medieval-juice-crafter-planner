@@ -119,7 +119,7 @@ export interface StageDefinition {
 }
 
 
-export type RecipeCandidateSource = 'observed' | 'computed'
+export type RecipeCandidateSource = 'observed' | 'personal' | 'computed'
 
 export interface RecipeEffectAmbiguity {
   cutoffValue: number
@@ -151,12 +151,25 @@ export interface RecipeCandidate {
 }
 
 
+export interface SavedRecipeConfirmedResult {
+  /** 玩家已在遊戲內確認的最終成品特性 snapshot。 */
+  effects: EffectValue[]
+  /** 售價若未實測可維持 null；不從 computed 規則補值。 */
+  salePrice: number | null
+  confirmedAt: string
+}
+
 export interface SavedRecipe {
   id: string
   name: string
   ingredientIds: string[]
   note?: string
   createdAt: string
+  /**
+   * 只有存在 confirmedResult 的個人配方，才可作為 trusted optimizer evidence。
+   * 舊資料沒有此欄仍保留，但只視為未確認的個人筆記。
+   */
+  confirmedResult?: SavedRecipeConfirmedResult
 }
 
 export type RecipeSequenceIssueCode =

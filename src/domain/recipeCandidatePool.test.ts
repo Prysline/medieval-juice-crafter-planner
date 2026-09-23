@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Customer, SavedRecipe } from '../types'
+import type { Customer, EffectValue, SavedRecipe } from '../types'
 import { matchingRecipeCandidatesForCustomer } from './matching'
 import {
   buildOptimizationModel,
@@ -21,6 +21,21 @@ function saved(
     name: id,
     ingredientIds,
     createdAt: '2026-09-22T00:00:00.000Z',
+  }
+}
+
+function confirmedSaved(
+  id: string,
+  ingredientIds: string[],
+  effects: EffectValue[],
+): SavedRecipe {
+  return {
+    ...saved(id, ingredientIds),
+    confirmedResult: {
+      effects,
+      salePrice: null,
+      confirmedAt: '2026-09-24T00:00:00.000Z',
+    },
   }
 }
 
@@ -86,6 +101,121 @@ describe('shared recipe candidate pool', () => {
         (candidate) => candidate.id === savedOnly?.candidate.id,
       ),
     ).toBe(false)
+  })
+
+  it('promotes only confirmed saved-only recipes to trusted personal candidates', () => {
+    const pool = buildRecipeCandidatePool(
+      'seasoner-unlocked',
+      [
+        saved('unconfirmed', ['lemon', 'mint', 'mint']),
+        confirmedSaved(
+          'confirmed',
+          ['lemon', 'sugar', 'sugar'],
+          [
+            { name: '玩家確認特性', value: 9 },
+            { name: '甜味', value: 4 },
+          ],
+        ),
+      ],
+    )
+
+    const unconfirmed = pool.entries.find((entry) =>
+      entry.savedRecipeIds.includes('unconfirmed'),
+    )
+    const confirmed = pool.entries.find((entry) =>
+      entry.savedRecipeIds.includes('confirmed'),
+    )
+
+    expect(unconfirmed?.candidate.source).toBe('computed')
+    expect(unconfirmed?.sources).not.toContain('personal')
+    expect(confirmed?.candidate).toMatchObject({
+      source: 'personal',
+      name: 'confirmed',
+      salePrice: null,
+      effects: [
+        { name: '玩家確認特性', value: 9 },
+        { name: '甜味', value: 4 },
+      ],
+    })
+    expect(confirmed?.sources).toEqual(
+      expect.arrayContaining(['personal', 'saved']),
+    )
+
+    const customer: Customer = {
+      id: 'trusted-fixture',
+      name: '可信配方測試',
+      occupation: '測試',
+      villageId: 'east-harbor',
+      satisfactionRequired: 0,
+      preferences: [
+        { kind: 'effect', value: '玩家確認特性' },
+      ],
+    }
+
+    const trusted = searchRecipeCandidatesForCustomer(
+      pool,
+      'seasoner-unlocked',
+      customer,
+      {
+        candidatePolicy: 'trusted-only',
+        mode: 'bounded-exhaustive',
+      },
+    )
+
+    expect(trusted.candidates.some(
+      (candidate) => candidate.id === confirmed?.candidate.id,
+    )).toBe(true)
+    expect(trusted.candidates.some(
+      (candidate) => candidate.id === unconfirmed?.candidate.id,
+    )).toBe(false)
+
+    const request: OptimizationRequest = {
+      customerIds: [customer.id],
+      suppliedCustomerIds: [],
+      satisfactionByVillage: {
+        'east-harbor': 0,
+        'tranquil-fountain': 0,
+      },
+      formalCustomerIds: [],
+      currentProgress: 'seasoner-unlocked',
+      candidatePolicy: 'trusted-only',
+      objective: 'minimum-cost',
+    }
+    const model = buildOptimizationModel(request, {
+      customers: [customer],
+      candidatePool: pool,
+    })
+
+    expect(model.serviceableCustomerIds).toEqual([customer.id])
+    expect(model.recipes).toHaveLength(1)
+    expect(model.recipes[0]?.candidate.source).toBe('personal')
+  })
+
+  it('keeps formal observed evidence above a confirmed personal snapshot for the same sequence', () => {
+    const pool = buildRecipeCandidatePool(
+      'seasoner-unlocked',
+      [
+        confirmedSaved(
+          'personal-lemon-mint',
+          ['lemon', 'mint'],
+          [{ name: '錯誤覆蓋不應生效', value: 99 }],
+        ),
+      ],
+    )
+
+    const entry = pool.entries.find(
+      (candidate) =>
+        candidate.ingredientIds.join('>') === 'lemon>mint',
+    )
+
+    expect(entry?.candidate.source).toBe('observed')
+    expect(entry?.candidate.effects).not.toContainEqual({
+      name: '錯誤覆蓋不應生效',
+      value: 99,
+    })
+    expect(entry?.sources).toEqual(
+      expect.arrayContaining(['observed', 'saved']),
+    )
   })
 
   it('keeps future-progress saved recipes as metadata but out of the current search scope', () => {

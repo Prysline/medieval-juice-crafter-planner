@@ -15,6 +15,7 @@ import {
 
 export type ProgressiveRecipeSearchPolicy =
   | 'observed-only'
+  | 'trusted-only'
   | 'allow-unambiguous-computed'
 
 export type ProgressiveRecipeSearchMode =
@@ -61,6 +62,13 @@ function candidateEligibleForSearch(
   if (
     options.candidatePolicy === 'observed-only' &&
     candidate.source !== 'observed'
+  ) {
+    return false
+  }
+  if (
+    options.candidatePolicy === 'trusted-only' &&
+    candidate.source !== 'observed' &&
+    candidate.source !== 'personal'
   ) {
     return false
   }
@@ -135,7 +143,42 @@ export function searchRecipeCandidatesForCustomer(
   const entryById = new Map(
     pool.entries.map((entry) => [entry.id, entry]),
   )
-  const candidates: RecipeCandidate[] = []
+
+  if (options.candidatePolicy === 'trusted-only') {
+    const candidates = pool.entries
+      .filter(
+        (entry) =>
+          entry.availableAtCurrentProgress &&
+          (
+            entry.candidate.source === 'observed' ||
+            entry.candidate.source === 'personal'
+          ),
+      )
+      .map((entry) => entry.candidate)
+      .filter((candidate) =>
+        candidateEligibleForSearch(candidate, options),
+      )
+
+    return resultWithStop({
+      candidates,
+      exploredLayers: [],
+      stoppedAt: null,
+      usedRepeatedSeasoningFallback: false,
+      truncated: false,
+      guaranteedFullMatchFound: candidates.some((candidate) =>
+        recipeCandidateMatchesCustomer(candidate, customer),
+      ),
+    })
+  }
+
+  const candidates: RecipeCandidate[] = pool.entries
+    .filter(
+      (entry) =>
+        !entry.inGeneratedSearchScope &&
+        entry.availableAtCurrentProgress &&
+        candidateEligibleForSearch(entry.candidate, options),
+    )
+    .map((entry) => entry.candidate)
   const singleSegmentCandidates: RecipeCandidate[] = []
   const exploredLayers: ProgressiveRecipeSearchLayerResult[] = []
   const mode = options.mode ?? 'first-feasible'

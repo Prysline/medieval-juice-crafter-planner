@@ -93,6 +93,7 @@ function formatEffect(effect: EffectValue) {
 
 function recipePoolSourceLabel(source: RecipeCandidatePoolSource): string {
   if (source === 'observed') return '實測'
+  if (source === 'personal') return '個人已確認'
   if (source === 'saved') return '已保存'
   if (source === 'computed') return '安全推導'
   return '歧義推導'
