@@ -658,6 +658,41 @@ it(
       },
     )
     const compressedCostStage = compressedRelaxedHighs.stages[0]
+    const compressedRecipeById = new Map(
+      costStageCompressedRecipes.map((recipe) => [
+        recipe.candidate.id,
+        recipe,
+      ]),
+    )
+    const compressedIncumbentEdgeQuantity = new Map<string, number>()
+    let compressedIncumbentCost = 0
+    let compressedIncumbentProductionUnits = 0
+
+    for (
+      const selection of compressedCostStage?.selectedRecipeUnits ?? []
+    ) {
+      const recipe = compressedRecipeById.get(selection.recipeId)
+      if (!recipe) continue
+      const units = Math.round(selection.units)
+      compressedIncumbentProductionUnits += units
+      compressedIncumbentCost +=
+        units * recipe.juiceUnitIngredientCost
+
+      for (const edge of recipe.productionPath.edges) {
+        compressedIncumbentEdgeQuantity.set(
+          edge.key,
+          (compressedIncumbentEdgeQuantity.get(edge.key) ?? 0) + units,
+        )
+      }
+    }
+
+    const compressedIncumbentMachineOperations = [
+      ...compressedIncumbentEdgeQuantity.values(),
+    ].reduce(
+      (total, quantity) =>
+        total + Math.ceil(quantity / PROCESSING_STACK_CAPACITY),
+      0,
+    )
 
     const fixedMinimumCost =
       compressedCostStage?.status === 'optimal' &&
@@ -1079,6 +1114,14 @@ it(
       stage2ProjectedConstraintCountAfterLocalCompression:
         projectedStage2ConstraintCountAfterLocalCompression,
       stage2FixedMinimumCost: fixedMinimumCost,
+      stage1CompressedIncumbent: {
+        selectedRecipeCount:
+          compressedCostStage?.selectedRecipeUnits.length ?? 0,
+        productionUnits: compressedIncumbentProductionUnits,
+        cost: compressedIncumbentCost,
+        machineOperations:
+          compressedIncumbentMachineOperations,
+      },
       stage2DistinctRecipeCostCount:
         strictCostDistinctCosts.length,
       stage2RecipeCostRange: {
