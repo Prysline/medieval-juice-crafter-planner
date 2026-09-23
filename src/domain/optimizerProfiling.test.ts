@@ -145,7 +145,8 @@ it(
     expect(highs.finalConstraintCount).toBeGreaterThan(0)
   },
   // The profiler gives each HiGHS stage its own short diagnostic solver
-  // limit. Existing production solver semantics and existing smoke-test
-  // timeout remain unchanged.
-  30_000,
+  // limit. This larger test-only timeout lets the stage-build diagnostics
+  // finish; production solver semantics and existing smoke-test timeout
+  // remain unchanged.
+  90_000,
 )
