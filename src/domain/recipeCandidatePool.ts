@@ -14,6 +14,7 @@ import {
 
 export type RecipeCandidatePoolSource =
   | 'observed'
+  | 'personal'
   | 'saved'
   | 'computed'
   | 'ambiguous-computed'
@@ -55,6 +56,7 @@ const ingredientIdByName = new Map(
 
 const sourceOrder: readonly RecipeCandidatePoolSource[] = [
   'observed',
+  'personal',
   'saved',
   'computed',
   'ambiguous-computed',
@@ -82,9 +84,16 @@ function derivedSource(
   candidate: RecipeCandidate,
 ): RecipeCandidatePoolSource {
   if (candidate.source === 'observed') return 'observed'
+  if (candidate.source === 'personal') return 'personal'
   return candidate.effectAmbiguity
     ? 'ambiguous-computed'
     : 'computed'
+}
+
+function candidateAuthority(candidate: RecipeCandidate): number {
+  if (candidate.source === 'observed') return 3
+  if (candidate.source === 'personal') return 2
+  return 1
 }
 
 function mergeSources(
@@ -143,6 +152,11 @@ export function buildRecipeCandidatePool(
 
     entriesBySequence.set(key, {
       ...current,
+      candidate:
+        candidateAuthority(candidate) >
+        candidateAuthority(current.candidate)
+          ? candidate
+          : current.candidate,
       sources: mergeSources(current.sources, sources),
       savedRecipeIds: [
         ...new Set([...current.savedRecipeIds, ...savedRecipeIds]),
@@ -199,10 +213,26 @@ export function buildRecipeCandidatePool(
       continue
     }
 
+    const confirmedResult = savedRecipe.confirmedResult
+    const candidate =
+      confirmedResult &&
+      evaluation.candidate.source !== 'observed'
+        ? {
+            ...evaluation.candidate,
+            name: savedRecipe.name,
+            source: 'personal' as const,
+            salePrice: confirmedResult.salePrice,
+            effects: confirmedResult.effects.map((effect) => ({
+              ...effect,
+            })),
+            effectAmbiguity: undefined,
+          }
+        : evaluation.candidate
+
     mergeEntry({
       ingredientIds: [...evaluation.ingredientIds],
-      candidate: evaluation.candidate,
-      sources: ['saved', derivedSource(evaluation.candidate)],
+      candidate,
+      sources: ['saved', derivedSource(candidate)],
       savedRecipeIds: [savedRecipe.id],
       availableAtCurrentProgress:
         evaluation.availableAtCurrentProgress,
