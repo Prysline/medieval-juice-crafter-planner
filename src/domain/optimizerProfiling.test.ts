@@ -1847,12 +1847,8 @@ it(
       tightOperationBoundMachineFirstStage?.capturedMps
     const baselineWarmStartSolutionValues =
       fixedIncumbentMachineFirstStage?.capturedSolutionValues
-    const binaryEncodedWarmStartMps =
-      binaryEncodedMachineFirstStage?.capturedMps
     const decomposedBoundWarmStartMps =
       decomposedBoundMachineFirstStage?.capturedMps
-    const binaryEncodedWarmStartSolutionValues =
-      fixedBinaryEncodedMachineFirstStage?.capturedSolutionValues
 
     if (
       (
