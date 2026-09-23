@@ -47,6 +47,9 @@ export interface HighsStageProfile {
   fixCount: number
   variableCount: number
   constraintCount: number
+  assignmentVariablesRelaxed: boolean
+  fractionalAssignmentVariableCount: number
+  maxAssignmentIntegralityError: number
   buildMs: number
   buildPhases: HighsBuildPhaseProfile
   serializeMs: number
@@ -115,6 +118,9 @@ function buildHighsStage(
   domain: BatchOptimizationModel,
   objective: ObjectiveKey,
   fixes: ObjectiveFix[],
+  options: {
+    relaxAssignmentVariables?: boolean
+  } = {},
 ) {
   const model = new Model()
   const maxJuiceUnitsPerRecipe = Math.max(
@@ -198,7 +204,9 @@ function buildHighsStage(
     domain.recipes.forEach((recipe, recipeIndex) => {
       if (!recipe.eligibleCustomerIds.includes(customerId)) return
 
-      const y = model.boolVar(`y_${customerIndex}_${recipeIndex}`)
+      const y = options.relaxAssignmentVariables
+        ? model.numVar(0, 1, `y_${customerIndex}_${recipeIndex}`)
+        : model.boolVar(`y_${customerIndex}_${recipeIndex}`)
       yByCustomerRecipe.set(
         `${customerId}\u001f${recipe.candidate.id}`,
         y,
@@ -539,6 +547,7 @@ export async function profileHighsOptimization(
   priorities: OptimizationCriterion[],
   options: {
     stageTimeLimitSeconds?: number
+    relaxAssignmentVariables?: boolean
   } = {},
 ): Promise<HighsOptimizationProfile> {
   if (domain.serviceableCustomerIds.length === 0) {
@@ -566,7 +575,15 @@ export async function profileHighsOptimization(
 
   for (const objectiveKey of objectives) {
     const buildStartedAt = performance.now()
-    const built = buildHighsStage(domain, objectiveKey, fixes)
+    const built = buildHighsStage(
+      domain,
+      objectiveKey,
+      fixes,
+      {
+        relaxAssignmentVariables:
+          options.relaxAssignmentVariables ?? false,
+      },
+    )
     const buildMs = performance.now() - buildStartedAt
 
     const serializeStartedAt = performance.now()
@@ -581,6 +598,8 @@ export async function profileHighsOptimization(
     let solveMs = 0
     let status = 'unknown'
     let objectiveValue: number | null = null
+    let fractionalAssignmentVariableCount = 0
+    let maxAssignmentIntegralityError = 0
 
     try {
       const parseStartedAt = performance.now()
@@ -607,6 +626,23 @@ export async function profileHighsOptimization(
         Number.isFinite(solution.objective)
           ? solution.objective
           : null
+
+      if (
+        options.relaxAssignmentVariables &&
+        solution.solution
+      ) {
+        for (const [name, value] of solution.solution) {
+          if (!name.startsWith('y_')) continue
+          const integralityError = Math.abs(value - Math.round(value))
+          if (integralityError > 1e-7) {
+            fractionalAssignmentVariableCount += 1
+          }
+          maxAssignmentIntegralityError = Math.max(
+            maxAssignmentIntegralityError,
+            integralityError,
+          )
+        }
+      }
     } finally {
       highs.free()
     }
@@ -616,6 +652,10 @@ export async function profileHighsOptimization(
       fixCount: fixes.length,
       variableCount: built.variableCount,
       constraintCount: built.constraintCount,
+      assignmentVariablesRelaxed:
+        options.relaxAssignmentVariables ?? false,
+      fractionalAssignmentVariableCount,
+      maxAssignmentIntegralityError,
       buildMs,
       buildPhases: built.buildPhaseMs,
       serializeMs,
