@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { customers } from '../data/customers'
 import { generateRecipeCandidates } from './recipeGenerator'
 import {
+  bestFullMatchRecommendation,
   cheapestFullMatchRecommendation,
   customerRecipeRecommendations,
+  sortFullMatchCandidatesByIngredientCost,
 } from './customerRecommendation'
 import type { Customer, RecipeCandidate } from '../types'
 
@@ -49,6 +51,42 @@ describe('customer lowest-cost recommendations', () => {
     expect(recommendation?.candidates.map(({ candidate }) => candidate.id)).toEqual([
       'cheap',
     ])
+  })
+
+  it('can choose the highest ingredient cost full match', () => {
+    const recommendation = bestFullMatchRecommendation(
+      [
+        fixtureCandidate('expensive', ['橙子', '薄荷']),
+        fixtureCandidate('cheap', ['檸檬', '糖']),
+      ],
+      syntheticCustomer,
+      'observed-only',
+      'maximum',
+    )
+
+    expect(recommendation?.costMode).toBe('maximum')
+    expect(recommendation?.batchIngredientCost).toBe(23)
+    expect(
+      recommendation?.candidates.map(({ candidate }) => candidate.id),
+    ).toEqual(['expensive'])
+  })
+
+  it('sorts full matches by ingredient cost in the selected direction', () => {
+    const cheap = fixtureCandidate('cheap', ['檸檬', '糖'])
+    const expensive = fixtureCandidate('expensive', ['橙子', '薄荷'])
+
+    expect(
+      sortFullMatchCandidatesByIngredientCost(
+        [expensive, cheap],
+        'minimum',
+      ).map((candidate) => candidate.id),
+    ).toEqual(['cheap', 'expensive'])
+    expect(
+      sortFullMatchCandidatesByIngredientCost(
+        [cheap, expensive],
+        'maximum',
+      ).map((candidate) => candidate.id),
+    ).toEqual(['expensive', 'cheap'])
   })
 
   it('keeps every tied cheapest recipe instead of inventing a tie-break', () => {
