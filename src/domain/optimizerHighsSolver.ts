@@ -244,7 +244,7 @@ function buildHighsStage(
   if (assignmentGroups) {
     domain.serviceableCustomerIds.forEach(
       (customerId, customerIndex) => {
-        const assignmentVars = []
+        const assignmentVars: BoolVariable[] = []
 
         assignmentGroups.forEach((group, groupIndex) => {
           if (!group.eligibleCustomerIds.includes(customerId)) return
