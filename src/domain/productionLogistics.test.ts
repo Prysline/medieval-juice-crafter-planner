@@ -218,7 +218,7 @@ describe('production logistics', () => {
     ])
   })
 
-  it('acquires missing raw ingredients just in time through backpack capacity', () => {
+  it('acquires missing raw ingredients through backpack capacity', () => {
     const result = buildProductionLogisticsPlan(
       shortfall(['lemon', 'sugar'], 2),
       inventory(),
@@ -233,6 +233,104 @@ describe('production logistics', () => {
         .filter((action) => action.kind === 'acquire-ingredient')
         .map((action) => action.quantity),
     ).toEqual([2, 2])
+  })
+
+  it('preloads all primary inputs before the first machine operation when backpack capacity is sufficient', () => {
+    const result = buildProductionLogisticsPlan(
+      shortfall(['lemon', 'sugar'], 2),
+      inventory(),
+      settings(),
+      receiverTimeline(2),
+    )
+
+    expect(result.feasible).toBe(true)
+
+    const firstMachineLoadIndex = result.actions.findIndex(
+      (action) => action.kind === 'load-machine',
+    )
+    expect(firstMachineLoadIndex).toBeGreaterThan(0)
+
+    const preloadActions = result.actions.slice(0, firstMachineLoadIndex)
+    expect(
+      preloadActions
+        .filter((action) => action.kind === 'acquire-ingredient')
+        .map((action) => action.label),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('檸檬 ×2'),
+        expect.stringContaining('糖 ×2'),
+      ]),
+    )
+    expect(
+      preloadActions.some(
+        (action) =>
+          action.kind === 'fetch-water' &&
+          action.quantity === 2,
+      ),
+    ).toBe(true)
+  })
+
+  it('moves stocked shelf ingredients into the backpack explicitly before machine loading', () => {
+    const result = buildProductionLogisticsPlan(
+      shortfall(['lemon'], 1, {
+        waterUnitsAvailable: 1,
+        waterUnitsUsed: 1,
+        waterUnitsToFetch: 0,
+      }),
+      inventory({
+        ingredientUnits: { lemon: 1 },
+        waterUnits: 1,
+      }),
+      settings(),
+      receiverTimeline(1),
+    )
+
+    expect(result.feasible).toBe(true)
+
+    const move = result.actions.find(
+      (action) => action.kind === 'move-shelf-to-backpack',
+    )
+    const firstLoad = result.actions.find(
+      (action) => action.kind === 'load-machine',
+    )
+
+    expect(move).toBeDefined()
+    expect(move?.label).toContain('檸檬 ×1')
+    expect(move?.label).toContain('一般架 → 背包')
+    expect(move!.index).toBeLessThan(firstLoad!.index)
+  })
+
+  it('unloads machine intermediate output into the backpack instead of silently assigning it to the shelf', () => {
+    const result = buildProductionLogisticsPlan(
+      shortfall(['lemon'], 1, {
+        waterUnitsAvailable: 1,
+        waterUnitsUsed: 1,
+        waterUnitsToFetch: 0,
+      }),
+      inventory({
+        ingredientUnits: { lemon: 1 },
+        waterUnits: 1,
+      }),
+      settings(),
+      receiverTimeline(1),
+    )
+
+    expect(result.feasible).toBe(true)
+
+    const unload = result.actions.find(
+      (action) => action.kind === 'unload-intermediate',
+    )
+    expect(unload).toBeDefined()
+    expect(unload?.label).toContain('→ 背包')
+    expect(unload?.snapshot).toMatchObject({
+      shelfSlotsUsed: 0,
+      backpackSlotsUsed: 2,
+    })
+
+    const hiddenShelfStore = result.actions
+      .slice(0, unload!.index)
+      .some((action) => action.kind === 'move-backpack-to-shelf')
+    expect(hiddenShelfStore).toBe(false)
   })
 
   it('keeps Blender inputs and machine slots physical', () => {

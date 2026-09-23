@@ -501,6 +501,8 @@ function productionLogisticsActionKindLabel(
 ): string {
   if (kind === 'acquire-ingredient') return '取得原料'
   if (kind === 'fetch-water') return '取水'
+  if (kind === 'move-shelf-to-backpack') return '架上取物'
+  if (kind === 'move-backpack-to-shelf') return '放回一般架'
   if (kind === 'load-machine') return '放入機器'
   if (kind === 'run-machine') return '機器加工'
   if (kind === 'unload-intermediate') return '取出中間產物'

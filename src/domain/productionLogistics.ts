@@ -38,6 +38,8 @@ export interface ProductionStorageSnapshot {
 export type ProductionLogisticsActionKind =
   | 'acquire-ingredient'
   | 'fetch-water'
+  | 'move-shelf-to-backpack'
+  | 'move-backpack-to-shelf'
   | 'load-machine'
   | 'run-machine'
   | 'unload-intermediate'
@@ -74,6 +76,13 @@ interface PendingOperation {
   step: ProductionStep
   quantity: number
   receiverFill?: MultiTripProductionJarFill
+}
+
+interface PrimaryInputRequirement {
+  key: string
+  kind: 'raw' | 'water'
+  quantity: number
+  stackCapacity: number
 }
 
 const ingredientById = new Map(
@@ -132,6 +141,16 @@ function cloneMaterials(
   )
 }
 
+function replaceMaterials(
+  target: Map<string, MaterialState>,
+  source: Map<string, MaterialState>,
+) {
+  target.clear()
+  for (const [key, material] of source) {
+    target.set(key, { ...material })
+  }
+}
+
 function materialSlots(materials: Map<string, MaterialState>): number {
   return [...materials.values()].reduce(
     (sum, material) =>
@@ -180,28 +199,33 @@ function materialQuantity(
   return materials.get(key)?.quantity ?? 0
 }
 
+function locatedMaterialQuantity(
+  shelfMaterials: Map<string, MaterialState>,
+  backpackMaterials: Map<string, MaterialState>,
+  key: string,
+): number {
+  return (
+    materialQuantity(shelfMaterials, key) +
+    materialQuantity(backpackMaterials, key)
+  )
+}
+
 function storageSnapshot(
-  materials: Map<string, MaterialState>,
+  shelfMaterials: Map<string, MaterialState>,
+  backpackMaterials: Map<string, MaterialState>,
   inventory: InventoryState,
   settings: PlannerSettings,
   machineSlotsUsed = 0,
   machineSlotsAvailable = 0,
 ): ProductionStorageSnapshot {
   const capacity = buildInventoryCapacitySummary(inventory, settings)
-  const totalSlots = materialSlots(materials)
-  const shelfSlotsUsed = Math.min(
-    totalSlots,
-    capacity.shelfSlotCapacity,
-  )
-  const backpackSlotsUsed = Math.max(0, totalSlots - shelfSlotsUsed)
   const carriedOutputJarSlots = Math.min(
     capacity.physicalJuiceJarCount,
     capacity.effectiveReservedJuiceJarSlots,
   )
   const nonCarriedPhysicalJars = Math.max(
     0,
-    capacity.physicalJuiceJarCount -
-      carriedOutputJarSlots,
+    capacity.physicalJuiceJarCount - carriedOutputJarSlots,
   )
   const rackOutputJarSlots = Math.min(
     nonCarriedPhysicalJars,
@@ -209,9 +233,9 @@ function storageSnapshot(
   )
 
   return {
-    shelfSlotsUsed,
+    shelfSlotsUsed: materialSlots(shelfMaterials),
     shelfSlotsAvailable: capacity.shelfSlotCapacity,
-    backpackSlotsUsed,
+    backpackSlotsUsed: materialSlots(backpackMaterials),
     backpackSlotsAvailable:
       capacity.backpackSlotsRemainingAfterCarriedJars,
     carriedJarSlots: capacity.carriedJarSlotCost,
@@ -236,6 +260,28 @@ function backpackFreeSlots(snapshot: ProductionStorageSnapshot): number {
     0,
     snapshot.backpackSlotsAvailable - snapshot.backpackSlotsUsed,
   )
+}
+
+function availableAdditionalQuantity(
+  currentQuantity: number,
+  stackCapacity: number,
+  freeSlots: number,
+): number {
+  const partialRoom =
+    currentQuantity > 0 && currentQuantity % stackCapacity !== 0
+      ? stackCapacity - (currentQuantity % stackCapacity)
+      : 0
+  return partialRoom + freeSlots * stackCapacity
+}
+
+function quantityToFreeOneStack(
+  quantity: number,
+  stackCapacity: number,
+): number {
+  const stacks = stackCount(quantity, stackCapacity)
+  if (stacks <= 0) return 0
+  const quantityAfter = Math.max(0, (stacks - 1) * stackCapacity)
+  return quantity - quantityAfter
 }
 
 function intermediateRequirements(
@@ -266,10 +312,16 @@ function intermediateRequirements(
 
 function canRunWithCurrentIntermediateStock(
   operation: PendingOperation,
-  materials: Map<string, MaterialState>,
+  shelfMaterials: Map<string, MaterialState>,
+  backpackMaterials: Map<string, MaterialState>,
 ): boolean {
   return [...intermediateRequirements(operation).entries()].every(
-    ([key, quantity]) => materialQuantity(materials, key) >= quantity,
+    ([key, quantity]) =>
+      locatedMaterialQuantity(
+        shelfMaterials,
+        backpackMaterials,
+        key,
+      ) >= quantity,
   )
 }
 
@@ -310,6 +362,63 @@ function actionLabel(
   return `${sequenceLabel(step.fromIngredientIds)} + 水 ×${quantity} → 成品 ×${quantity * 2}`
 }
 
+function materialLabel(key: string): string {
+  if (key === 'water') return '水'
+  if (key.startsWith('raw:')) {
+    const ingredientId = key.slice('raw:'.length)
+    return ingredientById.get(ingredientId)?.name ?? ingredientId
+  }
+  if (key.startsWith('juice:')) {
+    const ids = key
+      .slice('juice:'.length)
+      .split('>')
+      .filter(Boolean)
+    return sequenceLabel(ids)
+  }
+  return key
+}
+
+function primaryInputRequirements(
+  operations: PendingOperation[],
+): PrimaryInputRequirement[] {
+  const requirementByKey = new Map<
+    string,
+    PrimaryInputRequirement
+  >()
+
+  for (const operation of operations) {
+    const { step, quantity } = operation
+    let requirement: PrimaryInputRequirement | null = null
+
+    if (step.kind === 'juicing' || step.kind === 'seasoning') {
+      const ingredientId = step.addedIngredientId
+      if (!ingredientId) continue
+      requirement = {
+        key: rawKey(ingredientId),
+        kind: 'raw',
+        quantity,
+        stackCapacity: PROCESSING_STACK_CAPACITY,
+      }
+    } else if (step.kind === 'finalizing') {
+      requirement = {
+        key: 'water',
+        kind: 'water',
+        quantity,
+        stackCapacity: WATER_STACK_CAPACITY,
+      }
+    }
+
+    if (!requirement) continue
+    const current = requirementByKey.get(requirement.key)
+    requirementByKey.set(requirement.key, {
+      ...requirement,
+      quantity: (current?.quantity ?? 0) + requirement.quantity,
+    })
+  }
+
+  return [...requirementByKey.values()]
+}
+
 export function buildNetProductionPlan(
   shortfall: PreparationShortfall,
 ): ProductionPlan {
@@ -333,21 +442,56 @@ export function buildProductionLogisticsPlan(
   receiverTimeline: MultiTripProductionJarFill[],
 ): ProductionLogisticsPlan {
   const productionPlan = buildNetProductionPlan(shortfall)
-  const materials = new Map<string, MaterialState>()
+  const capacitySummary = buildInventoryCapacitySummary(
+    inventory,
+    settings,
+  )
+  const shelfMaterials = new Map<string, MaterialState>()
+  const backpackMaterials = new Map<string, MaterialState>()
+
+  function placeInitialMaterial(
+    key: string,
+    kind: MaterialKind,
+    quantity: number,
+    stackCapacity: number,
+  ) {
+    if (quantity <= 0) return
+
+    const freeShelfSlots = Math.max(
+      0,
+      capacitySummary.shelfSlotCapacity - materialSlots(shelfMaterials),
+    )
+    const shelfQuantity = Math.min(
+      quantity,
+      freeShelfSlots * stackCapacity,
+    )
+    addMaterial(
+      shelfMaterials,
+      key,
+      kind,
+      shelfQuantity,
+      stackCapacity,
+    )
+    addMaterial(
+      backpackMaterials,
+      key,
+      kind,
+      quantity - shelfQuantity,
+      stackCapacity,
+    )
+  }
 
   for (const [ingredientId, quantity] of Object.entries(
     inventory.ingredientUnits,
   )) {
-    addMaterial(
-      materials,
+    placeInitialMaterial(
       rawKey(ingredientId),
       'raw',
       quantity,
       PROCESSING_STACK_CAPACITY,
     )
   }
-  addMaterial(
-    materials,
+  placeInitialMaterial(
     'water',
     'water',
     inventory.waterUnits,
@@ -355,7 +499,8 @@ export function buildProductionLogisticsPlan(
   )
 
   const initialSnapshot = storageSnapshot(
-    materials,
+    shelfMaterials,
+    backpackMaterials,
     inventory,
     settings,
   )
@@ -364,10 +509,7 @@ export function buildProductionLogisticsPlan(
   let ingredientAcquisitionActions = 0
   let waterFetchTrips = 0
   let externalWaterRemaining = shortfall.waterUnitsToFetch
-  const capacitySummary = buildInventoryCapacitySummary(
-    inventory,
-    settings,
-  )
+
   const inventoryJarIds = new Set(
     inventory.juiceJars.map((jar) => jar.id),
   )
@@ -488,105 +630,385 @@ export function buildProductionLogisticsPlan(
     })
   }
 
-  function canAcquireOneStack(): boolean {
-    return backpackFreeSlots(
-      storageSnapshot(materials, inventory, settings),
-    ) >= 1
-  }
-
-  function ensureRaw(
-    ingredientId: string,
-    quantity: number,
+  function currentSnapshot(
     machineSlotsUsed = 0,
     machineSlotsAvailable = 0,
-  ): boolean {
-    const key = rawKey(ingredientId)
-    const available = materialQuantity(materials, key)
-    if (available >= quantity) return true
-
-    const missing = quantity - available
-    if (!canAcquireOneStack()) return false
-
-    addMaterial(
-      materials,
-      key,
-      'raw',
-      missing,
-      PROCESSING_STACK_CAPACITY,
-    )
-    const snapshot = storageSnapshot(
-      materials,
+  ): ProductionStorageSnapshot {
+    return storageSnapshot(
+      shelfMaterials,
+      backpackMaterials,
       inventory,
       settings,
       machineSlotsUsed,
       machineSlotsAvailable,
     )
-    if (!storageFits(snapshot)) {
-      removeMaterial(materials, key, missing)
+  }
+
+  function canAddToShelf(
+    key: string,
+    material: MaterialState,
+    quantity: number,
+  ): boolean {
+    const clone = cloneMaterials(shelfMaterials)
+    addMaterial(
+      clone,
+      key,
+      material.kind,
+      quantity,
+      material.stackCapacity,
+    )
+    return (
+      materialSlots(clone) <= capacitySummary.shelfSlotCapacity
+    )
+  }
+
+  function moveShelfToBackpack(
+    key: string,
+    quantity: number,
+    machineSlotsUsed = 0,
+    machineSlotsAvailable = 0,
+  ): boolean {
+    const source = shelfMaterials.get(key)
+    if (!source || source.quantity < quantity || quantity <= 0) {
       return false
     }
 
+    const current = materialQuantity(backpackMaterials, key)
+    const extraCapacity = availableAdditionalQuantity(
+      current,
+      source.stackCapacity,
+      backpackFreeSlots(currentSnapshot()),
+    )
+    if (quantity > extraCapacity) return false
+
+    removeMaterial(shelfMaterials, key, quantity)
+    addMaterial(
+      backpackMaterials,
+      key,
+      source.kind,
+      quantity,
+      source.stackCapacity,
+    )
+    pushAction(
+      'move-shelf-to-backpack',
+      `${materialLabel(key)} ×${quantity}：一般架 → 背包`,
+      quantity,
+      currentSnapshot(machineSlotsUsed, machineSlotsAvailable),
+    )
+    return true
+  }
+
+  function moveBackpackToShelf(
+    key: string,
+    quantity: number,
+    machineSlotsUsed = 0,
+    machineSlotsAvailable = 0,
+  ): boolean {
+    const source = backpackMaterials.get(key)
+    if (!source || source.quantity < quantity || quantity <= 0) {
+      return false
+    }
+    if (!canAddToShelf(key, source, quantity)) return false
+
+    removeMaterial(backpackMaterials, key, quantity)
+    addMaterial(
+      shelfMaterials,
+      key,
+      source.kind,
+      quantity,
+      source.stackCapacity,
+    )
+    pushAction(
+      'move-backpack-to-shelf',
+      `${materialLabel(key)} ×${quantity}：背包 → 一般架`,
+      quantity,
+      currentSnapshot(machineSlotsUsed, machineSlotsAvailable),
+    )
+    return true
+  }
+
+  function freeBackpackSlots(
+    slotsNeeded: number,
+    protectedKeys: Set<string>,
+    machineSlotsUsed = 0,
+    machineSlotsAvailable = 0,
+  ): boolean {
+    let remaining = slotsNeeded
+
+    while (remaining > 0) {
+      const candidate = [...backpackMaterials.entries()]
+        .filter(([key]) => !protectedKeys.has(key))
+        .sort(([leftKey, left], [rightKey, right]) => {
+          const kindWeight: Record<MaterialKind, number> = {
+            raw: 0,
+            water: 1,
+            intermediate: 2,
+          }
+          return (
+            kindWeight[left.kind] - kindWeight[right.kind] ||
+            right.quantity - left.quantity ||
+            leftKey.localeCompare(rightKey)
+          )
+        })
+        .find(([key, material]) => {
+          const moveQuantity = quantityToFreeOneStack(
+            material.quantity,
+            material.stackCapacity,
+          )
+          return canAddToShelf(key, material, moveQuantity)
+        })
+
+      if (!candidate) return false
+      const [key, material] = candidate
+      const moveQuantity = quantityToFreeOneStack(
+        material.quantity,
+        material.stackCapacity,
+      )
+      if (
+        !moveBackpackToShelf(
+          key,
+          moveQuantity,
+          machineSlotsUsed,
+          machineSlotsAvailable,
+        )
+      ) {
+        return false
+      }
+      remaining -= 1
+    }
+
+    return true
+  }
+
+  function ensureBackpackCapacityForAddition(
+    key: string,
+    amount: number,
+    stackCapacity: number,
+    protectedKeys: Set<string>,
+    machineSlotsUsed = 0,
+    machineSlotsAvailable = 0,
+  ): boolean {
+    if (amount <= 0) return true
+    const current = materialQuantity(backpackMaterials, key)
+    const beforeSlots = stackCount(current, stackCapacity)
+    const afterSlots = stackCount(current + amount, stackCapacity)
+    const extraSlots = Math.max(0, afterSlots - beforeSlots)
+    const freeSlots = backpackFreeSlots(currentSnapshot())
+    if (extraSlots <= freeSlots) return true
+
+    return freeBackpackSlots(
+      extraSlots - freeSlots,
+      new Set([...protectedKeys, key]),
+      machineSlotsUsed,
+      machineSlotsAvailable,
+    )
+  }
+
+  function acquireExternalRaw(
+    key: string,
+    quantity: number,
+    machineSlotsUsed = 0,
+    machineSlotsAvailable = 0,
+  ): boolean {
+    if (quantity <= 0) return true
+    if (
+      !ensureBackpackCapacityForAddition(
+        key,
+        quantity,
+        PROCESSING_STACK_CAPACITY,
+        new Set([key]),
+        machineSlotsUsed,
+        machineSlotsAvailable,
+      )
+    ) {
+      return false
+    }
+
+    addMaterial(
+      backpackMaterials,
+      key,
+      'raw',
+      quantity,
+      PROCESSING_STACK_CAPACITY,
+    )
     ingredientAcquisitionActions += 1
     pushAction(
       'acquire-ingredient',
-      `取得 ${ingredientById.get(ingredientId)?.name ?? ingredientId} ×${missing}`,
-      missing,
-      snapshot,
+      `取得 ${materialLabel(key)} ×${quantity} → 背包`,
+      quantity,
+      currentSnapshot(machineSlotsUsed, machineSlotsAvailable),
     )
     return true
   }
 
-  function ensureWater(
+  function fetchExternalWater(
     quantity: number,
     machineSlotsUsed = 0,
     machineSlotsAvailable = 0,
   ): boolean {
-    const available = materialQuantity(materials, 'water')
-    if (available >= quantity) return true
-
-    const missing = quantity - available
-    const currentSnapshot = storageSnapshot(
-      materials,
-      inventory,
-      settings,
-    )
-    const freeSlots = backpackFreeSlots(currentSnapshot)
-    if (freeSlots < 1) return false
-
-    const fetchUnits = Math.min(
-      externalWaterRemaining,
-      freeSlots * WATER_STACK_CAPACITY,
-    )
-    if (fetchUnits < missing) return false
-
-    addMaterial(
-      materials,
-      'water',
-      'water',
-      fetchUnits,
-      WATER_STACK_CAPACITY,
-    )
-    const snapshot = storageSnapshot(
-      materials,
-      inventory,
-      settings,
-      machineSlotsUsed,
-      machineSlotsAvailable,
-    )
-    if (!storageFits(snapshot)) {
-      removeMaterial(materials, 'water', fetchUnits)
+    if (quantity <= 0) return true
+    if (externalWaterRemaining < quantity) return false
+    if (
+      !ensureBackpackCapacityForAddition(
+        'water',
+        quantity,
+        WATER_STACK_CAPACITY,
+        new Set(['water']),
+        machineSlotsUsed,
+        machineSlotsAvailable,
+      )
+    ) {
       return false
     }
 
-    externalWaterRemaining -= fetchUnits
+    addMaterial(
+      backpackMaterials,
+      'water',
+      'water',
+      quantity,
+      WATER_STACK_CAPACITY,
+    )
+    externalWaterRemaining -= quantity
     waterFetchTrips += 1
     pushAction(
       'fetch-water',
-      `取水 ×${fetchUnits}`,
-      fetchUnits,
-      snapshot,
+      `取水 ×${quantity} → 背包`,
+      quantity,
+      currentSnapshot(machineSlotsUsed, machineSlotsAvailable),
     )
     return true
+  }
+
+  function ensureBackpackQuantity(
+    key: string,
+    quantity: number,
+    kind: MaterialKind,
+    stackCapacity: number,
+    protectedKeys: Set<string>,
+    allowExternal: boolean,
+    machineSlotsUsed = 0,
+    machineSlotsAvailable = 0,
+  ): boolean {
+    if (materialQuantity(backpackMaterials, key) >= quantity) {
+      return true
+    }
+
+    let missing =
+      quantity - materialQuantity(backpackMaterials, key)
+    const onShelf = materialQuantity(shelfMaterials, key)
+    const fromShelf = Math.min(onShelf, missing)
+
+    if (fromShelf > 0) {
+      if (
+        !ensureBackpackCapacityForAddition(
+          key,
+          fromShelf,
+          stackCapacity,
+          protectedKeys,
+          machineSlotsUsed,
+          machineSlotsAvailable,
+        )
+      ) {
+        return false
+      }
+      if (
+        !moveShelfToBackpack(
+          key,
+          fromShelf,
+          machineSlotsUsed,
+          machineSlotsAvailable,
+        )
+      ) {
+        return false
+      }
+      missing =
+        quantity - materialQuantity(backpackMaterials, key)
+    }
+
+    if (missing <= 0) return true
+    if (!allowExternal) return false
+
+    if (kind === 'water') {
+      return fetchExternalWater(
+        missing,
+        machineSlotsUsed,
+        machineSlotsAvailable,
+      )
+    }
+    if (kind === 'raw') {
+      return acquireExternalRaw(
+        key,
+        missing,
+        machineSlotsUsed,
+        machineSlotsAvailable,
+      )
+    }
+    return false
+  }
+
+  function tryPreloadPrimaryRequirement(
+    requirement: PrimaryInputRequirement,
+  ) {
+    const current = materialQuantity(
+      backpackMaterials,
+      requirement.key,
+    )
+    if (current >= requirement.quantity) return
+
+    let remaining = requirement.quantity - current
+    const snapshot = currentSnapshot()
+    const addCapacity = availableAdditionalQuantity(
+      current,
+      requirement.stackCapacity,
+      backpackFreeSlots(snapshot),
+    )
+    if (addCapacity <= 0) return
+
+    let allowance = Math.min(remaining, addCapacity)
+    const shelfQuantity = materialQuantity(
+      shelfMaterials,
+      requirement.key,
+    )
+    const fromShelf = Math.min(shelfQuantity, allowance)
+
+    if (fromShelf > 0) {
+      if (!moveShelfToBackpack(requirement.key, fromShelf)) {
+        return
+      }
+      allowance -= fromShelf
+      remaining -= fromShelf
+    }
+
+    if (allowance <= 0 || remaining <= 0) return
+    const externalQuantity = Math.min(allowance, remaining)
+
+    if (requirement.kind === 'water') {
+      const fetchQuantity = Math.min(
+        externalQuantity,
+        externalWaterRemaining,
+      )
+      if (fetchQuantity > 0) {
+        fetchExternalWater(fetchQuantity)
+      }
+      return
+    }
+
+    acquireExternalRaw(requirement.key, externalQuantity)
+  }
+
+  function preloadPrimaryInputs(operations: PendingOperation[]) {
+    for (const requirement of primaryInputRequirements(operations)) {
+      tryPreloadPrimaryRequirement(requirement)
+    }
+  }
+
+  // Opportunistically preload every remaining primary input that currently
+  // fits. When the backpack can hold the full production round this puts all
+  // raw ingredients and water in the backpack before the first machine run.
+  // If it cannot, later operation attempts replenish only after machine inputs
+  // have been loaded and their backpack slots have been freed.
+  if (issues.length === 0) {
+    preloadPrimaryInputs(pending)
   }
 
   let guard = 0
@@ -610,12 +1032,17 @@ export function buildProductionLogisticsPlan(
 
       if (
         step.kind !== 'juicing' &&
-        !canRunWithCurrentIntermediateStock(operation, materials)
+        !canRunWithCurrentIntermediateStock(
+          operation,
+          shelfMaterials,
+          backpackMaterials,
+        )
       ) {
         continue
       }
 
-      const materialsBefore = cloneMaterials(materials)
+      const shelfBefore = cloneMaterials(shelfMaterials)
+      const backpackBefore = cloneMaterials(backpackMaterials)
       const actionsLengthBefore = actions.length
       const ingredientAcquisitionActionsBefore =
         ingredientAcquisitionActions
@@ -623,10 +1050,8 @@ export function buildProductionLogisticsPlan(
       const externalWaterRemainingBefore = externalWaterRemaining
 
       const rollbackOperationAttempt = () => {
-        materials.clear()
-        for (const [key, value] of materialsBefore) {
-          materials.set(key, value)
-        }
+        replaceMaterials(shelfMaterials, shelfBefore)
+        replaceMaterials(backpackMaterials, backpackBefore)
         actions.splice(actionsLengthBefore)
         ingredientAcquisitionActions =
           ingredientAcquisitionActionsBefore
@@ -636,28 +1061,77 @@ export function buildProductionLogisticsPlan(
 
       const machineSlotsAvailable = equipmentSlotCapacity(step.kind)
       let preloadedMachineSlots = 0
+      const protectedKeys = new Set<string>()
 
       if (step.kind === 'juicing') {
         const ingredientId = step.addedIngredientId
-        if (!ingredientId || !ensureRaw(ingredientId, quantity)) {
+        if (!ingredientId) {
           rollbackOperationAttempt()
           continue
         }
-        removeMaterial(materials, rawKey(ingredientId), quantity)
+        const key = rawKey(ingredientId)
+        protectedKeys.add(key)
+        if (
+          !ensureBackpackQuantity(
+            key,
+            quantity,
+            'raw',
+            PROCESSING_STACK_CAPACITY,
+            protectedKeys,
+            true,
+          )
+        ) {
+          rollbackOperationAttempt()
+          continue
+        }
+        removeMaterial(backpackMaterials, key, quantity)
       } else {
         const requirements = intermediateRequirements(operation)
+        for (const key of requirements.keys()) {
+          protectedKeys.add(key)
+        }
+
+        let inputsReady = true
         for (const [key, required] of requirements) {
-          removeMaterial(materials, key, required)
+          if (
+            !ensureBackpackQuantity(
+              key,
+              required,
+              'intermediate',
+              PROCESSING_STACK_CAPACITY,
+              protectedKeys,
+              false,
+              preloadedMachineSlots,
+              machineSlotsAvailable,
+            )
+          ) {
+            inputsReady = false
+            break
+          }
+          removeMaterial(backpackMaterials, key, required)
           preloadedMachineSlots += 1
+        }
+        if (!inputsReady) {
+          rollbackOperationAttempt()
+          continue
         }
 
         if (step.kind === 'seasoning') {
           const ingredientId = step.addedIngredientId
+          if (!ingredientId) {
+            rollbackOperationAttempt()
+            continue
+          }
+          const key = rawKey(ingredientId)
+          protectedKeys.add(key)
           if (
-            !ingredientId ||
-            !ensureRaw(
-              ingredientId,
+            !ensureBackpackQuantity(
+              key,
               quantity,
+              'raw',
+              PROCESSING_STACK_CAPACITY,
+              protectedKeys,
+              true,
               preloadedMachineSlots,
               machineSlotsAvailable,
             )
@@ -665,11 +1139,17 @@ export function buildProductionLogisticsPlan(
             rollbackOperationAttempt()
             continue
           }
-          removeMaterial(materials, rawKey(ingredientId), quantity)
+          removeMaterial(backpackMaterials, key, quantity)
         } else if (step.kind === 'finalizing') {
+          protectedKeys.add('water')
           if (
-            !ensureWater(
+            !ensureBackpackQuantity(
+              'water',
               quantity,
+              'water',
+              WATER_STACK_CAPACITY,
+              protectedKeys,
+              true,
               preloadedMachineSlots,
               machineSlotsAvailable,
             )
@@ -677,14 +1157,11 @@ export function buildProductionLogisticsPlan(
             rollbackOperationAttempt()
             continue
           }
-          removeMaterial(materials, 'water', quantity)
+          removeMaterial(backpackMaterials, 'water', quantity)
         }
       }
 
-      const loadedSnapshot = storageSnapshot(
-        materials,
-        inventory,
-        settings,
+      const loadedSnapshot = currentSnapshot(
         operationInputCount(step.kind),
         machineSlotsAvailable,
       )
@@ -696,10 +1173,7 @@ export function buildProductionLogisticsPlan(
         step.equipment,
       )
 
-      const outputSnapshot = storageSnapshot(
-        materials,
-        inventory,
-        settings,
+      const outputSnapshot = currentSnapshot(
         1,
         machineSlotsAvailable,
       )
@@ -712,15 +1186,11 @@ export function buildProductionLogisticsPlan(
       )
 
       if (step.kind === 'finalizing') {
-        const snapshot = storageSnapshot(materials, inventory, settings)
         const receiverFill = operation.receiverFill
         if (!receiverFill) {
           rollbackOperationAttempt()
           continue
         }
-
-        const outputJarReceiver = receiverFill.receiver
-
         if (receiverFill.servings !== quantity * 2) {
           rollbackOperationAttempt()
           continue
@@ -730,29 +1200,39 @@ export function buildProductionLogisticsPlan(
           'handoff-finished',
           `第 ${receiverFill.beforeTripNumber} 趟前：成品 ×${receiverFill.servings} → ${receiverFill.physicalJarId}（${receiverFill.recipeName}）`,
           receiverFill.servings,
-          snapshot,
+          currentSnapshot(),
           step.equipment,
-          outputJarReceiver,
+          receiverFill.receiver,
           receiverFill,
         )
       } else {
+        const outputKey = intermediateKey(step.toIngredientIds)
+        if (
+          !ensureBackpackCapacityForAddition(
+            outputKey,
+            quantity,
+            PROCESSING_STACK_CAPACITY,
+            new Set([outputKey]),
+            1,
+            machineSlotsAvailable,
+          )
+        ) {
+          rollbackOperationAttempt()
+          continue
+        }
+
         addMaterial(
-          materials,
-          intermediateKey(step.toIngredientIds),
+          backpackMaterials,
+          outputKey,
           'intermediate',
           quantity,
           PROCESSING_STACK_CAPACITY,
         )
-        const snapshot = storageSnapshot(materials, inventory, settings)
-        if (!storageFits(snapshot)) {
-          rollbackOperationAttempt()
-          continue
-        }
         pushAction(
           'unload-intermediate',
-          `${sequenceLabel(step.toIngredientIds)} ×${quantity} → 一般暫存`,
+          `${sequenceLabel(step.toIngredientIds)} ×${quantity}：機器 → 背包`,
           quantity,
-          snapshot,
+          currentSnapshot(),
           step.equipment,
         )
       }
@@ -762,19 +1242,22 @@ export function buildProductionLogisticsPlan(
       )
       pending.splice(pendingIndex, 1)
       executed = true
+
+      // Fill newly freed backpack capacity with as much of the remaining
+      // production round as possible before choosing the next machine step.
+      preloadPrimaryInputs(pending)
       break
     }
 
     if (!executed) {
-      const receiverSnapshot = storageSnapshot(
-        materials,
-        inventory,
-        settings,
-      )
       const finalizerReadyWithoutReceiver = pending.some(
         (operation) =>
           operation.step.kind === 'finalizing' &&
-          canRunWithCurrentIntermediateStock(operation, materials),
+          canRunWithCurrentIntermediateStock(
+            operation,
+            shelfMaterials,
+            backpackMaterials,
+          ),
       )
 
       issues.push(
@@ -785,11 +1268,7 @@ export function buildProductionLogisticsPlan(
     }
   }
 
-  const finalSnapshot = storageSnapshot(
-    materials,
-    inventory,
-    settings,
-  )
+  const finalSnapshot = currentSnapshot()
 
   return {
     feasible: issues.length === 0,
