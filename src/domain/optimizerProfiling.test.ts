@@ -544,6 +544,76 @@ it(
         new Set(['juicing', 'seasoning', 'blending']),
       )
 
+    const singletonEdgeCountsByRecipe: number[] = []
+    const singletonMultiplicityPatterns = new Map<string, number>()
+    let recipesWithSingletonEdges = 0
+    let recipesWithAllSingletonMultiplicityOne = 0
+    let singletonEdgesWithMultiplicityGreaterThanOne = 0
+    let localOperationVariableCountByDistinctMultiplicity = 0
+
+    for (const recipe of strictCostPrunedRecipes) {
+      const singletonMultiplicityByEdgeKey = new Map<string, number>()
+
+      for (const edge of recipe.productionPath.edges) {
+        const usage = stage2EdgeUsage.get(edge.key)
+        if ((usage?.recipeIds.size ?? 0) !== 1) continue
+
+        singletonMultiplicityByEdgeKey.set(
+          edge.key,
+          (singletonMultiplicityByEdgeKey.get(edge.key) ?? 0) + 1,
+        )
+      }
+
+      const multiplicities = [
+        ...singletonMultiplicityByEdgeKey.values(),
+      ].sort((a, b) => a - b)
+
+      singletonEdgeCountsByRecipe.push(multiplicities.length)
+      if (multiplicities.length > 0) {
+        recipesWithSingletonEdges += 1
+
+        const distinctMultiplicities = new Set(multiplicities)
+        localOperationVariableCountByDistinctMultiplicity +=
+          distinctMultiplicities.size
+
+        if (multiplicities.every((value) => value === 1)) {
+          recipesWithAllSingletonMultiplicityOne += 1
+        }
+
+        singletonEdgesWithMultiplicityGreaterThanOne +=
+          multiplicities.filter((value) => value > 1).length
+
+        const pattern = multiplicities.join(',')
+        singletonMultiplicityPatterns.set(
+          pattern,
+          (singletonMultiplicityPatterns.get(pattern) ?? 0) + 1,
+        )
+      }
+    }
+
+    singletonEdgeCountsByRecipe.sort((a, b) => b - a)
+    const singletonMultiplicityPatternCounts = [
+      ...singletonMultiplicityPatterns.entries(),
+    ]
+      .map(([pattern, count]) => ({ pattern, count }))
+      .sort((left, right) => right.count - left.count)
+
+    const operationVariableCountAfterLocalMultiplicityCompression =
+      stage2SharedEdgeCount +
+      localOperationVariableCountByDistinctMultiplicity
+    const operationVariableReductionFromLocalCompression =
+      stage2EdgeUsage.size -
+      operationVariableCountAfterLocalMultiplicityCompression
+    const projectedStage2VariableCountAfterLocalCompression =
+      strictCostPrunedRecipes.length +
+      strictCostPrunedAssignmentEligibility +
+      operationVariableCountAfterLocalMultiplicityCompression
+    const projectedStage2ConstraintCountAfterLocalCompression =
+      strictCostPrunedRecipes.length +
+      model.serviceableCustomerIds.length +
+      operationVariableCountAfterLocalMultiplicityCompression * 2 +
+      1
+
     const solverImportStartedAt = performance.now()
     const { profileHighsOptimization } = await import(
       './optimizerHighsSolver'
@@ -678,6 +748,25 @@ it(
       stage2SharedJuicingGrouping,
       stage2SharedJuicingSeasoningGrouping,
       stage2SharedJuicingSeasoningBlendingGrouping,
+      stage2SingletonEdgeCountsByRecipe:
+        singletonEdgeCountsByRecipe.slice(0, 20),
+      stage2RecipesWithSingletonEdges: recipesWithSingletonEdges,
+      stage2RecipesWithAllSingletonMultiplicityOne:
+        recipesWithAllSingletonMultiplicityOne,
+      stage2SingletonEdgesWithMultiplicityGreaterThanOne:
+        singletonEdgesWithMultiplicityGreaterThanOne,
+      stage2SingletonMultiplicityPatterns:
+        singletonMultiplicityPatternCounts.slice(0, 20),
+      stage2LocalOperationVariableCountByDistinctMultiplicity:
+        localOperationVariableCountByDistinctMultiplicity,
+      stage2OperationVariableCountAfterLocalMultiplicityCompression:
+        operationVariableCountAfterLocalMultiplicityCompression,
+      stage2OperationVariableReductionFromLocalCompression:
+        operationVariableReductionFromLocalCompression,
+      stage2ProjectedVariableCountAfterLocalCompression:
+        projectedStage2VariableCountAfterLocalCompression,
+      stage2ProjectedConstraintCountAfterLocalCompression:
+        projectedStage2ConstraintCountAfterLocalCompression,
       finalHighsVariables: binaryHighs.finalVariableCount,
       finalHighsConstraints: binaryHighs.finalConstraintCount,
       candidateGenerationMs,
