@@ -679,6 +679,28 @@ it(
             },
           )
         : null
+    const localCompressedMachineHighs =
+      compressedCostStage?.status === 'optimal' &&
+      compressedCostStage.objectiveValue !== null
+        ? await profileHighsOptimization(
+            strictCostPrunedModel,
+            ['minimum-machine-operations'],
+            {
+              stageTimeLimitSeconds: 10.5,
+              relaxAssignmentVariables: true,
+              aggregateLocalSingletonOperations: true,
+              maxStages: 1,
+              initialCriterionFixes: [
+                {
+                  criterion: 'minimum-cost',
+                  value: Math.round(
+                    compressedCostStage.objectiveValue,
+                  ),
+                },
+              ],
+            },
+          )
+        : null
     const binaryFirstStage = binaryHighs.stages[0]
     const relaxedFirstStage = relaxedHighs.stages[0]
     const prunedRelaxedFirstStage = prunedRelaxedHighs.stages[0]
@@ -686,6 +708,8 @@ it(
       compressedRelaxedHighs.stages[0]
     const expandedMachineFirstStage =
       expandedMachineHighs?.stages[0]
+    const localCompressedMachineFirstStage =
+      localCompressedMachineHighs?.stages[0]
 
     const report = {
       progress: request.currentProgress,
@@ -856,6 +880,31 @@ it(
             totalMs: expandedMachineHighs?.totalMs ?? 0,
           }
         : null,
+      localCompressedMachineStage:
+        localCompressedMachineFirstStage
+          ? {
+              solveMs: localCompressedMachineFirstStage.solveMs,
+              status: localCompressedMachineFirstStage.status,
+              objectiveValue:
+                localCompressedMachineFirstStage.objectiveValue,
+              fixCount:
+                localCompressedMachineFirstStage.fixCount,
+              variableCount:
+                localCompressedMachineFirstStage.variableCount,
+              constraintCount:
+                localCompressedMachineFirstStage.constraintCount,
+              fractionalAssignmentVariableCount:
+                localCompressedMachineFirstStage.fractionalAssignmentVariableCount,
+              maxAssignmentIntegralityError:
+                localCompressedMachineFirstStage.maxAssignmentIntegralityError,
+              integralAssignmentReconstructionFeasible:
+                localCompressedMachineFirstStage.integralAssignmentReconstructionFeasible,
+              reconstructedAssignmentCount:
+                localCompressedMachineFirstStage.reconstructedAssignmentCount,
+              totalMs:
+                localCompressedMachineHighs?.totalMs ?? 0,
+            }
+          : null,
       binaryStages: binaryHighs.stages,
       relaxedStages: relaxedHighs.stages,
     }
@@ -918,6 +967,37 @@ it(
         ).toBe(true)
         expect(expandedMachineFirstStage.reconstructedAssignmentCount).toBe(
           model.serviceableCustomerIds.length,
+        )
+      }
+    }
+    if (localCompressedMachineFirstStage) {
+      expect(localCompressedMachineFirstStage.objective).toBe(
+        'machineOperations',
+      )
+      expect(localCompressedMachineFirstStage.fixCount).toBe(1)
+      expect(localCompressedMachineFirstStage.variableCount).toBe(
+        projectedStage2VariableCountAfterLocalCompression,
+      )
+      expect(localCompressedMachineFirstStage.constraintCount).toBe(
+        projectedStage2ConstraintCountAfterLocalCompression,
+      )
+      if (localCompressedMachineFirstStage.objectiveValue !== null) {
+        expect(
+          localCompressedMachineFirstStage.integralAssignmentReconstructionFeasible,
+        ).toBe(true)
+        expect(
+          localCompressedMachineFirstStage.reconstructedAssignmentCount,
+        ).toBe(model.serviceableCustomerIds.length)
+      }
+      if (
+        expandedMachineFirstStage?.status === 'optimal' &&
+        localCompressedMachineFirstStage.status === 'optimal'
+      ) {
+        expect(
+          localCompressedMachineFirstStage.objectiveValue,
+        ).toBeCloseTo(
+          expandedMachineFirstStage.objectiveValue ?? 0,
+          9,
         )
       }
     }
