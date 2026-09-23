@@ -266,6 +266,7 @@ function buildHighsStage(
     excludeSingletonMachineOperationKinds?: Set<string>
     machineOperationsUpperBound?: number
     machineOperationsLowerBound?: number
+    productionUnitsLowerBound?: number
     machineOperationPartitionLowerBounds?: Partial<
       Record<MachineOperationPartition, number>
     >
@@ -802,7 +803,13 @@ function buildHighsStage(
         }),
       )
     : undefined
-  const productionUnitsExpression = needsAnyObjective('productionUnits')
+  const needsProductionUnitsExpression =
+    needsAnyObjective('productionUnits') ||
+    (
+      typeof options.productionUnitsLowerBound === 'number' &&
+      Number.isFinite(options.productionUnitsLowerBound)
+    )
+  const productionUnitsExpression = needsProductionUnitsExpression
     ? sum(
         ...domain.recipes.flatMap((recipe) => {
           const x = xByRecipeId.get(recipe.candidate.id)
@@ -810,6 +817,18 @@ function buildHighsStage(
         }),
       )
     : undefined
+  if (
+    productionUnitsExpression &&
+    typeof options.productionUnitsLowerBound === 'number' &&
+    Number.isFinite(options.productionUnitsLowerBound)
+  ) {
+    model.addConstraint(
+      productionUnitsExpression.geq(
+        Math.max(0, Math.ceil(options.productionUnitsLowerBound)),
+      ),
+      'production_units_lower_bound',
+    )
+  }
   const kindExpression = needsAnyObjective('kinds')
     ? sum(
         ...domain.recipes.flatMap((recipe) => {
@@ -1087,6 +1106,12 @@ function buildHighsStage(
         ? 1
         : 0
     ) +
+    (
+      typeof options.productionUnitsLowerBound === 'number' &&
+      Number.isFinite(options.productionUnitsLowerBound)
+        ? 1
+        : 0
+    ) +
     (options.fixedRecipeUnits ? domain.recipes.length : 0)
 
   return {
@@ -1119,6 +1144,7 @@ export async function profileHighsOptimization(
     excludeSingletonMachineOperationKinds?: string[]
     machineOperationsUpperBound?: number
     machineOperationsLowerBound?: number
+    productionUnitsLowerBound?: number
     machineOperationPartitionLowerBounds?: Partial<
       Record<MachineOperationPartition, number>
     >
@@ -1211,6 +1237,8 @@ export async function profileHighsOptimization(
           options.machineOperationsUpperBound,
         machineOperationsLowerBound:
           options.machineOperationsLowerBound,
+        productionUnitsLowerBound:
+          options.productionUnitsLowerBound,
         machineOperationPartitionLowerBounds:
           options.machineOperationPartitionLowerBounds,
         fixedRecipeUnits,
