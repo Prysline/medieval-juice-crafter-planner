@@ -791,6 +791,7 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
     const objectives = objectiveOrder(priorities)
     const fixes: ObjectiveFix[] = []
     let currentDomain = domain
+    let minimumCostCertificateApplied = false
     let final:
       | {
           domain: BatchOptimizationModel
@@ -822,6 +823,31 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
         }
       }
 
+      if (
+        objectiveKey === 'machineOperations' &&
+        minimumCostCertificateApplied &&
+        fixes.length === 1 &&
+        fixes[0].objective === 'cost'
+      ) {
+        const certificate = await tryMachineOperationCertificate(
+          currentDomain,
+          fixes[0].value,
+        )
+        if (certificate) {
+          final = {
+            domain: currentDomain,
+            built: certificate.built,
+            solution: certificate.solution,
+          }
+          fixes.push({
+            objective: objectiveKey,
+            value: certificate.optimum,
+          })
+          currentDomain = continuationDomain
+          continue
+        }
+      }
+
       let built = buildHighsStage(stageDomain, objectiveKey, fixes)
       let solution = await built.model.solve()
 
@@ -842,6 +868,10 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
           { solverStatus: solution.status },
           `HiGHS optimizer ended with status: ${solution.status}`,
         )
+      }
+
+      if (objectiveIndex === 0 && objectiveKey === 'cost') {
+        minimumCostCertificateApplied = usingMinimumCostCertificate
       }
 
       const optimum = Math.round(
