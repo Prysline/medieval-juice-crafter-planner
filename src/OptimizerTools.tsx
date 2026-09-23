@@ -1602,6 +1602,37 @@ function OptimizerTools({
         <PlanningErrorBlock presentation={applicationState.error} />
       )}
 
+      {deliveryUiState.status === 'applied' && (
+        <div className="optimizer-result-note" role="status">
+          <strong>
+            已正式交付：{customerLabel(deliveryUiState.customerId)}
+          </strong>
+          <span>
+            庫存、果汁罐、杯具與「今日已供應」已原子同步；可繼續完成目前販售趟，或在果汁分配區依目前狀態重新規劃。
+          </span>
+        </div>
+      )}
+
+      {deliveryUiState.status === 'stale' && (
+        <div className="optimizer-error" role="alert">
+          <strong>交付排程已過期，未寫入任何變更</strong>
+          <span>
+            已變更：
+            {deliveryUiState.mismatches
+              .map((field) => deliveryMismatchLabels[field])
+              .join('、')}
+            。目前 canonical 狀態已重新讀取，請重新產生最佳化規劃。
+          </span>
+        </div>
+      )}
+
+      {deliveryUiState.status === 'error' && runState.status !== 'success' && (
+        <div className="optimizer-error" role="alert">
+          <strong>交付沒有寫入</strong>
+          <span>{deliveryUiState.message}</span>
+        </div>
+      )}
+
       {runState.status === 'success' && (
         <OptimizerResultPanel
           result={runState.result}
