@@ -27,9 +27,11 @@ import type {
   UsedCupTripPolicy,
 } from './domain/multiTripReplenishment'
 import type { PreparationShortfall } from './domain/preparationShortfall'
-import type {
-  DeliveryExecutionCursor,
-  DeliveryExecutionPlan,
+import {
+  buildDeliveryExecutionPlan,
+  createDeliveryExecutionCursor,
+  type DeliveryExecutionCursor,
+  type DeliveryExecutionPlan,
 } from './domain/deliveryExecution'
 import {
   recipeCandidateEntriesForInventoryEditor,
@@ -927,10 +929,6 @@ function OptimizerTools({
         { buildProductionLogisticsPlan },
         { buildMultiTripReplenishmentPlan },
         { buildPlanApplicationTransactionDraft },
-        {
-          buildDeliveryExecutionPlan,
-          createDeliveryExecutionCursor,
-        },
       ] = await Promise.all([
         import('./domain/optimizer'),
         import('./domain/preparationDemand'),
@@ -938,7 +936,6 @@ function OptimizerTools({
         import('./domain/productionLogistics'),
         import('./domain/multiTripReplenishment'),
         import('./domain/planApplicationTransaction'),
-        import('./domain/deliveryExecution'),
       ])
       const parsedMaxSwitches =
         maxJarTypeSwitches.trim() === ''
