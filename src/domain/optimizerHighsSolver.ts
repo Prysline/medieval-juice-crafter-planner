@@ -22,6 +22,26 @@ type ObjectiveKey =
   | 'machineOperations'
   | 'jarSwitches'
 
+type MachineOperationPartition =
+  | 'juicing'
+  | 'seasoning'
+  | 'sharedBlending'
+  | 'singletonBlending'
+  | 'finalizing'
+
+function machineOperationPartition(
+  edgeKind: string | undefined,
+  shared: boolean,
+): MachineOperationPartition | null {
+  if (edgeKind === 'juicing') return 'juicing'
+  if (edgeKind === 'seasoning') return 'seasoning'
+  if (edgeKind === 'blending') {
+    return shared ? 'sharedBlending' : 'singletonBlending'
+  }
+  if (edgeKind === 'finalizing') return 'finalizing'
+  return null
+}
+
 type IntVariable = ReturnType<Model['intVar']>
 type BoolVariable = ReturnType<Model['boolVar']>
 
@@ -246,6 +266,9 @@ function buildHighsStage(
     excludeSingletonMachineOperationKinds?: Set<string>
     machineOperationsUpperBound?: number
     machineOperationsLowerBound?: number
+    machineOperationPartitionLowerBounds?: Partial<
+      Record<MachineOperationPartition, number>
+    >
     fixedRecipeUnits?: Map<string, number>
   } = {},
 ) {
@@ -479,6 +502,10 @@ function buildHighsStage(
   >()
   const quantityUpperBoundByEdgeKey = new Map<string, number>()
   const machineOperationTerms: ReturnType<IntVariable['times']>[] = []
+  const machineOperationTermsByPartition = new Map<
+    MachineOperationPartition,
+    ReturnType<IntVariable['times']>[]
+  >()
   const operationByEdgeKey = new Map<string, IntVariable>()
   let encodedOperationBinaryVariableCount = 0
   let operationConstraintCount = 0
@@ -490,6 +517,9 @@ function buildHighsStage(
     variableName: string,
     constraintPrefix: string,
     objectiveWeight: number,
+    partitionWeights: Partial<
+      Record<MachineOperationPartition, number>
+    > = {},
   ) => {
     const binaryEncodingLimit =
       options.binaryEncodeOperationUpperBoundAtMost
@@ -541,6 +571,15 @@ function buildHighsStage(
       machineOperationTerms.push(
         batchCount.times(objectiveWeight),
       )
+      for (const [partition, weight] of Object.entries(
+        partitionWeights,
+      ) as Array<[MachineOperationPartition, number]>) {
+        if (!weight) continue
+        const terms =
+          machineOperationTermsByPartition.get(partition) ?? []
+        terms.push(batchCount.times(weight))
+        machineOperationTermsByPartition.set(partition, terms)
+      }
       encodedOperationBinaryVariableCount += batches.length
       return
     }
@@ -566,6 +605,15 @@ function buildHighsStage(
     machineOperationTerms.push(
       operationCount.times(objectiveWeight),
     )
+    for (const [partition, weight] of Object.entries(
+      partitionWeights,
+    ) as Array<[MachineOperationPartition, number]>) {
+      if (!weight) continue
+      const terms =
+        machineOperationTermsByPartition.get(partition) ?? []
+      terms.push(operationCount.times(weight))
+      machineOperationTermsByPartition.set(partition, terms)
+    }
   }
 
   if (needsProductionOperations) {
@@ -612,7 +660,15 @@ function buildHighsStage(
       const edgeMultiplicityByKey =
         edgeMultiplicityByRecipe.get(recipe.candidate.id) ??
         new Map<string, number>()
-      const localEdgeCountByMultiplicity = new Map<number, number>()
+      const localOperationStatsByMultiplicity = new Map<
+        number,
+        {
+          totalCount: number
+          partitionWeights: Partial<
+            Record<MachineOperationPartition, number>
+          >
+        }
+      >()
 
       for (const [edgeKey, multiplicity] of edgeMultiplicityByKey) {
         const recipeCount = recipeCountByEdgeKey.get(edgeKey) ?? 0
@@ -636,9 +692,23 @@ function buildHighsStage(
           options.aggregateLocalSingletonOperations &&
           recipeCount === 1
         ) {
-          localEdgeCountByMultiplicity.set(
+          const stats =
+            localOperationStatsByMultiplicity.get(multiplicity) ?? {
+              totalCount: 0,
+              partitionWeights: {},
+            }
+          stats.totalCount += 1
+          const partition = machineOperationPartition(
+            edgeKind,
+            false,
+          )
+          if (partition) {
+            stats.partitionWeights[partition] =
+              (stats.partitionWeights[partition] ?? 0) + 1
+          }
+          localOperationStatsByMultiplicity.set(
             multiplicity,
-            (localEdgeCountByMultiplicity.get(multiplicity) ?? 0) + 1,
+            stats,
           )
           continue
         }
@@ -659,8 +729,8 @@ function buildHighsStage(
         )
       }
 
-      for (const [multiplicity, localEdgeCount] of
-        localEdgeCountByMultiplicity) {
+      for (const [multiplicity, localOperationStats] of
+        localOperationStatsByMultiplicity) {
         const localOperationUpperBound =
           options.tightenOperationBoundsFromRecipeBounds
             ? Math.min(
@@ -681,7 +751,8 @@ function buildHighsStage(
           localOperationUpperBound,
           `local_op_${localOperationIndex}`,
           `local_operation_${localOperationIndex}`,
-          localEdgeCount,
+          localOperationStats.totalCount,
+          localOperationStats.partitionWeights,
         )
         localOperationIndex += 1
       }
@@ -700,6 +771,10 @@ function buildHighsStage(
               )
             : maxTotalJuiceUnits
         const quantityExpression = sum(...quantityTerms)
+        const partition = machineOperationPartition(
+          edgeKindByKey.get(edgeKey),
+          (recipeCountByEdgeKey.get(edgeKey) ?? 0) > 1,
+        )
         addMachineOperation(
           edgeKey,
           quantityExpression,
@@ -707,6 +782,7 @@ function buildHighsStage(
           `op_${edgeIndex}`,
           `operation_${edgeIndex}`,
           1,
+          partition ? { [partition]: 1 } : {},
         )
       },
     )
@@ -745,6 +821,7 @@ function buildHighsStage(
   const machineOperationsExpression = needsAnyObjective('machineOperations')
     ? sum(...machineOperationTerms)
     : undefined
+  let machineOperationPartitionConstraintCount = 0
   if (
     machineOperationsExpression &&
     typeof options.machineOperationsUpperBound === 'number' &&
@@ -774,6 +851,25 @@ function buildHighsStage(
       ),
       'machine_operations_lower_bound',
     )
+  }
+  for (const [partition, rawLowerBound] of Object.entries(
+    options.machineOperationPartitionLowerBounds ?? {},
+  ) as Array<[MachineOperationPartition, number]>) {
+    if (!Number.isFinite(rawLowerBound)) continue
+    const terms = machineOperationTermsByPartition.get(partition)
+    if (!terms?.length) {
+      if (rawLowerBound > 0) {
+        throw new Error(
+          `Missing machine-operation partition expression for ${partition}`,
+        )
+      }
+      continue
+    }
+    model.addConstraint(
+      sum(...terms).geq(Math.max(0, Math.ceil(rawLowerBound))),
+      `machine_operations_${partition}_lower_bound`,
+    )
+    machineOperationPartitionConstraintCount += 1
   }
   buildPhaseMs.baseObjectivesMs = performance.now() - phaseStartedAt
 
@@ -962,6 +1058,7 @@ function buildHighsStage(
     (needsRecipeUsageStructure ? domain.recipes.length * 2 : 0) +
     domain.serviceableCustomerIds.length +
     operationConstraintCount +
+    machineOperationPartitionConstraintCount +
     (needsJarStructure ? 2 : 0) +
     fixes.length +
     (
@@ -1022,6 +1119,9 @@ export async function profileHighsOptimization(
     excludeSingletonMachineOperationKinds?: string[]
     machineOperationsUpperBound?: number
     machineOperationsLowerBound?: number
+    machineOperationPartitionLowerBounds?: Partial<
+      Record<MachineOperationPartition, number>
+    >
     fixedRecipeUnits?: Array<{
       recipeId: string
       units: number
@@ -1111,6 +1211,8 @@ export async function profileHighsOptimization(
           options.machineOperationsUpperBound,
         machineOperationsLowerBound:
           options.machineOperationsLowerBound,
+        machineOperationPartitionLowerBounds:
+          options.machineOperationPartitionLowerBounds,
         fixedRecipeUnits,
       },
     )
