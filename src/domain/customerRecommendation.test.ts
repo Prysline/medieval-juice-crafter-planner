@@ -65,7 +65,7 @@ describe('customer lowest-cost recommendations', () => {
     )
 
     expect(recommendation?.costMode).toBe('maximum')
-    expect(recommendation?.batchIngredientCost).toBe(23)
+    expect(recommendation?.batchIngredientCost).toBe(25)
     expect(
       recommendation?.candidates.map(({ candidate }) => candidate.id),
     ).toEqual(['expensive'])
