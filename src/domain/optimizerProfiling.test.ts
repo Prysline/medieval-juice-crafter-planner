@@ -658,6 +658,139 @@ it(
       },
     )
     const compressedCostStage = compressedRelaxedHighs.stages[0]
+
+    const fixedMinimumCost =
+      compressedCostStage?.status === 'optimal' &&
+      compressedCostStage.objectiveValue !== null
+        ? Math.round(compressedCostStage.objectiveValue)
+        : null
+    const maxJuiceUnitsPerRecipe = Math.max(
+      1,
+      Math.ceil(model.serviceableCustomerIds.length / 2),
+    )
+    const minimumRequiredProductionUnits = Math.ceil(
+      model.serviceableCustomerIds.length / 2,
+    )
+    const strictCostRecipeCosts = strictCostPrunedRecipes.map(
+      (recipe) => recipe.juiceUnitIngredientCost,
+    )
+    const strictCostDistinctCosts = [
+      ...new Set(strictCostRecipeCosts),
+    ].sort((a, b) => a - b)
+    const strictCostNonIntegerCostCount =
+      strictCostRecipeCosts.filter(
+        (cost) => !Number.isInteger(cost) || cost < 0,
+      ).length
+    const recipeCountByCost = new Map<number, number>()
+    for (const cost of strictCostRecipeCosts) {
+      recipeCountByCost.set(
+        cost,
+        (recipeCountByCost.get(cost) ?? 0) + 1,
+      )
+    }
+
+    const costFixFeasibleRecipeCosts = new Set<number>()
+    const exactCostReachableRecipeCosts = new Set<number>()
+
+    if (
+      fixedMinimumCost !== null &&
+      strictCostNonIntegerCostCount === 0
+    ) {
+      for (const selectedCost of strictCostDistinctCosts) {
+        if (selectedCost > fixedMinimumCost) continue
+
+        const targetCost = fixedMinimumCost - selectedCost
+        const requiredRemainingUnits = Math.max(
+          0,
+          minimumRequiredProductionUnits - 1,
+        )
+        const reachable = Array.from(
+          { length: targetCost + 1 },
+          () =>
+            Array.from(
+              { length: requiredRemainingUnits + 1 },
+              () => false,
+            ),
+        )
+        reachable[0][0] = true
+
+        for (const cost of strictCostDistinctCosts) {
+          let availableUnits =
+            (recipeCountByCost.get(cost) ?? 0) *
+            maxJuiceUnitsPerRecipe
+          if (cost === selectedCost) {
+            availableUnits -= 1
+          }
+          if (availableUnits <= 0) continue
+
+          let chunk = 1
+          let remaining = availableUnits
+          while (remaining > 0) {
+            const take = Math.min(chunk, remaining)
+            const chunkCost = cost * take
+            const chunkUnits = take
+
+            for (
+              let currentCost = targetCost;
+              currentCost >= chunkCost;
+              currentCost -= 1
+            ) {
+              for (
+                let currentUnits = requiredRemainingUnits;
+                currentUnits >= 0;
+                currentUnits -= 1
+              ) {
+                if (!reachable[currentCost][currentUnits]) {
+                  continue
+                }
+                const nextCost = currentCost + chunkCost
+                if (nextCost > targetCost) continue
+                const nextUnits = Math.min(
+                  requiredRemainingUnits,
+                  currentUnits + chunkUnits,
+                )
+                reachable[nextCost][nextUnits] = true
+              }
+            }
+
+            remaining -= take
+            chunk *= 2
+          }
+        }
+
+        if (
+          reachable[targetCost]?.some((value) => value)
+        ) {
+          exactCostReachableRecipeCosts.add(selectedCost)
+        }
+        if (
+          reachable[targetCost]?.[requiredRemainingUnits]
+        ) {
+          costFixFeasibleRecipeCosts.add(selectedCost)
+        }
+      }
+    }
+
+    const recipesRejectedByExactCostFix =
+      strictCostPrunedRecipes.filter(
+        (recipe) =>
+          fixedMinimumCost !== null &&
+          !exactCostReachableRecipeCosts.has(
+            recipe.juiceUnitIngredientCost,
+          ),
+      )
+    const recipesRejectedByCostFixAndMinimumUnits =
+      strictCostPrunedRecipes.filter(
+        (recipe) =>
+          fixedMinimumCost !== null &&
+          !costFixFeasibleRecipeCosts.has(
+            recipe.juiceUnitIngredientCost,
+          ),
+      )
+    const recipesRemainingAfterCostFixNecessaryConditions =
+      strictCostPrunedRecipes.length -
+      recipesRejectedByCostFixAndMinimumUnits.length
+
     const expandedMachineHighs =
       compressedCostStage?.status === 'optimal' &&
       compressedCostStage.objectiveValue !== null
@@ -791,6 +924,25 @@ it(
         projectedStage2VariableCountAfterLocalCompression,
       stage2ProjectedConstraintCountAfterLocalCompression:
         projectedStage2ConstraintCountAfterLocalCompression,
+      stage2FixedMinimumCost: fixedMinimumCost,
+      stage2DistinctRecipeCostCount:
+        strictCostDistinctCosts.length,
+      stage2RecipeCostRange: {
+        min: strictCostDistinctCosts.at(0) ?? null,
+        max: strictCostDistinctCosts.at(-1) ?? null,
+      },
+      stage2NonIntegerOrNegativeRecipeCostCount:
+        strictCostNonIntegerCostCount,
+      stage2ExactCostReachableCostCount:
+        exactCostReachableRecipeCosts.size,
+      stage2CostFixFeasibleCostCount:
+        costFixFeasibleRecipeCosts.size,
+      stage2RecipesRejectedByExactCostFix:
+        recipesRejectedByExactCostFix.length,
+      stage2RecipesRejectedByCostFixAndMinimumUnits:
+        recipesRejectedByCostFixAndMinimumUnits.length,
+      stage2RecipesRemainingAfterCostFixNecessaryConditions:
+        recipesRemainingAfterCostFixNecessaryConditions,
       finalHighsVariables: binaryHighs.finalVariableCount,
       finalHighsConstraints: binaryHighs.finalConstraintCount,
       candidateGenerationMs,
