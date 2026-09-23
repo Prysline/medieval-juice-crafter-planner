@@ -1,7 +1,9 @@
 import { Model, sum } from '@bubblyworld/highs-ts'
 import { PROCESSING_STACK_CAPACITY } from './inventoryRules'
 import {
+  finalizingEdgesAreRecipeIdentityUnique,
   machineOperationBreakdownForSelection,
+  minimumRecipeKindsFromFinalizingBound,
   prepareMinimumCostStageCertificate,
   repairMachineOperationWitness,
   type RecipeUnitSelection,
@@ -85,6 +87,7 @@ interface HighsStageOptions {
   tightenOperationBoundsFromRecipeBounds?: boolean
   machineOperationKinds?: Set<ProductionStepKind>
   fixedRecipeUnits?: Map<string, number>
+  productionUnitsLowerBound?: number
 }
 
 function buildHighsStage(
@@ -426,14 +429,28 @@ function buildHighsStage(
       )
     : undefined
 
-  const productionUnitsExpression = needsAnyObjective('productionUnits')
-    ? sum(
-        ...domain.recipes.flatMap((recipe) => {
-          const x = xByRecipeId.get(recipe.candidate.id)
-          return x ? [x] : []
-        }),
-      )
-    : undefined
+  const productionUnitsExpression =
+    needsAnyObjective('productionUnits') ||
+    typeof options.productionUnitsLowerBound === 'number'
+      ? sum(
+          ...domain.recipes.flatMap((recipe) => {
+            const x = xByRecipeId.get(recipe.candidate.id)
+            return x ? [x] : []
+          }),
+        )
+      : undefined
+
+  if (
+    productionUnitsExpression &&
+    typeof options.productionUnitsLowerBound === 'number'
+  ) {
+    model.addConstraint(
+      productionUnitsExpression
+        .times(-1)
+        .leq(-Math.max(0, Math.floor(options.productionUnitsLowerBound))),
+      'production_units_lower_bound',
+    )
+  }
 
   const kindExpression = needsAnyObjective('kinds')
     ? sum(
@@ -818,6 +835,205 @@ export async function solveMachineOperationCertificateForCostFix(
   }
 }
 
+export interface JarSwitchCertificateSummary {
+  optimum: number
+  productionUnits: number
+  extraProductionUnitCostLowerBound: number
+  finalizingOperations: number
+  distinctRecipeKindLowerBound: number
+  jarLowerBound: number
+  jarUpperBound: number
+  witnessRecipeUnits: RecipeUnitSelection[]
+  verifiedAssignmentCount: number
+}
+
+interface InternalJarSwitchCertificate
+  extends JarSwitchCertificateSummary {
+  built: ReturnType<typeof buildHighsStage>
+  solution: Awaited<ReturnType<Model['solve']>>
+}
+
+async function tryJarSwitchCertificate(
+  domain: BatchOptimizationModel,
+  fixedMinimumCost: number,
+  machineCertificate: MachineOperationCertificateSummary,
+): Promise<InternalJarSwitchCertificate | null> {
+  const initialJars = normalizedInitialCarriedJuiceJars(
+    domain.request,
+  )
+  if (
+    initialJars.length === 0 ||
+    initialJars.some((jar) => jar.recipeId && jar.servings > 0)
+  ) {
+    return null
+  }
+
+  const maxJarTypeSwitches =
+    domain.request.constraints?.maxJarTypeSwitches
+  if (
+    typeof maxJarTypeSwitches === 'number' &&
+    Number.isFinite(maxJarTypeSwitches)
+  ) {
+    return null
+  }
+
+  const productionUnits = Math.ceil(
+    domain.serviceableCustomerIds.length / 2,
+  )
+  const extraUnitProbe = buildHighsStage(
+    domain,
+    'cost',
+    [],
+    {
+      relaxAssignmentVariables: true,
+      aggregateEquivalentAssignments: true,
+      productionUnitsLowerBound: productionUnits + 1,
+    },
+  )
+  const extraUnitSolution = await extraUnitProbe.model.solve()
+  if (extraUnitSolution.status !== 'optimal') return null
+
+  const extraProductionUnitCostLowerBound = Math.round(
+    requiredFiniteNumber(
+      extraUnitSolution.objective,
+      'extra-production-unit cost lower bound',
+    ),
+  )
+  if (extraProductionUnitCostLowerBound <= fixedMinimumCost) {
+    return null
+  }
+
+  if (!finalizingEdgesAreRecipeIdentityUnique(domain)) {
+    return null
+  }
+
+  const finalizingOperations =
+    machineCertificate.lowerBounds.finalizing
+  const distinctRecipeKindLowerBound =
+    minimumRecipeKindsFromFinalizingBound(
+      productionUnits,
+      finalizingOperations,
+    )
+  if (distinctRecipeKindLowerBound <= 0) return null
+
+  const witnessRecipeUnits =
+    machineCertificate.witnessRecipeUnits.filter(
+      (selection) => selection.units > 0,
+    )
+  const witnessProductionUnits = witnessRecipeUnits.reduce(
+    (total, selection) => total + Math.round(selection.units),
+    0,
+  )
+  if (witnessProductionUnits !== productionUnits) return null
+  if (
+    witnessRecipeUnits.length !== distinctRecipeKindLowerBound
+  ) {
+    return null
+  }
+
+  const witnessRecipeIds = witnessRecipeUnits.map(
+    (selection) => selection.recipeId,
+  )
+  const jarUpperBound = minimumJarTypeSwitchesForRecipeIds(
+    domain.request,
+    witnessRecipeIds,
+  )
+  const jarLowerBound = minimumJarTypeSwitchesForRecipeIds(
+    domain.request,
+    Array.from(
+      { length: distinctRecipeKindLowerBound },
+      (_, index) => `__jar_certificate_kind_${index}`,
+    ),
+  )
+  if (jarLowerBound !== jarUpperBound) return null
+
+  const fixedRecipeUnits = new Map(
+    witnessRecipeUnits.map((selection) => [
+      selection.recipeId,
+      Math.round(selection.units),
+    ]),
+  )
+  const fixes: ObjectiveFix[] = [
+    {
+      objective: 'cost',
+      value: fixedMinimumCost,
+    },
+    {
+      objective: 'machineOperations',
+      value: machineCertificate.optimum,
+    },
+  ]
+  const built = buildHighsStage(
+    domain,
+    'jarSwitches',
+    fixes,
+    {
+      fixedRecipeUnits,
+    },
+  )
+  const solution = await built.model.solve()
+  if (solution.status !== 'optimal') return null
+
+  const verifiedObjective = Math.round(
+    requiredFiniteNumber(
+      solution.objective,
+      'fixed-x jar-switch objective',
+    ),
+  )
+  const assignmentCount = verifiedAssignmentCount(
+    domain,
+    built,
+    solution,
+  )
+  if (
+    verifiedObjective !== jarLowerBound ||
+    assignmentCount !== domain.serviceableCustomerIds.length
+  ) {
+    return null
+  }
+
+  return {
+    optimum: jarLowerBound,
+    productionUnits,
+    extraProductionUnitCostLowerBound,
+    finalizingOperations,
+    distinctRecipeKindLowerBound,
+    jarLowerBound,
+    jarUpperBound,
+    witnessRecipeUnits,
+    verifiedAssignmentCount: assignmentCount,
+    built,
+    solution,
+  }
+}
+
+export async function solveJarSwitchCertificateForCostAndMachineFix(
+  domain: BatchOptimizationModel,
+  fixedMinimumCost: number,
+  machineCertificate: MachineOperationCertificateSummary,
+): Promise<JarSwitchCertificateSummary | null> {
+  const certificate = await tryJarSwitchCertificate(
+    domain,
+    fixedMinimumCost,
+    machineCertificate,
+  )
+  if (!certificate) return null
+
+  return {
+    optimum: certificate.optimum,
+    productionUnits: certificate.productionUnits,
+    extraProductionUnitCostLowerBound:
+      certificate.extraProductionUnitCostLowerBound,
+    finalizingOperations: certificate.finalizingOperations,
+    distinctRecipeKindLowerBound:
+      certificate.distinctRecipeKindLowerBound,
+    jarLowerBound: certificate.jarLowerBound,
+    jarUpperBound: certificate.jarUpperBound,
+    witnessRecipeUnits: certificate.witnessRecipeUnits,
+    verifiedAssignmentCount: certificate.verifiedAssignmentCount,
+  }
+}
+
 export const highsSolverAdapter: BatchOptimizerSolver = {
   async solve(
     domain: BatchOptimizationModel,
@@ -841,6 +1057,9 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
     const fixes: ObjectiveFix[] = []
     let currentDomain = domain
     let minimumCostCertificateApplied = false
+    let machineCertificate:
+      | MachineOperationCertificateSummary
+      | null = null
     let final:
       | {
           domain: BatchOptimizationModel
@@ -884,6 +1103,7 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
           fixes[0].value,
         )
         if (certificate) {
+          machineCertificate = certificate
           final = {
             domain: currentDomain,
             built: certificate.built,
@@ -894,6 +1114,48 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
             value: certificate.optimum,
           })
           currentDomain = continuationDomain
+          continue
+        }
+      }
+
+      if (
+        objectiveKey === 'jarSwitches' &&
+        minimumCostCertificateApplied &&
+        machineCertificate &&
+        fixes.length === 2 &&
+        fixes[0].objective === 'cost' &&
+        fixes[1].objective === 'machineOperations' &&
+        currentDomain.recipes.length >= 4000
+      ) {
+        const certificate = await tryJarSwitchCertificate(
+          currentDomain,
+          fixes[0].value,
+          machineCertificate,
+        )
+        if (certificate) {
+          final = {
+            domain: currentDomain,
+            built: certificate.built,
+            solution: certificate.solution,
+          }
+          fixes.push({
+            objective: objectiveKey,
+            value: certificate.optimum,
+          })
+          currentDomain = continuationDomain
+
+          const remainingObjectives = objectives.slice(
+            objectiveIndex + 1,
+          )
+          if (
+            remainingObjectives.every(
+              (remainingObjective) =>
+                remainingObjective === 'productionUnits' ||
+                remainingObjective === 'kinds',
+            )
+          ) {
+            break
+          }
           continue
         }
       }
