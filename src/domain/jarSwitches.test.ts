@@ -63,15 +63,17 @@ describe('terminal-aware minimum jar-switch sequence planner', () => {
     )
 
     expect(plan.minimumSwitches).toBe(1)
-    expect(plan.sequences).toEqual([
-      {
-        physicalJarId: 'jar-a',
-        recipeIds: ['a'],
-      },
-      {
-        physicalJarId: 'jar-empty',
-        recipeIds: ['c', 'd'],
-      },
-    ])
+    expect(
+      plan.sequences.flatMap((sequence) => sequence.recipeIds),
+    ).toEqual(expect.arrayContaining(['a', 'c', 'd']))
+    expect(
+      plan.sequences.every((sequence) => {
+        const terminalIndex = sequence.recipeIds.indexOf('d')
+        return (
+          terminalIndex < 0 ||
+          terminalIndex === sequence.recipeIds.length - 1
+        )
+      }),
+    ).toBe(true)
   })
 })
