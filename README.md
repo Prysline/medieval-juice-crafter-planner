@@ -84,6 +84,7 @@ src/
     purchaseSources.ts # 已知購買來源、最低價／同價保留 decision
     singleTripPacking.ts # 販售趟 finished-drink jars + clean cups 最小必要 slot / overflow
     multiTripReplenishment.ts # 持久果汁罐 ID、初始內容、多趟販售、實際裝罐時序、leftover / discard 與杯具 policy；PR #96 initial-match preservation；PR #98 以 terminal-aware exact sequence plan 驅動多配方 physical jar queue
+    deliveryExecution.ts # Workflow-3A：physical sales plan → partial execution trace；同趟顧客可任意順序、跨趟必須依序；逐顧客 jar / cup 狀態轉換
     scheduleRouteReadiness.ts # 作息觀察 normalization 與 route-data blockers
   storage/
     plannerState.ts    # localStorage 讀寫、正式顧客與 legacy migration
@@ -278,7 +279,8 @@ Phase 4 已完成：
 29. PR #100 完成 **2026-09-23 實測配方資料同步**：依直接截圖新增 7 筆 observed recipes：香蕉▸薄荷（35）、檸檬▸糖▸肉桂（42）、香蕉▸薄荷▸糖（47）、梨▸薄荷▸糖▸肉桂（70）、橙子▸糖▸薄荷▸肉桂（67）、紅蘿蔔▸薄荷▸糖▸肉桂（66）、香蕉▸薄荷▸糖▸肉桂（73）。杯中圖示依直接實測規則「由下往上＝由早到晚加入」還原；列表型截圖依原料欄左→右記錄。實測售價、完整成品特性與 `observedDisplayName` 均已鎖進 data / evaluator regression；不新增 computed sale-price 公式。CI #501：41 test files / 319 tests passed、production build success。
 30. PR #102 完成 **Workflow-1｜製作物流物理化**：`productionLogistics.ts` 將一般架／背包 material state 正式拆開；新增顯式架上取物／放回架子 movement；machine intermediate output 固定先回背包；能裝下時 raw ingredients + production water 於第一個 machine operation 前 batch preload，容量不足才分輪補貨。保留 machine input 先裝入後騰背包格、finalizer → physical jar receiver、transactional rollback 等既有物理規則。CI #506：41 test files / 322 tests passed、`productionLogistics.test.ts` 13 tests、production build success。
 31. PR #104 完成 **Workflow-2｜製作步驟 checkbox**：新增 `mjc-production-checklist` 純進度 storage；exact net production plan canonical payload 直接作 stable fingerprint，不使用可能 collision 的短 hash；每個 machine batch 以 `step.key#batchIndex` 作 operation identity，可任意順序勾選／取消、顯示完成進度並全部重置。相同 plan 重新產生後可恢復；不同 plan 不套用舊完成狀態。checkbox persistence 與 `mjc-inventory`、`mjc-plan-application-state`、optimizer result / transaction 完全分離。CI #513：42 test files / 329 tests passed；`productionChecklist.test.ts` 6 tests、`OptimizerTools.test.tsx` 8 tests、production build success（1.78 s）。
-目前下一步是 **Workflow-3｜果汁分配 delivery checkbox + partial delivery transaction**：逐顧客正式交付必須同步 `suppliedCustomerIds` 與 physical jar / cup / juice state，支援送到一半立即重新規劃；完成後再回 Debug-D Production P4。其後依序 Inventory-Intermediate → Candidate-3 → Candidate-4 → Phase 6 → Candidate-5。路線最佳化仍等待跨村移動時間、位置資訊、完整顧客服務時段與商店營業時間資料。
+32. PR #106 完成 **Workflow-3A｜partial delivery execution trace**：把既有 physical sales plan 轉成可逐步執行的純 domain trace。每趟第一次正式交付前才套用該趟需要的 initial-juice discard、production fills、對應原料／production water 與洗杯；每位顧客各自消耗指定 physical jar 1 杯與 1 個 clean cup，並依同一 backpack capacity 規則逐杯決定 clean → used 或 drop；本趟最後一位完成後才執行 trip-end new-production discard。**趟次必須依序；同一 active trip 內未交付顧客可任意順序。**完整執行後的 inventory 已用 regression 證明與現行 whole-plan transaction 終態一致；另鎖定「上一趟賣空後、下一趟同配方仍是 refill-same-type」的歷史 recipe edge。CI #519：43 test files / 334 tests passed；`deliveryExecution.test.ts` 5 tests、production build success（1.24 s）。
+目前下一步是 **Workflow-3B｜atomic partial commit**：把 inventory、`suppliedCustomerIds` 與 plan-bound execution cursor 放進同一 canonical single-write transaction，拒絕 stale execution state；接著才做 **Workflow-3C｜delivery checkbox UI / partial replan**。Workflow-3 完成後再回 Debug-D Production P4。其後依序 Inventory-Intermediate → Candidate-3 → Candidate-4 → Phase 6 → Candidate-5。路線最佳化仍等待跨村移動時間、位置資訊、完整顧客服務時段與商店營業時間資料。
 
 
 ## Schedule / route readiness boundary
