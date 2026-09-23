@@ -960,6 +960,30 @@ it(
             },
           )
         : null
+    const tightBoundMachineHighs =
+      compressedCostStage?.status === 'optimal' &&
+      compressedCostStage.objectiveValue !== null
+        ? await profileHighsOptimization(
+            strictCostPrunedModel,
+            ['minimum-machine-operations'],
+            {
+              stageTimeLimitSeconds: 10.5,
+              relaxAssignmentVariables: true,
+              aggregateLocalSingletonOperations: true,
+              aggregateEquivalentAssignments: true,
+              tightenRecipeBoundsFromMinimumCostFix: true,
+              maxStages: 1,
+              initialCriterionFixes: [
+                {
+                  criterion: 'minimum-cost',
+                  value: Math.round(
+                    compressedCostStage.objectiveValue,
+                  ),
+                },
+              ],
+            },
+          )
+        : null
     const binaryFirstStage = binaryHighs.stages[0]
     const relaxedFirstStage = relaxedHighs.stages[0]
     const prunedRelaxedFirstStage = prunedRelaxedHighs.stages[0]
@@ -971,6 +995,8 @@ it(
       localCompressedMachineHighs?.stages[0]
     const groupedAssignmentMachineFirstStage =
       groupedAssignmentMachineHighs?.stages[0]
+    const tightBoundMachineFirstStage =
+      tightBoundMachineHighs?.stages[0]
 
     const report = {
       progress: request.currentProgress,
@@ -1235,6 +1261,29 @@ it(
                 groupedAssignmentMachineHighs?.totalMs ?? 0,
             }
           : null,
+      tightBoundMachineStage:
+        tightBoundMachineFirstStage
+          ? {
+              solveMs: tightBoundMachineFirstStage.solveMs,
+              status: tightBoundMachineFirstStage.status,
+              objectiveValue:
+                tightBoundMachineFirstStage.objectiveValue,
+              fixCount: tightBoundMachineFirstStage.fixCount,
+              variableCount:
+                tightBoundMachineFirstStage.variableCount,
+              constraintCount:
+                tightBoundMachineFirstStage.constraintCount,
+              fractionalAssignmentVariableCount:
+                tightBoundMachineFirstStage.fractionalAssignmentVariableCount,
+              maxAssignmentIntegralityError:
+                tightBoundMachineFirstStage.maxAssignmentIntegralityError,
+              integralAssignmentReconstructionFeasible:
+                tightBoundMachineFirstStage.integralAssignmentReconstructionFeasible,
+              reconstructedAssignmentCount:
+                tightBoundMachineFirstStage.reconstructedAssignmentCount,
+              totalMs: tightBoundMachineHighs?.totalMs ?? 0,
+            }
+          : null,
       binaryStages: binaryHighs.stages,
       relaxedStages: relaxedHighs.stages,
     }
@@ -1358,6 +1407,37 @@ it(
           groupedAssignmentMachineFirstStage.objectiveValue,
         ).toBeCloseTo(
           localCompressedMachineFirstStage.objectiveValue ?? 0,
+          9,
+        )
+      }
+    }
+    if (tightBoundMachineFirstStage) {
+      expect(tightBoundMachineFirstStage.objective).toBe(
+        'machineOperations',
+      )
+      expect(tightBoundMachineFirstStage.fixCount).toBe(1)
+      expect(tightBoundMachineFirstStage.variableCount).toBe(
+        stage2ProjectedVariablesWithGroupAssignmentsAndLocalOps,
+      )
+      expect(tightBoundMachineFirstStage.constraintCount).toBe(
+        stage2ProjectedConstraintsWithGroupAssignmentsAndLocalOps,
+      )
+      if (tightBoundMachineFirstStage.objectiveValue !== null) {
+        expect(
+          tightBoundMachineFirstStage.integralAssignmentReconstructionFeasible,
+        ).toBe(true)
+        expect(
+          tightBoundMachineFirstStage.reconstructedAssignmentCount,
+        ).toBe(model.serviceableCustomerIds.length)
+      }
+      if (
+        groupedAssignmentMachineFirstStage?.status === 'optimal' &&
+        tightBoundMachineFirstStage.status === 'optimal'
+      ) {
+        expect(
+          tightBoundMachineFirstStage.objectiveValue,
+        ).toBeCloseTo(
+          groupedAssignmentMachineFirstStage.objectiveValue ?? 0,
           9,
         )
       }
