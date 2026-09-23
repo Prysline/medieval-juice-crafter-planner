@@ -234,6 +234,7 @@ function buildHighsStage(
     aggregateLocalSingletonOperations?: boolean
     aggregateEquivalentAssignments?: boolean
     tightenRecipeBoundsFromMinimumCostFix?: boolean
+    tightenOperationBoundsFromRecipeBounds?: boolean
     machineOperationsUpperBound?: number
     fixedRecipeUnits?: Map<string, number>
   } = {},
@@ -248,6 +249,7 @@ function buildHighsStage(
     domain.serviceableCustomerIds.length,
   )
   const xByRecipeId = new Map<string, IntVariable>()
+  const recipeUpperBoundById = new Map<string, number>()
   const zByRecipeId = new Map<string, BoolVariable>()
   const yByCustomerRecipe = new Map<string, BoolVariable>()
   const buildPhaseMs: HighsBuildPhaseProfile = {
@@ -382,6 +384,10 @@ function buildHighsStage(
           `x_${recipeIndex}`,
         )
     xByRecipeId.set(recipe.candidate.id, x)
+    recipeUpperBoundById.set(
+      recipe.candidate.id,
+      recipeUpperBound,
+    )
 
     if (options.fixedRecipeUnits) {
       model.addConstraint(
@@ -461,6 +467,7 @@ function buildHighsStage(
     string,
     ReturnType<IntVariable['times']>[]
   >()
+  const quantityUpperBoundByEdgeKey = new Map<string, number>()
   const machineOperationTerms: ReturnType<IntVariable['times']>[] = []
   const operationByEdgeKey = new Map<string, IntVariable>()
 
@@ -521,19 +528,39 @@ function buildHighsStage(
         } else {
           quantityTermsByEdgeKey.set(edgeKey, [term])
         }
+        quantityUpperBoundByEdgeKey.set(
+          edgeKey,
+          (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) +
+            multiplicity *
+              (recipeUpperBoundById.get(recipe.candidate.id) ??
+                maxJuiceUnitsPerRecipe),
+        )
       }
 
       for (const [multiplicity, localEdgeCount] of
         localEdgeCountByMultiplicity) {
+        const localOperationUpperBound =
+          options.tightenOperationBoundsFromRecipeBounds
+            ? Math.min(
+                maxTotalJuiceUnits,
+                Math.ceil(
+                  (multiplicity *
+                    (recipeUpperBoundById.get(
+                      recipe.candidate.id,
+                    ) ?? maxJuiceUnitsPerRecipe)) /
+                    PROCESSING_STACK_CAPACITY,
+                ),
+              )
+            : maxTotalJuiceUnits
         const operationCount = options.relaxOperationVariables
           ? model.numVar(
               0,
-              maxTotalJuiceUnits,
+              localOperationUpperBound,
               `local_op_${localOperationIndex}`,
             )
           : model.intVar(
               0,
-              maxTotalJuiceUnits,
+              localOperationUpperBound,
               `local_op_${localOperationIndex}`,
             )
         operationByEdgeKey.set(
@@ -563,15 +590,25 @@ function buildHighsStage(
 
     ;[...quantityTermsByEdgeKey.entries()].forEach(
       ([edgeKey, quantityTerms], edgeIndex) => {
+        const operationUpperBound =
+          options.tightenOperationBoundsFromRecipeBounds
+            ? Math.min(
+                maxTotalJuiceUnits,
+                Math.ceil(
+                  (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) /
+                    PROCESSING_STACK_CAPACITY,
+                ),
+              )
+            : maxTotalJuiceUnits
         const operationCount = options.relaxOperationVariables
           ? model.numVar(
               0,
-              maxTotalJuiceUnits,
+              operationUpperBound,
               `op_${edgeIndex}`,
             )
           : model.intVar(
               0,
-              maxTotalJuiceUnits,
+              operationUpperBound,
               `op_${edgeIndex}`,
             )
         operationByEdgeKey.set(edgeKey, operationCount)
@@ -875,6 +912,7 @@ export async function profileHighsOptimization(
     aggregateLocalSingletonOperations?: boolean
     aggregateEquivalentAssignments?: boolean
     tightenRecipeBoundsFromMinimumCostFix?: boolean
+    tightenOperationBoundsFromRecipeBounds?: boolean
     machineOperationsUpperBound?: number
     fixedRecipeUnits?: Array<{
       recipeId: string
@@ -941,6 +979,8 @@ export async function profileHighsOptimization(
           options.aggregateEquivalentAssignments ?? false,
         tightenRecipeBoundsFromMinimumCostFix:
           options.tightenRecipeBoundsFromMinimumCostFix ?? false,
+        tightenOperationBoundsFromRecipeBounds:
+          options.tightenOperationBoundsFromRecipeBounds ?? false,
         machineOperationsUpperBound:
           options.machineOperationsUpperBound,
         fixedRecipeUnits,
