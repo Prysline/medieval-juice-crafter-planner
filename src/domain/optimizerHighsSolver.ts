@@ -220,6 +220,7 @@ function buildHighsStage(
   options: {
     relaxAssignmentVariables?: boolean
     aggregateLocalSingletonOperations?: boolean
+    aggregateEquivalentAssignments?: boolean
   } = {},
 ) {
   const model = new Model()
@@ -271,6 +272,57 @@ function buildHighsStage(
     needsAnyObjective('kinds') || needsJarStructure
   const needsProductionOperations =
     needsAnyObjective('machineOperations')
+  const needsRecipeSpecificAssignments = needsAnyObjective(
+    'negativeAssignedIngredientCost',
+    'negativeKnownRevenue',
+    'negativeKnownGrossProfit',
+  )
+  if (
+    options.aggregateEquivalentAssignments &&
+    needsRecipeSpecificAssignments
+  ) {
+    throw new Error(
+      'Grouped assignments cannot be used with assignment-sensitive objectives',
+    )
+  }
+
+  const assignmentGroups = (() => {
+    if (!options.aggregateEquivalentAssignments) {
+      return domain.recipes.map((recipe) => ({
+        key: recipe.candidate.id,
+        recipes: [recipe],
+        eligibleCustomerIds: recipe.eligibleCustomerIds,
+      }))
+    }
+
+    const groupsByEligibility = new Map<
+      string,
+      {
+        key: string
+        recipes: typeof domain.recipes
+        eligibleCustomerIds: string[]
+      }
+    >()
+
+    for (const recipe of domain.recipes) {
+      const eligibleCustomerIds = [
+        ...recipe.eligibleCustomerIds,
+      ].sort()
+      const key = eligibleCustomerIds.join('\u001e')
+      const group = groupsByEligibility.get(key)
+      if (group) {
+        group.recipes.push(recipe)
+      } else {
+        groupsByEligibility.set(key, {
+          key,
+          recipes: [recipe],
+          eligibleCustomerIds,
+        })
+      }
+    }
+
+    return [...groupsByEligibility.values()]
+  })()
 
   let phaseStartedAt = performance.now()
   domain.recipes.forEach((recipe, recipeIndex) => {
@@ -301,14 +353,14 @@ function buildHighsStage(
   domain.serviceableCustomerIds.forEach((customerId, customerIndex) => {
     const assignmentVars: BoolVariable[] = []
 
-    domain.recipes.forEach((recipe, recipeIndex) => {
-      if (!recipe.eligibleCustomerIds.includes(customerId)) return
+    assignmentGroups.forEach((group, groupIndex) => {
+      if (!group.eligibleCustomerIds.includes(customerId)) return
 
       const y = options.relaxAssignmentVariables
-        ? model.numVar(0, 1, `y_${customerIndex}_${recipeIndex}`)
-        : model.boolVar(`y_${customerIndex}_${recipeIndex}`)
+        ? model.numVar(0, 1, `y_${customerIndex}_${groupIndex}`)
+        : model.boolVar(`y_${customerIndex}_${groupIndex}`)
       yByCustomerRecipe.set(
-        `${customerId}\u001f${recipe.candidate.id}`,
+        `${customerId}\u001f${group.key}`,
         y,
       )
       assignmentVars.push(y)
@@ -322,22 +374,25 @@ function buildHighsStage(
   buildPhaseMs.customerAssignmentsMs = performance.now() - phaseStartedAt
 
   phaseStartedAt = performance.now()
-  domain.recipes.forEach((recipe, recipeIndex) => {
-    const x = xByRecipeId.get(recipe.candidate.id)
-    if (!x) return
-
-    const assignmentVars = recipe.eligibleCustomerIds.flatMap(
+  assignmentGroups.forEach((group, groupIndex) => {
+    const assignmentVars = group.eligibleCustomerIds.flatMap(
       (customerId) => {
         const y = yByCustomerRecipe.get(
-          `${customerId}\u001f${recipe.candidate.id}`,
+          `${customerId}\u001f${group.key}`,
         )
         return y ? [y] : []
       },
     )
+    const capacityTerms = group.recipes.flatMap((recipe) => {
+      const x = xByRecipeId.get(recipe.candidate.id)
+      return x ? [x.times(2)] : []
+    })
 
     model.addConstraint(
-      sum(...assignmentVars).minus(x.times(2)).leq(0),
-      `capacity_${recipeIndex}`,
+      sum(...assignmentVars)
+        .minus(sum(...capacityTerms))
+        .leq(0),
+      `capacity_${groupIndex}`,
     )
   })
   buildPhaseMs.recipeCapacityMs = performance.now() - phaseStartedAt
@@ -684,7 +739,7 @@ function buildHighsStage(
     (needsJarStructure ? 1 : 0) +
     reusableJarVariableCount
   const constraintCount =
-    domain.recipes.length +
+    assignmentGroups.length +
     (needsRecipeUsageStructure ? domain.recipes.length * 2 : 0) +
     domain.serviceableCustomerIds.length +
     operationByEdgeKey.size * 2 +
@@ -722,6 +777,7 @@ export async function profileHighsOptimization(
     relaxAssignmentVariables?: boolean
     maxStages?: number
     aggregateLocalSingletonOperations?: boolean
+    aggregateEquivalentAssignments?: boolean
     initialCriterionFixes?: Array<{
       criterion: OptimizationCriterion
       value: number
@@ -767,6 +823,8 @@ export async function profileHighsOptimization(
           options.relaxAssignmentVariables ?? false,
         aggregateLocalSingletonOperations:
           options.aggregateLocalSingletonOperations ?? false,
+        aggregateEquivalentAssignments:
+          options.aggregateEquivalentAssignments ?? false,
       },
     )
     const buildMs = performance.now() - buildStartedAt
