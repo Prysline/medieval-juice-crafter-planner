@@ -152,38 +152,34 @@ function buildHighsStage(
     )
   }
 
-  const assignmentGroups = (() => {
-    if (!options.aggregateEquivalentAssignments) {
-      return domain.recipes.map((recipe) => ({
-        key: recipe.candidate.id,
-        recipes: [recipe],
-        eligibleCustomerIds: recipe.eligibleCustomerIds,
-      }))
-    }
-
-    const groups = new Map<
-      string,
-      {
-        key: string
-        recipes: typeof domain.recipes
-        eligibleCustomerIds: string[]
-      }
-    >()
-    for (const recipe of domain.recipes) {
-      const eligibleCustomerIds = [...recipe.eligibleCustomerIds].sort()
-      const key = eligibleCustomerIds.join('\u001e')
-      const group = groups.get(key)
-      if (group) group.recipes.push(recipe)
-      else {
-        groups.set(key, {
-          key,
-          recipes: [recipe],
-          eligibleCustomerIds,
-        })
-      }
-    }
-    return [...groups.values()]
-  })()
+  const assignmentGroups = options.aggregateEquivalentAssignments
+    ? (() => {
+        const groups = new Map<
+          string,
+          {
+            key: string
+            recipes: typeof domain.recipes
+            eligibleCustomerIds: string[]
+          }
+        >()
+        for (const recipe of domain.recipes) {
+          const eligibleCustomerIds = [
+            ...recipe.eligibleCustomerIds,
+          ].sort()
+          const key = eligibleCustomerIds.join('\u001e')
+          const group = groups.get(key)
+          if (group) group.recipes.push(recipe)
+          else {
+            groups.set(key, {
+              key,
+              recipes: [recipe],
+              eligibleCustomerIds,
+            })
+          }
+        }
+        return [...groups.values()]
+      })()
+    : null
 
   domain.recipes.forEach((recipe, recipeIndex) => {
     const customerCapacityUpperBound = Math.max(
@@ -245,49 +241,102 @@ function buildHighsStage(
     }
   })
 
-  domain.serviceableCustomerIds.forEach((customerId, customerIndex) => {
-    const assignmentVars: BoolVariable[] = []
+  if (assignmentGroups) {
+    domain.serviceableCustomerIds.forEach(
+      (customerId, customerIndex) => {
+        const assignmentVars = []
 
-    assignmentGroups.forEach((group, groupIndex) => {
-      if (!group.eligibleCustomerIds.includes(customerId)) return
+        assignmentGroups.forEach((group, groupIndex) => {
+          if (!group.eligibleCustomerIds.includes(customerId)) return
 
-      const y = options.relaxAssignmentVariables
-        ? model.numVar(0, 1, `y_${customerIndex}_${groupIndex}`)
-        : model.boolVar(`y_${customerIndex}_${groupIndex}`)
-      yByCustomerRecipe.set(
-        `${customerId}\u001f${group.key}`,
-        y,
-      )
-      assignmentVars.push(y)
-    })
+          const y = options.relaxAssignmentVariables
+            ? model.numVar(
+                0,
+                1,
+                `y_${customerIndex}_${groupIndex}`,
+              )
+            : model.boolVar(`y_${customerIndex}_${groupIndex}`)
+          yByCustomerRecipe.set(
+            `${customerId}\u001f${group.key}`,
+            y,
+          )
+          assignmentVars.push(y)
+        })
 
-    model.addConstraint(
-      sum(...assignmentVars).eq(1),
-      `customer_${customerIndex}`,
-    )
-  })
-
-  assignmentGroups.forEach((group, groupIndex) => {
-    const assignmentVars = group.eligibleCustomerIds.flatMap(
-      (customerId) => {
-        const y = yByCustomerRecipe.get(
-          `${customerId}\u001f${group.key}`,
+        model.addConstraint(
+          sum(...assignmentVars).eq(1),
+          `customer_${customerIndex}`,
         )
-        return y ? [y] : []
       },
     )
-    const capacityTerms = group.recipes.flatMap((recipe) => {
-      const x = xByRecipeId.get(recipe.candidate.id)
-      return x ? [x.times(2)] : []
-    })
 
-    model.addConstraint(
-      sum(...assignmentVars)
-        .minus(sum(...capacityTerms))
-        .leq(0),
-      `capacity_${groupIndex}`,
+    assignmentGroups.forEach((group, groupIndex) => {
+      const assignmentVars = group.eligibleCustomerIds.flatMap(
+        (customerId) => {
+          const y = yByCustomerRecipe.get(
+            `${customerId}\u001f${group.key}`,
+          )
+          return y ? [y] : []
+        },
+      )
+      const capacityTerms = group.recipes.flatMap((recipe) => {
+        const x = xByRecipeId.get(recipe.candidate.id)
+        return x ? [x.times(2)] : []
+      })
+
+      model.addConstraint(
+        sum(...assignmentVars)
+          .minus(sum(...capacityTerms))
+          .leq(0),
+        `capacity_${groupIndex}`,
+      )
+    })
+  } else {
+    domain.serviceableCustomerIds.forEach(
+      (customerId, customerIndex) => {
+        const assignmentVars: BoolVariable[] = []
+
+        domain.recipes.forEach((recipe, recipeIndex) => {
+          if (!recipe.eligibleCustomerIds.includes(customerId)) {
+            return
+          }
+
+          const y = model.boolVar(
+            `y_${customerIndex}_${recipeIndex}`,
+          )
+          yByCustomerRecipe.set(
+            `${customerId}\u001f${recipe.candidate.id}`,
+            y,
+          )
+          assignmentVars.push(y)
+        })
+
+        model.addConstraint(
+          sum(...assignmentVars).eq(1),
+          `customer_${customerIndex}`,
+        )
+      },
     )
-  })
+
+    domain.recipes.forEach((recipe, recipeIndex) => {
+      const x = xByRecipeId.get(recipe.candidate.id)
+      if (!x) return
+
+      const assignmentVars = recipe.eligibleCustomerIds.flatMap(
+        (customerId) => {
+          const y = yByCustomerRecipe.get(
+            `${customerId}\u001f${recipe.candidate.id}`,
+          )
+          return y ? [y] : []
+        },
+      )
+
+      model.addConstraint(
+        sum(...assignmentVars).minus(x.times(2)).leq(0),
+        `capacity_${recipeIndex}`,
+      )
+    })
+  }
 
   if (needsProductionOperations) {
     const quantityTermsByEdgeKey = new Map<
