@@ -737,6 +737,21 @@ it(
       0,
     )
 
+    const stage3AtLeast25UnitCostLowerBoundHighs =
+      await profileHighsOptimization(
+        strictCostPrunedModel,
+        ['minimum-cost'],
+        {
+          stageTimeLimitSeconds: 10.5,
+          relaxAssignmentVariables: true,
+          aggregateEquivalentAssignments: true,
+          productionUnitsLowerBound: 25,
+          maxStages: 1,
+        },
+      )
+    const stage3AtLeast25UnitCostLowerBoundStage =
+      stage3AtLeast25UnitCostLowerBoundHighs.stages[0]
+
     const fixedMinimumCost =
       compressedCostStage?.status === 'optimal' &&
       compressedCostStage.objectiveValue !== null
@@ -3133,6 +3148,35 @@ it(
       stage2ProjectedConstraintCountAfterLocalCompression:
         projectedStage2ConstraintCountAfterLocalCompression,
       stage2FixedMinimumCost: fixedMinimumCost,
+      stage3AtLeast25UnitCostLowerBoundStage:
+        stage3AtLeast25UnitCostLowerBoundStage
+          ? {
+              status:
+                stage3AtLeast25UnitCostLowerBoundStage.status,
+              objectiveValue:
+                stage3AtLeast25UnitCostLowerBoundStage.objectiveValue,
+              selectedRecipeCount:
+                stage3AtLeast25UnitCostLowerBoundStage.selectedRecipeUnits.length,
+              productionUnits:
+                stage3AtLeast25UnitCostLowerBoundStage.selectedRecipeUnits.reduce(
+                  (total, selection) =>
+                    total + Math.round(selection.units),
+                  0,
+                ),
+              solveMs:
+                stage3AtLeast25UnitCostLowerBoundStage.solveMs,
+              variableCount:
+                stage3AtLeast25UnitCostLowerBoundStage.variableCount,
+              constraintCount:
+                stage3AtLeast25UnitCostLowerBoundStage.constraintCount,
+              integralAssignmentReconstructionFeasible:
+                stage3AtLeast25UnitCostLowerBoundStage.integralAssignmentReconstructionFeasible,
+              reconstructedAssignmentCount:
+                stage3AtLeast25UnitCostLowerBoundStage.reconstructedAssignmentCount,
+              totalMs:
+                stage3AtLeast25UnitCostLowerBoundHighs.totalMs,
+            }
+          : null,
       stage1CompressedIncumbent: {
         selectedRecipeCount:
           compressedCostStage?.selectedRecipeUnits.length ?? 0,
