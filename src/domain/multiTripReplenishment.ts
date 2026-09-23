@@ -514,10 +514,71 @@ function buildJarQueuesWithSwitches(
     terminalRecipes.map((recipe) => recipe.recipeId),
   )
 
-  for (const recipe of recipes.filter(
-    (item) => !terminalRecipeIds.has(item.recipeId),
-  )) {
-    const target = [...availableQueues].sort((a, b) =>
+  // A terminal recipe must end the day in its final physical jar. When a
+  // reusable jar already carries the same recipe, reserve that free match
+  // before unrelated recipes can switch the jar away and force a later
+  // switch back.
+  const reservedTerminalQueueByRecipeId = new Map<
+    string,
+    JarQueue
+  >()
+  const reservedTerminalQueueIds = new Set<string>()
+  for (const recipe of terminalRecipes) {
+    const matchingQueue = availableQueues
+      .filter(
+        (queue) =>
+          !reservedTerminalQueueIds.has(queue.physicalJarId) &&
+          queueCurrentRecipeId(queue) === recipe.recipeId,
+      )
+      .sort((a, b) =>
+        queueSelectionSort(recipe.recipeId, a, b),
+      )[0]
+
+    if (!matchingQueue) continue
+    reservedTerminalQueueByRecipeId.set(
+      recipe.recipeId,
+      matchingQueue,
+    )
+    reservedTerminalQueueIds.add(matchingQueue.physicalJarId)
+  }
+
+  const unreservedQueues = availableQueues.filter(
+    (queue) =>
+      !reservedTerminalQueueIds.has(queue.physicalJarId),
+  )
+  const nonTerminalTargetQueues =
+    unreservedQueues.length > 0
+      ? unreservedQueues
+      : availableQueues
+  const matchingRecipeIdsAtStart = new Set(
+    nonTerminalTargetQueues.flatMap((queue) => {
+      const recipeId = queueCurrentRecipeId(queue)
+      return recipeId ? [recipeId] : []
+    }),
+  )
+  const nonTerminalRecipes = recipes
+    .filter(
+      (recipe) => !terminalRecipeIds.has(recipe.recipeId),
+    )
+    .map((recipe, index) => ({ recipe, index }))
+    .sort(
+      (a, b) =>
+        Number(
+          !matchingRecipeIdsAtStart.has(a.recipe.recipeId),
+        ) -
+          Number(
+            !matchingRecipeIdsAtStart.has(b.recipe.recipeId),
+          ) ||
+        a.index - b.index,
+    )
+    .map(({ recipe }) => recipe)
+
+  // Preserve free initial/current matches before scheduling recipes that
+  // necessarily require a type switch. Reserved terminal jars are only used
+  // here when every reusable jar is terminal-reserved, in which case the
+  // later consistency check still guards against an unrealizable lower bound.
+  for (const recipe of nonTerminalRecipes) {
+    const target = [...nonTerminalTargetQueues].sort((a, b) =>
       queueSelectionSort(recipe.recipeId, a, b),
     )[0]
     if (!target) {
@@ -528,12 +589,22 @@ function buildJarQueuesWithSwitches(
     appendRecipeChunks(target, recipe, recipe.chunks)
   }
 
-  const terminalPool = [...availableQueues]
+  const terminalPool = availableQueues.filter(
+    (queue) =>
+      !reservedTerminalQueueIds.has(queue.physicalJarId),
+  )
   for (const recipe of terminalRecipes) {
-    terminalPool.sort((a, b) =>
-      queueSelectionSort(recipe.recipeId, a, b),
-    )
-    const target = terminalPool.shift()
+    const reserved =
+      reservedTerminalQueueByRecipeId.get(recipe.recipeId)
+    let target = reserved
+
+    if (!target) {
+      terminalPool.sort((a, b) =>
+        queueSelectionSort(recipe.recipeId, a, b),
+      )
+      target = terminalPool.shift()
+    }
+
     if (!target) {
       throw new Error(
         'Leftover terminal jar allocation exceeded reusable carried jar capacity',
