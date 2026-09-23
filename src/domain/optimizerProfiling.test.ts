@@ -677,6 +677,30 @@ it(
       )
     const stage3ServiceCoverJarLowerBoundStage =
       stage3ServiceCoverJarLowerBoundHighs.stages[0]
+    const stage3CostFixedServiceCoverJarLowerBoundHighs =
+      compressedCostStage?.status === 'optimal' &&
+      compressedCostStage.objectiveValue !== null
+        ? await profileHighsOptimization(
+            costStageCompressedModel,
+            ['minimum-jar-switches'],
+            {
+              stageTimeLimitSeconds: 10.5,
+              relaxAssignmentVariables: true,
+              aggregateEquivalentAssignments: true,
+              maxStages: 1,
+              initialCriterionFixes: [
+                {
+                  criterion: 'minimum-cost',
+                  value: Math.round(
+                    compressedCostStage.objectiveValue,
+                  ),
+                },
+              ],
+            },
+          )
+        : null
+    const stage3CostFixedServiceCoverJarLowerBoundStage =
+      stage3CostFixedServiceCoverJarLowerBoundHighs?.stages[0]
     const compressedRecipeById = new Map(
       costStageCompressedRecipes.map((recipe) => [
         recipe.candidate.id,
@@ -3634,6 +3658,35 @@ it(
                 stage3ServiceCoverJarLowerBoundStage.reconstructedAssignmentCount,
               totalMs:
                 stage3ServiceCoverJarLowerBoundHighs.totalMs,
+            }
+          : null,
+      stage3CostFixedServiceCoverJarLowerBoundStage:
+        stage3CostFixedServiceCoverJarLowerBoundStage
+          ? {
+              status:
+                stage3CostFixedServiceCoverJarLowerBoundStage.status,
+              objectiveValue:
+                stage3CostFixedServiceCoverJarLowerBoundStage.objectiveValue,
+              selectedRecipeCount:
+                stage3CostFixedServiceCoverJarLowerBoundStage.selectedRecipeUnits.length,
+              productionUnits:
+                stage3CostFixedServiceCoverJarLowerBoundStage.selectedRecipeUnits.reduce(
+                  (total, selection) =>
+                    total + Math.round(selection.units),
+                  0,
+                ),
+              solveMs:
+                stage3CostFixedServiceCoverJarLowerBoundStage.solveMs,
+              variableCount:
+                stage3CostFixedServiceCoverJarLowerBoundStage.variableCount,
+              constraintCount:
+                stage3CostFixedServiceCoverJarLowerBoundStage.constraintCount,
+              integralAssignmentReconstructionFeasible:
+                stage3CostFixedServiceCoverJarLowerBoundStage.integralAssignmentReconstructionFeasible,
+              reconstructedAssignmentCount:
+                stage3CostFixedServiceCoverJarLowerBoundStage.reconstructedAssignmentCount,
+              totalMs:
+                stage3CostFixedServiceCoverJarLowerBoundHighs?.totalMs ?? 0,
             }
           : null,
       stage3WitnessDistinctRecipeCount:
