@@ -1,4 +1,4 @@
-import { Model, sum } from '@bubblyworld/highs-ts'
+import { HiGHS, Model, sum } from '@bubblyworld/highs-ts'
 import { PROCESSING_STACK_CAPACITY } from './inventoryRules'
 import { PlanningUserError } from './planningErrors'
 import type {
@@ -36,18 +36,25 @@ export interface HighsStageProfile {
   variableCount: number
   constraintCount: number
   buildMs: number
+  serializeMs: number
+  wasmCreateMs: number
+  parseMs: number
   solveMs: number
   status: string
-  objectiveValue: number
+  objectiveValue: number | null
 }
 
 export interface HighsOptimizationProfile {
   stages: HighsStageProfile[]
   totalBuildMs: number
+  totalSerializeMs: number
+  totalWasmCreateMs: number
+  totalParseMs: number
   totalSolveMs: number
   totalMs: number
   finalVariableCount: number
   finalConstraintCount: number
+  terminatedAtObjective: ObjectiveKey | null
 }
 
 function requiredFiniteNumber(
@@ -414,15 +421,22 @@ function buildHighsStage(
 export async function profileHighsOptimization(
   domain: BatchOptimizationModel,
   priorities: OptimizationCriterion[],
+  options: {
+    stageTimeLimitSeconds?: number
+  } = {},
 ): Promise<HighsOptimizationProfile> {
   if (domain.serviceableCustomerIds.length === 0) {
     return {
       stages: [],
       totalBuildMs: 0,
+      totalSerializeMs: 0,
+      totalWasmCreateMs: 0,
+      totalParseMs: 0,
       totalSolveMs: 0,
       totalMs: 0,
       finalVariableCount: 0,
       finalConstraintCount: 0,
+      terminatedAtObjective: null,
     }
   }
 
@@ -430,30 +444,56 @@ export async function profileHighsOptimization(
   const objectives = objectiveOrder(priorities)
   const fixes: ObjectiveFix[] = []
   const stages: HighsStageProfile[] = []
+  const stageTimeLimitSeconds =
+    options.stageTimeLimitSeconds ?? 10.5
+  let terminatedAtObjective: ObjectiveKey | null = null
 
   for (const objectiveKey of objectives) {
     const buildStartedAt = performance.now()
     const built = buildHighsStage(domain, objectiveKey, fixes)
     const buildMs = performance.now() - buildStartedAt
 
-    const solveStartedAt = performance.now()
-    const solution = await built.model.solve()
-    const solveMs = performance.now() - solveStartedAt
+    const serializeStartedAt = performance.now()
+    const mps = built.model.print('mps')
+    const serializeMs = performance.now() - serializeStartedAt
 
-    if (solution.status !== 'optimal') {
-      throw new PlanningUserError(
-        'optimizer-no-solution',
-        { solverStatus: solution.status },
-        `HiGHS optimizer ended with status: ${solution.status}`,
+    const wasmCreateStartedAt = performance.now()
+    const highs = await HiGHS.create()
+    const wasmCreateMs = performance.now() - wasmCreateStartedAt
+
+    let parseMs = 0
+    let solveMs = 0
+    let status = 'unknown'
+    let objectiveValue: number | null = null
+
+    try {
+      const parseStartedAt = performance.now()
+      await highs.parse(mps, 'mps')
+      parseMs = performance.now() - parseStartedAt
+
+      // highs-ts 1.3.0 dispatches integer JS numbers to the integer-option
+      // setter. HiGHS time_limit is a real option, so keep this diagnostic
+      // value non-integer without changing the requested practical bound.
+      const realTimeLimit = Number.isInteger(stageTimeLimitSeconds)
+        ? stageTimeLimitSeconds + 1e-6
+        : stageTimeLimitSeconds
+      highs.setParam(
+        'time_limit',
+        Math.max(0.1, realTimeLimit),
       )
-    }
 
-    const optimum = Math.round(
-      requiredFiniteNumber(
-        solution.objective,
-        `${objectiveKey} objective`,
-      ),
-    )
+      const solveStartedAt = performance.now()
+      const solution = await highs.solve()
+      solveMs = performance.now() - solveStartedAt
+      status = solution.status
+      objectiveValue =
+        typeof solution.objective === 'number' &&
+        Number.isFinite(solution.objective)
+          ? solution.objective
+          : null
+    } finally {
+      highs.free()
+    }
 
     stages.push({
       objective: objectiveKey,
@@ -461,13 +501,22 @@ export async function profileHighsOptimization(
       variableCount: built.variableCount,
       constraintCount: built.constraintCount,
       buildMs,
+      serializeMs,
+      wasmCreateMs,
+      parseMs,
       solveMs,
-      status: solution.status,
-      objectiveValue: optimum,
+      status,
+      objectiveValue,
     })
+
+    if (status !== 'optimal' || objectiveValue === null) {
+      terminatedAtObjective = objectiveKey
+      break
+    }
+
     fixes.push({
       objective: objectiveKey,
-      value: optimum,
+      value: Math.round(objectiveValue),
     })
   }
 
@@ -478,6 +527,18 @@ export async function profileHighsOptimization(
       (total, stage) => total + stage.buildMs,
       0,
     ),
+    totalSerializeMs: stages.reduce(
+      (total, stage) => total + stage.serializeMs,
+      0,
+    ),
+    totalWasmCreateMs: stages.reduce(
+      (total, stage) => total + stage.wasmCreateMs,
+      0,
+    ),
+    totalParseMs: stages.reduce(
+      (total, stage) => total + stage.parseMs,
+      0,
+    ),
     totalSolveMs: stages.reduce(
       (total, stage) => total + stage.solveMs,
       0,
@@ -485,6 +546,7 @@ export async function profileHighsOptimization(
     totalMs: performance.now() - totalStartedAt,
     finalVariableCount: finalStage?.variableCount ?? 0,
     finalConstraintCount: finalStage?.constraintCount ?? 0,
+    terminatedAtObjective,
   }
 }
 
