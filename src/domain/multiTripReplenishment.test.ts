@@ -258,6 +258,143 @@ describe('multi-trip replenishment', () => {
     expectScheduleConsistency(result)
   })
 
+  it('preserves a matching initial recipe before scheduling unrelated switch loads', () => {
+    const salesDemand = demand([
+      {
+        recipeId: 'a',
+        recipeName: 'A',
+        assignedServings: 3,
+      },
+      {
+        recipeId: 'c',
+        recipeName: 'C',
+        assignedServings: 4,
+      },
+      {
+        recipeId: 'd',
+        recipeName: 'D',
+        assignedServings: 2,
+      },
+    ])
+    const jars: JuiceJarInventoryItem[] = [
+      {
+        id: 'jar-a',
+        recipeId: 'a',
+        servings: 1,
+      },
+      {
+        id: 'jar-b-retained',
+        recipeId: 'b',
+        servings: 1,
+      },
+    ]
+
+    const result = buildPlanWithJars(
+      salesDemand,
+      'retain-and-wash',
+      jars,
+      { cleanCups: 9, usedCups: 0 },
+    )
+
+    expect(
+      minimumJarTypeSwitchesForInitialJars(
+        jars.map((jar) => ({
+          recipeId: jar.recipeId,
+          servings: jar.servings,
+        })),
+        salesDemand.recipes.map((recipe) => recipe.recipeId),
+      ),
+    ).toBe(2)
+    expect(result.jarTypeSwitches).toBe(2)
+    expect(
+      result.trips.flatMap((trip) =>
+        trip.juiceJars
+          .filter((load) => load.physicalJarId === 'jar-a')
+          .map((load) => ({
+            recipeId: load.recipeId,
+            fillAction: load.fillAction,
+          })),
+      ),
+    ).toEqual([
+      { recipeId: 'a', fillAction: 'use-existing' },
+      { recipeId: 'a', fillAction: 'refill-same-type' },
+      { recipeId: 'c', fillAction: 'type-switch' },
+      { recipeId: 'd', fillAction: 'type-switch' },
+    ])
+    expectScheduleConsistency(result)
+  })
+
+  it('reserves a matching initial jar for a terminal leftover recipe', () => {
+    const salesDemand = demand([
+      {
+        recipeId: 'a',
+        recipeName: 'A',
+        assignedServings: 2,
+      },
+      {
+        recipeId: 'c',
+        recipeName: 'C',
+        assignedServings: 2,
+      },
+      {
+        recipeId: 'd',
+        recipeName: 'D',
+        assignedServings: 2,
+      },
+    ])
+    const jars: JuiceJarInventoryItem[] = [
+      {
+        id: 'jar-a',
+        recipeId: 'a',
+        servings: 1,
+      },
+      {
+        id: 'jar-empty',
+        recipeId: null,
+        servings: 0,
+      },
+    ]
+
+    const result = buildPlanWithJars(
+      salesDemand,
+      'retain-and-wash',
+      jars,
+      { cleanCups: 6, usedCups: 0 },
+    )
+
+    expect(
+      minimumJarTypeSwitchesForInitialJars(
+        jars.map((jar) => ({
+          recipeId: jar.recipeId,
+          servings: jar.servings,
+        })),
+        salesDemand.recipes.map((recipe) => recipe.recipeId),
+      ),
+    ).toBe(1)
+    expect(result.jarTypeSwitches).toBe(1)
+    expect(
+      result.leftoverJarContents.some(
+        (leftover) =>
+          leftover.physicalJarId === 'jar-a' &&
+          leftover.recipeId === 'a',
+      ),
+    ).toBe(true)
+    expect(
+      result.trips.flatMap((trip) =>
+        trip.juiceJars
+          .filter((load) => load.physicalJarId === 'jar-a')
+          .map((load) => ({
+            recipeId: load.recipeId,
+            fillAction: load.fillAction,
+          })),
+      ),
+    ).toEqual([
+      { recipeId: 'a', fillAction: 'use-existing' },
+      { recipeId: 'a', fillAction: 'refill-same-type' },
+    ])
+    expectScheduleConsistency(result)
+  })
+
   it('counts a switch only after matching initial contents are fully consumed', () => {
     const salesDemand = namedRecipes(['A', 'B'], 1)
     const result = buildPlanWithJars(
