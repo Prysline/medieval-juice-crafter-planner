@@ -50,6 +50,12 @@ export interface HighsStageProfile {
   assignmentVariablesRelaxed: boolean
   fractionalAssignmentVariableCount: number
   maxAssignmentIntegralityError: number
+  recipeVariablesRelaxed: boolean
+  fractionalRecipeVariableCount: number
+  maxRecipeIntegralityError: number
+  operationVariablesRelaxed: boolean
+  fractionalOperationVariableCount: number
+  maxOperationIntegralityError: number
   integralAssignmentReconstructionFeasible: boolean | null
   reconstructedAssignmentCount: number
   selectedRecipeUnits: Array<{
@@ -223,6 +229,8 @@ function buildHighsStage(
   fixes: ObjectiveFix[],
   options: {
     relaxAssignmentVariables?: boolean
+    relaxRecipeVariables?: boolean
+    relaxOperationVariables?: boolean
     aggregateLocalSingletonOperations?: boolean
     aggregateEquivalentAssignments?: boolean
     tightenRecipeBoundsFromMinimumCostFix?: boolean
@@ -362,11 +370,17 @@ function buildHighsStage(
           )
         : maxJuiceUnitsPerRecipe
 
-    const x = model.intVar(
-      0,
-      recipeUpperBound,
-      `x_${recipeIndex}`,
-    )
+    const x = options.relaxRecipeVariables
+      ? model.numVar(
+          0,
+          recipeUpperBound,
+          `x_${recipeIndex}`,
+        )
+      : model.intVar(
+          0,
+          recipeUpperBound,
+          `x_${recipeIndex}`,
+        )
     xByRecipeId.set(recipe.candidate.id, x)
 
     if (options.fixedRecipeUnits) {
@@ -511,11 +525,17 @@ function buildHighsStage(
 
       for (const [multiplicity, localEdgeCount] of
         localEdgeCountByMultiplicity) {
-        const operationCount = model.intVar(
-          0,
-          maxTotalJuiceUnits,
-          `local_op_${localOperationIndex}`,
-        )
+        const operationCount = options.relaxOperationVariables
+          ? model.numVar(
+              0,
+              maxTotalJuiceUnits,
+              `local_op_${localOperationIndex}`,
+            )
+          : model.intVar(
+              0,
+              maxTotalJuiceUnits,
+              `local_op_${localOperationIndex}`,
+            )
         operationByEdgeKey.set(
           `local:${recipe.candidate.id}:m${multiplicity}`,
           operationCount,
@@ -543,11 +563,17 @@ function buildHighsStage(
 
     ;[...quantityTermsByEdgeKey.entries()].forEach(
       ([edgeKey, quantityTerms], edgeIndex) => {
-        const operationCount = model.intVar(
-          0,
-          maxTotalJuiceUnits,
-          `op_${edgeIndex}`,
-        )
+        const operationCount = options.relaxOperationVariables
+          ? model.numVar(
+              0,
+              maxTotalJuiceUnits,
+              `op_${edgeIndex}`,
+            )
+          : model.intVar(
+              0,
+              maxTotalJuiceUnits,
+              `op_${edgeIndex}`,
+            )
         operationByEdgeKey.set(edgeKey, operationCount)
 
         const quantityExpression = sum(...quantityTerms)
@@ -843,6 +869,8 @@ export async function profileHighsOptimization(
   options: {
     stageTimeLimitSeconds?: number
     relaxAssignmentVariables?: boolean
+    relaxRecipeVariables?: boolean
+    relaxOperationVariables?: boolean
     maxStages?: number
     aggregateLocalSingletonOperations?: boolean
     aggregateEquivalentAssignments?: boolean
@@ -903,6 +931,10 @@ export async function profileHighsOptimization(
       {
         relaxAssignmentVariables:
           options.relaxAssignmentVariables ?? false,
+        relaxRecipeVariables:
+          options.relaxRecipeVariables ?? false,
+        relaxOperationVariables:
+          options.relaxOperationVariables ?? false,
         aggregateLocalSingletonOperations:
           options.aggregateLocalSingletonOperations ?? false,
         aggregateEquivalentAssignments:
@@ -930,6 +962,10 @@ export async function profileHighsOptimization(
     let objectiveValue: number | null = null
     let fractionalAssignmentVariableCount = 0
     let maxAssignmentIntegralityError = 0
+    let fractionalRecipeVariableCount = 0
+    let maxRecipeIntegralityError = 0
+    let fractionalOperationVariableCount = 0
+    let maxOperationIntegralityError = 0
     let integralAssignmentReconstructionFeasible: boolean | null = null
     let reconstructedAssignmentCount = 0
     const selectedRecipeUnits: Array<{
@@ -966,12 +1002,36 @@ export async function profileHighsOptimization(
       if (solution.solution) {
         for (const [recipeId, x] of built.xByRecipeId) {
           const units = solution.solution.get(x.name) ?? 0
+          const integralityError = Math.abs(
+            units - Math.round(units),
+          )
+          if (integralityError > 1e-7) {
+            fractionalRecipeVariableCount += 1
+          }
+          maxRecipeIntegralityError = Math.max(
+            maxRecipeIntegralityError,
+            integralityError,
+          )
           if (units > 1e-7) {
             selectedRecipeUnits.push({
               recipeId,
               units,
             })
           }
+        }
+
+        for (const operation of built.operationByEdgeKey.values()) {
+          const value = solution.solution.get(operation.name) ?? 0
+          const integralityError = Math.abs(
+            value - Math.round(value),
+          )
+          if (integralityError > 1e-7) {
+            fractionalOperationVariableCount += 1
+          }
+          maxOperationIntegralityError = Math.max(
+            maxOperationIntegralityError,
+            integralityError,
+          )
         }
       }
 
@@ -991,15 +1051,17 @@ export async function profileHighsOptimization(
           )
         }
 
-        const reconstruction = reconstructIntegralAssignments(
-          domain,
-          built,
-          solution.solution,
-        )
-        integralAssignmentReconstructionFeasible =
-          reconstruction.feasible
-        reconstructedAssignmentCount =
-          reconstruction.assignedCount
+        if (maxRecipeIntegralityError <= 1e-7) {
+          const reconstruction = reconstructIntegralAssignments(
+            domain,
+            built,
+            solution.solution,
+          )
+          integralAssignmentReconstructionFeasible =
+            reconstruction.feasible
+          reconstructedAssignmentCount =
+            reconstruction.assignedCount
+        }
       }
     } finally {
       highs.free()
@@ -1014,6 +1076,14 @@ export async function profileHighsOptimization(
         options.relaxAssignmentVariables ?? false,
       fractionalAssignmentVariableCount,
       maxAssignmentIntegralityError,
+      recipeVariablesRelaxed:
+        options.relaxRecipeVariables ?? false,
+      fractionalRecipeVariableCount,
+      maxRecipeIntegralityError,
+      operationVariablesRelaxed:
+        options.relaxOperationVariables ?? false,
+      fractionalOperationVariableCount,
+      maxOperationIntegralityError,
       integralAssignmentReconstructionFeasible,
       reconstructedAssignmentCount,
       selectedRecipeUnits,
