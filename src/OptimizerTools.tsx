@@ -238,10 +238,17 @@ function inventoryRecipeSourceLabel(
 ): string {
   const labels: string[] = []
   if (entry.sources.includes('observed')) labels.push('實測')
-  if (entry.sources.includes('saved')) labels.push('已保存')
+  if (entry.sources.includes('personal')) labels.push('個人已確認')
+  if (
+    entry.sources.includes('saved') &&
+    !entry.sources.includes('personal')
+  ) {
+    labels.push('已保存')
+  }
   if (
     entry.sources.includes('computed') &&
-    !entry.sources.includes('observed')
+    !entry.sources.includes('observed') &&
+    !entry.sources.includes('personal')
   ) {
     labels.push('安全推導')
   }
@@ -596,7 +603,7 @@ function OptimizerTools({
 }: OptimizerToolsProps) {
   const [scope, setScope] = useState<OptimizerCustomerScope>('all')
   const [candidatePolicy, setCandidatePolicy] =
-    useState<OptimizationCandidatePolicy>('observed-only')
+    useState<OptimizationCandidatePolicy>('trusted-only')
   const [primaryCriterion, setPrimaryCriterion] =
     useState<OptimizationCriterion>('minimum-cost')
   const [secondaryOne, setSecondaryOne] =
@@ -1158,9 +1165,11 @@ function OptimizerTools({
                 )
               }
             >
-              <option value="observed-only">只用已實測配方</option>
+              <option value="trusted-only">
+                正式實測＋已確認個人配方
+              </option>
               <option value="allow-unambiguous-computed">
-                允許無歧義預測配方
+                正式實測＋已確認個人配方＋無歧義預測
               </option>
             </select>
           </label>
