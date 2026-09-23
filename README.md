@@ -93,8 +93,9 @@ src/
     plannerSettings.ts # mjc-planner-settings：persistent carried jar IDs、legacy count migration 與 used-cup drop opt-in
     productionChecklist.ts # Workflow-2：mjc-production-checklist；exact production-plan fingerprint + batch completion progress，純玩家進度、不改 domain state
     planApplicationBasis.ts # read-only canonical basis 重建與 stored transaction stale validation
-    planApplicationState.ts # inventory + supplied customers 的單一 canonical plan-application storage envelope
-    planApplicationCommit.ts # Phase 5C-4：commit 前 stale validation + single-write transaction commit
+    planApplicationState.ts # Workflow-3B 後為 plan-application-state-v2：inventory + supplied customers + plan-bound delivery execution cursor 的單一 canonical envelope；仍可讀 v1
+    planApplicationCommit.ts # Phase 5C-4：full-plan commit 前 stale validation + single-write transaction commit
+    deliveryExecutionCommit.ts # Workflow-3B：partial delivery 的 atomic single-write commit；同步 inventory / supplied customers / execution cursor，並鎖 canonical basis drift
   types.ts             # 共用 domain / data 型別
   App.tsx              # 顧客／配方／配方工具／批次規劃頁籤；UX-2B shared customer comparison + research filters
   RecipeTools.tsx      # Recipe Simulator + Personal Recipes UI；UX-2B 完整特性累計與多顧客比較
@@ -280,7 +281,8 @@ Phase 4 已完成：
 30. PR #102 完成 **Workflow-1｜製作物流物理化**：`productionLogistics.ts` 將一般架／背包 material state 正式拆開；新增顯式架上取物／放回架子 movement；machine intermediate output 固定先回背包；能裝下時 raw ingredients + production water 於第一個 machine operation 前 batch preload，容量不足才分輪補貨。保留 machine input 先裝入後騰背包格、finalizer → physical jar receiver、transactional rollback 等既有物理規則。CI #506：41 test files / 322 tests passed、`productionLogistics.test.ts` 13 tests、production build success。
 31. PR #104 完成 **Workflow-2｜製作步驟 checkbox**：新增 `mjc-production-checklist` 純進度 storage；exact net production plan canonical payload 直接作 stable fingerprint，不使用可能 collision 的短 hash；每個 machine batch 以 `step.key#batchIndex` 作 operation identity，可任意順序勾選／取消、顯示完成進度並全部重置。相同 plan 重新產生後可恢復；不同 plan 不套用舊完成狀態。checkbox persistence 與 `mjc-inventory`、`mjc-plan-application-state`、optimizer result / transaction 完全分離。CI #513：42 test files / 329 tests passed；`productionChecklist.test.ts` 6 tests、`OptimizerTools.test.tsx` 8 tests、production build success（1.78 s）。
 32. PR #106 完成 **Workflow-3A｜partial delivery execution trace**：把既有 physical sales plan 轉成可逐步執行的純 domain trace。每趟第一次正式交付前才套用該趟需要的 initial-juice discard、production fills、對應原料／production water 與洗杯；每位顧客各自消耗指定 physical jar 1 杯與 1 個 clean cup，並依同一 backpack capacity 規則逐杯決定 clean → used 或 drop；本趟最後一位完成後才執行 trip-end new-production discard。**趟次必須依序；同一 active trip 內未交付顧客可任意順序。**完整執行後的 inventory 已用 regression 證明與現行 whole-plan transaction 終態一致；另鎖定「上一趟賣空後、下一趟同配方仍是 refill-same-type」的歷史 recipe edge。CI #519：43 test files / 334 tests passed；`deliveryExecution.test.ts` 5 tests、production build success（1.24 s）。
-目前下一步是 **Workflow-3B｜atomic partial commit**：把 inventory、`suppliedCustomerIds` 與 plan-bound execution cursor 放進同一 canonical single-write transaction，拒絕 stale execution state；接著才做 **Workflow-3C｜delivery checkbox UI / partial replan**。Workflow-3 完成後再回 Debug-D Production P4。其後依序 Inventory-Intermediate → Candidate-3 → Candidate-4 → Phase 6 → Candidate-5。路線最佳化仍等待跨村移動時間、位置資訊、完整顧客服務時段與商店營業時間資料。
+33. PR #108 完成 **Workflow-3B｜atomic partial commit**：`mjc-plan-application-state` 升級為 v2 canonical envelope，單一 key 同時保存 inventory、`suppliedCustomerIds` 與 plan-bound delivery execution cursor；仍可讀既有 v1。每次 partial delivery 只做一次 canonical `setItem`，cursor 同時保存當下 inventory + supplied customers 的 basis fingerprint；下一次提交若 canonical state 已漂移即拒絕。從其他 UI 手動改 inventory／今日已供應會清除 in-flight cursor；部分送貨後若重新求解，新 plan 只有在 basis 精確等於目前 canonical state 且使用 initial cursor 時才能接管舊 session，不重播已提交事件。CI #524：44 test files / 343 tests passed；`deliveryExecutionCommit.test.ts` 9 tests、production build success（1.83 s）。
+目前下一步是 **Workflow-3C｜delivery checkbox UI / partial replan**：把 3A / 3B authority 接進果汁分配 UI，逐顧客正式提交、已提交不可用取消 checkbox 逆轉，部分送貨後可立即重新求解並以當前 canonical inventory / supplied state 建立新 execution session。Workflow-3 完成後再回 Debug-D Production P4。其後依序 Inventory-Intermediate → Candidate-3 → Candidate-4 → Phase 6 → Candidate-5。路線最佳化仍等待跨村移動時間、位置資訊、完整顧客服務時段與商店營業時間資料。
 
 
 ## Schedule / route readiness boundary
