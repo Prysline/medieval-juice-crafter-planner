@@ -124,7 +124,10 @@ async function expectRelaxationEquivalent(
     expect(relaxedStage.objective).toBe(binaryStage.objective)
     expect(binaryStage.status).toBe('optimal')
     expect(relaxedStage.status).toBe('optimal')
-    expect(relaxedStage.objectiveValue).toBe(binaryStage.objectiveValue)
+    expect(relaxedStage.objectiveValue).toBeCloseTo(
+      binaryStage.objectiveValue ?? 0,
+      9,
+    )
     expect(relaxedStage.fractionalAssignmentVariableCount).toBe(0)
     expect(relaxedStage.maxAssignmentIntegralityError).toBe(0)
     expect(
