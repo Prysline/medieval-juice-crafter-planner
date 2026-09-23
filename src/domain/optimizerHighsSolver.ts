@@ -245,6 +245,7 @@ function buildHighsStage(
     excludeSharedMachineOperationKinds?: Set<string>
     excludeSingletonMachineOperationKinds?: Set<string>
     machineOperationsUpperBound?: number
+    machineOperationsLowerBound?: number
     fixedRecipeUnits?: Map<string, number>
   } = {},
 ) {
@@ -759,6 +760,21 @@ function buildHighsStage(
       'machine_operations_upper_bound',
     )
   }
+  if (
+    machineOperationsExpression &&
+    typeof options.machineOperationsLowerBound === 'number' &&
+    Number.isFinite(options.machineOperationsLowerBound)
+  ) {
+    model.addConstraint(
+      machineOperationsExpression.geq(
+        Math.max(
+          0,
+          Math.ceil(options.machineOperationsLowerBound),
+        ),
+      ),
+      'machine_operations_lower_bound',
+    )
+  }
   buildPhaseMs.baseObjectivesMs = performance.now() - phaseStartedAt
 
   phaseStartedAt = performance.now()
@@ -998,6 +1014,7 @@ export async function profileHighsOptimization(
     excludeSharedMachineOperationKinds?: string[]
     excludeSingletonMachineOperationKinds?: string[]
     machineOperationsUpperBound?: number
+    machineOperationsLowerBound?: number
     fixedRecipeUnits?: Array<{
       recipeId: string
       units: number
@@ -1085,6 +1102,8 @@ export async function profileHighsOptimization(
         excludeSingletonMachineOperationKinds,
         machineOperationsUpperBound:
           options.machineOperationsUpperBound,
+        machineOperationsLowerBound:
+          options.machineOperationsLowerBound,
         fixedRecipeUnits,
       },
     )
