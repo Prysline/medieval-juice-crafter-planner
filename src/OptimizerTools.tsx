@@ -613,6 +613,10 @@ function OptimizerTools({
   })
   const [applicationState, setApplicationState] =
     useState<PlanApplicationUiState>({ status: 'idle' })
+  const [deliveryUiState, setDeliveryUiState] =
+    useState<DeliveryUiState>({ status: 'idle' })
+  const deliveryCanonicalSyncGuardRef =
+    useRef<DeliveryCanonicalSyncGuard | null>(null)
 
   const priorities = useMemo(
     () => uniquePriorities(primaryCriterion, secondaryOne, secondaryTwo),
@@ -642,6 +646,15 @@ function OptimizerTools({
   const capacitySummary = useMemo(
     () => buildInventoryCapacitySummary(inventoryState, plannerSettings),
     [inventoryState, plannerSettings],
+  )
+
+  const canonicalDeliveryUiFingerprint = useMemo(
+    () =>
+      deliveryExecutionCanonicalBasisFingerprint(
+        inventoryState,
+        suppliedCustomerIds,
+      ),
+    [inventoryState, suppliedCustomerIds],
   )
 
   function persistInventory(next: InventoryState) {
@@ -746,19 +759,41 @@ function OptimizerTools({
 
   useEffect(() => {
     setRunState({ status: 'idle' })
+    setDeliveryUiState({ status: 'idle' })
   }, [
     currentProgress,
     satisfactionByVillage,
-    suppliedCustomerIds,
     formalCustomerIds,
     scope,
     candidatePolicy,
     priorities,
-    inventoryState,
     plannerSettings,
     maxJarTypeSwitches,
     recipeCandidatePool,
   ])
+
+  useEffect(() => {
+    const guard = deliveryCanonicalSyncGuardRef.current
+    if (guard) {
+      const status = deliveryCanonicalSyncStatus(
+        guard,
+        canonicalDeliveryUiFingerprint,
+      )
+      if (status === 'complete') {
+        deliveryCanonicalSyncGuardRef.current = null
+        return
+      }
+      if (status === 'pending') return
+      deliveryCanonicalSyncGuardRef.current = null
+    }
+
+    setRunState({ status: 'idle' })
+    setDeliveryUiState((current) =>
+      current.status === 'stale' || current.status === 'error'
+        ? current
+        : { status: 'idle' },
+    )
+  }, [canonicalDeliveryUiFingerprint])
 
   function applyTransactionDraft(
     draft: PlanApplicationTransactionDraft,
@@ -790,10 +825,98 @@ function OptimizerTools({
     ])
     setRunState({ status: 'idle' })
     setApplicationState({ status: 'applied' })
+    setDeliveryUiState({ status: 'idle' })
+  }
+
+  function commitDeliveryCustomer(customerId: string) {
+    if (
+      runState.status !== 'success' ||
+      !runState.deliveryExecutionPlan ||
+      !runState.deliveryCursor
+    ) {
+      return
+    }
+
+    const committed = commitDeliveryExecutionCustomer(
+      {
+        plan: runState.deliveryExecutionPlan,
+        cursor: runState.deliveryCursor,
+        customerId,
+        expectedBasis: runState.deliveryExpectedBasis,
+      },
+      window.localStorage,
+    )
+
+    if (committed.status === 'stale') {
+      setDeliveryUiState({
+        status: 'stale',
+        mismatches: committed.mismatches,
+      })
+      setInventoryState(readInventoryState(window.localStorage))
+      onSuppliedCustomerIdsCommitted(
+        readSuppliedCustomerIds(window.localStorage),
+      )
+      setRunState({ status: 'idle' })
+      return
+    }
+
+    if (committed.status === 'error') {
+      setDeliveryUiState({
+        status: 'error',
+        message: committed.message,
+      })
+      return
+    }
+
+    const beforeInventory = inventoryState
+    const beforeSupplied = [...suppliedCustomerIds]
+    const afterSupplied = [...committed.suppliedCustomerIds]
+    const targetFingerprint =
+      deliveryExecutionCanonicalBasisFingerprint(
+        committed.inventory,
+        afterSupplied,
+      )
+    deliveryCanonicalSyncGuardRef.current = {
+      targetFingerprint,
+      allowedFingerprints: [
+        deliveryExecutionCanonicalBasisFingerprint(
+          beforeInventory,
+          beforeSupplied,
+        ),
+        deliveryExecutionCanonicalBasisFingerprint(
+          committed.inventory,
+          beforeSupplied,
+        ),
+        deliveryExecutionCanonicalBasisFingerprint(
+          beforeInventory,
+          afterSupplied,
+        ),
+        targetFingerprint,
+      ],
+    }
+
+    setInventoryState(committed.inventory)
+    onSuppliedCustomerIdsCommitted(afterSupplied)
+    setRunState((current) =>
+      current.status === 'success'
+        ? {
+            ...current,
+            deliveryCursor: committed.cursor,
+            transactionDraft: null,
+            transactionDraftInvalidatedByPartialDelivery: true,
+          }
+        : current,
+    )
+    setApplicationState({ status: 'idle' })
+    setDeliveryUiState({
+      status: 'applied',
+      customerId,
+    })
   }
 
   async function runOptimizer() {
     setApplicationState({ status: 'idle' })
+    setDeliveryUiState({ status: 'idle' })
     setRunState({ status: 'loading' })
 
     try {
@@ -804,6 +927,10 @@ function OptimizerTools({
         { buildProductionLogisticsPlan },
         { buildMultiTripReplenishmentPlan },
         { buildPlanApplicationTransactionDraft },
+        {
+          buildDeliveryExecutionPlan,
+          createDeliveryExecutionCursor,
+        },
       ] = await Promise.all([
         import('./domain/optimizer'),
         import('./domain/preparationDemand'),
@@ -811,6 +938,7 @@ function OptimizerTools({
         import('./domain/productionLogistics'),
         import('./domain/multiTripReplenishment'),
         import('./domain/planApplicationTransaction'),
+        import('./domain/deliveryExecution'),
       ])
       const parsedMaxSwitches =
         maxJarTypeSwitches.trim() === ''
@@ -947,6 +1075,15 @@ function OptimizerTools({
             salesPlan: selectedSalesTripPlan,
           })
         : null
+      const deliveryExecutionPlan = productionLogistics.feasible
+        ? buildDeliveryExecutionPlan(
+            preparationShortfall,
+            selectedSalesTripPlan,
+          )
+        : null
+      const deliveryCursor = deliveryExecutionPlan
+        ? createDeliveryExecutionCursor(deliveryExecutionPlan)
+        : null
 
       setRunState({
         status: 'success',
@@ -955,6 +1092,13 @@ function OptimizerTools({
         productionLogistics,
         salesTripPlans,
         transactionDraft,
+        transactionDraftInvalidatedByPartialDelivery: false,
+        deliveryExecutionPlan,
+        deliveryCursor,
+        deliveryExpectedBasis: {
+          inventory: inventoryState,
+          suppliedCustomerIds: [...suppliedCustomerIds],
+        },
       })
     } catch (error) {
       setRunState({
