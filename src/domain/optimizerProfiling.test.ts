@@ -2205,6 +2205,39 @@ it(
           )
         : null
 
+    const postCertificateJarHighs =
+      lowerBoundWitnessFixedVerification?.stages[0]?.status ===
+        'optimal' &&
+      compressedCostStage?.status === 'optimal' &&
+      compressedCostStage.objectiveValue !== null &&
+      combinedMachineOperationLowerBound !== null
+        ? await profileHighsOptimization(
+            strictCostPrunedModel,
+            ['minimum-jar-switches'],
+            {
+              stageTimeLimitSeconds: 10.5,
+              relaxAssignmentVariables: true,
+              aggregateLocalSingletonOperations: true,
+              aggregateEquivalentAssignments: true,
+              tightenRecipeBoundsFromMinimumCostFix: true,
+              tightenOperationBoundsFromRecipeBounds: true,
+              maxStages: 1,
+              initialCriterionFixes: [
+                {
+                  criterion: 'minimum-cost',
+                  value: Math.round(
+                    compressedCostStage.objectiveValue,
+                  ),
+                },
+                {
+                  criterion: 'minimum-machine-operations',
+                  value: combinedMachineOperationLowerBound,
+                },
+              ],
+            },
+          )
+        : null
+
     const stage1LocalDescentSteps: Array<{
       from: number
       to: number
@@ -3505,6 +3538,24 @@ it(
       lowerBoundWitnessSearches,
       certifiedLowerBoundWitness:
         certifiedLowerBoundWitness?.source ?? null,
+      postCertificateJarStage:
+        postCertificateJarHighs?.stages[0]
+          ? {
+              status: postCertificateJarHighs.stages[0].status,
+              objectiveValue:
+                postCertificateJarHighs.stages[0].objectiveValue,
+              solveMs: postCertificateJarHighs.stages[0].solveMs,
+              variableCount:
+                postCertificateJarHighs.stages[0].variableCount,
+              constraintCount:
+                postCertificateJarHighs.stages[0].constraintCount,
+              integralAssignmentReconstructionFeasible:
+                postCertificateJarHighs.stages[0].integralAssignmentReconstructionFeasible,
+              reconstructedAssignmentCount:
+                postCertificateJarHighs.stages[0].reconstructedAssignmentCount,
+              totalMs: postCertificateJarHighs.totalMs,
+            }
+          : null,
       lowerBoundWitnessFixedVerification:
         lowerBoundWitnessFixedVerification?.stages[0]
           ? {
