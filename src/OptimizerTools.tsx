@@ -1,4 +1,4 @@
-import { memo, useEffect, useId, useMemo, useState } from 'react'
+import { memo, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { customers } from './data/customers'
 import { ingredients } from './data/ingredients'
 import { recipes } from './data/recipes'
@@ -27,6 +27,10 @@ import type {
   UsedCupTripPolicy,
 } from './domain/multiTripReplenishment'
 import type { PreparationShortfall } from './domain/preparationShortfall'
+import type {
+  DeliveryExecutionCursor,
+  DeliveryExecutionPlan,
+} from './domain/deliveryExecution'
 import {
   recipeCandidateEntriesForInventoryEditor,
   type RecipeCandidatePool,
@@ -56,6 +60,12 @@ import {
 } from './storage/productionChecklist'
 import { commitPlanApplicationTransaction } from './storage/planApplicationCommit'
 import {
+  commitDeliveryExecutionCustomer,
+  deliveryExecutionCanonicalBasisFingerprint,
+  type DeliveryExecutionCommitStaleField,
+} from './storage/deliveryExecutionCommit'
+import { readSuppliedCustomerIds } from './storage/plannerState'
+import {
   PlanningUserError,
   presentPlanningError,
   type PlanningErrorPresentation,
@@ -84,6 +94,11 @@ interface SalesTripPlans {
   alternateError: string | null
 }
 
+interface DeliveryExecutionBasis {
+  inventory: InventoryState
+  suppliedCustomerIds: string[]
+}
+
 type OptimizerRunState =
   | { status: 'idle' }
   | { status: 'loading' }
@@ -94,6 +109,10 @@ type OptimizerRunState =
       productionLogistics: ProductionLogisticsPlan
       salesTripPlans: SalesTripPlans
       transactionDraft: PlanApplicationTransactionDraft | null
+      transactionDraftInvalidatedByPartialDelivery: boolean
+      deliveryExecutionPlan: DeliveryExecutionPlan | null
+      deliveryCursor: DeliveryExecutionCursor | null
+      deliveryExpectedBasis: DeliveryExecutionBasis
     }
   | { status: 'error'; error: PlanningErrorPresentation }
 
@@ -105,6 +124,32 @@ type PlanApplicationUiState =
       mismatches: readonly PlanApplicationBasisMismatchField[]
     }
   | { status: 'error'; error: PlanningErrorPresentation }
+
+type DeliveryUiState =
+  | { status: 'idle' }
+  | { status: 'applied'; customerId: string }
+  | {
+      status: 'stale'
+      mismatches: readonly DeliveryExecutionCommitStaleField[]
+    }
+  | { status: 'error'; message: string }
+
+interface DeliveryCanonicalSyncGuard {
+  allowedFingerprints: readonly string[]
+  targetFingerprint: string
+}
+
+export function deliveryCanonicalSyncStatus(
+  guard: DeliveryCanonicalSyncGuard,
+  currentFingerprint: string,
+): 'pending' | 'complete' | 'unexpected' {
+  if (currentFingerprint === guard.targetFingerprint) {
+    return 'complete'
+  }
+  return guard.allowedFingerprints.includes(currentFingerprint)
+    ? 'pending'
+    : 'unexpected'
+}
 
 type OptionalCriterion = OptimizationCriterion | 'none'
 
@@ -118,6 +163,16 @@ const planApplicationMismatchLabels: Record<
   'formal-customers': '正式顧客',
   'supplied-customers': '今日已供應',
   'planner-settings': '規劃器設定',
+}
+
+const deliveryMismatchLabels: Record<
+  DeliveryExecutionCommitStaleField,
+  string
+> = {
+  inventory: '庫存',
+  'supplied-customers': '今日已供應',
+  'execution-cursor': '交付進度',
+  'execution-basis': '交付基準狀態',
 }
 
 const customerById = new Map(
