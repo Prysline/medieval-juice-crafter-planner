@@ -235,6 +235,7 @@ function buildHighsStage(
     aggregateEquivalentAssignments?: boolean
     tightenRecipeBoundsFromMinimumCostFix?: boolean
     tightenOperationBoundsFromRecipeBounds?: boolean
+    machineOperationKinds?: Set<string>
     machineOperationsUpperBound?: number
     fixedRecipeUnits?: Map<string, number>
   } = {},
@@ -481,6 +482,12 @@ function buildHighsStage(
     for (const recipe of domain.recipes) {
       const edgeMultiplicityByKey = new Map<string, number>()
       for (const edge of recipe.productionPath.edges) {
+        if (
+          options.machineOperationKinds &&
+          !options.machineOperationKinds.has(edge.kind)
+        ) {
+          continue
+        }
         edgeMultiplicityByKey.set(
           edge.key,
           (edgeMultiplicityByKey.get(edge.key) ?? 0) + 1,
@@ -913,6 +920,7 @@ export async function profileHighsOptimization(
     aggregateEquivalentAssignments?: boolean
     tightenRecipeBoundsFromMinimumCostFix?: boolean
     tightenOperationBoundsFromRecipeBounds?: boolean
+    machineOperationKinds?: string[]
     machineOperationsUpperBound?: number
     fixedRecipeUnits?: Array<{
       recipeId: string
@@ -958,6 +966,9 @@ export async function profileHighsOptimization(
         ]),
       )
     : undefined
+  const machineOperationKinds = options.machineOperationKinds
+    ? new Set(options.machineOperationKinds)
+    : undefined
   let terminatedAtObjective: ObjectiveKey | null = null
 
   for (const objectiveKey of objectives) {
@@ -981,6 +992,7 @@ export async function profileHighsOptimization(
           options.tightenRecipeBoundsFromMinimumCostFix ?? false,
         tightenOperationBoundsFromRecipeBounds:
           options.tightenOperationBoundsFromRecipeBounds ?? false,
+        machineOperationKinds,
         machineOperationsUpperBound:
           options.machineOperationsUpperBound,
         fixedRecipeUnits,
