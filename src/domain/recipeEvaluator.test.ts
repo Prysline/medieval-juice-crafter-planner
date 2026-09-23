@@ -100,6 +100,72 @@ describe('recipe sequence evaluator', () => {
     expect(result.candidate.effectAmbiguity).toBeUndefined()
   })
 
+  it('uses the 2026-09-23 observed overlays for exact ordered sequences', () => {
+    const observations = [
+      {
+        ingredientIds: ['banana', 'mint'],
+        id: 'banana-mint',
+        observedDisplayName: '香蕉 - 薄荷（調製飲品）',
+        salePrice: 35,
+      },
+      {
+        ingredientIds: ['lemon', 'sugar', 'cinnamon'],
+        id: 'lemon-sugar-cinnamon',
+        observedDisplayName: '甜味 咆哮',
+        salePrice: 42,
+      },
+      {
+        ingredientIds: ['banana', 'mint', 'sugar'],
+        id: 'banana-mint-sugar',
+        observedDisplayName: '活力 戀人',
+        salePrice: 47,
+      },
+      {
+        ingredientIds: ['pear', 'mint', 'sugar', 'cinnamon'],
+        id: 'pear-mint-sugar-cinnamon',
+        observedDisplayName: '甜味 暴風',
+        salePrice: 70,
+      },
+      {
+        ingredientIds: ['orange', 'sugar', 'mint', 'cinnamon'],
+        id: 'orange-sugar-mint-cinnamon',
+        observedDisplayName: '甜味 滋響',
+        salePrice: 67,
+      },
+      {
+        ingredientIds: ['carrot', 'mint', 'sugar', 'cinnamon'],
+        id: 'carrot-mint-sugar-cinnamon',
+        observedDisplayName: '血糖平衡 勇士',
+        salePrice: 66,
+      },
+      {
+        ingredientIds: ['banana', 'mint', 'sugar', 'cinnamon'],
+        id: 'banana-mint-sugar-cinnamon',
+        observedDisplayName: '活力 純真',
+        salePrice: 73,
+      },
+    ] as const
+
+    for (const observation of observations) {
+      const result = evaluateRecipeSequence(
+        [...observation.ingredientIds],
+        'tranquil-fountain-unlocked',
+      )
+
+      expect(result.valid).toBe(true)
+      if (!result.valid) continue
+
+      expect(result.candidate).toMatchObject({
+        id: observation.id,
+        source: 'observed',
+        observedDisplayName: observation.observedDisplayName,
+        salePrice: observation.salePrice,
+      })
+      expect(result.availableAtCurrentProgress).toBe(true)
+      expect(result.usesBlender).toBe(false)
+    }
+  })
+
   it('returns computed data only when no observed overlay exists', () => {
     const result = evaluateRecipeSequence(
       ['banana', 'sugar'],
