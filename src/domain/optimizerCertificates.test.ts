@@ -4,7 +4,11 @@ import type {
   EligibleOptimizationRecipe,
   OptimizationRequest,
 } from './optimizerModel'
-import { prepareMinimumCostStageCertificate } from './optimizerCertificates'
+import {
+  machineOperationBreakdownForSelection,
+  prepareMinimumCostStageCertificate,
+  repairMachineOperationWitness,
+} from './optimizerCertificates'
 
 const baseRequest: OptimizationRequest = {
   customerIds: ['a', 'b'],
@@ -23,6 +27,7 @@ function recipe(
   id: string,
   cost: number,
   eligibleCustomerIds: string[],
+  edgeKeys: string[] = [],
 ): EligibleOptimizationRecipe {
   return {
     candidate: {
@@ -39,7 +44,13 @@ function recipe(
     eligibleCustomerIds,
     productionPath: {
       ingredientIds: ['lemon'],
-      edges: [],
+      edges: edgeKeys.map((key) => ({
+        key,
+        kind: 'finalizing',
+        equipment: '果汁成品台',
+        fromIngredientIds: ['lemon'],
+        toIngredientIds: ['lemon'],
+      })),
     },
   }
 }
@@ -140,5 +151,51 @@ describe('minimum-cost stage certificate preparation', () => {
     )
 
     expect(certificate).not.toBeNull()
+  })
+})
+
+
+describe('machine-operation witness repair', () => {
+  it('moves units only between equal-cost recipes with the same service set', () => {
+    const customerIds = Array.from(
+      { length: 10 },
+      (_, index) => `c${index}`,
+    )
+    const domain: BatchOptimizationModel = {
+      request: {
+        ...baseRequest,
+        customerIds,
+        formalCustomerIds: customerIds,
+      },
+      serviceableCustomerIds: customerIds,
+      unresolvedCustomerIds: [],
+      excludedSuppliedCustomerIds: [],
+      recipes: [
+        recipe('source', 1, customerIds, ['finalize-source']),
+        recipe('target', 1, customerIds, ['finalize-target']),
+        recipe('different-cost', 2, customerIds, ['finalize-target']),
+      ],
+    }
+
+    const initial = [
+      { recipeId: 'source', units: 1 },
+      { recipeId: 'target', units: 4 },
+    ]
+    expect(
+      machineOperationBreakdownForSelection(domain, initial).total,
+    ).toBe(2)
+
+    const repaired = repairMachineOperationWitness(
+      domain,
+      initial,
+      5,
+      1,
+    )
+
+    expect(repaired.breakdown.total).toBe(1)
+    expect(repaired.steps).toHaveLength(1)
+    expect(repaired.selections).toEqual([
+      { recipeId: 'target', units: 5 },
+    ])
   })
 })
