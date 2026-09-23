@@ -827,7 +827,8 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
         objectiveKey === 'machineOperations' &&
         minimumCostCertificateApplied &&
         fixes.length === 1 &&
-        fixes[0].objective === 'cost'
+        fixes[0].objective === 'cost' &&
+        currentDomain.recipes.length >= 4000
       ) {
         const certificate = await tryMachineOperationCertificate(
           currentDomain,
