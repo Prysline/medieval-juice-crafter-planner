@@ -157,32 +157,11 @@ export function RecipeTools({
         ),
     [currentProgress, satisfactionByVillage],
   )
-  const displayCandidate = useMemo(() => {
-    if (!evaluation.valid) return null
-    if (
-      recipe.confirmedResult &&
-      evaluation.candidate.source !== 'observed'
-    ) {
-      return {
-        ...evaluation.candidate,
-        name: recipe.name,
-        source: 'personal' as const,
-        salePrice: recipe.confirmedResult.salePrice,
-        effects: recipe.confirmedResult.effects.map((effect) => ({
-          ...effect,
-        })),
-        effectAmbiguity: undefined,
-      }
-    }
-    return evaluation.candidate
-  }, [evaluation, recipe.confirmedResult, recipe.name])
-
   const matchingCustomers = useMemo(() => {
     if (
       !evaluation.valid ||
       !evaluation.availableAtCurrentProgress ||
-      !displayCandidate ||
-      displayCandidate.effectAmbiguity
+      evaluation.candidate.effectAmbiguity
     ) {
       return []
     }
@@ -197,16 +176,11 @@ export function RecipeTools({
       )
       .filter((customer) =>
         recipeCandidateMatchesCustomer(
-          displayCandidate,
+          evaluation.candidate,
           customer,
         ),
       )
-  }, [
-    displayCandidate,
-    evaluation,
-    currentProgress,
-    satisfactionByVillage,
-  ])
+  }, [evaluation, currentProgress, satisfactionByVillage])
 
   function appendIngredient(ingredientId: string) {
     setIngredientIds((current) => [...current, ingredientId])
@@ -847,11 +821,32 @@ function SavedRecipeRow({
     [recipe.ingredientIds, currentProgress],
   )
 
+  const displayCandidate = useMemo(() => {
+    if (!evaluation.valid) return null
+    if (
+      recipe.confirmedResult &&
+      evaluation.candidate.source !== 'observed'
+    ) {
+      return {
+        ...evaluation.candidate,
+        name: recipe.name,
+        source: 'personal' as const,
+        salePrice: recipe.confirmedResult.salePrice,
+        effects: recipe.confirmedResult.effects.map((effect) => ({
+          ...effect,
+        })),
+        effectAmbiguity: undefined,
+      }
+    }
+    return evaluation.candidate
+  }, [evaluation, recipe.confirmedResult, recipe.name])
+
   const matchingCustomers = useMemo(() => {
     if (
       !evaluation.valid ||
       !evaluation.availableAtCurrentProgress ||
-      evaluation.candidate.effectAmbiguity
+      !displayCandidate ||
+      displayCandidate.effectAmbiguity
     ) {
       return []
     }
@@ -866,11 +861,16 @@ function SavedRecipeRow({
       )
       .filter((customer) =>
         recipeCandidateMatchesCustomer(
-          evaluation.candidate,
+          displayCandidate,
           customer,
         ),
       )
-  }, [evaluation, currentProgress, satisfactionByVillage])
+  }, [
+    displayCandidate,
+    evaluation,
+    currentProgress,
+    satisfactionByVillage,
+  ])
 
   return (
     <article className="saved-recipe-card">
