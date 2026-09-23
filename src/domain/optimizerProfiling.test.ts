@@ -1794,10 +1794,8 @@ it(
       decomposedBoundMachineHighs?.stages[0]
     const tightOperationBoundMachineFirstStage =
       tightOperationBoundMachineHighs?.stages[0]
-    const binaryEncodedMachineFirstStage =
-      binaryEncodedMachineHighs?.stages[0]
-    const fixedBinaryEncodedMachineFirstStage =
-      fixedBinaryEncodedMachineHighs?.stages[0]
+    const binaryEncodedMachineFirstStage = null
+    const fixedBinaryEncodedMachineFirstStage = null
     const belowFiftyMachineFirstStage =
       belowFiftyMachineHighs?.stages[0]
     const recipeRelaxedMachineFirstStage =
@@ -2619,38 +2617,8 @@ it(
       decomposedBoundWarmStartComparison,
       warmStartHighsComparison,
       binaryEncodedWarmStartComparison,
-      binaryEncodedMachineStage:
-        binaryEncodedMachineFirstStage
-          ? {
-              solveMs: binaryEncodedMachineFirstStage.solveMs,
-              status: binaryEncodedMachineFirstStage.status,
-              objectiveValue:
-                binaryEncodedMachineFirstStage.objectiveValue,
-              variableCount:
-                binaryEncodedMachineFirstStage.variableCount,
-              constraintCount:
-                binaryEncodedMachineFirstStage.constraintCount,
-              totalMs:
-                binaryEncodedMachineHighs?.totalMs ?? 0,
-            }
-          : null,
-      fixedBinaryEncodedMachineStage:
-        fixedBinaryEncodedMachineFirstStage
-          ? {
-              solveMs:
-                fixedBinaryEncodedMachineFirstStage.solveMs,
-              status:
-                fixedBinaryEncodedMachineFirstStage.status,
-              objectiveValue:
-                fixedBinaryEncodedMachineFirstStage.objectiveValue,
-              variableCount:
-                fixedBinaryEncodedMachineFirstStage.variableCount,
-              constraintCount:
-                fixedBinaryEncodedMachineFirstStage.constraintCount,
-              totalMs:
-                fixedBinaryEncodedMachineHighs?.totalMs ?? 0,
-            }
-          : null,
+      binaryEncodedMachineStage: null,
+      fixedBinaryEncodedMachineStage: null,
       fixedIncumbentMachineStage:
         fixedIncumbentMachineFirstStage
           ? {
