@@ -731,8 +731,8 @@ it(
             const chunkUnits = take
 
             for (
-              let currentCost = targetCost;
-              currentCost >= chunkCost;
+              let currentCost = targetCost - chunkCost;
+              currentCost >= 0;
               currentCost -= 1
             ) {
               for (
@@ -744,7 +744,6 @@ it(
                   continue
                 }
                 const nextCost = currentCost + chunkCost
-                if (nextCost > targetCost) continue
                 const nextUnits = Math.min(
                   requiredRemainingUnits,
                   currentUnits + chunkUnits,
