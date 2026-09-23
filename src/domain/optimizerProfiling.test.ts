@@ -257,6 +257,112 @@ it(
       recipes: costStageCompressedRecipes,
     }
 
+    const productionEdgeMultiplicitySignature = (
+      recipe: (typeof model.recipes)[number],
+    ) => {
+      const multiplicityByEdgeKey = new Map<string, number>()
+      for (const edge of recipe.productionPath.edges) {
+        multiplicityByEdgeKey.set(
+          edge.key,
+          (multiplicityByEdgeKey.get(edge.key) ?? 0) + 1,
+        )
+      }
+      return [...multiplicityByEdgeKey.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([edgeKey, multiplicity]) => `${edgeKey}×${multiplicity}`)
+        .join('\u001d')
+    }
+
+    const machineEquivalenceGroups = new Map<
+      string,
+      (typeof model.recipes)[number][]
+    >()
+    for (const recipe of strictCostPrunedRecipes) {
+      const signature = [
+        recipeServiceMask(recipe).toString(),
+        recipe.juiceUnitIngredientCost.toString(),
+        productionEdgeMultiplicitySignature(recipe),
+      ].join('\u001c')
+      const group = machineEquivalenceGroups.get(signature)
+      if (group) {
+        group.push(recipe)
+      } else {
+        machineEquivalenceGroups.set(signature, [recipe])
+      }
+    }
+    const machineEquivalenceGroupSizes = [
+      ...machineEquivalenceGroups.values(),
+    ]
+      .map((group) => group.length)
+      .sort((a, b) => b - a)
+    const machineEquivalenceReducibleRecipeCount =
+      strictCostPrunedRecipes.length - machineEquivalenceGroups.size
+    const machineEquivalenceAssignmentEligibility =
+      [...machineEquivalenceGroups.values()].reduce(
+        (total, group) =>
+          total + (group[0]?.eligibleCustomerIds.length ?? 0),
+        0,
+      )
+
+    const stage2EdgeUsage = new Map<
+      string,
+      {
+        kind:
+          (typeof strictCostPrunedRecipes)[number]['productionPath']['edges'][number]['kind']
+        recipeIds: Set<string>
+        totalMultiplicity: number
+      }
+    >()
+    for (const recipe of strictCostPrunedRecipes) {
+      const multiplicityByEdgeKey = new Map<string, number>()
+      const kindByEdgeKey = new Map<
+        string,
+        (typeof recipe.productionPath.edges)[number]['kind']
+      >()
+      for (const edge of recipe.productionPath.edges) {
+        multiplicityByEdgeKey.set(
+          edge.key,
+          (multiplicityByEdgeKey.get(edge.key) ?? 0) + 1,
+        )
+        kindByEdgeKey.set(edge.key, edge.kind)
+      }
+
+      for (const [edgeKey, multiplicity] of multiplicityByEdgeKey) {
+        const current = stage2EdgeUsage.get(edgeKey) ?? {
+          kind: kindByEdgeKey.get(edgeKey)!,
+          recipeIds: new Set<string>(),
+          totalMultiplicity: 0,
+        }
+        current.recipeIds.add(recipe.candidate.id)
+        current.totalMultiplicity += multiplicity
+        stage2EdgeUsage.set(edgeKey, current)
+      }
+    }
+
+    const edgeKindStats = {
+      juicing: { uniqueEdges: 0, singletonEdges: 0, recipeIncidences: 0 },
+      seasoning: { uniqueEdges: 0, singletonEdges: 0, recipeIncidences: 0 },
+      blending: { uniqueEdges: 0, singletonEdges: 0, recipeIncidences: 0 },
+      finalizing: { uniqueEdges: 0, singletonEdges: 0, recipeIncidences: 0 },
+    }
+    const edgeRecipeUsageCounts: number[] = []
+    for (const usage of stage2EdgeUsage.values()) {
+      const recipeCount = usage.recipeIds.size
+      edgeRecipeUsageCounts.push(recipeCount)
+      const stats = edgeKindStats[usage.kind]
+      stats.uniqueEdges += 1
+      stats.recipeIncidences += recipeCount
+      if (recipeCount === 1) {
+        stats.singletonEdges += 1
+      }
+    }
+    edgeRecipeUsageCounts.sort((a, b) => b - a)
+    const stage2SingletonEdgeCount = edgeRecipeUsageCounts.filter(
+      (count) => count === 1,
+    ).length
+    const stage2SharedEdgeCount =
+      edgeRecipeUsageCounts.length - stage2SingletonEdgeCount
+
     const solverImportStartedAt = performance.now()
     const { profileHighsOptimization } = await import(
       './optimizerHighsSolver'
@@ -368,6 +474,22 @@ it(
         costStageCompressedRecipes.length,
       costStageCompressedAssignmentEligibility:
         costStageCompressedAssignmentEligibility,
+      stage2MachineEquivalenceGroupCount:
+        machineEquivalenceGroups.size,
+      stage2MachineEquivalenceGroupSizes:
+        machineEquivalenceGroupSizes.slice(0, 20),
+      stage2MachineEquivalenceReducibleRecipeCount:
+        machineEquivalenceReducibleRecipeCount,
+      stage2MachineEquivalenceAssignmentEligibility:
+        machineEquivalenceAssignmentEligibility,
+      stage2UniqueProductionEdgeCount: stage2EdgeUsage.size,
+      stage2SingletonProductionEdgeCount:
+        stage2SingletonEdgeCount,
+      stage2SharedProductionEdgeCount:
+        stage2SharedEdgeCount,
+      stage2TopProductionEdgeRecipeUsageCounts:
+        edgeRecipeUsageCounts.slice(0, 20),
+      stage2ProductionEdgeKindStats: edgeKindStats,
       finalHighsVariables: binaryHighs.finalVariableCount,
       finalHighsConstraints: binaryHighs.finalConstraintCount,
       candidateGenerationMs,
