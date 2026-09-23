@@ -790,6 +790,55 @@ it(
       strictCostPrunedRecipes.length -
       recipesRejectedByCostFixAndMinimumUnits.length
 
+    const stage2RecipesByServiceMask = new Map<
+      bigint,
+      (typeof model.recipes)[number][]
+    >()
+    for (const recipe of strictCostPrunedRecipes) {
+      const mask = recipeServiceMask(recipe)
+      const group = stage2RecipesByServiceMask.get(mask)
+      if (group) {
+        group.push(recipe)
+      } else {
+        stage2RecipesByServiceMask.set(mask, [recipe])
+      }
+    }
+
+    let stage2NonUniformCostServiceGroupCount = 0
+    for (const group of stage2RecipesByServiceMask.values()) {
+      const costs = new Set(
+        group.map((recipe) => recipe.juiceUnitIngredientCost),
+      )
+      if (costs.size !== 1) {
+        stage2NonUniformCostServiceGroupCount += 1
+      }
+    }
+
+    const stage2GroupAssignmentEligibility =
+      [...stage2RecipesByServiceMask.values()].reduce(
+        (total, group) =>
+          total + (group[0]?.eligibleCustomerIds.length ?? 0),
+        0,
+      )
+    const stage2ProjectedVariablesWithGroupAssignments =
+      strictCostPrunedRecipes.length +
+      stage2GroupAssignmentEligibility +
+      stage2EdgeUsage.size
+    const stage2ProjectedConstraintsWithGroupAssignments =
+      model.serviceableCustomerIds.length +
+      stage2RecipesByServiceMask.size +
+      stage2EdgeUsage.size * 2 +
+      1
+    const stage2ProjectedVariablesWithGroupAssignmentsAndLocalOps =
+      strictCostPrunedRecipes.length +
+      stage2GroupAssignmentEligibility +
+      operationVariableCountAfterLocalMultiplicityCompression
+    const stage2ProjectedConstraintsWithGroupAssignmentsAndLocalOps =
+      model.serviceableCustomerIds.length +
+      stage2RecipesByServiceMask.size +
+      operationVariableCountAfterLocalMultiplicityCompression * 2 +
+      1
+
     const expandedMachineHighs =
       compressedCostStage?.status === 'optimal' &&
       compressedCostStage.objectiveValue !== null
@@ -942,6 +991,20 @@ it(
         recipesRejectedByCostFixAndMinimumUnits.length,
       stage2RecipesRemainingAfterCostFixNecessaryConditions:
         recipesRemainingAfterCostFixNecessaryConditions,
+      stage2ServiceGroupCountAfterStrictCostPruning:
+        stage2RecipesByServiceMask.size,
+      stage2NonUniformCostServiceGroupCount:
+        stage2NonUniformCostServiceGroupCount,
+      stage2GroupAssignmentEligibility:
+        stage2GroupAssignmentEligibility,
+      stage2ProjectedVariablesWithGroupAssignments:
+        stage2ProjectedVariablesWithGroupAssignments,
+      stage2ProjectedConstraintsWithGroupAssignments:
+        stage2ProjectedConstraintsWithGroupAssignments,
+      stage2ProjectedVariablesWithGroupAssignmentsAndLocalOps:
+        stage2ProjectedVariablesWithGroupAssignmentsAndLocalOps,
+      stage2ProjectedConstraintsWithGroupAssignmentsAndLocalOps:
+        stage2ProjectedConstraintsWithGroupAssignmentsAndLocalOps,
       finalHighsVariables: binaryHighs.finalVariableCount,
       finalHighsConstraints: binaryHighs.finalConstraintCount,
       candidateGenerationMs,
