@@ -1195,6 +1195,33 @@ it(
             },
           )
         : null
+    const fixedIncumbentMachineHighs =
+      compressedCostStage?.status === 'optimal' &&
+      compressedCostStage.objectiveValue !== null &&
+      compressedCostStage.selectedRecipeUnits.length > 0
+        ? await profileHighsOptimization(
+            strictCostPrunedModel,
+            ['minimum-machine-operations'],
+            {
+              stageTimeLimitSeconds: 2.5,
+              relaxAssignmentVariables: true,
+              aggregateLocalSingletonOperations: true,
+              aggregateEquivalentAssignments: true,
+              tightenRecipeBoundsFromMinimumCostFix: true,
+              fixedRecipeUnits:
+                compressedCostStage.selectedRecipeUnits,
+              maxStages: 1,
+              initialCriterionFixes: [
+                {
+                  criterion: 'minimum-cost',
+                  value: Math.round(
+                    compressedCostStage.objectiveValue,
+                  ),
+                },
+              ],
+            },
+          )
+        : null
     const binaryFirstStage = binaryHighs.stages[0]
     const relaxedFirstStage = relaxedHighs.stages[0]
     const prunedRelaxedFirstStage = prunedRelaxedHighs.stages[0]
@@ -1210,6 +1237,8 @@ it(
       tightBoundMachineHighs?.stages[0]
     const incumbentBoundMachineFirstStage =
       incumbentBoundMachineHighs?.stages[0]
+    const fixedIncumbentMachineFirstStage =
+      fixedIncumbentMachineHighs?.stages[0]
 
     const report = {
       progress: request.currentProgress,
@@ -1534,6 +1563,25 @@ it(
               totalMs: incumbentBoundMachineHighs?.totalMs ?? 0,
             }
           : null,
+      fixedIncumbentMachineStage:
+        fixedIncumbentMachineFirstStage
+          ? {
+              solveMs: fixedIncumbentMachineFirstStage.solveMs,
+              status: fixedIncumbentMachineFirstStage.status,
+              objectiveValue:
+                fixedIncumbentMachineFirstStage.objectiveValue,
+              fixCount: fixedIncumbentMachineFirstStage.fixCount,
+              variableCount:
+                fixedIncumbentMachineFirstStage.variableCount,
+              constraintCount:
+                fixedIncumbentMachineFirstStage.constraintCount,
+              integralAssignmentReconstructionFeasible:
+                fixedIncumbentMachineFirstStage.integralAssignmentReconstructionFeasible,
+              reconstructedAssignmentCount:
+                fixedIncumbentMachineFirstStage.reconstructedAssignmentCount,
+              totalMs: fixedIncumbentMachineHighs?.totalMs ?? 0,
+            }
+          : null,
       binaryStages: binaryHighs.stages,
       relaxedStages: relaxedHighs.stages,
     }
@@ -1585,6 +1633,20 @@ it(
         9,
       )
     }
+    if (fixedIncumbentMachineFirstStage) {
+      expect(fixedIncumbentMachineFirstStage.status).toBe('optimal')
+      expect(fixedIncumbentMachineFirstStage.objectiveValue).toBeCloseTo(
+        compressedIncumbentMachineOperations,
+        9,
+      )
+      expect(
+        fixedIncumbentMachineFirstStage.integralAssignmentReconstructionFeasible,
+      ).toBe(true)
+      expect(
+        fixedIncumbentMachineFirstStage.reconstructedAssignmentCount,
+      ).toBe(model.serviceableCustomerIds.length)
+    }
+
     if (expandedMachineFirstStage) {
       expect(expandedMachineFirstStage.objective).toBe(
         'machineOperations',
