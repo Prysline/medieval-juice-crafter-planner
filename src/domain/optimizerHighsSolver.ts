@@ -240,6 +240,7 @@ function buildHighsStage(
     aggregateEquivalentAssignments?: boolean
     tightenRecipeBoundsFromMinimumCostFix?: boolean
     tightenOperationBoundsFromRecipeBounds?: boolean
+    binaryEncodeOperationUpperBoundAtMost?: number
     machineOperationKinds?: Set<string>
     excludeSharedMachineOperationKinds?: Set<string>
     excludeSingletonMachineOperationKinds?: Set<string>
@@ -478,6 +479,93 @@ function buildHighsStage(
   const quantityUpperBoundByEdgeKey = new Map<string, number>()
   const machineOperationTerms: ReturnType<IntVariable['times']>[] = []
   const operationByEdgeKey = new Map<string, IntVariable>()
+  let encodedOperationBinaryVariableCount = 0
+  let operationConstraintCount = 0
+
+  const addMachineOperation = (
+    edgeKey: string,
+    quantityExpression: ReturnType<typeof sum>,
+    operationUpperBound: number,
+    variableName: string,
+    constraintPrefix: string,
+    objectiveWeight: number,
+  ) => {
+    const binaryEncodingLimit =
+      options.binaryEncodeOperationUpperBoundAtMost
+    if (
+      !options.relaxOperationVariables &&
+      typeof binaryEncodingLimit === 'number' &&
+      Number.isFinite(binaryEncodingLimit) &&
+      operationUpperBound > 0 &&
+      operationUpperBound <= Math.max(1, Math.floor(binaryEncodingLimit))
+    ) {
+      const batches = Array.from(
+        { length: operationUpperBound },
+        (_, batchIndex) =>
+          model.boolVar(`${variableName}_batch_${batchIndex}`),
+      )
+      const batchCount = sum(...batches)
+
+      model.addConstraint(
+        quantityExpression
+          .minus(
+            batchCount.times(PROCESSING_STACK_CAPACITY),
+          )
+          .leq(0),
+        `${constraintPrefix}_capacity`,
+      )
+      operationConstraintCount += 1
+
+      batches.forEach((batch, batchIndex) => {
+        const minimumQuantity =
+          batchIndex * PROCESSING_STACK_CAPACITY + 1
+        model.addConstraint(
+          batch
+            .times(minimumQuantity)
+            .minus(quantityExpression)
+            .leq(0),
+          `${constraintPrefix}_usage_${batchIndex}`,
+        )
+        operationConstraintCount += 1
+
+        if (batchIndex > 0) {
+          model.addConstraint(
+            batch.minus(batches[batchIndex - 1]).leq(0),
+            `${constraintPrefix}_chain_${batchIndex}`,
+          )
+          operationConstraintCount += 1
+        }
+      })
+
+      machineOperationTerms.push(
+        batchCount.times(objectiveWeight),
+      )
+      encodedOperationBinaryVariableCount += batches.length
+      return
+    }
+
+    const operationCount = options.relaxOperationVariables
+      ? model.numVar(0, operationUpperBound, variableName)
+      : model.intVar(0, operationUpperBound, variableName)
+    operationByEdgeKey.set(edgeKey, operationCount)
+
+    model.addConstraint(
+      quantityExpression
+        .minus(
+          operationCount.times(PROCESSING_STACK_CAPACITY),
+        )
+        .leq(0),
+      `${constraintPrefix}_capacity`,
+    )
+    model.addConstraint(
+      operationCount.minus(quantityExpression).leq(0),
+      `${constraintPrefix}_usage`,
+    )
+    operationConstraintCount += 2
+    machineOperationTerms.push(
+      operationCount.times(objectiveWeight),
+    )
+  }
 
   if (needsProductionOperations) {
     const edgeMultiplicityByRecipe = new Map<
@@ -585,37 +673,14 @@ function buildHighsStage(
                 ),
               )
             : maxTotalJuiceUnits
-        const operationCount = options.relaxOperationVariables
-          ? model.numVar(
-              0,
-              localOperationUpperBound,
-              `local_op_${localOperationIndex}`,
-            )
-          : model.intVar(
-              0,
-              localOperationUpperBound,
-              `local_op_${localOperationIndex}`,
-            )
-        operationByEdgeKey.set(
-          `local:${recipe.candidate.id}:m${multiplicity}`,
-          operationCount,
-        )
         const quantityExpression = x.times(multiplicity)
-
-        model.addConstraint(
-          quantityExpression
-            .minus(
-              operationCount.times(PROCESSING_STACK_CAPACITY),
-            )
-            .leq(0),
-          `local_operation_capacity_${localOperationIndex}`,
-        )
-        model.addConstraint(
-          operationCount.minus(quantityExpression).leq(0),
-          `local_operation_usage_${localOperationIndex}`,
-        )
-        machineOperationTerms.push(
-          operationCount.times(localEdgeCount),
+        addMachineOperation(
+          `local:${recipe.candidate.id}:m${multiplicity}`,
+          quantityExpression,
+          localOperationUpperBound,
+          `local_op_${localOperationIndex}`,
+          `local_operation_${localOperationIndex}`,
+          localEdgeCount,
         )
         localOperationIndex += 1
       }
@@ -633,34 +698,15 @@ function buildHighsStage(
                 ),
               )
             : maxTotalJuiceUnits
-        const operationCount = options.relaxOperationVariables
-          ? model.numVar(
-              0,
-              operationUpperBound,
-              `op_${edgeIndex}`,
-            )
-          : model.intVar(
-              0,
-              operationUpperBound,
-              `op_${edgeIndex}`,
-            )
-        operationByEdgeKey.set(edgeKey, operationCount)
-
         const quantityExpression = sum(...quantityTerms)
-
-        model.addConstraint(
-          quantityExpression
-            .minus(
-              operationCount.times(PROCESSING_STACK_CAPACITY),
-            )
-            .leq(0),
-          `operation_capacity_${edgeIndex}`,
+        addMachineOperation(
+          edgeKey,
+          quantityExpression,
+          operationUpperBound,
+          `op_${edgeIndex}`,
+          `operation_${edgeIndex}`,
+          1,
         )
-        model.addConstraint(
-          operationCount.minus(quantityExpression).leq(0),
-          `operation_usage_${edgeIndex}`,
-        )
-        machineOperationTerms.push(operationCount.times(1))
       },
     )
   }
@@ -892,13 +938,14 @@ function buildHighsStage(
     (needsRecipeUsageStructure ? domain.recipes.length : 0) +
     yByCustomerRecipe.size +
     operationByEdgeKey.size +
+    encodedOperationBinaryVariableCount +
     (needsJarStructure ? 1 : 0) +
     reusableJarVariableCount
   const constraintCount =
     assignmentGroups.length +
     (needsRecipeUsageStructure ? domain.recipes.length * 2 : 0) +
     domain.serviceableCustomerIds.length +
-    operationByEdgeKey.size * 2 +
+    operationConstraintCount +
     (needsJarStructure ? 2 : 0) +
     fixes.length +
     (
@@ -946,6 +993,7 @@ export async function profileHighsOptimization(
     aggregateEquivalentAssignments?: boolean
     tightenRecipeBoundsFromMinimumCostFix?: boolean
     tightenOperationBoundsFromRecipeBounds?: boolean
+    binaryEncodeOperationUpperBoundAtMost?: number
     machineOperationKinds?: string[]
     excludeSharedMachineOperationKinds?: string[]
     excludeSingletonMachineOperationKinds?: string[]
@@ -1030,6 +1078,8 @@ export async function profileHighsOptimization(
           options.tightenRecipeBoundsFromMinimumCostFix ?? false,
         tightenOperationBoundsFromRecipeBounds:
           options.tightenOperationBoundsFromRecipeBounds ?? false,
+        binaryEncodeOperationUpperBoundAtMost:
+          options.binaryEncodeOperationUpperBoundAtMost,
         machineOperationKinds,
         excludeSharedMachineOperationKinds,
         excludeSingletonMachineOperationKinds,
