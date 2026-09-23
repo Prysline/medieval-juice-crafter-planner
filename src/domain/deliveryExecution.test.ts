@@ -729,6 +729,106 @@ describe('delivery execution trace', () => {
     expect(second.cursor.nextTripNumber).toBe(3)
   })
 
+  it('allows a same-type refill after the previous trip emptied that jar', () => {
+    const refillShortfall: PreparationShortfall = {
+      ...twoTripShortfall(),
+      recipes: [
+        {
+          recipeId: 'recipe-b',
+          recipeName: 'B',
+          ingredientIds: ['lemon'],
+          assignedServings: 2,
+          finishedServingsAvailable: 0,
+          finishedServingsUsed: 0,
+          finishedServingsRemaining: 0,
+          finishedStockSources: [],
+          servingsToProduce: 2,
+          juiceUnitsToPrepare: 2,
+          newlyProducedServings: 4,
+          newProductionLeftoverServings: 2,
+          ingredientUnitsPerJuiceUnit: [
+            {
+              ingredientId: 'lemon',
+              quantityPerJuiceUnit: 1,
+            },
+          ],
+        },
+      ],
+    }
+    const refillPlan = twoTripPlan()
+    refillPlan.distinctFinalJuiceTypes = 1
+    refillPlan.jarTypeSwitches = 0
+    refillPlan.trips[1].juiceJars[0] = {
+      ...refillPlan.trips[1].juiceJars[0],
+      recipeId: 'recipe-b',
+      recipeName: 'B',
+      fillAction: 'refill-same-type',
+      previousRecipeId: 'recipe-b',
+      previousRecipeName: 'B',
+    }
+    refillPlan.productionJarFills[1] = {
+      ...refillPlan.productionJarFills[1],
+      recipeId: 'recipe-b',
+      recipeName: 'B',
+      fillAction: 'refill-same-type',
+      previousRecipeId: 'recipe-b',
+      previousRecipeName: 'B',
+    }
+    refillPlan.leftoverJarContents[0] = {
+      ...refillPlan.leftoverJarContents[0],
+      recipeId: 'recipe-b',
+      recipeName: 'B',
+    }
+
+    const plan = buildDeliveryExecutionPlan(
+      refillShortfall,
+      refillPlan,
+    )
+    let current: InventoryState = {
+      ingredientUnits: { lemon: 2 },
+      waterUnits: 3,
+      cleanCups: 1,
+      usedCups: 0,
+      juiceJars: [
+        { id: 'jar-1', recipeId: null, servings: 0 },
+      ],
+      shelfCount: 0,
+      jarRackCount: 0,
+    }
+    let cursor = createDeliveryExecutionCursor(plan)
+
+    const first = applyDeliveryExecutionCustomer(
+      plan,
+      current,
+      cursor,
+      'customer-1',
+    )
+    current = first.inventory
+    cursor = first.cursor
+
+    expect(current.juiceJars[0]).toEqual({
+      id: 'jar-1',
+      recipeId: null,
+      servings: 0,
+    })
+
+    const second = applyDeliveryExecutionCustomer(
+      plan,
+      current,
+      cursor,
+      'customer-2',
+    )
+
+    expect(second.changes.productionFills[0]?.fillAction).toBe(
+      'refill-same-type',
+    )
+    expect(second.inventory.juiceJars[0]).toEqual({
+      id: 'jar-1',
+      recipeId: 'recipe-b',
+      servings: 1,
+    })
+  })
+
   it('reproduces per-customer used-cup drop behavior from the trip capacity state', () => {
     const dropShortfall: PreparationShortfall = {
       recipes: [
