@@ -218,7 +218,7 @@ describe('production logistics', () => {
     ])
   })
 
-  it('acquires missing raw ingredients just in time through backpack capacity', () => {
+  it('acquires missing raw ingredients through backpack capacity', () => {
     const result = buildProductionLogisticsPlan(
       shortfall(['lemon', 'sugar'], 2),
       inventory(),
@@ -323,8 +323,8 @@ describe('production logistics', () => {
     expect(unload).toBeDefined()
     expect(unload?.label).toContain('→ 背包')
     expect(unload?.snapshot).toMatchObject({
-      shelfSlotsUsed: 1,
-      backpackSlotsUsed: 1,
+      shelfSlotsUsed: 0,
+      backpackSlotsUsed: 2,
     })
 
     const hiddenShelfStore = result.actions
