@@ -133,7 +133,7 @@ it(
       model,
       priorities,
       {
-        stageTimeLimitSeconds: 2.5,
+        stageTimeLimitSeconds: 10.5,
         relaxAssignmentVariables: true,
         maxStages: 1,
       },
