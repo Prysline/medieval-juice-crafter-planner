@@ -215,6 +215,20 @@ it(
       }
     }
 
+    const strictCostPrunedRecipes = model.recipes.filter(
+      (recipe) =>
+        !strictCostSupersetDominatedRecipeIds.has(recipe.candidate.id),
+    )
+    const strictCostPrunedAssignmentEligibility =
+      strictCostPrunedRecipes.reduce(
+        (total, recipe) => total + recipe.eligibleCustomerIds.length,
+        0,
+      )
+    const strictCostPrunedModel = {
+      ...model,
+      recipes: strictCostPrunedRecipes,
+    }
+
     const solverImportStartedAt = performance.now()
     const { profileHighsOptimization } = await import(
       './optimizerHighsSolver'
@@ -240,8 +254,18 @@ it(
         maxStages: 1,
       },
     )
+    const prunedRelaxedHighs = await profileHighsOptimization(
+      strictCostPrunedModel,
+      priorities,
+      {
+        stageTimeLimitSeconds: 10.5,
+        relaxAssignmentVariables: true,
+        maxStages: 1,
+      },
+    )
     const binaryFirstStage = binaryHighs.stages[0]
     const relaxedFirstStage = relaxedHighs.stages[0]
+    const prunedRelaxedFirstStage = prunedRelaxedHighs.stages[0]
 
     const report = {
       progress: request.currentProgress,
@@ -274,8 +298,9 @@ it(
         strictCostSupersetDominatedRecipeIds.size,
       nondominatedServiceSetCount,
       recipesRemainingAfterStrictCostSupersetDominance:
-        model.recipes.length -
-        strictCostSupersetDominatedRecipeIds.size,
+        strictCostPrunedRecipes.length,
+      assignmentEligibilityRemainingAfterStrictCostSupersetDominance:
+        strictCostPrunedAssignmentEligibility,
       finalHighsVariables: binaryHighs.finalVariableCount,
       finalHighsConstraints: binaryHighs.finalConstraintCount,
       candidateGenerationMs,
@@ -306,6 +331,23 @@ it(
           relaxedFirstStage?.reconstructedAssignmentCount ?? 0,
         totalMs: relaxedHighs.totalMs,
       },
+      prunedRelaxedAssignment: {
+        solveMs: prunedRelaxedFirstStage?.solveMs ?? 0,
+        status: prunedRelaxedFirstStage?.status ?? 'missing',
+        objectiveValue: prunedRelaxedFirstStage?.objectiveValue ?? null,
+        variableCount: prunedRelaxedFirstStage?.variableCount ?? 0,
+        constraintCount: prunedRelaxedFirstStage?.constraintCount ?? 0,
+        fractionalAssignmentVariableCount:
+          prunedRelaxedFirstStage?.fractionalAssignmentVariableCount ?? 0,
+        maxAssignmentIntegralityError:
+          prunedRelaxedFirstStage?.maxAssignmentIntegralityError ?? 0,
+        integralAssignmentReconstructionFeasible:
+          prunedRelaxedFirstStage?.integralAssignmentReconstructionFeasible ??
+          null,
+        reconstructedAssignmentCount:
+          prunedRelaxedFirstStage?.reconstructedAssignmentCount ?? 0,
+        totalMs: prunedRelaxedHighs.totalMs,
+      },
       binaryStages: binaryHighs.stages,
       relaxedStages: relaxedHighs.stages,
     }
@@ -331,6 +373,18 @@ it(
     expect(relaxedHighs.finalConstraintCount).toBe(
       binaryHighs.finalConstraintCount,
     )
+    expect(prunedRelaxedHighs.stages).toHaveLength(1)
+    expect(strictCostPrunedRecipes.length).toBeGreaterThan(0)
+    expect(strictCostPrunedRecipes.length).toBeLessThan(model.recipes.length)
+    if (
+      relaxedFirstStage?.status === 'optimal' &&
+      prunedRelaxedFirstStage?.status === 'optimal'
+    ) {
+      expect(prunedRelaxedFirstStage.objectiveValue).toBeCloseTo(
+        relaxedFirstStage.objectiveValue ?? 0,
+        9,
+      )
+    }
   },
   // The profiler gives each HiGHS stage its own short diagnostic solver
   // limit. This larger test-only timeout lets the stage-build diagnostics
