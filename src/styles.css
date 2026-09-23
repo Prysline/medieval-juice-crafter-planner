@@ -778,6 +778,24 @@ h1 {
   font-size: 0.78rem;
 }
 
+.match-list-more {
+  margin-top: 6px;
+  border-top: 1px dashed #dfd2bd;
+  padding-top: 6px;
+}
+
+.match-list-more > summary {
+  width: fit-content;
+  cursor: pointer;
+  color: #5c4d39;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.match-list-more[open] > summary {
+  margin-bottom: 6px;
+}
+
 .muted,
 .customer-names {
   margin: 0;

@@ -4,6 +4,7 @@ import type { ProgressiveRecipeSearchPolicy } from './recipeSearch'
 import type { Customer, RecipeCandidate } from '../types'
 
 export type RecommendationPolicy = ProgressiveRecipeSearchPolicy
+export type RecommendationCostMode = 'minimum' | 'maximum'
 
 export interface CostedRecipeCandidate {
   candidate: RecipeCandidate
@@ -11,16 +12,19 @@ export interface CostedRecipeCandidate {
   unitIngredientCost: number
 }
 
-export interface CheapestRecipeRecommendation {
+export interface BestRecipeRecommendation {
   policy: RecommendationPolicy
+  costMode: RecommendationCostMode
   batchIngredientCost: number
   unitIngredientCost: number
   candidates: CostedRecipeCandidate[]
 }
 
+export type CheapestRecipeRecommendation = BestRecipeRecommendation
+
 export interface CustomerRecipeRecommendations {
-  observedOnly: CheapestRecipeRecommendation | null
-  allowComputed: CheapestRecipeRecommendation | null
+  observedOnly: BestRecipeRecommendation | null
+  allowComputed: BestRecipeRecommendation | null
 }
 
 function eligibleForPolicy(
@@ -34,12 +38,12 @@ function eligibleForPolicy(
   return true
 }
 
-export function cheapestFullMatchRecommendation(
+function costedFullMatches(
   candidates: readonly RecipeCandidate[],
   customer: Customer,
   policy: RecommendationPolicy,
-): CheapestRecipeRecommendation | null {
-  const costed = candidates.flatMap((candidate) => {
+): CostedRecipeCandidate[] {
+  return candidates.flatMap((candidate) => {
     if (!eligibleForPolicy(candidate, policy)) return []
     if (!recipeCandidateMatchesCustomer(candidate, customer)) return []
 
@@ -57,39 +61,91 @@ export function cheapestFullMatchRecommendation(
       unitIngredientCost: cost.unitIngredientCost,
     }]
   })
+}
 
+export function bestFullMatchRecommendation(
+  candidates: readonly RecipeCandidate[],
+  customer: Customer,
+  policy: RecommendationPolicy,
+  costMode: RecommendationCostMode,
+): BestRecipeRecommendation | null {
+  const costed = costedFullMatches(candidates, customer, policy)
   if (costed.length === 0) return null
 
-  const minimumBatchCost = Math.min(
-    ...costed.map((item) => item.batchIngredientCost),
-  )
-  const cheapest = costed.filter(
-    (item) => item.batchIngredientCost === minimumBatchCost,
+  const targetBatchCost =
+    costMode === 'minimum'
+      ? Math.min(...costed.map((item) => item.batchIngredientCost))
+      : Math.max(...costed.map((item) => item.batchIngredientCost))
+  const best = costed.filter(
+    (item) => item.batchIngredientCost === targetBatchCost,
   )
 
   return {
     policy,
-    batchIngredientCost: minimumBatchCost,
-    unitIngredientCost: cheapest[0].unitIngredientCost,
-    candidates: cheapest,
+    costMode,
+    batchIngredientCost: targetBatchCost,
+    unitIngredientCost: best[0].unitIngredientCost,
+    candidates: best,
   }
+}
+
+export function cheapestFullMatchRecommendation(
+  candidates: readonly RecipeCandidate[],
+  customer: Customer,
+  policy: RecommendationPolicy,
+): BestRecipeRecommendation | null {
+  return bestFullMatchRecommendation(
+    candidates,
+    customer,
+    policy,
+    'minimum',
+  )
+}
+
+export function sortFullMatchCandidatesByIngredientCost(
+  candidates: readonly RecipeCandidate[],
+  costMode: RecommendationCostMode,
+): RecipeCandidate[] {
+  return candidates
+    .map((candidate, index) => ({
+      candidate,
+      index,
+      cost: calculateRecipeIngredientCost(candidate).batchIngredientCost,
+    }))
+    .sort((left, right) => {
+      if (left.cost === null && right.cost === null) {
+        return left.index - right.index
+      }
+      if (left.cost === null) return 1
+      if (right.cost === null) return -1
+
+      const costDelta =
+        costMode === 'minimum'
+          ? left.cost - right.cost
+          : right.cost - left.cost
+      return costDelta || left.index - right.index
+    })
+    .map(({ candidate }) => candidate)
 }
 
 export function customerRecipeRecommendationsFromSearch(
   observedOnlyCandidates: readonly RecipeCandidate[],
   allowComputedCandidates: readonly RecipeCandidate[],
   customer: Customer,
+  costMode: RecommendationCostMode = 'minimum',
 ): CustomerRecipeRecommendations {
   return {
-    observedOnly: cheapestFullMatchRecommendation(
+    observedOnly: bestFullMatchRecommendation(
       observedOnlyCandidates,
       customer,
       'observed-only',
+      costMode,
     ),
-    allowComputed: cheapestFullMatchRecommendation(
+    allowComputed: bestFullMatchRecommendation(
       allowComputedCandidates,
       customer,
       'allow-unambiguous-computed',
+      costMode,
     ),
   }
 }
@@ -97,10 +153,12 @@ export function customerRecipeRecommendationsFromSearch(
 export function customerRecipeRecommendations(
   candidates: readonly RecipeCandidate[],
   customer: Customer,
+  costMode: RecommendationCostMode = 'minimum',
 ): CustomerRecipeRecommendations {
   return customerRecipeRecommendationsFromSearch(
     candidates,
     candidates,
     customer,
+    costMode,
   )
 }
