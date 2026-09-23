@@ -1329,6 +1329,37 @@ it(
             strictCostPrunedModel,
             ['minimum-machine-operations'],
             {
+              stageTimeLimitSeconds: 0.25,
+              relaxAssignmentVariables: true,
+              aggregateLocalSingletonOperations: true,
+              aggregateEquivalentAssignments: true,
+              tightenRecipeBoundsFromMinimumCostFix: true,
+              tightenOperationBoundsFromRecipeBounds: true,
+              machineOperationKinds: [
+                'juicing',
+                'seasoning',
+                'blending',
+              ],
+              maxStages: 1,
+              initialCriterionFixes: [
+                {
+                  criterion: 'minimum-cost',
+                  value: Math.round(
+                    compressedCostStage.objectiveValue,
+                  ),
+                },
+              ],
+            },
+          )
+        : null
+
+    const sharedBlendingMachineHighs =
+      compressedCostStage?.status === 'optimal' &&
+      compressedCostStage.objectiveValue !== null
+        ? await profileHighsOptimization(
+            strictCostPrunedModel,
+            ['minimum-machine-operations'],
+            {
               stageTimeLimitSeconds: 5.5,
               relaxAssignmentVariables: true,
               aggregateLocalSingletonOperations: true,
@@ -1340,6 +1371,38 @@ it(
                 'seasoning',
                 'blending',
               ],
+              excludeSingletonMachineOperationKinds: ['blending'],
+              maxStages: 1,
+              initialCriterionFixes: [
+                {
+                  criterion: 'minimum-cost',
+                  value: Math.round(
+                    compressedCostStage.objectiveValue,
+                  ),
+                },
+              ],
+            },
+          )
+        : null
+    const singletonBlendingMachineHighs =
+      compressedCostStage?.status === 'optimal' &&
+      compressedCostStage.objectiveValue !== null
+        ? await profileHighsOptimization(
+            strictCostPrunedModel,
+            ['minimum-machine-operations'],
+            {
+              stageTimeLimitSeconds: 5.5,
+              relaxAssignmentVariables: true,
+              aggregateLocalSingletonOperations: true,
+              aggregateEquivalentAssignments: true,
+              tightenRecipeBoundsFromMinimumCostFix: true,
+              tightenOperationBoundsFromRecipeBounds: true,
+              machineOperationKinds: [
+                'juicing',
+                'seasoning',
+                'blending',
+              ],
+              excludeSharedMachineOperationKinds: ['blending'],
               maxStages: 1,
               initialCriterionFixes: [
                 {
@@ -1532,6 +1595,10 @@ it(
       throughSeasoningMachineHighs?.stages[0]
     const throughBlendingMachineFirstStage =
       throughBlendingMachineHighs?.stages[0]
+    const sharedBlendingMachineFirstStage =
+      sharedBlendingMachineHighs?.stages[0]
+    const singletonBlendingMachineFirstStage =
+      singletonBlendingMachineHighs?.stages[0]
     const tightOperationBoundMachineFirstStage =
       tightOperationBoundMachineHighs?.stages[0]
     const belowFiftyMachineFirstStage =
@@ -1914,6 +1981,36 @@ it(
               reconstructedAssignmentCount:
                 throughBlendingMachineFirstStage.reconstructedAssignmentCount,
               totalMs: throughBlendingMachineHighs?.totalMs ?? 0,
+            }
+          : null,
+      sharedBlendingMachineStage:
+        sharedBlendingMachineFirstStage
+          ? {
+              solveMs: sharedBlendingMachineFirstStage.solveMs,
+              status: sharedBlendingMachineFirstStage.status,
+              objectiveValue: sharedBlendingMachineFirstStage.objectiveValue,
+              variableCount: sharedBlendingMachineFirstStage.variableCount,
+              constraintCount: sharedBlendingMachineFirstStage.constraintCount,
+              integralAssignmentReconstructionFeasible:
+                sharedBlendingMachineFirstStage.integralAssignmentReconstructionFeasible,
+              reconstructedAssignmentCount:
+                sharedBlendingMachineFirstStage.reconstructedAssignmentCount,
+              totalMs: sharedBlendingMachineHighs?.totalMs ?? 0,
+            }
+          : null,
+      singletonBlendingMachineStage:
+        singletonBlendingMachineFirstStage
+          ? {
+              solveMs: singletonBlendingMachineFirstStage.solveMs,
+              status: singletonBlendingMachineFirstStage.status,
+              objectiveValue: singletonBlendingMachineFirstStage.objectiveValue,
+              variableCount: singletonBlendingMachineFirstStage.variableCount,
+              constraintCount: singletonBlendingMachineFirstStage.constraintCount,
+              integralAssignmentReconstructionFeasible:
+                singletonBlendingMachineFirstStage.integralAssignmentReconstructionFeasible,
+              reconstructedAssignmentCount:
+                singletonBlendingMachineFirstStage.reconstructedAssignmentCount,
+              totalMs: singletonBlendingMachineHighs?.totalMs ?? 0,
             }
           : null,
       tightOperationBoundMachineStage:
