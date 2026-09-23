@@ -622,6 +622,10 @@ it(
     const solverModuleImportMs =
       performance.now() - solverImportStartedAt
 
+    const disabledHighsProfile = (): Awaited<
+      ReturnType<typeof profileHighsOptimization>
+    > | null => null
+
     const priorities = normalizedOptimizationPriorities(request)
     const binaryHighs = await profileHighsOptimization(
       model,
@@ -1271,58 +1275,8 @@ it(
             },
           )
         : null
-    const juicingOnlyMachineHighs =
-      compressedCostStage?.status === 'optimal' &&
-      compressedCostStage.objectiveValue !== null
-        ? await profileHighsOptimization(
-            strictCostPrunedModel,
-            ['minimum-machine-operations'],
-            {
-              stageTimeLimitSeconds: 5.5,
-              relaxAssignmentVariables: true,
-              aggregateLocalSingletonOperations: true,
-              aggregateEquivalentAssignments: true,
-              tightenRecipeBoundsFromMinimumCostFix: true,
-              tightenOperationBoundsFromRecipeBounds: true,
-              machineOperationKinds: ['juicing'],
-              maxStages: 1,
-              initialCriterionFixes: [
-                {
-                  criterion: 'minimum-cost',
-                  value: Math.round(
-                    compressedCostStage.objectiveValue,
-                  ),
-                },
-              ],
-            },
-          )
-        : null
-    const seasoningOnlyMachineHighs =
-      compressedCostStage?.status === 'optimal' &&
-      compressedCostStage.objectiveValue !== null
-        ? await profileHighsOptimization(
-            strictCostPrunedModel,
-            ['minimum-machine-operations'],
-            {
-              stageTimeLimitSeconds: 5.5,
-              relaxAssignmentVariables: true,
-              aggregateLocalSingletonOperations: true,
-              aggregateEquivalentAssignments: true,
-              tightenRecipeBoundsFromMinimumCostFix: true,
-              tightenOperationBoundsFromRecipeBounds: true,
-              machineOperationKinds: ['seasoning'],
-              maxStages: 1,
-              initialCriterionFixes: [
-                {
-                  criterion: 'minimum-cost',
-                  value: Math.round(
-                    compressedCostStage.objectiveValue,
-                  ),
-                },
-              ],
-            },
-          )
-        : null
+    const juicingOnlyMachineHighs = disabledHighsProfile()
+    const seasoningOnlyMachineHighs = disabledHighsProfile()
 
     const throughSeasoningMachineHighs =
       compressedCostStage?.status === 'optimal' &&
@@ -1381,60 +1335,8 @@ it(
           )
         : null
 
-    const sharedBlendingMachineHighs =
-      compressedCostStage?.status === 'optimal' &&
-      compressedCostStage.objectiveValue !== null
-        ? await profileHighsOptimization(
-            strictCostPrunedModel,
-            ['minimum-machine-operations'],
-            {
-              stageTimeLimitSeconds: 5.5,
-              relaxAssignmentVariables: true,
-              aggregateLocalSingletonOperations: true,
-              aggregateEquivalentAssignments: true,
-              tightenRecipeBoundsFromMinimumCostFix: true,
-              tightenOperationBoundsFromRecipeBounds: true,
-              machineOperationKinds: ['blending'],
-              excludeSingletonMachineOperationKinds: ['blending'],
-              maxStages: 1,
-              initialCriterionFixes: [
-                {
-                  criterion: 'minimum-cost',
-                  value: Math.round(
-                    compressedCostStage.objectiveValue,
-                  ),
-                },
-              ],
-            },
-          )
-        : null
-    const singletonBlendingMachineHighs =
-      compressedCostStage?.status === 'optimal' &&
-      compressedCostStage.objectiveValue !== null
-        ? await profileHighsOptimization(
-            strictCostPrunedModel,
-            ['minimum-machine-operations'],
-            {
-              stageTimeLimitSeconds: 5.5,
-              relaxAssignmentVariables: true,
-              aggregateLocalSingletonOperations: true,
-              aggregateEquivalentAssignments: true,
-              tightenRecipeBoundsFromMinimumCostFix: true,
-              tightenOperationBoundsFromRecipeBounds: true,
-              machineOperationKinds: ['blending'],
-              excludeSharedMachineOperationKinds: ['blending'],
-              maxStages: 1,
-              initialCriterionFixes: [
-                {
-                  criterion: 'minimum-cost',
-                  value: Math.round(
-                    compressedCostStage.objectiveValue,
-                  ),
-                },
-              ],
-            },
-          )
-        : null
+    const sharedBlendingMachineHighs = disabledHighsProfile()
+    const singletonBlendingMachineHighs = disabledHighsProfile()
 
     const finalizingOnlyMachineHighs =
       compressedCostStage?.status === 'optimal' &&
@@ -1463,25 +1365,20 @@ it(
           )
         : null
 
-    const sharedPrefixMachineHighs =
+    const blendingOnlyMachineHighs =
       compressedCostStage?.status === 'optimal' &&
       compressedCostStage.objectiveValue !== null
         ? await profileHighsOptimization(
             strictCostPrunedModel,
             ['minimum-machine-operations'],
             {
-              stageTimeLimitSeconds: 5.5,
+              stageTimeLimitSeconds: 15.5,
               relaxAssignmentVariables: true,
               aggregateLocalSingletonOperations: true,
               aggregateEquivalentAssignments: true,
               tightenRecipeBoundsFromMinimumCostFix: true,
               tightenOperationBoundsFromRecipeBounds: true,
-              machineOperationKinds: [
-                'juicing',
-                'seasoning',
-                'blending',
-              ],
-              excludeSingletonMachineOperationKinds: ['blending'],
+              machineOperationKinds: ['blending'],
               maxStages: 1,
               initialCriterionFixes: [
                 {
@@ -1495,33 +1392,8 @@ it(
           )
         : null
 
-    const localTailMachineHighs =
-      compressedCostStage?.status === 'optimal' &&
-      compressedCostStage.objectiveValue !== null
-        ? await profileHighsOptimization(
-            strictCostPrunedModel,
-            ['minimum-machine-operations'],
-            {
-              stageTimeLimitSeconds: 5.5,
-              relaxAssignmentVariables: true,
-              aggregateLocalSingletonOperations: true,
-              aggregateEquivalentAssignments: true,
-              tightenRecipeBoundsFromMinimumCostFix: true,
-              tightenOperationBoundsFromRecipeBounds: true,
-              machineOperationKinds: ['blending', 'finalizing'],
-              excludeSharedMachineOperationKinds: ['blending'],
-              maxStages: 1,
-              initialCriterionFixes: [
-                {
-                  criterion: 'minimum-cost',
-                  value: Math.round(
-                    compressedCostStage.objectiveValue,
-                  ),
-                },
-              ],
-            },
-          )
-        : null
+    const sharedPrefixMachineHighs = disabledHighsProfile()
+    const localTailMachineHighs = disabledHighsProfile()
 
     const twoWayMachineOperationStages = [
       sharedPrefixMachineHighs?.stages[0],
@@ -1534,6 +1406,24 @@ it(
           stage.objectiveValue !== null,
       )
         ? twoWayMachineOperationStages.reduce(
+            (total, stage) =>
+              total + Math.round(stage?.objectiveValue ?? 0),
+            0,
+          )
+        : null
+
+    const combinedMachineOperationStages = [
+      throughSeasoningMachineHighs?.stages[0],
+      blendingOnlyMachineHighs?.stages[0],
+      finalizingOnlyMachineHighs?.stages[0],
+    ]
+    const combinedMachineOperationLowerBound =
+      combinedMachineOperationStages.every(
+        (stage) =>
+          stage?.status === 'optimal' &&
+          stage.objectiveValue !== null,
+      )
+        ? combinedMachineOperationStages.reduce(
             (total, stage) =>
               total + Math.round(stage?.objectiveValue ?? 0),
             0,
@@ -1590,99 +1480,9 @@ it(
           )
         : null
 
-    const exactFiftyMachineHighs =
-      compressedCostStage?.status === 'optimal' &&
-      compressedCostStage.objectiveValue !== null &&
-      decomposedMachineOperationLowerBound === 50
-        ? await profileHighsOptimization(
-            strictCostPrunedModel,
-            ['minimum-machine-operations'],
-            {
-              stageTimeLimitSeconds: 5.5,
-              relaxAssignmentVariables: true,
-              aggregateLocalSingletonOperations: true,
-              aggregateEquivalentAssignments: true,
-              tightenRecipeBoundsFromMinimumCostFix: true,
-              tightenOperationBoundsFromRecipeBounds: true,
-              machineOperationsLowerBound: 50,
-              machineOperationsUpperBound: 50,
-              maxStages: 1,
-              initialCriterionFixes: [
-                {
-                  criterion: 'minimum-cost',
-                  value: Math.round(
-                    compressedCostStage.objectiveValue,
-                  ),
-                },
-              ],
-            },
-          )
-        : null
-
-    const atMostFiftyOneMachineHighs =
-      compressedCostStage?.status === 'optimal' &&
-      compressedCostStage.objectiveValue !== null &&
-      decomposedMachineOperationLowerBound === 50
-        ? await profileHighsOptimization(
-            strictCostPrunedModel,
-            ['minimum-machine-operations'],
-            {
-              stageTimeLimitSeconds: 5.5,
-              relaxAssignmentVariables: true,
-              aggregateLocalSingletonOperations: true,
-              aggregateEquivalentAssignments: true,
-              tightenRecipeBoundsFromMinimumCostFix: true,
-              tightenOperationBoundsFromRecipeBounds: true,
-              machineOperationsLowerBound: 50,
-              machineOperationsUpperBound: 51,
-              maxStages: 1,
-              initialCriterionFixes: [
-                {
-                  criterion: 'minimum-cost',
-                  value: Math.round(
-                    compressedCostStage.objectiveValue,
-                  ),
-                },
-              ],
-            },
-          )
-        : null
-
-    const partitionBoundExactFiftyMachineHighs =
-      compressedCostStage?.status === 'optimal' &&
-      compressedCostStage.objectiveValue !== null &&
-      decomposedMachineOperationLowerBound === 50
-        ? await profileHighsOptimization(
-            strictCostPrunedModel,
-            ['minimum-machine-operations'],
-            {
-              stageTimeLimitSeconds: 5.5,
-              relaxAssignmentVariables: true,
-              aggregateLocalSingletonOperations: true,
-              aggregateEquivalentAssignments: true,
-              tightenRecipeBoundsFromMinimumCostFix: true,
-              tightenOperationBoundsFromRecipeBounds: true,
-              machineOperationsLowerBound: 50,
-              machineOperationsUpperBound: 50,
-              machineOperationPartitionLowerBounds: {
-                juicing: 8,
-                seasoning: 12,
-                sharedBlending: 7,
-                singletonBlending: 2,
-                finalizing: 21,
-              },
-              maxStages: 1,
-              initialCriterionFixes: [
-                {
-                  criterion: 'minimum-cost',
-                  value: Math.round(
-                    compressedCostStage.objectiveValue,
-                  ),
-                },
-              ],
-            },
-          )
-        : null
+    const exactFiftyMachineHighs = disabledHighsProfile()
+    const atMostFiftyOneMachineHighs = disabledHighsProfile()
+    const partitionBoundExactFiftyMachineHighs = disabledHighsProfile()
 
     const tightOperationBoundMachineHighs =
       compressedCostStage?.status === 'optimal' &&
@@ -1943,8 +1743,7 @@ it(
       | WarmStartComparison['warm']
       | null = null
 
-    const baselineWarmStartMps =
-      tightOperationBoundMachineFirstStage?.capturedMps
+    const baselineWarmStartMps: string | undefined = undefined
     const baselineWarmStartSolutionValues =
       fixedIncumbentMachineFirstStage?.capturedSolutionValues
     const decomposedBoundWarmStartMps =
