@@ -1078,6 +1078,30 @@ it(
       )
       .sort((a, b) => b - a)
 
+    const expandedCostFeasibilityHighs =
+      compressedCostStage?.status === 'optimal' &&
+      compressedCostStage.objectiveValue !== null
+        ? await profileHighsOptimization(
+            strictCostPrunedModel,
+            ['minimum-cost'],
+            {
+              stageTimeLimitSeconds: 5.5,
+              relaxAssignmentVariables: true,
+              aggregateEquivalentAssignments: true,
+              tightenRecipeBoundsFromMinimumCostFix: true,
+              maxStages: 1,
+              initialCriterionFixes: [
+                {
+                  criterion: 'minimum-cost',
+                  value: Math.round(
+                    compressedCostStage.objectiveValue,
+                  ),
+                },
+              ],
+            },
+          )
+        : null
+
     const expandedMachineHighs =
       compressedCostStage?.status === 'optimal' &&
       compressedCostStage.objectiveValue !== null
@@ -1227,6 +1251,8 @@ it(
     const prunedRelaxedFirstStage = prunedRelaxedHighs.stages[0]
     const compressedRelaxedFirstStage =
       compressedRelaxedHighs.stages[0]
+    const expandedCostFeasibilityFirstStage =
+      expandedCostFeasibilityHighs?.stages[0]
     const expandedMachineFirstStage =
       expandedMachineHighs?.stages[0]
     const localCompressedMachineFirstStage =
@@ -1446,6 +1472,27 @@ it(
           compressedRelaxedFirstStage?.reconstructedAssignmentCount ?? 0,
         totalMs: compressedRelaxedHighs.totalMs,
       },
+      expandedCostFeasibilityStage:
+        expandedCostFeasibilityFirstStage
+          ? {
+              solveMs: expandedCostFeasibilityFirstStage.solveMs,
+              status: expandedCostFeasibilityFirstStage.status,
+              objectiveValue:
+                expandedCostFeasibilityFirstStage.objectiveValue,
+              fixCount:
+                expandedCostFeasibilityFirstStage.fixCount,
+              variableCount:
+                expandedCostFeasibilityFirstStage.variableCount,
+              constraintCount:
+                expandedCostFeasibilityFirstStage.constraintCount,
+              integralAssignmentReconstructionFeasible:
+                expandedCostFeasibilityFirstStage.integralAssignmentReconstructionFeasible,
+              reconstructedAssignmentCount:
+                expandedCostFeasibilityFirstStage.reconstructedAssignmentCount,
+              totalMs:
+                expandedCostFeasibilityHighs?.totalMs ?? 0,
+            }
+          : null,
       expandedMachineStage: expandedMachineFirstStage
         ? {
             solveMs: expandedMachineFirstStage.solveMs,
@@ -1633,6 +1680,22 @@ it(
         9,
       )
     }
+    if (expandedCostFeasibilityFirstStage) {
+      expect(expandedCostFeasibilityFirstStage.objective).toBe('cost')
+      expect(expandedCostFeasibilityFirstStage.fixCount).toBe(1)
+      if (expandedCostFeasibilityFirstStage.objectiveValue !== null) {
+        expect(
+          expandedCostFeasibilityFirstStage.objectiveValue,
+        ).toBeCloseTo(fixedMinimumCost ?? 0, 9)
+        expect(
+          expandedCostFeasibilityFirstStage.integralAssignmentReconstructionFeasible,
+        ).toBe(true)
+        expect(
+          expandedCostFeasibilityFirstStage.reconstructedAssignmentCount,
+        ).toBe(model.serviceableCustomerIds.length)
+      }
+    }
+
     if (fixedIncumbentMachineFirstStage) {
       expect(fixedIncumbentMachineFirstStage.status).toBe('optimal')
       expect(fixedIncumbentMachineFirstStage.objectiveValue).toBeCloseTo(
