@@ -9,10 +9,13 @@ import {
   machineOperationBreakdownForSelection,
   prepareMinimumCostStageCertificate,
 } from './optimizerCertificates'
-import { solveMachineOperationCertificateForCostFix } from './optimizerHighsSolver'
+import {
+  solveJarSwitchCertificateForCostAndMachineFix,
+  solveMachineOperationCertificateForCostFix,
+} from './optimizerHighsSolver'
 
-describe('production-scale machine-operation certificate', () => {
-  it('closes the exact 50-operation lower and upper bounds', async () => {
+describe('production-scale optimizer certificates', () => {
+  it('closes the exact Stage 2 machine and Stage 3 jar bounds', async () => {
     const customerIds = canonicalCustomers.map((customer) => customer.id)
     const request: OptimizationRequest = {
       customerIds,
@@ -62,5 +65,25 @@ describe('production-scale machine-operation certificate', () => {
         certificate!.witnessRecipeUnits,
       ).total,
     ).toBe(50)
-  }, 30000)
+
+    const jarCertificate =
+      await solveJarSwitchCertificateForCostAndMachineFix(
+        stage1!.continuationDomain,
+        572,
+        certificate!,
+      )
+
+    expect(jarCertificate).not.toBeNull()
+    expect(jarCertificate?.productionUnits).toBe(24)
+    expect(
+      jarCertificate?.extraProductionUnitCostLowerBound,
+    ).toBe(581)
+    expect(jarCertificate?.finalizingOperations).toBe(21)
+    expect(jarCertificate?.distinctRecipeKindLowerBound).toBe(21)
+    expect(jarCertificate?.jarLowerBound).toBe(19)
+    expect(jarCertificate?.jarUpperBound).toBe(19)
+    expect(jarCertificate?.optimum).toBe(19)
+    expect(jarCertificate?.witnessRecipeUnits).toHaveLength(21)
+    expect(jarCertificate?.verifiedAssignmentCount).toBe(48)
+  }, 45000)
 })
