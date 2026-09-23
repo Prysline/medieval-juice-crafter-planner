@@ -1,5 +1,6 @@
 import { Model, sum } from '@bubblyworld/highs-ts'
 import { PROCESSING_STACK_CAPACITY } from './inventoryRules'
+import { prepareMinimumCostStageCertificate } from './optimizerCertificates'
 import { PlanningUserError } from './planningErrors'
 import type {
   BatchOptimizerSolver,
@@ -88,6 +89,34 @@ function buildHighsStage(
   const xByRecipeId = new Map<string, IntVariable>()
   const zByRecipeId = new Map<string, BoolVariable>()
   const yByCustomerRecipe = new Map<string, BoolVariable>()
+  const operationByEdgeKey = new Map<string, IntVariable>()
+  const neededObjectiveKeys = new Set<ObjectiveKey>([
+    objective,
+    ...fixes.map((fix) => fix.objective),
+  ])
+  const needsAnyObjective = (...keys: ObjectiveKey[]) =>
+    keys.some((key) => neededObjectiveKeys.has(key))
+
+  const initialJars = normalizedInitialCarriedJuiceJars(
+    domain.request,
+  )
+  const emptyJarCount = initialJars.filter(
+    (jar) => !jar.recipeId || jar.servings <= 0,
+  ).length
+  const maxJarTypeSwitches =
+    domain.request.constraints?.maxJarTypeSwitches
+  const hasJarHardConstraint =
+    emptyJarCount === 0 ||
+    (
+      typeof maxJarTypeSwitches === 'number' &&
+      Number.isFinite(maxJarTypeSwitches)
+    )
+  const needsJarStructure =
+    needsAnyObjective('jarSwitches') || hasJarHardConstraint
+  const needsRecipeUsageStructure =
+    needsAnyObjective('kinds') || needsJarStructure
+  const needsProductionOperations =
+    needsAnyObjective('machineOperations')
 
   domain.recipes.forEach((recipe, recipeIndex) => {
     const x = model.intVar(
@@ -95,18 +124,21 @@ function buildHighsStage(
       maxJuiceUnitsPerRecipe,
       `x_${recipeIndex}`,
     )
-    const z = model.boolVar(`z_${recipeIndex}`)
     xByRecipeId.set(recipe.candidate.id, x)
-    zByRecipeId.set(recipe.candidate.id, z)
 
-    model.addConstraint(
-      x.minus(z.times(maxJuiceUnitsPerRecipe)).leq(0),
-      `usage_upper_${recipeIndex}`,
-    )
-    model.addConstraint(
-      z.minus(x).leq(0),
-      `usage_lower_${recipeIndex}`,
-    )
+    if (needsRecipeUsageStructure) {
+      const z = model.boolVar(`z_${recipeIndex}`)
+      zByRecipeId.set(recipe.candidate.id, z)
+
+      model.addConstraint(
+        x.minus(z.times(maxJuiceUnitsPerRecipe)).leq(0),
+        `usage_upper_${recipeIndex}`,
+      )
+      model.addConstraint(
+        z.minus(x).leq(0),
+        `usage_lower_${recipeIndex}`,
+      )
+    }
   })
 
   domain.serviceableCustomerIds.forEach((customerId, customerIndex) => {
@@ -148,191 +180,222 @@ function buildHighsStage(
     )
   })
 
-  const productionEdgeKeys = [
-    ...new Set(
-      domain.recipes.flatMap((recipe) =>
-        recipe.productionPath.edges.map((edge) => edge.key),
-      ),
-    ),
-  ]
-  const operationByEdgeKey = new Map<string, IntVariable>()
+  if (needsProductionOperations) {
+    const quantityTermsByEdgeKey = new Map<
+      string,
+      ReturnType<IntVariable['times']>[]
+    >()
 
-  productionEdgeKeys.forEach((edgeKey, edgeIndex) => {
-    const operationCount = model.intVar(
-      0,
-      maxTotalJuiceUnits,
-      `op_${edgeIndex}`,
-    )
-    operationByEdgeKey.set(edgeKey, operationCount)
-
-    const quantityExpression = sum(
-      ...domain.recipes.flatMap((recipe) => {
-        const edgeMultiplicity = recipe.productionPath.edges.filter(
-          (edge) => edge.key === edgeKey,
-        ).length
-        if (edgeMultiplicity === 0) return []
-
-        const x = xByRecipeId.get(recipe.candidate.id)
-        return x ? [x.times(edgeMultiplicity)] : []
-      }),
-    )
-
-    model.addConstraint(
-      quantityExpression
-        .minus(operationCount.times(PROCESSING_STACK_CAPACITY))
-        .leq(0),
-      `operation_capacity_${edgeIndex}`,
-    )
-    model.addConstraint(
-      operationCount.minus(quantityExpression).leq(0),
-      `operation_usage_${edgeIndex}`,
-    )
-  })
-
-  const costExpression = sum(
-    ...domain.recipes.flatMap((recipe) => {
+    for (const recipe of domain.recipes) {
       const x = xByRecipeId.get(recipe.candidate.id)
-      return x ? [x.times(recipe.juiceUnitIngredientCost)] : []
-    }),
-  )
-  const productionUnitsExpression = sum(
-    ...domain.recipes.flatMap((recipe) => {
-      const x = xByRecipeId.get(recipe.candidate.id)
-      return x ? [x] : []
-    }),
-  )
-  const kindExpression = sum(
-    ...domain.recipes.flatMap((recipe) => {
-      const z = zByRecipeId.get(recipe.candidate.id)
-      return z ? [z] : []
-    }),
-  )
-  const machineOperationsExpression = sum(
-    ...operationByEdgeKey.values(),
-  )
+      if (!x) continue
 
-  const assignedIngredientCostExpression = sum(
-    ...domain.serviceableCustomerIds.flatMap((customerId) =>
-      domain.recipes.flatMap((recipe) => {
-        const y = yByCustomerRecipe.get(
-          `${customerId}\u001f${recipe.candidate.id}`,
+      const multiplicityByEdgeKey = new Map<string, number>()
+      for (const edge of recipe.productionPath.edges) {
+        multiplicityByEdgeKey.set(
+          edge.key,
+          (multiplicityByEdgeKey.get(edge.key) ?? 0) + 1,
         )
-        return y ? [y.times(recipe.juiceUnitIngredientCost)] : []
-      }),
-    ),
-  )
+      }
 
-  const formalCustomerIds = new Set(domain.request.formalCustomerIds)
-  const knownRevenueExpression = sum(
-    ...domain.serviceableCustomerIds.flatMap((customerId) => {
-      if (!formalCustomerIds.has(customerId)) return []
-
-      return domain.recipes.flatMap((recipe) => {
-        const salePrice = recipe.candidate.salePrice
-        if (salePrice === null) return []
-
-        const y = yByCustomerRecipe.get(
-          `${customerId}\u001f${recipe.candidate.id}`,
-        )
-        return y ? [y.times(salePrice)] : []
-      })
-    }),
-  )
-
-  const initialJars = normalizedInitialCarriedJuiceJars(
-    domain.request,
-  )
-  const emptyJarCount = initialJars.filter(
-    (jar) => !jar.recipeId || jar.servings <= 0,
-  ).length
-  const initialRecipeIds = new Set(
-    initialJars.flatMap((jar) =>
-      jar.recipeId && jar.servings > 0 ? [jar.recipeId] : [],
-    ),
-  )
-  const unmatchedKindExpression = sum(
-    ...domain.recipes.flatMap((recipe) => {
-      if (initialRecipeIds.has(recipe.candidate.id)) return []
-      const z = zByRecipeId.get(recipe.candidate.id)
-      return z ? [z] : []
-    }),
-  )
-  const jarSwitches = model.intVar(
-    0,
-    Math.max(0, domain.recipes.length),
-    'jar_type_switches',
-  )
-  model.addConstraint(
-    unmatchedKindExpression
-      .minus(jarSwitches)
-      .leq(emptyJarCount),
-    'jar_switch_lower_bound',
-  )
-  model.addConstraint(
-    jarSwitches.minus(unmatchedKindExpression).leq(0),
-    'jar_switch_usage',
-  )
-
-  if (emptyJarCount === 0) {
-    const cumulativeServingsByRecipe = new Map<string, number>()
-    const reusableJarVars: BoolVariable[] = []
-
-    initialJars.forEach((jar, jarIndex) => {
-      if (!jar.recipeId || jar.servings <= 0) return
-      const cumulative =
-        (cumulativeServingsByRecipe.get(jar.recipeId) ?? 0) +
-        jar.servings
-      cumulativeServingsByRecipe.set(jar.recipeId, cumulative)
-
-      const assignedServings = sum(
-        ...domain.serviceableCustomerIds.flatMap((customerId) => {
-          const y = yByCustomerRecipe.get(
-            `${customerId}\u001f${jar.recipeId}`,
-          )
-          return y ? [y] : []
-        }),
-      )
-      const reusable = model.boolVar(
-        `initial_jar_reusable_${jarIndex}`,
-      )
-      model.addConstraint(
-        reusable.times(cumulative).minus(assignedServings).leq(0),
-        `initial_jar_reusable_threshold_${jarIndex}`,
-      )
-      reusableJarVars.push(reusable)
-    })
-
-    if (reusableJarVars.length > 0) {
-      model.addConstraint(
-        unmatchedKindExpression
-          .minus(
-            sum(...reusableJarVars).times(
-              Math.max(1, domain.recipes.length),
-            ),
-          )
-          .leq(0),
-        'initial_jar_switch_requires_reusable_jar',
-      )
-    } else {
-      model.addConstraint(
-        unmatchedKindExpression.leq(0),
-        'initial_jar_switch_requires_reusable_jar',
-      )
+      for (const [edgeKey, multiplicity] of multiplicityByEdgeKey) {
+        const terms = quantityTermsByEdgeKey.get(edgeKey)
+        const term = x.times(multiplicity)
+        if (terms) {
+          terms.push(term)
+        } else {
+          quantityTermsByEdgeKey.set(edgeKey, [term])
+        }
+      }
     }
+
+    ;[...quantityTermsByEdgeKey.entries()].forEach(
+      ([edgeKey, quantityTerms], edgeIndex) => {
+        const operationCount = model.intVar(
+          0,
+          maxTotalJuiceUnits,
+          `op_${edgeIndex}`,
+        )
+        operationByEdgeKey.set(edgeKey, operationCount)
+        const quantityExpression = sum(...quantityTerms)
+
+        model.addConstraint(
+          quantityExpression
+            .minus(
+              operationCount.times(PROCESSING_STACK_CAPACITY),
+            )
+            .leq(0),
+          `operation_capacity_${edgeIndex}`,
+        )
+        model.addConstraint(
+          operationCount.minus(quantityExpression).leq(0),
+          `operation_usage_${edgeIndex}`,
+        )
+      },
+    )
   }
 
-  const maxJarTypeSwitches =
-    domain.request.constraints?.maxJarTypeSwitches
-  if (
-    typeof maxJarTypeSwitches === 'number' &&
-    Number.isFinite(maxJarTypeSwitches)
-  ) {
-    model.addConstraint(
-      unmatchedKindExpression.leq(
-        emptyJarCount + Math.max(0, Math.floor(maxJarTypeSwitches)),
+  const costExpression = needsAnyObjective(
+    'cost',
+    'negativeKnownGrossProfit',
+  )
+    ? sum(
+        ...domain.recipes.flatMap((recipe) => {
+          const x = xByRecipeId.get(recipe.candidate.id)
+          return x ? [x.times(recipe.juiceUnitIngredientCost)] : []
+        }),
+      )
+    : undefined
+
+  const productionUnitsExpression = needsAnyObjective('productionUnits')
+    ? sum(
+        ...domain.recipes.flatMap((recipe) => {
+          const x = xByRecipeId.get(recipe.candidate.id)
+          return x ? [x] : []
+        }),
+      )
+    : undefined
+
+  const kindExpression = needsAnyObjective('kinds')
+    ? sum(
+        ...domain.recipes.flatMap((recipe) => {
+          const z = zByRecipeId.get(recipe.candidate.id)
+          return z ? [z] : []
+        }),
+      )
+    : undefined
+
+  const machineOperationsExpression = needsAnyObjective('machineOperations')
+    ? sum(...operationByEdgeKey.values())
+    : undefined
+
+  const assignedIngredientCostExpression = needsAnyObjective(
+    'negativeAssignedIngredientCost',
+  )
+    ? sum(
+        ...domain.serviceableCustomerIds.flatMap((customerId) =>
+          domain.recipes.flatMap((recipe) => {
+            const y = yByCustomerRecipe.get(
+              `${customerId}\u001f${recipe.candidate.id}`,
+            )
+            return y ? [y.times(recipe.juiceUnitIngredientCost)] : []
+          }),
+        ),
+      )
+    : undefined
+
+  const formalCustomerIds = new Set(domain.request.formalCustomerIds)
+  const knownRevenueExpression = needsAnyObjective(
+    'negativeKnownRevenue',
+    'negativeKnownGrossProfit',
+  )
+    ? sum(
+        ...domain.serviceableCustomerIds.flatMap((customerId) => {
+          if (!formalCustomerIds.has(customerId)) return []
+
+          return domain.recipes.flatMap((recipe) => {
+            const salePrice = recipe.candidate.salePrice
+            if (salePrice === null) return []
+
+            const y = yByCustomerRecipe.get(
+              `${customerId}\u001f${recipe.candidate.id}`,
+            )
+            return y ? [y.times(salePrice)] : []
+          })
+        }),
+      )
+    : undefined
+
+  let jarSwitches: IntVariable | undefined
+
+  if (needsJarStructure) {
+    const initialRecipeIds = new Set(
+      initialJars.flatMap((jar) =>
+        jar.recipeId && jar.servings > 0 ? [jar.recipeId] : [],
       ),
-      'jar_switch_hard_limit',
     )
+    const unmatchedKindExpression = sum(
+      ...domain.recipes.flatMap((recipe) => {
+        if (initialRecipeIds.has(recipe.candidate.id)) return []
+        const z = zByRecipeId.get(recipe.candidate.id)
+        return z ? [z] : []
+      }),
+    )
+    jarSwitches = model.intVar(
+      0,
+      Math.max(0, domain.recipes.length),
+      'jar_type_switches',
+    )
+    model.addConstraint(
+      unmatchedKindExpression
+        .minus(jarSwitches)
+        .leq(emptyJarCount),
+      'jar_switch_lower_bound',
+    )
+    model.addConstraint(
+      jarSwitches.minus(unmatchedKindExpression).leq(0),
+      'jar_switch_usage',
+    )
+
+    if (emptyJarCount === 0) {
+      const cumulativeServingsByRecipe = new Map<string, number>()
+      const reusableJarVars: BoolVariable[] = []
+
+      initialJars.forEach((jar, jarIndex) => {
+        if (!jar.recipeId || jar.servings <= 0) return
+        const cumulative =
+          (cumulativeServingsByRecipe.get(jar.recipeId) ?? 0) +
+          jar.servings
+        cumulativeServingsByRecipe.set(jar.recipeId, cumulative)
+
+        const assignedServings = sum(
+          ...domain.serviceableCustomerIds.flatMap((customerId) => {
+            const y = yByCustomerRecipe.get(
+              `${customerId}\u001f${jar.recipeId}`,
+            )
+            return y ? [y] : []
+          }),
+        )
+        const reusable = model.boolVar(
+          `initial_jar_reusable_${jarIndex}`,
+        )
+        model.addConstraint(
+          reusable.times(cumulative).minus(assignedServings).leq(0),
+          `initial_jar_reusable_threshold_${jarIndex}`,
+        )
+        reusableJarVars.push(reusable)
+      })
+
+      if (reusableJarVars.length > 0) {
+        model.addConstraint(
+          unmatchedKindExpression
+            .minus(
+              sum(...reusableJarVars).times(
+                Math.max(1, domain.recipes.length),
+              ),
+            )
+            .leq(0),
+          'initial_jar_switch_requires_reusable_jar',
+        )
+      } else {
+        model.addConstraint(
+          unmatchedKindExpression.leq(0),
+          'initial_jar_switch_requires_reusable_jar',
+        )
+      }
+    }
+
+    if (
+      typeof maxJarTypeSwitches === 'number' &&
+      Number.isFinite(maxJarTypeSwitches)
+    ) {
+      model.addConstraint(
+        unmatchedKindExpression.leq(
+          emptyJarCount + Math.max(0, Math.floor(maxJarTypeSwitches)),
+        ),
+        'jar_switch_hard_limit',
+      )
+    }
   }
 
   const expressions = {
@@ -340,21 +403,32 @@ function buildHighsStage(
     productionUnits: productionUnitsExpression,
     kinds: kindExpression,
     negativeAssignedIngredientCost:
-      assignedIngredientCostExpression.times(-1),
-    negativeKnownRevenue: knownRevenueExpression.times(-1),
-    negativeKnownGrossProfit: costExpression.minus(knownRevenueExpression),
+      assignedIngredientCostExpression?.times(-1),
+    negativeKnownRevenue: knownRevenueExpression?.times(-1),
+    negativeKnownGrossProfit:
+      costExpression && knownRevenueExpression
+        ? costExpression.minus(knownRevenueExpression)
+        : undefined,
     machineOperations: machineOperationsExpression,
     jarSwitches,
   }
 
+  const requiredObjectiveExpression = (key: ObjectiveKey) => {
+    const expression = expressions[key]
+    if (!expression) {
+      throw new Error(`Missing HiGHS expression for objective ${key}`)
+    }
+    return expression
+  }
+
   fixes.forEach((fix, index) => {
     model.addConstraint(
-      expressions[fix.objective].eq(fix.value),
+      requiredObjectiveExpression(fix.objective).eq(fix.value),
       `fix_${fix.objective}_${index}`,
     )
   })
 
-  model.minimize(expressions[objective])
+  model.minimize(requiredObjectiveExpression(objective))
 
   return {
     model,
@@ -385,16 +459,51 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
 
     const objectives = objectiveOrder(priorities)
     const fixes: ObjectiveFix[] = []
+    let currentDomain = domain
     let final:
       | {
+          domain: BatchOptimizationModel
           built: ReturnType<typeof buildHighsStage>
           solution: Awaited<ReturnType<Model['solve']>>
         }
       | undefined
 
-    for (const objectiveKey of objectives) {
-      const built = buildHighsStage(domain, objectiveKey, fixes)
-      const solution = await built.model.solve()
+    for (
+      let objectiveIndex = 0;
+      objectiveIndex < objectives.length;
+      objectiveIndex += 1
+    ) {
+      const objectiveKey = objectives[objectiveIndex]
+      let stageDomain = currentDomain
+      let continuationDomain = currentDomain
+      let usingMinimumCostCertificate = false
+
+      if (objectiveIndex === 0 && objectiveKey === 'cost') {
+        const certificate = prepareMinimumCostStageCertificate(domain)
+        if (
+          certificate &&
+          certificate.representativeRecipeCount <
+            certificate.originalRecipeCount
+        ) {
+          stageDomain = certificate.stageDomain
+          continuationDomain = certificate.continuationDomain
+          usingMinimumCostCertificate = true
+        }
+      }
+
+      let built = buildHighsStage(stageDomain, objectiveKey, fixes)
+      let solution = await built.model.solve()
+
+      if (
+        usingMinimumCostCertificate &&
+        solution.status !== 'optimal'
+      ) {
+        stageDomain = domain
+        continuationDomain = domain
+        usingMinimumCostCertificate = false
+        built = buildHighsStage(domain, objectiveKey, fixes)
+        solution = await built.model.solve()
+      }
 
       if (solution.status !== 'optimal') {
         throw new PlanningUserError(
@@ -407,11 +516,16 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
       const optimum = Math.round(
         requiredFiniteNumber(solution.objective, `${objectiveKey} objective`),
       )
-      final = { built, solution }
+      final = {
+        domain: stageDomain,
+        built,
+        solution,
+      }
       fixes.push({
         objective: objectiveKey,
         value: optimum,
       })
+      currentDomain = continuationDomain
     }
 
     if (!final) {
@@ -419,9 +533,10 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
     }
 
     const finalStage = final
-    const assignments = domain.serviceableCustomerIds.map(
+    const finalDomain = finalStage.domain
+    const assignments = finalDomain.serviceableCustomerIds.map(
       (customerId) => {
-        const recipe = domain.recipes.find((entry) => {
+        const recipe = finalDomain.recipes.find((entry) => {
           const variable = finalStage.built.yByCustomerRecipe.get(
             `${customerId}\u001f${entry.candidate.id}`,
           )
@@ -447,7 +562,7 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
     )
 
     const productionUnitsByRecipeId: Record<string, number> = {}
-    for (const recipe of domain.recipes) {
+    for (const recipe of finalDomain.recipes) {
       const variable = finalStage.built.xByRecipeId.get(recipe.candidate.id)
       const count = variable
         ? Math.round(
@@ -465,7 +580,7 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
 
     const totalProductionUnits = Object.values(productionUnitsByRecipeId)
       .reduce((total, count) => total + count, 0)
-    const totalIngredientCost = domain.recipes.reduce(
+    const totalIngredientCost = finalDomain.recipes.reduce(
       (total, recipe) =>
         total +
         (productionUnitsByRecipeId[recipe.candidate.id] ?? 0) *

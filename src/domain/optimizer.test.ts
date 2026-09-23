@@ -634,6 +634,38 @@ describe('production optimizer', () => {
     ).toBe(true)
   })
 
+  it('restores equal-cost recipe identities before the machine-operation stage', async () => {
+    const highOperationRecipe = recipe(
+      'equal-cost-high-ops',
+      ['紅蘿蔔', '梨'],
+      ['甜味'],
+    )
+    const lowOperationRecipe = recipe(
+      'equal-cost-low-ops',
+      ['檸檬', '薄荷'],
+      ['甜味'],
+    )
+
+    const result = await optimizeBatchPlan(
+      {
+        ...request(['a']),
+        currentProgress: 'juice-blender-unlocked',
+        priorities: ['minimum-cost', 'minimum-machine-operations'],
+      },
+      {
+        source: {
+          customers: [customer('a', '甜味')],
+          candidates: [highOperationRecipe, lowOperationRecipe],
+        },
+      },
+    )
+
+    expect(result.totalIngredientCost).toBe(23)
+    expect(result.recipePlans).toHaveLength(1)
+    expect(result.recipePlans[0].recipeId).toBe('equal-cost-low-ops')
+    expect(result.machineOperations.total).toBe(3)
+  })
+
   it('solves the current tranquil-fountain dataset without duplicate assignments', async () => {
     const result = await optimizeBatchPlan({
       customerIds: canonicalCustomers.map((item) => item.id),

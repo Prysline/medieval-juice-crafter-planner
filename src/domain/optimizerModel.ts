@@ -257,7 +257,7 @@ export function buildOptimizationModel(
 
   const unresolvedCustomerIds: string[] = []
   const serviceableCustomerIds: string[] = []
-  const eligibleRecipeIdsByCustomer = new Map<string, string[]>()
+  const eligibleCustomerIdsByRecipe = new Map<string, string[]>()
 
   for (const customerId of demandIds) {
     const customer = customerById.get(customerId)
@@ -323,13 +323,20 @@ export function buildOptimizationModel(
     }
 
     serviceableCustomerIds.push(customerId)
-    eligibleRecipeIdsByCustomer.set(customerId, recipeIds)
+    for (const recipeId of new Set(recipeIds)) {
+      const eligibleCustomerIds =
+        eligibleCustomerIdsByRecipe.get(recipeId)
+      if (eligibleCustomerIds) {
+        eligibleCustomerIds.push(customerId)
+      } else {
+        eligibleCustomerIdsByRecipe.set(recipeId, [customerId])
+      }
+    }
   }
 
   const recipes = [...selectedEntriesById.values()].flatMap((entry) => {
-    const eligibleCustomerIds = serviceableCustomerIds.filter((customerId) =>
-      eligibleRecipeIdsByCustomer.get(customerId)?.includes(entry.candidate.id),
-    )
+    const eligibleCustomerIds =
+      eligibleCustomerIdsByRecipe.get(entry.candidate.id) ?? []
 
     return eligibleCustomerIds.length > 0
       ? [{
