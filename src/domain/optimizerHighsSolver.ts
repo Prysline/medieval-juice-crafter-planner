@@ -50,6 +50,8 @@ export interface HighsStageProfile {
   assignmentVariablesRelaxed: boolean
   fractionalAssignmentVariableCount: number
   maxAssignmentIntegralityError: number
+  integralAssignmentReconstructionFeasible: boolean | null
+  reconstructedAssignmentCount: number
   buildMs: number
   buildPhases: HighsBuildPhaseProfile
   serializeMs: number
@@ -112,6 +114,103 @@ function objectiveOrder(
     'kinds',
   ]
   return [...new Set([...explicit, ...fallback])]
+}
+
+function reconstructIntegralAssignments(
+  domain: BatchOptimizationModel,
+  built: {
+    xByRecipeId: Map<string, IntVariable>
+  },
+  values: Map<string, number>,
+): {
+  feasible: boolean
+  assignedCount: number
+} {
+  const capacityByRecipeId = new Map<string, number>()
+  for (const recipe of domain.recipes) {
+    const x = built.xByRecipeId.get(recipe.candidate.id)
+    const units = x ? values.get(x.name) ?? 0 : 0
+    const capacity = Math.max(0, Math.round(units) * 2)
+    if (capacity > 0) {
+      capacityByRecipeId.set(recipe.candidate.id, capacity)
+    }
+  }
+
+  const eligibleRecipeIdsByCustomer = new Map<string, string[]>()
+  for (const customerId of domain.serviceableCustomerIds) {
+    eligibleRecipeIdsByCustomer.set(
+      customerId,
+      domain.recipes.flatMap((recipe) =>
+        capacityByRecipeId.has(recipe.candidate.id) &&
+        recipe.eligibleCustomerIds.includes(customerId)
+          ? [recipe.candidate.id]
+          : [],
+      ),
+    )
+  }
+
+  const assignedCustomersByRecipe = new Map<string, string[]>()
+
+  function tryAssign(
+    customerId: string,
+    visitedRecipeIds: Set<string>,
+    visitedCustomerIds: Set<string>,
+  ): boolean {
+    for (const recipeId of eligibleRecipeIdsByCustomer.get(customerId) ?? []) {
+      if (visitedRecipeIds.has(recipeId)) continue
+      visitedRecipeIds.add(recipeId)
+
+      const assigned = assignedCustomersByRecipe.get(recipeId) ?? []
+      const capacity = capacityByRecipeId.get(recipeId) ?? 0
+      if (assigned.length < capacity) {
+        assigned.push(customerId)
+        assignedCustomersByRecipe.set(recipeId, assigned)
+        return true
+      }
+
+      for (let index = 0; index < assigned.length; index += 1) {
+        const displacedCustomerId = assigned[index]
+        if (visitedCustomerIds.has(displacedCustomerId)) continue
+        visitedCustomerIds.add(displacedCustomerId)
+
+        if (
+          tryAssign(
+            displacedCustomerId,
+            visitedRecipeIds,
+            visitedCustomerIds,
+          )
+        ) {
+          assigned[index] = customerId
+          assignedCustomersByRecipe.set(recipeId, assigned)
+          return true
+        }
+      }
+    }
+
+    return false
+  }
+
+  let assignedCount = 0
+  for (const customerId of domain.serviceableCustomerIds) {
+    if (
+      !tryAssign(
+        customerId,
+        new Set<string>(),
+        new Set<string>([customerId]),
+      )
+    ) {
+      return {
+        feasible: false,
+        assignedCount,
+      }
+    }
+    assignedCount += 1
+  }
+
+  return {
+    feasible: true,
+    assignedCount,
+  }
 }
 
 function buildHighsStage(
@@ -548,6 +647,7 @@ export async function profileHighsOptimization(
   options: {
     stageTimeLimitSeconds?: number
     relaxAssignmentVariables?: boolean
+    maxStages?: number
   } = {},
 ): Promise<HighsOptimizationProfile> {
   if (domain.serviceableCustomerIds.length === 0) {
@@ -600,6 +700,8 @@ export async function profileHighsOptimization(
     let objectiveValue: number | null = null
     let fractionalAssignmentVariableCount = 0
     let maxAssignmentIntegralityError = 0
+    let integralAssignmentReconstructionFeasible: boolean | null = null
+    let reconstructedAssignmentCount = 0
 
     try {
       const parseStartedAt = performance.now()
@@ -642,6 +744,16 @@ export async function profileHighsOptimization(
             integralityError,
           )
         }
+
+        const reconstruction = reconstructIntegralAssignments(
+          domain,
+          built,
+          solution.solution,
+        )
+        integralAssignmentReconstructionFeasible =
+          reconstruction.feasible
+        reconstructedAssignmentCount =
+          reconstruction.assignedCount
       }
     } finally {
       highs.free()
@@ -656,6 +768,8 @@ export async function profileHighsOptimization(
         options.relaxAssignmentVariables ?? false,
       fractionalAssignmentVariableCount,
       maxAssignmentIntegralityError,
+      integralAssignmentReconstructionFeasible,
+      reconstructedAssignmentCount,
       buildMs,
       buildPhases: built.buildPhaseMs,
       serializeMs,
@@ -668,6 +782,13 @@ export async function profileHighsOptimization(
 
     if (status !== 'optimal' || objectiveValue === null) {
       terminatedAtObjective = objectiveKey
+      break
+    }
+
+    if (
+      typeof options.maxStages === 'number' &&
+      stages.length >= options.maxStages
+    ) {
       break
     }
 
