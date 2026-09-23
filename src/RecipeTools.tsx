@@ -132,6 +132,8 @@ export function RecipeTools({
   const [blenderBackIds, setBlenderBackIds] = useState<string[]>([])
   const [saveName, setSaveName] = useState('')
   const [saveNote, setSaveNote] = useState('')
+  const [saveConfirmedForPlanning, setSaveConfirmedForPlanning] =
+    useState(false)
 
   const evaluation = useMemo(
     () => evaluateRecipeSequence(ingredientIds, currentProgress),
@@ -155,11 +157,32 @@ export function RecipeTools({
         ),
     [currentProgress, satisfactionByVillage],
   )
+  const displayCandidate = useMemo(() => {
+    if (!evaluation.valid) return null
+    if (
+      recipe.confirmedResult &&
+      evaluation.candidate.source !== 'observed'
+    ) {
+      return {
+        ...evaluation.candidate,
+        name: recipe.name,
+        source: 'personal' as const,
+        salePrice: recipe.confirmedResult.salePrice,
+        effects: recipe.confirmedResult.effects.map((effect) => ({
+          ...effect,
+        })),
+        effectAmbiguity: undefined,
+      }
+    }
+    return evaluation.candidate
+  }, [evaluation, recipe.confirmedResult, recipe.name])
+
   const matchingCustomers = useMemo(() => {
     if (
       !evaluation.valid ||
       !evaluation.availableAtCurrentProgress ||
-      evaluation.candidate.effectAmbiguity
+      !displayCandidate ||
+      displayCandidate.effectAmbiguity
     ) {
       return []
     }
@@ -174,11 +197,16 @@ export function RecipeTools({
       )
       .filter((customer) =>
         recipeCandidateMatchesCustomer(
-          evaluation.candidate,
+          displayCandidate,
           customer,
         ),
       )
-  }, [evaluation, currentProgress, satisfactionByVillage])
+  }, [
+    displayCandidate,
+    evaluation,
+    currentProgress,
+    satisfactionByVillage,
+  ])
 
   function appendIngredient(ingredientId: string) {
     setIngredientIds((current) => [...current, ingredientId])
@@ -199,22 +227,43 @@ export function RecipeTools({
     const name = saveName.trim()
     if (!name || !evaluation.valid) return
 
+    const canConfirm =
+      !evaluation.candidate.effectAmbiguity
+    const confirmedResult =
+      saveConfirmedForPlanning && canConfirm
+        ? {
+            effects: evaluation.candidate.effects.map((effect) => ({
+              ...effect,
+            })),
+            salePrice:
+              evaluation.candidate.source === 'observed'
+                ? evaluation.candidate.salePrice
+                : null,
+            confirmedAt: new Date().toISOString(),
+          }
+        : undefined
+
     const recipe: SavedRecipe = {
       id: makeSavedRecipeId(),
       name,
       ingredientIds: [...evaluation.ingredientIds],
       note: saveNote.trim() || undefined,
       createdAt: new Date().toISOString(),
+      confirmedResult,
     }
 
     persistSavedRecipes(upsertSavedRecipe(savedRecipes, recipe))
     setSaveName('')
     setSaveNote('')
+    setSaveConfirmedForPlanning(false)
   }
 
   function updateSavedMetadata(
     recipe: SavedRecipe,
-    patch: Pick<Partial<SavedRecipe>, 'name' | 'note'>,
+    patch: Pick<
+      Partial<SavedRecipe>,
+      'name' | 'note' | 'confirmedResult'
+    >,
   ) {
     if (patch.name !== undefined && !patch.name.trim()) return
 
@@ -238,6 +287,7 @@ export function RecipeTools({
     setIngredientIds([...recipe.ingredientIds])
     setSaveName(recipe.name)
     setSaveNote(recipe.note ?? '')
+    setSaveConfirmedForPlanning(Boolean(recipe.confirmedResult))
   }
 
   function captureBlenderSide(side: 'front' | 'back') {
@@ -442,6 +492,31 @@ export function RecipeTools({
               onChange={(event) => setSaveNote(event.target.value)}
             />
           </label>
+          <label className="trusted-recipe-confirmation">
+            <input
+              type="checkbox"
+              checked={saveConfirmedForPlanning}
+              disabled={
+                !evaluation.valid ||
+                Boolean(
+                  evaluation.valid &&
+                    evaluation.candidate.effectAmbiguity,
+                )
+              }
+              onChange={(event) =>
+                setSaveConfirmedForPlanning(event.target.checked)
+              }
+            />
+            <span>
+              我已在遊戲中核對上方成品特性，可供批次規劃使用
+            </span>
+          </label>
+          {evaluation.valid &&
+            evaluation.candidate.effectAmbiguity && (
+              <small className="trusted-recipe-note">
+                目前成品特性仍有同分歧義，不能直接確認為個人實測證據。
+              </small>
+            )}
           <button
             type="button"
             disabled={!evaluation.valid || !saveName.trim()}
@@ -760,7 +835,12 @@ function SavedRecipeRow({
   satisfactionByVillage: SatisfactionByVillage
   onLoad: () => void
   onDelete: () => void
-  onUpdate: (patch: Pick<Partial<SavedRecipe>, 'name' | 'note'>) => void
+  onUpdate: (
+    patch: Pick<
+      Partial<SavedRecipe>,
+      'name' | 'note' | 'confirmedResult'
+    >,
+  ) => void
 }) {
   const evaluation = useMemo(
     () => evaluateRecipeSequence(recipe.ingredientIds, currentProgress),
@@ -822,9 +902,11 @@ function SavedRecipeRow({
             <div>
               <strong>{formatRecipeSequence(evaluation.candidate.ingredients)}</strong>
               <span>
-                {evaluation.candidate.source === 'observed'
-                  ? '實測'
-                  : '預測'}
+                {displayCandidate?.source === 'observed'
+                  ? '正式實測'
+                  : displayCandidate?.source === 'personal'
+                    ? '個人已確認'
+                    : '預測'}
                 {' · '}
                 {evaluation.availableAtCurrentProgress
                   ? '目前可用'
@@ -843,16 +925,24 @@ function SavedRecipeRow({
           </div>
           <div className="saved-recipe-effects">
             <strong>
-              {evaluation.candidate.source === 'observed'
-                ? '成品特性（實測）'
-                : evaluation.candidate.effectAmbiguity
-                  ? '確定成品特性（預測）'
-                  : '成品特性（預測）'}
+              {displayCandidate?.source === 'observed'
+                ? '成品特性（正式實測）'
+                : displayCandidate?.source === 'personal'
+                  ? '成品特性（個人已確認）'
+                  : evaluation.candidate.effectAmbiguity
+                    ? '確定成品特性（預測）'
+                    : '成品特性（預測）'}
             </strong>
-            <EffectTagList effects={evaluation.candidate.effects} />
+            <EffectTagList
+              effects={
+                displayCandidate?.effects ??
+                evaluation.candidate.effects
+              }
+            />
           </div>
 
-          {evaluation.candidate.effectAmbiguity && (
+          {!recipe.confirmedResult &&
+            evaluation.candidate.effectAmbiguity && (
             <div className="saved-recipe-effects saved-recipe-ambiguity">
               <strong>
                 可能特性：剩{' '}
@@ -868,9 +958,18 @@ function SavedRecipeRow({
           )}
 
           <p className="saved-recipe-meta">
-            {evaluation.candidate.effectAmbiguity
-              ? '同分 cutoff 待確認；暫不參與 full-match recommendation / optimizer。'
-              : matchingCustomers.length > 0
+            {recipe.confirmedResult
+              ? matchingCustomers.length > 0
+                ? `個人實測已確認，可供批次規劃。完全匹配：${matchingCustomers
+                    .map(
+                      (customer) =>
+                        `${customer.name}（${customer.occupation}）`,
+                    )
+                    .join('、')}`
+                : '個人實測已確認，可供批次規劃；目前沒有已解鎖的完全匹配顧客。'
+              : evaluation.candidate.effectAmbiguity
+                ? '同分 cutoff 待確認；暫不參與 full-match recommendation / optimizer。'
+                : matchingCustomers.length > 0
                 ? `完全匹配：${matchingCustomers
                     .map(
                       (customer) =>
@@ -888,6 +987,33 @@ function SavedRecipeRow({
       )}
 
       <div className="saved-recipe-actions">
+        {evaluation.valid &&
+          evaluation.candidate.source !== 'observed' && (
+            <button
+              type="button"
+              disabled={
+                !recipe.confirmedResult &&
+                Boolean(evaluation.candidate.effectAmbiguity)
+              }
+              onClick={() =>
+                onUpdate({
+                  confirmedResult: recipe.confirmedResult
+                    ? undefined
+                    : {
+                        effects: evaluation.candidate.effects.map(
+                          (effect) => ({ ...effect }),
+                        ),
+                        salePrice: null,
+                        confirmedAt: new Date().toISOString(),
+                      },
+                })
+              }
+            >
+              {recipe.confirmedResult
+                ? '取消個人實測確認'
+                : '確認目前特性與遊戲實測一致'}
+            </button>
+          )}
         <button
           type="button"
           disabled={!evaluation.valid}
