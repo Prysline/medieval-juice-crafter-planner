@@ -1,7 +1,13 @@
 import { Model, sum } from '@bubblyworld/highs-ts'
 import { PROCESSING_STACK_CAPACITY } from './inventoryRules'
-import { prepareMinimumCostStageCertificate } from './optimizerCertificates'
+import {
+  machineOperationBreakdownForSelection,
+  prepareMinimumCostStageCertificate,
+  repairMachineOperationWitness,
+  type RecipeUnitSelection,
+} from './optimizerCertificates'
 import { PlanningUserError } from './planningErrors'
+import type { ProductionStepKind } from './productionPlan'
 import type {
   BatchOptimizerSolver,
   BatchSolverSolution,
@@ -72,10 +78,20 @@ function objectiveOrder(
   return [...new Set([...explicit, ...fallback])]
 }
 
+interface HighsStageOptions {
+  relaxAssignmentVariables?: boolean
+  aggregateEquivalentAssignments?: boolean
+  tightenRecipeBoundsFromMinimumCostFix?: boolean
+  tightenOperationBoundsFromRecipeBounds?: boolean
+  machineOperationKinds?: Set<ProductionStepKind>
+  fixedRecipeUnits?: Map<string, number>
+}
+
 function buildHighsStage(
   domain: BatchOptimizationModel,
   objective: ObjectiveKey,
   fixes: ObjectiveFix[],
+  options: HighsStageOptions = {},
 ) {
   const model = new Model()
   const maxJuiceUnitsPerRecipe = Math.max(
@@ -86,7 +102,11 @@ function buildHighsStage(
     1,
     domain.serviceableCustomerIds.length,
   )
+  const fixedMinimumCost = fixes.find(
+    (fix) => fix.objective === 'cost',
+  )?.value
   const xByRecipeId = new Map<string, IntVariable>()
+  const recipeUpperBoundById = new Map<string, number>()
   const zByRecipeId = new Map<string, BoolVariable>()
   const yByCustomerRecipe = new Map<string, BoolVariable>()
   const operationByEdgeKey = new Map<string, IntVariable>()
@@ -117,21 +137,105 @@ function buildHighsStage(
     needsAnyObjective('kinds') || needsJarStructure
   const needsProductionOperations =
     needsAnyObjective('machineOperations')
+  const needsRecipeSpecificAssignments = needsAnyObjective(
+    'negativeAssignedIngredientCost',
+    'negativeKnownRevenue',
+    'negativeKnownGrossProfit',
+  )
+
+  if (
+    options.aggregateEquivalentAssignments &&
+    (needsRecipeSpecificAssignments || needsJarStructure)
+  ) {
+    throw new Error(
+      'Grouped assignments require recipe-insensitive stage feasibility',
+    )
+  }
+
+  const assignmentGroups = (() => {
+    if (!options.aggregateEquivalentAssignments) {
+      return domain.recipes.map((recipe) => ({
+        key: recipe.candidate.id,
+        recipes: [recipe],
+        eligibleCustomerIds: recipe.eligibleCustomerIds,
+      }))
+    }
+
+    const groups = new Map<
+      string,
+      {
+        key: string
+        recipes: typeof domain.recipes
+        eligibleCustomerIds: string[]
+      }
+    >()
+    for (const recipe of domain.recipes) {
+      const eligibleCustomerIds = [...recipe.eligibleCustomerIds].sort()
+      const key = eligibleCustomerIds.join('\u001e')
+      const group = groups.get(key)
+      if (group) group.recipes.push(recipe)
+      else {
+        groups.set(key, {
+          key,
+          recipes: [recipe],
+          eligibleCustomerIds,
+        })
+      }
+    }
+    return [...groups.values()]
+  })()
 
   domain.recipes.forEach((recipe, recipeIndex) => {
+    const customerCapacityUpperBound = Math.max(
+      1,
+      Math.ceil(recipe.eligibleCustomerIds.length / 2),
+    )
+    const costUpperBound =
+      options.tightenRecipeBoundsFromMinimumCostFix &&
+      typeof fixedMinimumCost === 'number' &&
+      fixedMinimumCost >= 0 &&
+      recipe.juiceUnitIngredientCost > 0
+        ? Math.floor(
+            fixedMinimumCost / recipe.juiceUnitIngredientCost,
+          )
+        : maxJuiceUnitsPerRecipe
+    const recipeUpperBound =
+      options.tightenRecipeBoundsFromMinimumCostFix
+        ? Math.max(
+            0,
+            Math.min(
+              maxJuiceUnitsPerRecipe,
+              customerCapacityUpperBound,
+              costUpperBound,
+            ),
+          )
+        : maxJuiceUnitsPerRecipe
     const x = model.intVar(
       0,
-      maxJuiceUnitsPerRecipe,
+      recipeUpperBound,
       `x_${recipeIndex}`,
     )
     xByRecipeId.set(recipe.candidate.id, x)
+    recipeUpperBoundById.set(
+      recipe.candidate.id,
+      recipeUpperBound,
+    )
+
+    if (options.fixedRecipeUnits) {
+      model.addConstraint(
+        x.eq(
+          options.fixedRecipeUnits.get(recipe.candidate.id) ?? 0,
+        ),
+        `fixed_recipe_units_${recipeIndex}`,
+      )
+    }
 
     if (needsRecipeUsageStructure) {
       const z = model.boolVar(`z_${recipeIndex}`)
       zByRecipeId.set(recipe.candidate.id, z)
 
       model.addConstraint(
-        x.minus(z.times(maxJuiceUnitsPerRecipe)).leq(0),
+        x.minus(z.times(Math.max(1, recipeUpperBound))).leq(0),
         `usage_upper_${recipeIndex}`,
       )
       model.addConstraint(
@@ -144,12 +248,14 @@ function buildHighsStage(
   domain.serviceableCustomerIds.forEach((customerId, customerIndex) => {
     const assignmentVars: BoolVariable[] = []
 
-    domain.recipes.forEach((recipe, recipeIndex) => {
-      if (!recipe.eligibleCustomerIds.includes(customerId)) return
+    assignmentGroups.forEach((group, groupIndex) => {
+      if (!group.eligibleCustomerIds.includes(customerId)) return
 
-      const y = model.boolVar(`y_${customerIndex}_${recipeIndex}`)
+      const y = options.relaxAssignmentVariables
+        ? model.numVar(0, 1, `y_${customerIndex}_${groupIndex}`)
+        : model.boolVar(`y_${customerIndex}_${groupIndex}`)
       yByCustomerRecipe.set(
-        `${customerId}\u001f${recipe.candidate.id}`,
+        `${customerId}\u001f${group.key}`,
         y,
       )
       assignmentVars.push(y)
@@ -161,22 +267,25 @@ function buildHighsStage(
     )
   })
 
-  domain.recipes.forEach((recipe, recipeIndex) => {
-    const x = xByRecipeId.get(recipe.candidate.id)
-    if (!x) return
-
-    const assignmentVars = recipe.eligibleCustomerIds.flatMap(
+  assignmentGroups.forEach((group, groupIndex) => {
+    const assignmentVars = group.eligibleCustomerIds.flatMap(
       (customerId) => {
         const y = yByCustomerRecipe.get(
-          `${customerId}\u001f${recipe.candidate.id}`,
+          `${customerId}\u001f${group.key}`,
         )
         return y ? [y] : []
       },
     )
+    const capacityTerms = group.recipes.flatMap((recipe) => {
+      const x = xByRecipeId.get(recipe.candidate.id)
+      return x ? [x.times(2)] : []
+    })
 
     model.addConstraint(
-      sum(...assignmentVars).minus(x.times(2)).leq(0),
-      `capacity_${recipeIndex}`,
+      sum(...assignmentVars)
+        .minus(sum(...capacityTerms))
+        .leq(0),
+      `capacity_${groupIndex}`,
     )
   })
 
@@ -185,6 +294,7 @@ function buildHighsStage(
       string,
       ReturnType<IntVariable['times']>[]
     >()
+    const quantityUpperBoundByEdgeKey = new Map<string, number>()
 
     for (const recipe of domain.recipes) {
       const x = xByRecipeId.get(recipe.candidate.id)
@@ -192,6 +302,12 @@ function buildHighsStage(
 
       const multiplicityByEdgeKey = new Map<string, number>()
       for (const edge of recipe.productionPath.edges) {
+        if (
+          options.machineOperationKinds &&
+          !options.machineOperationKinds.has(edge.kind)
+        ) {
+          continue
+        }
         multiplicityByEdgeKey.set(
           edge.key,
           (multiplicityByEdgeKey.get(edge.key) ?? 0) + 1,
@@ -201,19 +317,33 @@ function buildHighsStage(
       for (const [edgeKey, multiplicity] of multiplicityByEdgeKey) {
         const terms = quantityTermsByEdgeKey.get(edgeKey)
         const term = x.times(multiplicity)
-        if (terms) {
-          terms.push(term)
-        } else {
-          quantityTermsByEdgeKey.set(edgeKey, [term])
-        }
+        if (terms) terms.push(term)
+        else quantityTermsByEdgeKey.set(edgeKey, [term])
+        quantityUpperBoundByEdgeKey.set(
+          edgeKey,
+          (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) +
+            multiplicity *
+              (recipeUpperBoundById.get(recipe.candidate.id) ??
+                maxJuiceUnitsPerRecipe),
+        )
       }
     }
 
     ;[...quantityTermsByEdgeKey.entries()].forEach(
       ([edgeKey, quantityTerms], edgeIndex) => {
+        const operationUpperBound =
+          options.tightenOperationBoundsFromRecipeBounds
+            ? Math.min(
+                maxTotalJuiceUnits,
+                Math.ceil(
+                  (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) /
+                    PROCESSING_STACK_CAPACITY,
+                ),
+              )
+            : maxTotalJuiceUnits
         const operationCount = model.intVar(
           0,
-          maxTotalJuiceUnits,
+          operationUpperBound,
           `op_${edgeIndex}`,
         )
         operationByEdgeKey.set(edgeKey, operationCount)
@@ -435,6 +565,207 @@ function buildHighsStage(
     xByRecipeId,
     yByCustomerRecipe,
     operationByEdgeKey,
+  }
+}
+
+function selectedRecipeUnits(
+  domain: BatchOptimizationModel,
+  built: ReturnType<typeof buildHighsStage>,
+  solution: Awaited<ReturnType<Model['solve']>>,
+): RecipeUnitSelection[] {
+  return domain.recipes.flatMap((recipe) => {
+    const variable = built.xByRecipeId.get(recipe.candidate.id)
+    if (!variable) return []
+    const units = Math.round(
+      requiredFiniteNumber(
+        solution.getValue(variable),
+        `production units ${recipe.candidate.id}`,
+      ),
+    )
+    return units > 0
+      ? [{ recipeId: recipe.candidate.id, units }]
+      : []
+  })
+}
+
+function verifiedAssignmentCount(
+  domain: BatchOptimizationModel,
+  built: ReturnType<typeof buildHighsStage>,
+  solution: Awaited<ReturnType<Model['solve']>>,
+): number {
+  return domain.serviceableCustomerIds.filter((customerId) =>
+    domain.recipes.some((recipe) => {
+      const variable = built.yByCustomerRecipe.get(
+        `${customerId}\u001f${recipe.candidate.id}`,
+      )
+      return variable
+        ? requiredFiniteNumber(
+            solution.getValue(variable),
+            `assignment ${customerId}/${recipe.candidate.id}`,
+          ) > 0.5
+        : false
+    }),
+  ).length
+}
+
+export interface MachineOperationCertificateSummary {
+  optimum: number
+  lowerBounds: {
+    throughSeasoning: number
+    blending: number
+    finalizing: number
+  }
+  witnessRecipeUnits: RecipeUnitSelection[]
+  witnessRepairSteps: number
+  verifiedAssignmentCount: number
+}
+
+interface InternalMachineOperationCertificate
+  extends MachineOperationCertificateSummary {
+  built: ReturnType<typeof buildHighsStage>
+  solution: Awaited<ReturnType<Model['solve']>>
+}
+
+async function tryMachineOperationCertificate(
+  domain: BatchOptimizationModel,
+  fixedMinimumCost: number,
+): Promise<InternalMachineOperationCertificate | null> {
+  const fixes: ObjectiveFix[] = [
+    {
+      objective: 'cost',
+      value: fixedMinimumCost,
+    },
+  ]
+  const partitions: Array<{
+    key: keyof MachineOperationCertificateSummary['lowerBounds']
+    kinds: ProductionStepKind[]
+  }> = [
+    {
+      key: 'throughSeasoning',
+      kinds: ['juicing', 'seasoning'],
+    },
+    {
+      key: 'blending',
+      kinds: ['blending'],
+    },
+    {
+      key: 'finalizing',
+      kinds: ['finalizing'],
+    },
+  ]
+  const lowerBounds = {
+    throughSeasoning: 0,
+    blending: 0,
+    finalizing: 0,
+  }
+  const witnessCandidates: RecipeUnitSelection[][] = []
+
+  for (const partition of partitions) {
+    const built = buildHighsStage(
+      domain,
+      'machineOperations',
+      fixes,
+      {
+        relaxAssignmentVariables: true,
+        aggregateEquivalentAssignments: true,
+        tightenRecipeBoundsFromMinimumCostFix: true,
+        tightenOperationBoundsFromRecipeBounds: true,
+        machineOperationKinds: new Set(partition.kinds),
+      },
+    )
+    const solution = await built.model.solve()
+    if (solution.status !== 'optimal') return null
+
+    lowerBounds[partition.key] = Math.round(
+      requiredFiniteNumber(
+        solution.objective,
+        `${partition.key} lower-bound objective`,
+      ),
+    )
+    witnessCandidates.push(
+      selectedRecipeUnits(domain, built, solution),
+    )
+  }
+
+  const lowerBound =
+    lowerBounds.throughSeasoning +
+    lowerBounds.blending +
+    lowerBounds.finalizing
+
+  for (const candidate of witnessCandidates) {
+    const repaired = repairMachineOperationWitness(
+      domain,
+      candidate,
+      fixedMinimumCost,
+      lowerBound,
+    )
+    if (repaired.breakdown.total !== lowerBound) continue
+
+    const fixedRecipeUnits = new Map(
+      repaired.selections.map((selection) => [
+        selection.recipeId,
+        selection.units,
+      ]),
+    )
+    const built = buildHighsStage(
+      domain,
+      'machineOperations',
+      fixes,
+      {
+        fixedRecipeUnits,
+      },
+    )
+    const solution = await built.model.solve()
+    if (solution.status !== 'optimal') continue
+
+    const verifiedObjective = Math.round(
+      requiredFiniteNumber(
+        solution.objective,
+        'fixed-x machine objective',
+      ),
+    )
+    const assignmentCount = verifiedAssignmentCount(
+      domain,
+      built,
+      solution,
+    )
+    if (
+      verifiedObjective !== lowerBound ||
+      assignmentCount !== domain.serviceableCustomerIds.length
+    ) {
+      continue
+    }
+
+    return {
+      optimum: lowerBound,
+      lowerBounds,
+      witnessRecipeUnits: repaired.selections,
+      witnessRepairSteps: repaired.steps.length,
+      verifiedAssignmentCount: assignmentCount,
+      built,
+      solution,
+    }
+  }
+
+  return null
+}
+
+export async function solveMachineOperationCertificateForCostFix(
+  domain: BatchOptimizationModel,
+  fixedMinimumCost: number,
+): Promise<MachineOperationCertificateSummary | null> {
+  const certificate = await tryMachineOperationCertificate(
+    domain,
+    fixedMinimumCost,
+  )
+  if (!certificate) return null
+
+  return {
+    optimum: certificate.optimum,
+    lowerBounds: certificate.lowerBounds,
+    witnessRecipeUnits: certificate.witnessRecipeUnits,
+    witnessRepairSteps: certificate.witnessRepairSteps,
+    verifiedAssignmentCount: certificate.verifiedAssignmentCount,
   }
 }
 
