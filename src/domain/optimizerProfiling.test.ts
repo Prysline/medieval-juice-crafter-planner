@@ -1270,6 +1270,32 @@ it(
             },
           )
         : null
+    const tightOperationBoundMachineHighs =
+      compressedCostStage?.status === 'optimal' &&
+      compressedCostStage.objectiveValue !== null
+        ? await profileHighsOptimization(
+            strictCostPrunedModel,
+            ['minimum-machine-operations'],
+            {
+              stageTimeLimitSeconds: 10.5,
+              relaxAssignmentVariables: true,
+              aggregateLocalSingletonOperations: true,
+              aggregateEquivalentAssignments: true,
+              tightenRecipeBoundsFromMinimumCostFix: true,
+              tightenOperationBoundsFromRecipeBounds: true,
+              maxStages: 1,
+              initialCriterionFixes: [
+                {
+                  criterion: 'minimum-cost',
+                  value: Math.round(
+                    compressedCostStage.objectiveValue,
+                  ),
+                },
+              ],
+            },
+          )
+        : null
+
     const recipeRelaxedMachineHighs =
       compressedCostStage?.status === 'optimal' &&
       compressedCostStage.objectiveValue !== null
@@ -1390,6 +1416,8 @@ it(
       groupedAssignmentMachineHighs?.stages[0]
     const tightBoundMachineFirstStage =
       tightBoundMachineHighs?.stages[0]
+    const tightOperationBoundMachineFirstStage =
+      tightOperationBoundMachineHighs?.stages[0]
     const recipeRelaxedMachineFirstStage =
       recipeRelaxedMachineHighs?.stages[0]
     const operationRelaxedMachineFirstStage =
@@ -1723,6 +1751,25 @@ it(
               reconstructedAssignmentCount:
                 tightBoundMachineFirstStage.reconstructedAssignmentCount,
               totalMs: tightBoundMachineHighs?.totalMs ?? 0,
+            }
+          : null,
+      tightOperationBoundMachineStage:
+        tightOperationBoundMachineFirstStage
+          ? {
+              solveMs: tightOperationBoundMachineFirstStage.solveMs,
+              status: tightOperationBoundMachineFirstStage.status,
+              objectiveValue:
+                tightOperationBoundMachineFirstStage.objectiveValue,
+              variableCount:
+                tightOperationBoundMachineFirstStage.variableCount,
+              constraintCount:
+                tightOperationBoundMachineFirstStage.constraintCount,
+              integralAssignmentReconstructionFeasible:
+                tightOperationBoundMachineFirstStage.integralAssignmentReconstructionFeasible,
+              reconstructedAssignmentCount:
+                tightOperationBoundMachineFirstStage.reconstructedAssignmentCount,
+              totalMs:
+                tightOperationBoundMachineHighs?.totalMs ?? 0,
             }
           : null,
       recipeRelaxedMachineStage:
