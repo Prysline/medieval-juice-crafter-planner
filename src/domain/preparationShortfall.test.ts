@@ -137,20 +137,20 @@ describe('preparation stock shortfall', () => {
     expect(result.waterUnitsToFetch).toBe(0)
   })
 
-  it('allocates finished stock to persistent jars in stable inventory order', () => {
+  it('uses existing finished stock while emptying smaller same-recipe jars first', () => {
     const result = buildPreparationShortfall(
       demand,
       inventory({
         juiceJars: [
           {
-            id: 'jar-a',
-            recipeId: 'lemon-sugar',
-            servings: 2,
-          },
-          {
-            id: 'jar-b',
+            id: 'jar-large-first',
             recipeId: 'lemon-sugar',
             servings: 4,
+          },
+          {
+            id: 'jar-small-second',
+            recipeId: 'lemon-sugar',
+            servings: 2,
           },
         ],
       }),
@@ -162,14 +162,14 @@ describe('preparation stock shortfall', () => {
       finishedServingsRemaining: 3,
       finishedStockSources: [
         {
-          physicalJarId: 'jar-a',
+          physicalJarId: 'jar-small-second',
           recipeId: 'lemon-sugar',
           initialServings: 2,
           servingsUsed: 2,
           servingsRemaining: 0,
         },
         {
-          physicalJarId: 'jar-b',
+          physicalJarId: 'jar-large-first',
           recipeId: 'lemon-sugar',
           initialServings: 4,
           servingsUsed: 1,
