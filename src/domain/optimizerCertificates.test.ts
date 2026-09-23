@@ -5,7 +5,9 @@ import type {
   OptimizationRequest,
 } from './optimizerModel'
 import {
+  finalizingEdgesAreRecipeIdentityUnique,
   machineOperationBreakdownForSelection,
+  minimumRecipeKindsFromFinalizingBound,
   prepareMinimumCostStageCertificate,
   repairMachineOperationWitness,
 } from './optimizerCertificates'
@@ -197,5 +199,30 @@ describe('machine-operation witness repair', () => {
     expect(repaired.selections).toEqual([
       { recipeId: 'target', units: 5 },
     ])
+  })
+})
+
+
+describe('jar certificate proof helpers', () => {
+  it('recognizes one recipe-unique finalizing edge per recipe', () => {
+    const domain = model([
+      recipe('a', 1, ['a'], ['final-a']),
+      recipe('b', 1, ['b'], ['final-b']),
+    ])
+
+    expect(finalizingEdgesAreRecipeIdentityUnique(domain)).toBe(true)
+  })
+
+  it('rejects shared finalizing identities', () => {
+    const domain = model([
+      recipe('a', 1, ['a'], ['shared-final']),
+      recipe('b', 1, ['b'], ['shared-final']),
+    ])
+
+    expect(finalizingEdgesAreRecipeIdentityUnique(domain)).toBe(false)
+  })
+
+  it('derives the distinct recipe-kind lower bound from finalizing operations and total units', () => {
+    expect(minimumRecipeKindsFromFinalizingBound(24, 21)).toBe(21)
   })
 })
