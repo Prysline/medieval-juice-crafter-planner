@@ -363,6 +363,124 @@ it(
     const stage2SharedEdgeCount =
       edgeRecipeUsageCounts.length - stage2SingletonEdgeCount
 
+    const normalizedMachineSignature = (
+      recipe: (typeof model.recipes)[number],
+      options: {
+        preserveSingletonKind: boolean
+      },
+    ) => {
+      const multiplicityByEdgeKey = new Map<string, number>()
+      const kindByEdgeKey = new Map<
+        string,
+        (typeof recipe.productionPath.edges)[number]['kind']
+      >()
+
+      for (const edge of recipe.productionPath.edges) {
+        multiplicityByEdgeKey.set(
+          edge.key,
+          (multiplicityByEdgeKey.get(edge.key) ?? 0) + 1,
+        )
+        kindByEdgeKey.set(edge.key, edge.kind)
+      }
+
+      const sharedTerms: string[] = []
+      const singletonTerms: string[] = []
+
+      for (const [edgeKey, multiplicity] of multiplicityByEdgeKey) {
+        const usage = stage2EdgeUsage.get(edgeKey)
+        if ((usage?.recipeIds.size ?? 0) > 1) {
+          sharedTerms.push(`${edgeKey}×${multiplicity}`)
+          continue
+        }
+
+        singletonTerms.push(
+          options.preserveSingletonKind
+            ? `${kindByEdgeKey.get(edgeKey)}×${multiplicity}`
+            : `${multiplicity}`,
+        )
+      }
+
+      sharedTerms.sort()
+      singletonTerms.sort()
+
+      return [
+        recipeServiceMask(recipe).toString(),
+        recipe.juiceUnitIngredientCost.toString(),
+        sharedTerms.join('\u001d'),
+        singletonTerms.join('\u001d'),
+      ].join('\u001c')
+    }
+
+    const conservativeNormalizedMachineGroups = new Map<
+      string,
+      (typeof model.recipes)[number][]
+    >()
+    const totalOnlyNormalizedMachineGroups = new Map<
+      string,
+      (typeof model.recipes)[number][]
+    >()
+
+    for (const recipe of strictCostPrunedRecipes) {
+      const conservativeSignature = normalizedMachineSignature(
+        recipe,
+        { preserveSingletonKind: true },
+      )
+      const conservativeGroup =
+        conservativeNormalizedMachineGroups.get(
+          conservativeSignature,
+        )
+      if (conservativeGroup) {
+        conservativeGroup.push(recipe)
+      } else {
+        conservativeNormalizedMachineGroups.set(
+          conservativeSignature,
+          [recipe],
+        )
+      }
+
+      const totalOnlySignature = normalizedMachineSignature(
+        recipe,
+        { preserveSingletonKind: false },
+      )
+      const totalOnlyGroup =
+        totalOnlyNormalizedMachineGroups.get(totalOnlySignature)
+      if (totalOnlyGroup) {
+        totalOnlyGroup.push(recipe)
+      } else {
+        totalOnlyNormalizedMachineGroups.set(
+          totalOnlySignature,
+          [recipe],
+        )
+      }
+    }
+
+    const normalizedGroupStats = (
+      groups: Map<
+        string,
+        (typeof model.recipes)[number][]
+      >,
+    ) => {
+      const sizes = [...groups.values()]
+        .map((group) => group.length)
+        .sort((a, b) => b - a)
+      return {
+        groupCount: groups.size,
+        reducibleRecipeCount:
+          strictCostPrunedRecipes.length - groups.size,
+        assignmentEligibility: [...groups.values()].reduce(
+          (total, group) =>
+            total + (group[0]?.eligibleCustomerIds.length ?? 0),
+          0,
+        ),
+        largestGroupSizes: sizes.slice(0, 20),
+      }
+    }
+
+    const conservativeNormalizedMachineStats =
+      normalizedGroupStats(conservativeNormalizedMachineGroups)
+    const totalOnlyNormalizedMachineStats =
+      normalizedGroupStats(totalOnlyNormalizedMachineGroups)
+
     const solverImportStartedAt = performance.now()
     const { profileHighsOptimization } = await import(
       './optimizerHighsSolver'
@@ -490,6 +608,10 @@ it(
       stage2TopProductionEdgeRecipeUsageCounts:
         edgeRecipeUsageCounts.slice(0, 20),
       stage2ProductionEdgeKindStats: edgeKindStats,
+      stage2ConservativeNormalizedMachineEquivalence:
+        conservativeNormalizedMachineStats,
+      stage2TotalOnlyNormalizedMachineEquivalence:
+        totalOnlyNormalizedMachineStats,
       finalHighsVariables: binaryHighs.finalVariableCount,
       finalHighsConstraints: binaryHighs.finalConstraintCount,
       candidateGenerationMs,
