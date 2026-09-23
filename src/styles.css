@@ -2237,6 +2237,93 @@ footer {
   font-size: 0.78rem;
 }
 
+.optimizer-delivery-toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  margin: 10px 0;
+  border: 1px solid #d9ccb9;
+  border-radius: 10px;
+  background: #fbf7ef;
+  padding: 8px 10px;
+}
+
+.optimizer-delivery-toolbar span {
+  color: #6d604d;
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.optimizer-delivery-toolbar button {
+  flex: 0 0 auto;
+  min-height: 34px;
+  border: 1px solid #4f6744;
+  border-radius: 8px;
+  background: #4f6744;
+  color: white;
+  padding: 6px 9px;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.optimizer-delivery-customer-list {
+  display: grid !important;
+  gap: 5px !important;
+  align-items: stretch !important;
+}
+
+.optimizer-delivery-customer {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  border: 1px solid #e1d6c5;
+  border-radius: 8px;
+  background: #fffdf8;
+  padding: 7px 8px;
+}
+
+.optimizer-delivery-customer.active {
+  cursor: pointer;
+  border-color: #a7b59d;
+  background: #f6f9f2;
+}
+
+.optimizer-delivery-customer.committed {
+  border-color: #c8d3c0;
+  background: #edf3e8;
+}
+
+.optimizer-delivery-customer > input {
+  width: 17px;
+  height: 17px;
+  margin: 0;
+}
+
+.optimizer-delivery-customer > span {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  text-align: left;
+}
+
+.optimizer-delivery-customer > span > strong {
+  color: #38502f;
+  font-size: 0.78rem;
+}
+
+.optimizer-delivery-customer > span > small {
+  color: #776a58;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.optimizer-delivery-customer input:disabled {
+  cursor: default;
+}
+
 .optimizer-shopping-row,
 .optimizer-assignment-row {
   display: grid;
@@ -2783,12 +2870,14 @@ footer {
     white-space: normal;
   }
 
-  .optimizer-production-checklist-toolbar {
+  .optimizer-production-checklist-toolbar,
+  .optimizer-delivery-toolbar {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .optimizer-production-checklist-toolbar button {
+  .optimizer-production-checklist-toolbar button,
+  .optimizer-delivery-toolbar button {
     width: 100%;
   }
 

@@ -1,14 +1,21 @@
 import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { MultiTripProductionJarFill } from './domain/multiTripReplenishment'
+import type {
+  DeliveryExecutionCursor,
+  DeliveryExecutionPlan,
+} from './domain/deliveryExecution'
 import type { PlanApplicationTransactionDraft } from './domain/planApplicationTransaction'
 import {
+  DeliveryCustomerCheckbox,
   INVENTORY_RECIPE_SEARCH_RESULT_LIMIT,
   JuiceJarRecipeCombobox,
   MachineBatchFlow,
   PlanApplicationPreview,
   PlanningErrorBlock,
   criterionLabel,
+  deliveryCanonicalSyncStatus,
+  deliveryCustomerControlState,
   moveInventoryRecipeSearchIndex,
   optimizerCriterionOptions,
   optimizerInventoryIngredients,
@@ -216,6 +223,224 @@ describe('juice jar recipe search UX', () => {
     expect(html).toContain('既有內容：legacy:unknown-recipe')
     expect(html).toContain('清空')
     expect(html).not.toContain('<option')
+  })
+})
+
+function deliveryPlan(): DeliveryExecutionPlan {
+  return {
+    planFingerprint: 'delivery-ui-plan',
+    policy: 'retain-and-wash',
+    trips: [
+      {
+        tripNumber: 1,
+        productionFills: [],
+        initialJuiceDiscards: [],
+        ingredientRequirements: [],
+        productionWaterUnits: 0,
+        cupsWashedBeforeTrip: 0,
+        cupWashWaterUnits: 0,
+        cleanCupsBeforeTrip: 2,
+        usedCupsBeforeTrip: 0,
+        cleanCupsAfterTrip: 0,
+        usedCupsAfterTrip: 2,
+        juiceJarSlotsCarried: 1,
+        deliveries: [
+          {
+            customerId: 'jack',
+            physicalJarId: 'jar-a',
+            recipeId: 'recipe-a',
+            recipeName: 'A',
+          },
+          {
+            customerId: 'leticia',
+            physicalJarId: 'jar-a',
+            recipeId: 'recipe-a',
+            recipeName: 'A',
+          },
+        ],
+        newProductionDiscards: [],
+      },
+      {
+        tripNumber: 2,
+        productionFills: [],
+        initialJuiceDiscards: [],
+        ingredientRequirements: [],
+        productionWaterUnits: 0,
+        cupsWashedBeforeTrip: 2,
+        cupWashWaterUnits: 2,
+        cleanCupsBeforeTrip: 0,
+        usedCupsBeforeTrip: 2,
+        cleanCupsAfterTrip: 0,
+        usedCupsAfterTrip: 1,
+        juiceJarSlotsCarried: 1,
+        deliveries: [
+          {
+            customerId: 'florida',
+            physicalJarId: 'jar-b',
+            recipeId: 'recipe-b',
+            recipeName: 'B',
+          },
+        ],
+        newProductionDiscards: [],
+      },
+    ],
+    finalCleanCups: 0,
+    finalUsedCups: 1,
+    finalPhysicalCupCount: 2,
+  }
+}
+
+function deliveryCursor(
+  overrides: Partial<DeliveryExecutionCursor> = {},
+): DeliveryExecutionCursor {
+  return {
+    planFingerprint: 'delivery-ui-plan',
+    nextTripNumber: 1,
+    tripPrepared: false,
+    completedCustomerIdsInTrip: [],
+    ...overrides,
+  }
+}
+
+describe('delivery checklist UI', () => {
+  it('keeps only the active trip checkable while later trips stay disabled', () => {
+    const plan = deliveryPlan()
+    const cursor = deliveryCursor()
+
+    expect(
+      deliveryCustomerControlState(plan, cursor, [], 'jack'),
+    ).toMatchObject({
+      status: 'active',
+      tripNumber: 1,
+      physicalJarId: 'jar-a',
+    })
+    expect(
+      deliveryCustomerControlState(plan, cursor, [], 'florida'),
+    ).toMatchObject({
+      status: 'later',
+      tripNumber: 2,
+      activeTripNumber: 1,
+    })
+
+    const activeHtml = renderToStaticMarkup(
+      <DeliveryCustomerCheckbox
+        customerId="jack"
+        plan={plan}
+        cursor={cursor}
+        suppliedCustomerIds={[]}
+        onCommit={() => {}}
+      />,
+    )
+    const laterHtml = renderToStaticMarkup(
+      <DeliveryCustomerCheckbox
+        customerId="florida"
+        plan={plan}
+        cursor={cursor}
+        suppliedCustomerIds={[]}
+        onCommit={() => {}}
+      />,
+    )
+
+    expect(activeHtml).toContain('type="checkbox"')
+    expect(activeHtml).not.toContain('disabled=""')
+    expect(activeHtml).toContain('勾選即正式寫入')
+    expect(laterHtml).toContain('disabled=""')
+    expect(laterHtml).toContain('請先完成第 1 趟')
+  })
+
+  it('renders committed deliveries checked and non-reversible', () => {
+    const plan = deliveryPlan()
+    const cursor = deliveryCursor({
+      tripPrepared: true,
+      completedCustomerIdsInTrip: ['jack'],
+    })
+
+    expect(
+      deliveryCustomerControlState(plan, cursor, [], 'jack').status,
+    ).toBe('committed')
+
+    const html = renderToStaticMarkup(
+      <DeliveryCustomerCheckbox
+        customerId="jack"
+        plan={plan}
+        cursor={cursor}
+        suppliedCustomerIds={[]}
+        onCommit={() => {}}
+      />,
+    )
+
+    expect(html).toContain('checked=""')
+    expect(html).toContain('disabled=""')
+    expect(html).toContain('已正式交付')
+  })
+
+  it('treats canonical supplied-customer state as the same committed delivery authority', () => {
+    const plan = deliveryPlan()
+    const cursor = deliveryCursor()
+
+    expect(
+      deliveryCustomerControlState(
+        plan,
+        cursor,
+        ['jack'],
+        'jack',
+      ).status,
+    ).toBe('committed')
+
+    const html = renderToStaticMarkup(
+      <DeliveryCustomerCheckbox
+        customerId="jack"
+        plan={plan}
+        cursor={cursor}
+        suppliedCustomerIds={['jack']}
+        onCommit={() => {}}
+      />,
+    )
+
+    expect(html).toContain('checked=""')
+    expect(html).toContain('disabled=""')
+    expect(html).toContain('已正式交付')
+  })
+
+  it('treats customers from completed trips as committed even after the cursor advances', () => {
+    const plan = deliveryPlan()
+    const cursor = deliveryCursor({
+      nextTripNumber: 2,
+      tripPrepared: false,
+      completedCustomerIdsInTrip: [],
+    })
+
+    expect(
+      deliveryCustomerControlState(plan, cursor, [], 'leticia').status,
+    ).toBe('committed')
+    expect(
+      deliveryCustomerControlState(plan, cursor, [], 'florida').status,
+    ).toBe('active')
+  })
+
+  it('preserves the result only across expected self-commit canonical sync states', () => {
+    const guard = {
+      allowedFingerprints: [
+        'before-before',
+        'after-before',
+        'before-after',
+        'after-after',
+      ],
+      targetFingerprint: 'after-after',
+    }
+
+    expect(
+      deliveryCanonicalSyncStatus(guard, 'before-before'),
+    ).toBe('pending')
+    expect(
+      deliveryCanonicalSyncStatus(guard, 'after-before'),
+    ).toBe('pending')
+    expect(
+      deliveryCanonicalSyncStatus(guard, 'after-after'),
+    ).toBe('complete')
+    expect(
+      deliveryCanonicalSyncStatus(guard, 'external-change'),
+    ).toBe('unexpected')
   })
 })
 
