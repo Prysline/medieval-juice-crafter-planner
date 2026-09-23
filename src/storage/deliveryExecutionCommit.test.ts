@@ -20,6 +20,7 @@ import {
   readSuppliedCustomerIds,
   STORAGE_KEYS,
   type StorageLike,
+  writeSuppliedCustomerIds,
 } from './plannerState'
 
 class MemoryStorage implements StorageLike {
@@ -346,6 +347,84 @@ describe('partial delivery atomic commit', () => {
           suppliedCustomerIds:
             readSuppliedCustomerIds(storage),
         },
+      },
+      storage,
+    )
+
+    expect(result).toEqual({
+      status: 'stale',
+      mismatches: ['execution-cursor'],
+    })
+    expect(storage.writes).toEqual([])
+  })
+
+  it('invalidates an in-flight cursor after a manual supplied-customer edit', () => {
+    const storage = legacyStorage()
+    const plan = planA()
+    const first = commitDeliveryExecutionCustomer(
+      {
+        plan,
+        cursor: createDeliveryExecutionCursor(plan),
+        customerId: 'customer-b',
+        expectedBasis: initialBasis(),
+      },
+      storage,
+    )
+    expect(first.status).toBe('applied')
+    if (first.status !== 'applied') return
+
+    writeSuppliedCustomerIds(storage, [
+      ...first.suppliedCustomerIds,
+      'manual-customer',
+    ])
+    expect(
+      readPlanApplicationStoredState(storage)?.deliveryExecution,
+    ).toBeNull()
+
+    storage.writes = []
+    const result = commitDeliveryExecutionCustomer(
+      {
+        plan,
+        cursor: first.cursor,
+        customerId: 'customer-a',
+        expectedBasis: {
+          inventory: readInventoryState(storage),
+          suppliedCustomerIds:
+            readSuppliedCustomerIds(storage),
+        },
+      },
+      storage,
+    )
+
+    expect(result).toEqual({
+      status: 'stale',
+      mismatches: ['execution-cursor'],
+    })
+    expect(storage.writes).toEqual([])
+  })
+
+  it('rejects an old or reconstructed cursor inside the same active plan', () => {
+    const storage = legacyStorage()
+    const plan = planA()
+    const first = commitDeliveryExecutionCustomer(
+      {
+        plan,
+        cursor: createDeliveryExecutionCursor(plan),
+        customerId: 'customer-b',
+        expectedBasis: initialBasis(),
+      },
+      storage,
+    )
+    expect(first.status).toBe('applied')
+    if (first.status !== 'applied') return
+
+    storage.writes = []
+    const result = commitDeliveryExecutionCustomer(
+      {
+        plan,
+        cursor: createDeliveryExecutionCursor(plan),
+        customerId: 'customer-a',
+        expectedBasis: initialBasis(),
       },
       storage,
     )
