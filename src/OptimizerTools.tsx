@@ -1610,7 +1610,16 @@ function OptimizerTools({
           priorities={priorities}
           salesTripPlans={runState.salesTripPlans}
           transactionDraft={runState.transactionDraft}
+          transactionDraftInvalidatedByPartialDelivery={
+            runState.transactionDraftInvalidatedByPartialDelivery
+          }
+          deliveryExecutionPlan={runState.deliveryExecutionPlan}
+          deliveryCursor={runState.deliveryCursor}
+          suppliedCustomerIds={suppliedCustomerIds}
+          deliveryUiState={deliveryUiState}
           onApplyTransaction={applyTransactionDraft}
+          onCommitDelivery={commitDeliveryCustomer}
+          onReplan={runOptimizer}
         />
       )}
     </section>
@@ -2120,6 +2129,128 @@ export function PlanApplicationPreview({
   )
 }
 
+export interface DeliveryCustomerControlState {
+  status: 'committed' | 'active' | 'later' | 'unavailable'
+  tripNumber: number | null
+  activeTripNumber: number | null
+  physicalJarId: string | null
+}
+
+export function deliveryCustomerControlState(
+  plan: DeliveryExecutionPlan | null,
+  cursor: DeliveryExecutionCursor | null,
+  suppliedCustomerIds: readonly string[],
+  customerId: string,
+): DeliveryCustomerControlState {
+  if (!plan || !cursor) {
+    return {
+      status: 'unavailable',
+      tripNumber: null,
+      activeTripNumber: null,
+      physicalJarId: null,
+    }
+  }
+
+  const trip = plan.trips.find((item) =>
+    item.deliveries.some(
+      (delivery) => delivery.customerId === customerId,
+    ),
+  )
+  const delivery = trip?.deliveries.find(
+    (item) => item.customerId === customerId,
+  )
+
+  if (!trip || !delivery) {
+    return {
+      status: 'unavailable',
+      tripNumber: null,
+      activeTripNumber: cursor.nextTripNumber,
+      physicalJarId: null,
+    }
+  }
+
+  const committed =
+    suppliedCustomerIds.includes(customerId) ||
+    trip.tripNumber < cursor.nextTripNumber ||
+    (
+      trip.tripNumber === cursor.nextTripNumber &&
+      cursor.completedCustomerIdsInTrip.includes(customerId)
+    )
+
+  return {
+    status: committed
+      ? 'committed'
+      : trip.tripNumber === cursor.nextTripNumber
+        ? 'active'
+        : 'later',
+    tripNumber: trip.tripNumber,
+    activeTripNumber: cursor.nextTripNumber,
+    physicalJarId: delivery.physicalJarId,
+  }
+}
+
+export function DeliveryCustomerCheckbox({
+  customerId,
+  plan,
+  cursor,
+  suppliedCustomerIds,
+  disabled = false,
+  onCommit,
+}: {
+  customerId: string
+  plan: DeliveryExecutionPlan | null
+  cursor: DeliveryExecutionCursor | null
+  suppliedCustomerIds: readonly string[]
+  disabled?: boolean
+  onCommit: (customerId: string) => void
+}) {
+  const control = deliveryCustomerControlState(
+    plan,
+    cursor,
+    suppliedCustomerIds,
+    customerId,
+  )
+  const committed = control.status === 'committed'
+  const canCommit = control.status === 'active' && !disabled
+
+  const detail =
+    control.status === 'committed'
+      ? '已正式交付'
+      : control.status === 'active'
+        ? `第 ${control.tripNumber} 趟 · 果汁罐 ${control.physicalJarId} · 勾選即正式寫入`
+        : control.status === 'later'
+          ? `第 ${control.tripNumber} 趟 · 請先完成第 ${control.activeTripNumber} 趟`
+          : '目前沒有可提交的實體交付事件'
+
+  return (
+    <label
+      className={
+        committed
+          ? 'optimizer-delivery-customer committed'
+          : canCommit
+            ? 'optimizer-delivery-customer active'
+            : 'optimizer-delivery-customer'
+      }
+    >
+      <input
+        type="checkbox"
+        checked={committed}
+        disabled={!canCommit}
+        onChange={(event) => {
+          if (event.target.checked && canCommit) {
+            onCommit(customerId)
+          }
+        }}
+        aria-label={`${customerLabel(customerId)}交付完成`}
+      />
+      <span>
+        <strong>{customerLabel(customerId)}</strong>
+        <small>{detail}</small>
+      </span>
+    </label>
+  )
+}
+
 function OptimizerResultPanel({
   result,
   preparationShortfall,
@@ -2127,7 +2258,14 @@ function OptimizerResultPanel({
   priorities,
   salesTripPlans,
   transactionDraft,
+  transactionDraftInvalidatedByPartialDelivery,
+  deliveryExecutionPlan,
+  deliveryCursor,
+  suppliedCustomerIds,
+  deliveryUiState,
   onApplyTransaction,
+  onCommitDelivery,
+  onReplan,
 }: {
   result: OptimizationResult
   preparationShortfall: PreparationShortfall
@@ -2135,7 +2273,14 @@ function OptimizerResultPanel({
   priorities: OptimizationCriterion[]
   salesTripPlans: SalesTripPlans
   transactionDraft: PlanApplicationTransactionDraft | null
+  transactionDraftInvalidatedByPartialDelivery: boolean
+  deliveryExecutionPlan: DeliveryExecutionPlan | null
+  deliveryCursor: DeliveryExecutionCursor | null
+  suppliedCustomerIds: readonly string[]
+  deliveryUiState: DeliveryUiState
   onApplyTransaction: (draft: PlanApplicationTransactionDraft) => void
+  onCommitDelivery: (customerId: string) => void
+  onReplan: () => void
 }) {
   const selectedSalesTripPlan = salesTripPlans.selected
   const alternateSalesTripPlan = salesTripPlans.alternate
@@ -2303,10 +2448,16 @@ function OptimizerResultPanel({
         >
           <div className="section-title">
             <strong>套用規劃預覽</strong>
-            <span>目前無法建立</span>
+            <span>
+              {transactionDraftInvalidatedByPartialDelivery
+                ? '已有部分交付'
+                : '目前無法建立'}
+            </span>
           </div>
           <p className="optimizer-transaction-warning">
-            目前製作物流不可行，因此不建立交易草稿，也不會修改庫存。請先處理下方製作物流警告後重新產生規劃。
+            {transactionDraftInvalidatedByPartialDelivery
+              ? '已有顧客透過果汁分配正式交付，原本的整份套用預覽已失效，避免再次扣除同一批物資。你可以繼續完成目前販售趟，或依現在庫存與今日已供應狀態重新規劃剩餘顧客。'
+              : '目前製作物流不可行，因此不建立交易草稿，也不會修改庫存。請先處理下方製作物流警告後重新產生規劃。'}
           </p>
         </section>
       )}
@@ -2595,8 +2746,48 @@ function OptimizerResultPanel({
       <section className="optimizer-result-section">
         <div className="section-title">
           <strong>果汁分配</strong>
-          <span>{result.recipePlans.length} 種</span>
+          <span>
+            {result.recipePlans.length} 種 ·{' '}
+            {
+              result.recipePlans
+                .flatMap((plan) => plan.customerIds)
+                .filter(
+                  (customerId) =>
+                    deliveryCustomerControlState(
+                      deliveryExecutionPlan,
+                      deliveryCursor,
+                      suppliedCustomerIds,
+                      customerId,
+                    ).status === 'committed',
+                ).length
+            }
+            {' / '}
+            {result.recipePlans.reduce(
+              (sum, plan) => sum + plan.customerIds.length,
+              0,
+            )}
+            {' 人已交付'}
+          </span>
         </div>
+
+        <div className="optimizer-delivery-toolbar">
+          <span>
+            勾選即代表該顧客已實際收到果汁，會立即同步果汁罐、杯具、庫存與「今日已供應」。
+            已提交的交付不能靠取消 checkbox 復原。
+          </span>
+          {transactionDraftInvalidatedByPartialDelivery && (
+            <button type="button" onClick={onReplan}>
+              依目前狀態重新規劃剩餘顧客
+            </button>
+          )}
+        </div>
+
+        {deliveryUiState.status === 'error' && (
+          <p className="optimizer-transaction-warning" role="alert">
+            交付沒有寫入：{deliveryUiState.message}
+          </p>
+        )}
+
         {result.recipePlans.length === 0 ? (
           <p className="empty-tool-state">本次沒有可製作的果汁。</p>
         ) : (
@@ -2609,9 +2800,19 @@ function OptimizerResultPanel({
                     原料成本：{optimizerMoney(plan.totalIngredientCost)}
                   </span>
                 </div>
-                <p>
-                  顧客：{plan.customerIds.map(customerLabel).join('、')}
-                </p>
+                <div className="optimizer-delivery-customer-list">
+                  {plan.customerIds.map((customerId) => (
+                    <DeliveryCustomerCheckbox
+                      key={customerId}
+                      customerId={customerId}
+                      plan={deliveryExecutionPlan}
+                      cursor={deliveryCursor}
+                      suppliedCustomerIds={suppliedCustomerIds}
+                      disabled={deliveryUiState.status === 'stale'}
+                      onCommit={onCommitDelivery}
+                    />
+                  ))}
+                </div>
                 <p>
                   需求 {plan.assignedServings} 杯 · 製作果汁 {plan.juiceUnits}{' '}
                   份 → {plan.producedServings} 杯
