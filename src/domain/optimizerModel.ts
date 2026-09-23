@@ -192,6 +192,13 @@ function candidateIsEligible(
   ) {
     return false
   }
+  if (
+    request.candidatePolicy === 'trusted-only' &&
+    candidate.source !== 'observed' &&
+    candidate.source !== 'personal'
+  ) {
+    return false
+  }
 
   return isAvailableAtProgress(
     candidate.unlockedAt,
