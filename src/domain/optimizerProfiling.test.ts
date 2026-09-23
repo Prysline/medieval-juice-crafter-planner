@@ -2,6 +2,7 @@ import { expect, it } from 'vitest'
 import { customers as canonicalCustomers } from '../data/customers'
 import {
   buildOptimizationModel,
+  minimumJarTypeSwitchesForRecipeIds,
   normalizedOptimizationPriorities,
   type OptimizationRequest,
 } from './optimizerModel'
@@ -663,6 +664,19 @@ it(
       },
     )
     const compressedCostStage = compressedRelaxedHighs.stages[0]
+    const stage3ServiceCoverJarLowerBoundHighs =
+      await profileHighsOptimization(
+        costStageCompressedModel,
+        ['minimum-jar-switches'],
+        {
+          stageTimeLimitSeconds: 10.5,
+          relaxAssignmentVariables: true,
+          aggregateEquivalentAssignments: true,
+          maxStages: 1,
+        },
+      )
+    const stage3ServiceCoverJarLowerBoundStage =
+      stage3ServiceCoverJarLowerBoundHighs.stages[0]
     const compressedRecipeById = new Map(
       costStageCompressedRecipes.map((recipe) => [
         recipe.candidate.id,
@@ -2175,6 +2189,17 @@ it(
             search: certifiedLowerBoundWitnessEntry[1],
           }
         : null
+    const stage3WitnessRecipeIds =
+      certifiedLowerBoundWitness?.search.recipeUnits.map(
+        (selection) => selection.recipeId,
+      ) ?? []
+    const stage3WitnessJarUpperBound =
+      stage3WitnessRecipeIds.length > 0
+        ? minimumJarTypeSwitchesForRecipeIds(
+            request,
+            stage3WitnessRecipeIds,
+          )
+        : null
 
     const lowerBoundWitnessFixedVerification =
       certifiedLowerBoundWitness &&
@@ -2199,6 +2224,49 @@ it(
                   value: Math.round(
                     compressedCostStage.objectiveValue,
                   ),
+                },
+              ],
+            },
+          )
+        : null
+
+    const stage3WitnessFixedJarHighs =
+      certifiedLowerBoundWitness &&
+      lowerBoundWitnessFixedVerification?.stages[0]?.status ===
+        'optimal' &&
+      compressedCostStage?.status === 'optimal' &&
+      compressedCostStage.objectiveValue !== null &&
+      combinedMachineOperationLowerBound !== null
+        ? await profileHighsOptimization(
+            strictCostPrunedModel,
+            ['minimum-jar-switches'],
+            {
+              stageTimeLimitSeconds: 2.5,
+              relaxAssignmentVariables: true,
+              aggregateLocalSingletonOperations: true,
+              aggregateEquivalentAssignments: true,
+              tightenRecipeBoundsFromMinimumCostFix: true,
+              tightenOperationBoundsFromRecipeBounds: true,
+              fixedRecipeUnits:
+                certifiedLowerBoundWitness.search.recipeUnits,
+              machineOperationPartitionLowerBounds: {
+                juicing: 8,
+                seasoning: 12,
+                sharedBlending: 7,
+                singletonBlending: 2,
+                finalizing: 21,
+              },
+              maxStages: 1,
+              initialCriterionFixes: [
+                {
+                  criterion: 'minimum-cost',
+                  value: Math.round(
+                    compressedCostStage.objectiveValue,
+                  ),
+                },
+                {
+                  criterion: 'minimum-machine-operations',
+                  value: combinedMachineOperationLowerBound,
                 },
               ],
             },
@@ -3545,6 +3613,52 @@ it(
       lowerBoundWitnessSearches,
       certifiedLowerBoundWitness:
         certifiedLowerBoundWitness?.source ?? null,
+      stage3ServiceCoverJarLowerBoundStage:
+        stage3ServiceCoverJarLowerBoundStage
+          ? {
+              status:
+                stage3ServiceCoverJarLowerBoundStage.status,
+              objectiveValue:
+                stage3ServiceCoverJarLowerBoundStage.objectiveValue,
+              selectedRecipeCount:
+                stage3ServiceCoverJarLowerBoundStage.selectedRecipeUnits.length,
+              solveMs:
+                stage3ServiceCoverJarLowerBoundStage.solveMs,
+              variableCount:
+                stage3ServiceCoverJarLowerBoundStage.variableCount,
+              constraintCount:
+                stage3ServiceCoverJarLowerBoundStage.constraintCount,
+              integralAssignmentReconstructionFeasible:
+                stage3ServiceCoverJarLowerBoundStage.integralAssignmentReconstructionFeasible,
+              reconstructedAssignmentCount:
+                stage3ServiceCoverJarLowerBoundStage.reconstructedAssignmentCount,
+              totalMs:
+                stage3ServiceCoverJarLowerBoundHighs.totalMs,
+            }
+          : null,
+      stage3WitnessDistinctRecipeCount:
+        stage3WitnessRecipeIds.length,
+      stage3WitnessJarUpperBound,
+      stage3WitnessFixedJarStage:
+        stage3WitnessFixedJarHighs?.stages[0]
+          ? {
+              status:
+                stage3WitnessFixedJarHighs.stages[0].status,
+              objectiveValue:
+                stage3WitnessFixedJarHighs.stages[0].objectiveValue,
+              solveMs:
+                stage3WitnessFixedJarHighs.stages[0].solveMs,
+              variableCount:
+                stage3WitnessFixedJarHighs.stages[0].variableCount,
+              constraintCount:
+                stage3WitnessFixedJarHighs.stages[0].constraintCount,
+              integralAssignmentReconstructionFeasible:
+                stage3WitnessFixedJarHighs.stages[0].integralAssignmentReconstructionFeasible,
+              reconstructedAssignmentCount:
+                stage3WitnessFixedJarHighs.stages[0].reconstructedAssignmentCount,
+              totalMs: stage3WitnessFixedJarHighs.totalMs,
+            }
+          : null,
       postCertificateJarStage:
         postCertificateJarHighs?.stages[0]
           ? {
