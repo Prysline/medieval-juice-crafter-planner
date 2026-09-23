@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Customer, SavedRecipe } from '../types'
+import type { Customer, EffectValue, SavedRecipe } from '../types'
 import { matchingRecipeCandidatesForCustomer } from './matching'
 import {
   buildOptimizationModel,
@@ -27,11 +27,7 @@ function saved(
 function confirmedSaved(
   id: string,
   ingredientIds: string[],
-  effects: SavedRecipe['confirmedResult'] extends infer Result
-    ? Result extends { effects: infer Effects }
-      ? Effects
-      : never
-    : never,
+  effects: EffectValue[],
 ): SavedRecipe {
   return {
     ...saved(id, ingredientIds),
