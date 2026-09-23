@@ -236,6 +236,8 @@ function buildHighsStage(
     tightenRecipeBoundsFromMinimumCostFix?: boolean
     tightenOperationBoundsFromRecipeBounds?: boolean
     machineOperationKinds?: Set<string>
+    excludeSharedMachineOperationKinds?: Set<string>
+    excludeSingletonMachineOperationKinds?: Set<string>
     machineOperationsUpperBound?: number
     fixedRecipeUnits?: Map<string, number>
   } = {},
@@ -478,6 +480,7 @@ function buildHighsStage(
       Map<string, number>
     >()
     const recipeCountByEdgeKey = new Map<string, number>()
+    const edgeKindByKey = new Map<string, string>()
 
     for (const recipe of domain.recipes) {
       const edgeMultiplicityByKey = new Map<string, number>()
@@ -492,6 +495,7 @@ function buildHighsStage(
           edge.key,
           (edgeMultiplicityByKey.get(edge.key) ?? 0) + 1,
         )
+        edgeKindByKey.set(edge.key, edge.kind)
       }
       edgeMultiplicityByRecipe.set(
         recipe.candidate.id,
@@ -517,9 +521,26 @@ function buildHighsStage(
       const localEdgeCountByMultiplicity = new Map<number, number>()
 
       for (const [edgeKey, multiplicity] of edgeMultiplicityByKey) {
+        const recipeCount = recipeCountByEdgeKey.get(edgeKey) ?? 0
+        const edgeKind = edgeKindByKey.get(edgeKey)
+        if (
+          recipeCount > 1 &&
+          edgeKind &&
+          options.excludeSharedMachineOperationKinds?.has(edgeKind)
+        ) {
+          continue
+        }
+        if (
+          recipeCount === 1 &&
+          edgeKind &&
+          options.excludeSingletonMachineOperationKinds?.has(edgeKind)
+        ) {
+          continue
+        }
+
         if (
           options.aggregateLocalSingletonOperations &&
-          recipeCountByEdgeKey.get(edgeKey) === 1
+          recipeCount === 1
         ) {
           localEdgeCountByMultiplicity.set(
             multiplicity,
@@ -921,6 +942,8 @@ export async function profileHighsOptimization(
     tightenRecipeBoundsFromMinimumCostFix?: boolean
     tightenOperationBoundsFromRecipeBounds?: boolean
     machineOperationKinds?: string[]
+    excludeSharedMachineOperationKinds?: string[]
+    excludeSingletonMachineOperationKinds?: string[]
     machineOperationsUpperBound?: number
     fixedRecipeUnits?: Array<{
       recipeId: string
@@ -969,6 +992,14 @@ export async function profileHighsOptimization(
   const machineOperationKinds = options.machineOperationKinds
     ? new Set(options.machineOperationKinds)
     : undefined
+  const excludeSharedMachineOperationKinds =
+    options.excludeSharedMachineOperationKinds
+      ? new Set(options.excludeSharedMachineOperationKinds)
+      : undefined
+  const excludeSingletonMachineOperationKinds =
+    options.excludeSingletonMachineOperationKinds
+      ? new Set(options.excludeSingletonMachineOperationKinds)
+      : undefined
   let terminatedAtObjective: ObjectiveKey | null = null
 
   for (const objectiveKey of objectives) {
@@ -993,6 +1024,8 @@ export async function profileHighsOptimization(
         tightenOperationBoundsFromRecipeBounds:
           options.tightenOperationBoundsFromRecipeBounds ?? false,
         machineOperationKinds,
+        excludeSharedMachineOperationKinds,
+        excludeSingletonMachineOperationKinds,
         machineOperationsUpperBound:
           options.machineOperationsUpperBound,
         fixedRecipeUnits,
