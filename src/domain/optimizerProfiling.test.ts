@@ -839,6 +839,61 @@ it(
       operationVariableCountAfterLocalMultiplicityCompression * 2 +
       1
 
+    const tightenedXUpperBounds = strictCostPrunedRecipes.map(
+      (recipe) => {
+        const customerCapacityBound = Math.max(
+          1,
+          Math.ceil(recipe.eligibleCustomerIds.length / 2),
+        )
+        const costBound =
+          fixedMinimumCost === null
+            ? maxJuiceUnitsPerRecipe
+            : Math.floor(
+                fixedMinimumCost /
+                  recipe.juiceUnitIngredientCost,
+              )
+        return Math.max(
+          0,
+          Math.min(
+            maxJuiceUnitsPerRecipe,
+            customerCapacityBound,
+            costBound,
+          ),
+        )
+      },
+    )
+    const xUpperBoundHistogram = new Map<number, number>()
+    for (const upperBound of tightenedXUpperBounds) {
+      xUpperBoundHistogram.set(
+        upperBound,
+        (xUpperBoundHistogram.get(upperBound) ?? 0) + 1,
+      )
+    }
+    const stage2XUpperBoundHistogram = [
+      ...xUpperBoundHistogram.entries(),
+    ]
+      .map(([upperBound, count]) => ({ upperBound, count }))
+      .sort(
+        (left, right) => left.upperBound - right.upperBound,
+      )
+    const stage2RecipesWithTightenedXUpperBound =
+      tightenedXUpperBounds.filter(
+        (upperBound) => upperBound < maxJuiceUnitsPerRecipe,
+      ).length
+    const stage2RecipesWithXUpperBoundOne =
+      tightenedXUpperBounds.filter(
+        (upperBound) => upperBound === 1,
+      ).length
+    const stage2RecipesWithXUpperBoundAtMostTwo =
+      tightenedXUpperBounds.filter(
+        (upperBound) => upperBound <= 2,
+      ).length
+    const stage2AverageTightenedXUpperBound =
+      tightenedXUpperBounds.reduce(
+        (total, upperBound) => total + upperBound,
+        0,
+      ) / Math.max(1, tightenedXUpperBounds.length)
+
     const expandedMachineHighs =
       compressedCostStage?.status === 'optimal' &&
       compressedCostStage.objectiveValue !== null
@@ -1030,6 +1085,17 @@ it(
         stage2ProjectedVariablesWithGroupAssignmentsAndLocalOps,
       stage2ProjectedConstraintsWithGroupAssignmentsAndLocalOps:
         stage2ProjectedConstraintsWithGroupAssignmentsAndLocalOps,
+      stage2DefaultXUpperBound: maxJuiceUnitsPerRecipe,
+      stage2RecipesWithTightenedXUpperBound:
+        stage2RecipesWithTightenedXUpperBound,
+      stage2RecipesWithXUpperBoundOne:
+        stage2RecipesWithXUpperBoundOne,
+      stage2RecipesWithXUpperBoundAtMostTwo:
+        stage2RecipesWithXUpperBoundAtMostTwo,
+      stage2AverageTightenedXUpperBound:
+        stage2AverageTightenedXUpperBound,
+      stage2XUpperBoundHistogram:
+        stage2XUpperBoundHistogram,
       finalHighsVariables: binaryHighs.finalVariableCount,
       finalHighsConstraints: binaryHighs.finalConstraintCount,
       candidateGenerationMs,
