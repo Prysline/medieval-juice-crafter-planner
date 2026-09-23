@@ -70,6 +70,11 @@ export interface HighsStageProfile {
   solveMs: number
   status: string
   objectiveValue: number | null
+  capturedMps?: string
+  capturedSolutionValues?: Array<{
+    name: string
+    value: number
+  }>
 }
 
 export interface HighsOptimizationProfile {
@@ -949,6 +954,8 @@ export async function profileHighsOptimization(
       recipeId: string
       units: number
     }>
+    captureMps?: boolean
+    captureSolutionValues?: boolean
     initialCriterionFixes?: Array<{
       criterion: OptimizationCriterion
       value: number
@@ -1053,6 +1060,9 @@ export async function profileHighsOptimization(
     let maxOperationIntegralityError = 0
     let integralAssignmentReconstructionFeasible: boolean | null = null
     let reconstructedAssignmentCount = 0
+    let capturedSolutionValues:
+      | Array<{ name: string; value: number }>
+      | undefined
     const selectedRecipeUnits: Array<{
       recipeId: string
       units: number
@@ -1085,6 +1095,12 @@ export async function profileHighsOptimization(
           : null
 
       if (solution.solution) {
+        if (options.captureSolutionValues) {
+          capturedSolutionValues = [...solution.solution].map(
+            ([name, value]) => ({ name, value }),
+          )
+        }
+
         for (const [recipeId, x] of built.xByRecipeId) {
           const units = solution.solution.get(x.name) ?? 0
           const integralityError = Math.abs(
@@ -1180,6 +1196,8 @@ export async function profileHighsOptimization(
       solveMs,
       status,
       objectiveValue,
+      capturedMps: options.captureMps ? mps : undefined,
+      capturedSolutionValues,
     })
 
     if (status !== 'optimal' || objectiveValue === null) {
