@@ -30,12 +30,25 @@ interface ObjectiveFix {
   value: number
 }
 
+export interface HighsBuildPhaseProfile {
+  recipeUsageMs: number
+  customerAssignmentsMs: number
+  recipeCapacityMs: number
+  productionOperationsMs: number
+  baseObjectivesMs: number
+  assignedIngredientCostMs: number
+  knownRevenueMs: number
+  jarSwitchesMs: number
+  fixesAndObjectiveMs: number
+}
+
 export interface HighsStageProfile {
   objective: ObjectiveKey
   fixCount: number
   variableCount: number
   constraintCount: number
   buildMs: number
+  buildPhases: HighsBuildPhaseProfile
   serializeMs: number
   wasmCreateMs: number
   parseMs: number
@@ -115,7 +128,19 @@ function buildHighsStage(
   const xByRecipeId = new Map<string, IntVariable>()
   const zByRecipeId = new Map<string, BoolVariable>()
   const yByCustomerRecipe = new Map<string, BoolVariable>()
+  const buildPhaseMs: HighsBuildPhaseProfile = {
+    recipeUsageMs: 0,
+    customerAssignmentsMs: 0,
+    recipeCapacityMs: 0,
+    productionOperationsMs: 0,
+    baseObjectivesMs: 0,
+    assignedIngredientCostMs: 0,
+    knownRevenueMs: 0,
+    jarSwitchesMs: 0,
+    fixesAndObjectiveMs: 0,
+  }
 
+  let phaseStartedAt = performance.now()
   domain.recipes.forEach((recipe, recipeIndex) => {
     const x = model.intVar(
       0,
@@ -135,7 +160,9 @@ function buildHighsStage(
       `usage_lower_${recipeIndex}`,
     )
   })
+  buildPhaseMs.recipeUsageMs = performance.now() - phaseStartedAt
 
+  phaseStartedAt = performance.now()
   domain.serviceableCustomerIds.forEach((customerId, customerIndex) => {
     const assignmentVars: BoolVariable[] = []
 
@@ -155,7 +182,9 @@ function buildHighsStage(
       `customer_${customerIndex}`,
     )
   })
+  buildPhaseMs.customerAssignmentsMs = performance.now() - phaseStartedAt
 
+  phaseStartedAt = performance.now()
   domain.recipes.forEach((recipe, recipeIndex) => {
     const x = xByRecipeId.get(recipe.candidate.id)
     if (!x) return
@@ -174,7 +203,9 @@ function buildHighsStage(
       `capacity_${recipeIndex}`,
     )
   })
+  buildPhaseMs.recipeCapacityMs = performance.now() - phaseStartedAt
 
+  phaseStartedAt = performance.now()
   const quantityTermsByEdgeKey = new Map<
     string,
     ReturnType<IntVariable['times']>[]
@@ -226,7 +257,10 @@ function buildHighsStage(
       )
     },
   )
+  buildPhaseMs.productionOperationsMs =
+    performance.now() - phaseStartedAt
 
+  phaseStartedAt = performance.now()
   const costExpression = sum(
     ...domain.recipes.flatMap((recipe) => {
       const x = xByRecipeId.get(recipe.candidate.id)
@@ -248,7 +282,9 @@ function buildHighsStage(
   const machineOperationsExpression = sum(
     ...operationByEdgeKey.values(),
   )
+  buildPhaseMs.baseObjectivesMs = performance.now() - phaseStartedAt
 
+  phaseStartedAt = performance.now()
   const assignedIngredientCostExpression = sum(
     ...domain.serviceableCustomerIds.flatMap((customerId) =>
       domain.recipes.flatMap((recipe) => {
@@ -259,7 +295,10 @@ function buildHighsStage(
       }),
     ),
   )
+  buildPhaseMs.assignedIngredientCostMs =
+    performance.now() - phaseStartedAt
 
+  phaseStartedAt = performance.now()
   const formalCustomerIds = new Set(domain.request.formalCustomerIds)
   const knownRevenueExpression = sum(
     ...domain.serviceableCustomerIds.flatMap((customerId) => {
@@ -276,7 +315,9 @@ function buildHighsStage(
       })
     }),
   )
+  buildPhaseMs.knownRevenueMs = performance.now() - phaseStartedAt
 
+  phaseStartedAt = performance.now()
   const initialJars = normalizedInitialCarriedJuiceJars(
     domain.request,
   )
@@ -372,7 +413,9 @@ function buildHighsStage(
       'jar_switch_hard_limit',
     )
   }
+  buildPhaseMs.jarSwitchesMs = performance.now() - phaseStartedAt
 
+  phaseStartedAt = performance.now()
   const expressions = {
     cost: costExpression,
     productionUnits: productionUnitsExpression,
@@ -393,6 +436,7 @@ function buildHighsStage(
   })
 
   model.minimize(expressions[objective])
+  buildPhaseMs.fixesAndObjectiveMs = performance.now() - phaseStartedAt
 
   const nonEmptyInitialJarCount = initialJars.filter(
     (jar) => jar.recipeId && jar.servings > 0,
@@ -426,6 +470,7 @@ function buildHighsStage(
     operationByEdgeKey,
     variableCount,
     constraintCount,
+    buildPhaseMs,
   }
 }
 
@@ -512,6 +557,7 @@ export async function profileHighsOptimization(
       variableCount: built.variableCount,
       constraintCount: built.constraintCount,
       buildMs,
+      buildPhases: built.buildPhaseMs,
       serializeMs,
       wasmCreateMs,
       parseMs,
