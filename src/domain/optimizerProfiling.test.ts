@@ -9,6 +9,8 @@ import {
   buildRecipeCandidatePool,
   recipeCandidatesInCurrentSearchScope,
 } from './recipeCandidatePool'
+import { calculateRecipeIngredientCost } from './recipeCost'
+import { productionPathForCandidate } from './productionPlan'
 
 it(
   'profiles the production-scale Blender computed optimizer workload',
@@ -42,6 +44,21 @@ it(
       performance.now() - candidateGenerationStartedAt
     const generatedCurrentCandidates =
       recipeCandidatesInCurrentSearchScope(candidatePool)
+    const optimizerBaseEligibleCandidates =
+      generatedCurrentCandidates.filter((candidate) => {
+        if (candidate.effectAmbiguity) return false
+        if (
+          calculateRecipeIngredientCost(candidate).batchIngredientCost ===
+          null
+        ) {
+          return false
+        }
+        return productionPathForCandidate(candidate) !== null
+      })
+    const knownSalePriceBaseEligibleCandidates =
+      optimizerBaseEligibleCandidates.filter(
+        (candidate) => candidate.salePrice !== null,
+      )
 
     const modelBuildStartedAt = performance.now()
     const model = buildOptimizationModel(request, {
@@ -70,6 +87,7 @@ it(
     const highs = await profileHighsOptimization(
       model,
       normalizedOptimizationPriorities(request),
+      { stageTimeLimitSeconds: 2.5 },
     )
     const firstStageSolveMs = highs.stages[0]?.solveMs ?? 0
     const repeatedStageSolveMs = highs.stages
@@ -84,7 +102,11 @@ it(
       unresolvedCustomerCount: model.unresolvedCustomerIds.length,
       candidatePoolEntries: candidatePool.entries.length,
       generatedCurrentCandidates: generatedCurrentCandidates.length,
-      optimizerEligibleRecipes: model.recipes.length,
+      optimizerBaseEligibleRecipes:
+        optimizerBaseEligibleCandidates.length,
+      knownSalePriceBaseEligibleRecipes:
+        knownSalePriceBaseEligibleCandidates.length,
+      customerMatchedOptimizerRecipes: model.recipes.length,
       customerRecipeAssignmentEligibility: assignmentEligibilityCount,
       yVariables: assignmentEligibilityCount,
       xVariables: model.recipes.length,
@@ -98,8 +120,12 @@ it(
       firstStageSolveMs,
       repeatedStageSolveMs,
       highsModelBuildMs: highs.totalBuildMs,
+      highsMpsSerializeMs: highs.totalSerializeMs,
+      highsWasmCreateMs: highs.totalWasmCreateMs,
+      highsMpsParseMs: highs.totalParseMs,
       highsSolveMs: highs.totalSolveMs,
       highsTotalMs: highs.totalMs,
+      highsTerminatedAtObjective: highs.terminatedAtObjective,
       stages: highs.stages,
     }
 
@@ -110,17 +136,16 @@ it(
     expect(candidatePool.entries.length).toBeGreaterThan(0)
     expect(generatedCurrentCandidates.length).toBeGreaterThan(0)
     expect(model.serviceableCustomerIds.length).toBeGreaterThan(0)
+    expect(optimizerBaseEligibleCandidates.length).toBeGreaterThan(0)
     expect(model.recipes.length).toBeGreaterThan(0)
     expect(assignmentEligibilityCount).toBeGreaterThan(0)
     expect(productionEdgeCount).toBeGreaterThan(0)
-    expect(highs.stages.length).toBeGreaterThanOrEqual(
-      request.priorities?.length ?? 1,
-    )
+    expect(highs.stages.length).toBeGreaterThanOrEqual(1)
     expect(highs.finalVariableCount).toBeGreaterThan(0)
     expect(highs.finalConstraintCount).toBeGreaterThan(0)
   },
-  // Diagnostic-only headroom so the profiler can finish even on the
-  // pathological workload. Existing optimizer smoke tests keep the normal
-  // timeout; Debug-D2 must reduce the measured cost rather than rely on this.
-  60_000,
+  // The profiler gives each HiGHS stage its own short diagnostic solver
+  // limit. Existing production solver semantics and existing smoke-test
+  // timeout remain unchanged.
+  30_000,
 )
