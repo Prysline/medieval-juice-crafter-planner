@@ -1974,6 +1974,65 @@ it(
       }
     }
 
+    const descendServiceEquivalentSelection = (
+      initialSelections: Array<{
+        recipeId: string
+        units: number
+      }>,
+    ) => {
+      const steps: Array<{
+        from: number
+        to: number
+        sourceRecipeId: string | null
+        targetRecipeId: string | null
+        transferredUnits: number
+        evaluatedMoves: number
+      }> = []
+      let recipeUnits = initialSelections.map((selection) => ({
+        recipeId: selection.recipeId,
+        units: Math.round(selection.units),
+      }))
+
+      for (
+        let stepIndex = 0;
+        stepIndex < 4 && recipeUnits.length > 0;
+        stepIndex += 1
+      ) {
+        const step =
+          searchOneServiceEquivalentTransfer(recipeUnits)
+        if (
+          !step.bestRecipeUnits ||
+          step.bestMachineOperations >=
+            step.baseMachineOperations
+        ) {
+          break
+        }
+        steps.push({
+          from: step.baseMachineOperations,
+          to: step.bestMachineOperations,
+          sourceRecipeId: step.sourceRecipeId,
+          targetRecipeId: step.targetRecipeId,
+          transferredUnits: step.transferredUnits,
+          evaluatedMoves: step.evaluatedMoves,
+        })
+        recipeUnits = step.bestRecipeUnits
+        if (
+          combinedMachineOperationLowerBound !== null &&
+          step.bestMachineOperations <=
+            combinedMachineOperationLowerBound
+        ) {
+          break
+        }
+      }
+
+      return {
+        steps,
+        recipeUnits,
+        breakdown:
+          machineOperationBreakdownForSelection(recipeUnits),
+      }
+    }
+
     const enumerateServiceEquivalentTransferCandidates = (
       rawSelections: Array<{
         recipeId: string
@@ -2079,6 +2138,66 @@ it(
 
       return candidates
     }
+
+    const lowerBoundWitnessSearches = {
+      throughSeasoning:
+        throughSeasoningMachineFirstStage?.status === 'optimal'
+          ? descendServiceEquivalentSelection(
+              throughSeasoningMachineFirstStage.selectedRecipeUnits,
+            )
+          : null,
+      blending:
+        blendingOnlyMachineFirstStage?.status === 'optimal'
+          ? descendServiceEquivalentSelection(
+              blendingOnlyMachineFirstStage.selectedRecipeUnits,
+            )
+          : null,
+      finalizing:
+        finalizingOnlyMachineFirstStage?.status === 'optimal'
+          ? descendServiceEquivalentSelection(
+              finalizingOnlyMachineFirstStage.selectedRecipeUnits,
+            )
+          : null,
+    }
+
+    const certifiedLowerBoundWitness =
+      combinedMachineOperationLowerBound === null
+        ? null
+        : (
+            Object.entries(lowerBoundWitnessSearches).find(
+              ([, search]) =>
+                search?.breakdown.total ===
+                combinedMachineOperationLowerBound,
+            ) ?? null
+          )
+
+    const lowerBoundWitnessFixedVerification =
+      certifiedLowerBoundWitness &&
+      compressedCostStage?.objectiveValue !== null
+        ? await profileHighsOptimization(
+            strictCostPrunedModel,
+            ['minimum-machine-operations'],
+            {
+              stageTimeLimitSeconds: 2.5,
+              relaxAssignmentVariables: true,
+              aggregateLocalSingletonOperations: true,
+              aggregateEquivalentAssignments: true,
+              tightenRecipeBoundsFromMinimumCostFix: true,
+              tightenOperationBoundsFromRecipeBounds: true,
+              fixedRecipeUnits:
+                certifiedLowerBoundWitness[1].recipeUnits,
+              maxStages: 1,
+              initialCriterionFixes: [
+                {
+                  criterion: 'minimum-cost',
+                  value: Math.round(
+                    compressedCostStage.objectiveValue,
+                  ),
+                },
+              ],
+            },
+          )
+        : null
 
     const stage1LocalDescentSteps: Array<{
       from: number
@@ -3377,6 +3496,24 @@ it(
             }
           : null,
       decomposedBoundWarmStartComparison,
+      lowerBoundWitnessSearches,
+      certifiedLowerBoundWitness:
+        certifiedLowerBoundWitness?.[0] ?? null,
+      lowerBoundWitnessFixedVerification:
+        lowerBoundWitnessFixedVerification?.stages[0]
+          ? {
+              status:
+                lowerBoundWitnessFixedVerification.stages[0].status,
+              objectiveValue:
+                lowerBoundWitnessFixedVerification.stages[0].objectiveValue,
+              integralAssignmentReconstructionFeasible:
+                lowerBoundWitnessFixedVerification.stages[0].integralAssignmentReconstructionFeasible,
+              reconstructedAssignmentCount:
+                lowerBoundWitnessFixedVerification.stages[0].reconstructedAssignmentCount,
+              totalMs:
+                lowerBoundWitnessFixedVerification.totalMs,
+            }
+          : null,
       stage1LocalDescentSteps,
       stage1LocalDescentBreakdown,
       stage1DepthTwoSearch,
