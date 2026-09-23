@@ -67,10 +67,10 @@ src/
     recipeCandidatePool.ts # Candidate-1/2A/2B：依完整有序序列合併來源、保存搜尋層資訊；UX-2A 提供目前可用的實測／已保存／安全推導庫存搜尋集合
     listFilters.ts     # UX-2B：顧客／配方研究 filter 的純判定；確定特性與 ambiguity 可能特性分開
     optimizerModel.ts  # optimizer request、recipe→eligible customer reverse index 與 gating；Debug-B 共用 jar-switch lower bound
-    optimizerCertificates.ts # Debug-DP1：minimum-cost Stage 1 strict-cost frontier / service-set representative / applicability gate
+    optimizerCertificates.ts # Debug-DP1/P2：Stage 1 cost certificate；Stage 2 machine witness breakdown / same-service same-cost repair helpers
     jarSwitches.ts      # Debug-B：initial-content-aware minimum jar-switch 共用 authority
     optimizerSolver.ts # 可替換的 async solver adapter contract
-    optimizerHighsSolver.ts # HiGHS WASM lexicographic MIP adapter；Debug-DP1 依 objective/fix lazy build stage structure，cost-first 可用 exact Stage 1 certificate，未符合 gate 時 generic fallback
+    optimizerHighsSolver.ts # HiGHS WASM lexicographic MIP adapter；Debug-DP1 Stage 1 exact cost certificate；Debug-DP2 大型 cost→machine stage 可用 exact operation-partition LB + fixed-x verification，未符合 gate／certificate 未閉合時 generic fallback
     optimizer.ts       # recipe production plan / shopping list / metrics normalization
     productionPlan.ts  # shared-prefix production graph / 1～5 stack machine operations
     optimizerUi.ts     # UI 預設需求集合：已解鎖、今日未供應、正式／潛在篩選
@@ -268,7 +268,8 @@ Phase 4 已完成：
 20. PR #64 完成 **Correctness-1｜跨趟果汁罐交換與同配方直接補裝**：planner settings 從 persistent jar ID 綁定改為 `auto`／`fixed-slots`；無果汁罐架時所有持有罐強制隨身，有架時可跨趟整罐上架／換罐，架上既有成品也會納入今日需求；同配方未空罐可直接補裝至容量 10，不同配方仍禁止直接混裝。
 21. PR #66 完成 **UX-1｜配方模擬器與批次規劃可讀性**：原料卡直接顯示特性與數值；模擬器可暫選目標顧客並顯示匹配狀態；批次規劃的常見可修正錯誤改用穩定 code + context，UI 顯示中文摘要、限制原因、可操作建議與次要技術資訊。
 22. PR #68 完成 **Candidate-2B｜多層果汁調和搜尋**；PR #69 完成 **Correctness-2｜剩餘果汁終局罐需求診斷**；PR #70 完成 **Performance-1｜配方分頁／篩選與批次規劃 render 降載**；PR #72 完成 **Correctness-2B｜明確允許倒掉既有果汁**；PR #74 完成 **Correctness-3｜候選搜尋 consumer 語意拆分**；PR #76 完成 **Objective-1｜批次規劃「最高原料成本」**；PR #78 完成 **UX-2A｜果汁罐內容即時搜尋**；PR #80～#82 完成 **UX-2B｜配方研究與顧客比較介面**；PR #84～#86 完成 **Batch-Debug A～C**。Debug-A 修正原料庫存 availability；Debug-B 收斂 jar-switch lower bound / physical schedule authority 並補 internal error；Debug-C 讓明確 discard opt-in 也可處理無終局容器的新製作殘餘，且 transaction preview 區分來源。
-23. PR #89 完成 **Debug-D Production P1｜Stage 1 exact cost certificate**：optimizer eligibility 改為 recipe→customer reverse index；HiGHS stage 只建立 objective / fix 真正需要的結構；minimum-cost 為第一層且沒有 identity-sensitive jar hard feasibility 時，先做 strict-cost dominance，再以每個 service set 的最低成本代表解 Stage 1，固定成本後恢復 equal-cost 真實 recipe identities。production-scale regression 鎖定 9,253 matched recipes → 4,996 strict frontier → 539 representatives、minimum cost = 572、48 / 48 reconstruction；不符合 certificate gate 時保留 generic fallback。下一步是 **Debug-D Production P2｜Stage 2 exact machine certificate**，之後 P3 → P4 → Inventory-Intermediate，再回 Candidate-3 → Candidate-4 → Phase 6 → Candidate-5。路線最佳化仍等待跨村移動時間、位置資訊、完整顧客服務時段與商店營業時間資料。
+23. PR #89 完成 **Debug-D Production P1｜Stage 1 exact cost certificate**：optimizer eligibility 改為 recipe→customer reverse index；HiGHS stage 只建立 objective / fix 真正需要的結構；minimum-cost 為第一層且沒有 identity-sensitive jar hard feasibility 時，先做 strict-cost dominance，再以每個 service set 的最低成本代表解 Stage 1，固定成本後恢復 equal-cost 真實 recipe identities。production-scale regression 鎖定 9,253 matched recipes → 4,996 strict frontier → 539 representatives、minimum cost = 572、48 / 48 reconstruction；不符合 certificate gate 時保留 generic fallback。
+24. PR #91 完成 **Debug-D Production P2｜Stage 2 exact machine certificate**：只有 P1 exact cost certificate 已成功、目前 sole fix 為 cost、下一 objective 為 machine operations，且 continuation frontier 足夠大時才嘗試。三個互斥子問題提供 through-seasoning 20 + blending 9 + finalizing 21 = **50** 的 exact lower bound；same-service-set + same-cost recipe-unit transfer 只作 witness search，最後必須回完整 binary-assignment / all-edge / fixed-x model 驗證 objective = 50、48 / 48 reconstruction 才接受。certificate 未閉合或模型較小時維持 generic exact solver；grouped / relaxed assignment 不全域啟用。CI #482：40 test files / 306 tests passed、production build success。下一步是 **Debug-D Production P3｜Stage 3 exact jar certificate**，之後 P4 → Inventory-Intermediate，再回 Candidate-3 → Candidate-4 → Phase 6 → Candidate-5。路線最佳化仍等待跨村移動時間、位置資訊、完整顧客服務時段與商店營業時間資料。
 
 
 ## Schedule / route readiness boundary
