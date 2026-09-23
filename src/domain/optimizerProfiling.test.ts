@@ -1192,6 +1192,57 @@ it(
             },
           )
         : null
+    const recipeRelaxedMachineHighs =
+      compressedCostStage?.status === 'optimal' &&
+      compressedCostStage.objectiveValue !== null
+        ? await profileHighsOptimization(
+            strictCostPrunedModel,
+            ['minimum-machine-operations'],
+            {
+              stageTimeLimitSeconds: 5.5,
+              relaxAssignmentVariables: true,
+              relaxRecipeVariables: true,
+              aggregateLocalSingletonOperations: true,
+              aggregateEquivalentAssignments: true,
+              tightenRecipeBoundsFromMinimumCostFix: true,
+              maxStages: 1,
+              initialCriterionFixes: [
+                {
+                  criterion: 'minimum-cost',
+                  value: Math.round(
+                    compressedCostStage.objectiveValue,
+                  ),
+                },
+              ],
+            },
+          )
+        : null
+    const operationRelaxedMachineHighs =
+      compressedCostStage?.status === 'optimal' &&
+      compressedCostStage.objectiveValue !== null
+        ? await profileHighsOptimization(
+            strictCostPrunedModel,
+            ['minimum-machine-operations'],
+            {
+              stageTimeLimitSeconds: 5.5,
+              relaxAssignmentVariables: true,
+              relaxOperationVariables: true,
+              aggregateLocalSingletonOperations: true,
+              aggregateEquivalentAssignments: true,
+              tightenRecipeBoundsFromMinimumCostFix: true,
+              maxStages: 1,
+              initialCriterionFixes: [
+                {
+                  criterion: 'minimum-cost',
+                  value: Math.round(
+                    compressedCostStage.objectiveValue,
+                  ),
+                },
+              ],
+            },
+          )
+        : null
+
     const incumbentBoundMachineHighs =
       compressedCostStage?.status === 'optimal' &&
       compressedCostStage.objectiveValue !== null &&
@@ -1261,6 +1312,10 @@ it(
       groupedAssignmentMachineHighs?.stages[0]
     const tightBoundMachineFirstStage =
       tightBoundMachineHighs?.stages[0]
+    const recipeRelaxedMachineFirstStage =
+      recipeRelaxedMachineHighs?.stages[0]
+    const operationRelaxedMachineFirstStage =
+      operationRelaxedMachineHighs?.stages[0]
     const incumbentBoundMachineFirstStage =
       incumbentBoundMachineHighs?.stages[0]
     const fixedIncumbentMachineFirstStage =
@@ -1585,6 +1640,52 @@ it(
               reconstructedAssignmentCount:
                 tightBoundMachineFirstStage.reconstructedAssignmentCount,
               totalMs: tightBoundMachineHighs?.totalMs ?? 0,
+            }
+          : null,
+      recipeRelaxedMachineStage:
+        recipeRelaxedMachineFirstStage
+          ? {
+              solveMs: recipeRelaxedMachineFirstStage.solveMs,
+              status: recipeRelaxedMachineFirstStage.status,
+              objectiveValue:
+                recipeRelaxedMachineFirstStage.objectiveValue,
+              variableCount:
+                recipeRelaxedMachineFirstStage.variableCount,
+              constraintCount:
+                recipeRelaxedMachineFirstStage.constraintCount,
+              fractionalRecipeVariableCount:
+                recipeRelaxedMachineFirstStage.fractionalRecipeVariableCount,
+              maxRecipeIntegralityError:
+                recipeRelaxedMachineFirstStage.maxRecipeIntegralityError,
+              fractionalOperationVariableCount:
+                recipeRelaxedMachineFirstStage.fractionalOperationVariableCount,
+              maxOperationIntegralityError:
+                recipeRelaxedMachineFirstStage.maxOperationIntegralityError,
+              totalMs:
+                recipeRelaxedMachineHighs?.totalMs ?? 0,
+            }
+          : null,
+      operationRelaxedMachineStage:
+        operationRelaxedMachineFirstStage
+          ? {
+              solveMs: operationRelaxedMachineFirstStage.solveMs,
+              status: operationRelaxedMachineFirstStage.status,
+              objectiveValue:
+                operationRelaxedMachineFirstStage.objectiveValue,
+              variableCount:
+                operationRelaxedMachineFirstStage.variableCount,
+              constraintCount:
+                operationRelaxedMachineFirstStage.constraintCount,
+              fractionalRecipeVariableCount:
+                operationRelaxedMachineFirstStage.fractionalRecipeVariableCount,
+              maxRecipeIntegralityError:
+                operationRelaxedMachineFirstStage.maxRecipeIntegralityError,
+              fractionalOperationVariableCount:
+                operationRelaxedMachineFirstStage.fractionalOperationVariableCount,
+              maxOperationIntegralityError:
+                operationRelaxedMachineFirstStage.maxOperationIntegralityError,
+              totalMs:
+                operationRelaxedMachineHighs?.totalMs ?? 0,
             }
           : null,
       incumbentBoundMachineStage:
