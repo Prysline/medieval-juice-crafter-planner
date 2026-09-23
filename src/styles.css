@@ -2392,13 +2392,70 @@ footer {
   gap: 7px;
 }
 
+.optimizer-production-checklist-toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  border: 1px solid #d9ccb9;
+  border-radius: 10px;
+  background: #fbf7ef;
+  padding: 8px 10px;
+}
+
+.optimizer-production-checklist-toolbar span {
+  color: #6d604d;
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.optimizer-production-checklist-toolbar button {
+  flex: 0 0 auto;
+  min-height: 34px;
+  border: 1px solid #9f8a69;
+  border-radius: 8px;
+  background: #fffdf8;
+  color: #5d4d36;
+  padding: 6px 9px;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.optimizer-production-checklist-toolbar button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
 .optimizer-operation-flow {
   display: grid;
-  grid-template-columns: 58px minmax(0, 1fr);
+  grid-template-columns: 22px 58px minmax(0, 1fr);
   gap: 8px;
   align-items: center;
   border-top: 1px dashed #e5d9c8;
   padding-top: 7px;
+  cursor: pointer;
+}
+
+.optimizer-operation-flow.completed {
+  border-radius: 8px;
+  background: #f1f5ed;
+  padding: 7px 6px 6px;
+}
+
+.optimizer-operation-checkbox {
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  cursor: pointer;
+}
+
+.optimizer-operation-flow.completed .optimizer-batch-index {
+  color: #526449;
+}
+
+.optimizer-operation-flow.completed .optimizer-slot-pill {
+  background: #eef3e9;
 }
 
 .optimizer-operation-flow:first-child {
@@ -2726,8 +2783,27 @@ footer {
     white-space: normal;
   }
 
+  .optimizer-production-checklist-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .optimizer-production-checklist-toolbar button {
+    width: 100%;
+  }
+
   .optimizer-operation-flow {
-    grid-template-columns: 1fr;
-    gap: 4px;
+    grid-template-columns: 22px minmax(0, 1fr);
+    gap: 4px 7px;
+  }
+
+  .optimizer-operation-checkbox {
+    grid-row: 1 / span 2;
+    align-self: start;
+  }
+
+  .optimizer-batch-index,
+  .optimizer-slot-flow {
+    grid-column: 2;
   }
 }
