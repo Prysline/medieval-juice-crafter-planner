@@ -145,6 +145,26 @@ function buildHighsStage(
   ])
   const needsAnyObjective = (...keys: ObjectiveKey[]) =>
     keys.some((key) => neededObjectiveKeys.has(key))
+  const initialJars = normalizedInitialCarriedJuiceJars(
+    domain.request,
+  )
+  const emptyJarCount = initialJars.filter(
+    (jar) => !jar.recipeId || jar.servings <= 0,
+  ).length
+  const maxJarTypeSwitches =
+    domain.request.constraints?.maxJarTypeSwitches
+  const hasJarHardConstraint =
+    emptyJarCount === 0 ||
+    (
+      typeof maxJarTypeSwitches === 'number' &&
+      Number.isFinite(maxJarTypeSwitches)
+    )
+  const needsJarStructure =
+    needsAnyObjective('jarSwitches') || hasJarHardConstraint
+  const needsRecipeUsageStructure =
+    needsAnyObjective('kinds') || needsJarStructure
+  const needsProductionOperations =
+    needsAnyObjective('machineOperations')
 
   let phaseStartedAt = performance.now()
   domain.recipes.forEach((recipe, recipeIndex) => {
@@ -153,18 +173,21 @@ function buildHighsStage(
       maxJuiceUnitsPerRecipe,
       `x_${recipeIndex}`,
     )
-    const z = model.boolVar(`z_${recipeIndex}`)
     xByRecipeId.set(recipe.candidate.id, x)
-    zByRecipeId.set(recipe.candidate.id, z)
 
-    model.addConstraint(
-      x.minus(z.times(maxJuiceUnitsPerRecipe)).leq(0),
-      `usage_upper_${recipeIndex}`,
-    )
-    model.addConstraint(
-      z.minus(x).leq(0),
-      `usage_lower_${recipeIndex}`,
-    )
+    if (needsRecipeUsageStructure) {
+      const z = model.boolVar(`z_${recipeIndex}`)
+      zByRecipeId.set(recipe.candidate.id, z)
+
+      model.addConstraint(
+        x.minus(z.times(maxJuiceUnitsPerRecipe)).leq(0),
+        `usage_upper_${recipeIndex}`,
+      )
+      model.addConstraint(
+        z.minus(x).leq(0),
+        `usage_lower_${recipeIndex}`,
+      )
+    }
   })
   buildPhaseMs.recipeUsageMs = performance.now() - phaseStartedAt
 
@@ -216,6 +239,7 @@ function buildHighsStage(
     string,
     ReturnType<IntVariable['times']>[]
   >()
+  if (needsProductionOperations) {
   for (const recipe of domain.recipes) {
     const x = xByRecipeId.get(recipe.candidate.id)
     if (!x) continue
@@ -239,6 +263,7 @@ function buildHighsStage(
     }
   }
 
+  }
   const operationByEdgeKey = new Map<string, IntVariable>()
   ;[...quantityTermsByEdgeKey.entries()].forEach(
     ([edgeKey, quantityTerms], edgeIndex) => {
@@ -342,41 +367,39 @@ function buildHighsStage(
   buildPhaseMs.knownRevenueMs = performance.now() - phaseStartedAt
 
   phaseStartedAt = performance.now()
-  const initialJars = normalizedInitialCarriedJuiceJars(
-    domain.request,
-  )
-  const emptyJarCount = initialJars.filter(
-    (jar) => !jar.recipeId || jar.servings <= 0,
-  ).length
-  const initialRecipeIds = new Set(
-    initialJars.flatMap((jar) =>
-      jar.recipeId && jar.servings > 0 ? [jar.recipeId] : [],
-    ),
-  )
-  const unmatchedKindExpression = sum(
-    ...domain.recipes.flatMap((recipe) => {
-      if (initialRecipeIds.has(recipe.candidate.id)) return []
-      const z = zByRecipeId.get(recipe.candidate.id)
-      return z ? [z] : []
-    }),
-  )
-  const jarSwitches = model.intVar(
-    0,
-    Math.max(0, domain.recipes.length),
-    'jar_type_switches',
-  )
-  model.addConstraint(
-    unmatchedKindExpression
-      .minus(jarSwitches)
-      .leq(emptyJarCount),
-    'jar_switch_lower_bound',
-  )
-  model.addConstraint(
-    jarSwitches.minus(unmatchedKindExpression).leq(0),
-    'jar_switch_usage',
-  )
+  let jarSwitches: IntVariable | undefined
+  let reusableJarVariableCount = 0
 
-  if (emptyJarCount === 0) {
+  if (needsJarStructure) {
+    const initialRecipeIds = new Set(
+      initialJars.flatMap((jar) =>
+        jar.recipeId && jar.servings > 0 ? [jar.recipeId] : [],
+      ),
+    )
+    const unmatchedKindExpression = sum(
+      ...domain.recipes.flatMap((recipe) => {
+        if (initialRecipeIds.has(recipe.candidate.id)) return []
+        const z = zByRecipeId.get(recipe.candidate.id)
+        return z ? [z] : []
+      }),
+    )
+    jarSwitches = model.intVar(
+      0,
+      Math.max(0, domain.recipes.length),
+      'jar_type_switches',
+    )
+    model.addConstraint(
+      unmatchedKindExpression
+        .minus(jarSwitches)
+        .leq(emptyJarCount),
+      'jar_switch_lower_bound',
+    )
+    model.addConstraint(
+      jarSwitches.minus(unmatchedKindExpression).leq(0),
+      'jar_switch_usage',
+    )
+
+    if (emptyJarCount === 0) {
     const cumulativeServingsByRecipe = new Map<string, number>()
     const reusableJarVars: BoolVariable[] = []
 
@@ -422,20 +445,20 @@ function buildHighsStage(
         'initial_jar_switch_requires_reusable_jar',
       )
     }
-  }
+      reusableJarVariableCount = reusableJarVars.length
+    }
 
-  const maxJarTypeSwitches =
-    domain.request.constraints?.maxJarTypeSwitches
-  if (
-    typeof maxJarTypeSwitches === 'number' &&
-    Number.isFinite(maxJarTypeSwitches)
-  ) {
-    model.addConstraint(
-      unmatchedKindExpression.leq(
-        emptyJarCount + Math.max(0, Math.floor(maxJarTypeSwitches)),
-      ),
-      'jar_switch_hard_limit',
-    )
+    if (
+      typeof maxJarTypeSwitches === 'number' &&
+      Number.isFinite(maxJarTypeSwitches)
+    ) {
+      model.addConstraint(
+        unmatchedKindExpression.leq(
+          emptyJarCount + Math.max(0, Math.floor(maxJarTypeSwitches)),
+        ),
+        'jar_switch_hard_limit',
+      )
+    }
   }
   buildPhaseMs.jarSwitchesMs = performance.now() - phaseStartedAt
 
@@ -473,25 +496,27 @@ function buildHighsStage(
   model.minimize(requiredObjectiveExpression(objective))
   buildPhaseMs.fixesAndObjectiveMs = performance.now() - phaseStartedAt
 
-  const nonEmptyInitialJarCount = initialJars.filter(
-    (jar) => jar.recipeId && jar.servings > 0,
-  ).length
-  const reusableJarVariableCount =
-    emptyJarCount === 0 ? nonEmptyInitialJarCount : 0
   const variableCount =
-    domain.recipes.length * 2 +
+    domain.recipes.length +
+    (needsRecipeUsageStructure ? domain.recipes.length : 0) +
     yByCustomerRecipe.size +
     operationByEdgeKey.size +
-    1 +
+    (needsJarStructure ? 1 : 0) +
     reusableJarVariableCount
   const constraintCount =
-    domain.recipes.length * 3 +
+    domain.recipes.length +
+    (needsRecipeUsageStructure ? domain.recipes.length * 2 : 0) +
     domain.serviceableCustomerIds.length +
     operationByEdgeKey.size * 2 +
-    2 +
+    (needsJarStructure ? 2 : 0) +
     fixes.length +
-    (emptyJarCount === 0 ? nonEmptyInitialJarCount + 1 : 0) +
     (
+      needsJarStructure && emptyJarCount === 0
+        ? reusableJarVariableCount + 1
+        : 0
+    ) +
+    (
+      needsJarStructure &&
       typeof maxJarTypeSwitches === 'number' &&
       Number.isFinite(maxJarTypeSwitches)
         ? 1
