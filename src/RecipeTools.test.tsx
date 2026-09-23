@@ -99,6 +99,45 @@ describe('recipe simulator UX', () => {
     expect(html).toContain('可能特性不視為確定成品特性')
   })
 
+  it('shows confirmed personal evidence separately from predictions', () => {
+    const html = renderToStaticMarkup(
+      <RecipeTools
+        currentProgress="tranquil-fountain-unlocked"
+        satisfactionByVillage={satisfaction}
+        savedRecipes={[
+          {
+            id: 'confirmed-personal',
+            name: '我的可靠配方',
+            ingredientIds: ['banana', 'sugar'],
+            createdAt: '2026-09-24T00:00:00.000Z',
+            confirmedResult: {
+              effects: [
+                { name: '玩家確認特性', value: 9 },
+                { name: '甜味', value: 4 },
+              ],
+              salePrice: null,
+              confirmedAt: '2026-09-24T00:00:00.000Z',
+            },
+          },
+        ]}
+        comparisonCustomerIds={[]}
+        onSavedRecipesChange={() => {}}
+        onAddComparisonCustomer={() => {}}
+        onRemoveComparisonCustomer={() => {}}
+        onClearComparisonCustomers={() => {}}
+      />,
+    )
+
+    expect(html).toContain('我的可靠配方')
+    expect(html).toContain('個人已確認')
+    expect(html).toContain('成品特性（個人已確認）')
+    expect(html).toContain('玩家確認特性（9）')
+    expect(html).toContain('取消個人實測確認')
+    expect(html).toContain(
+      '我已在遊戲中核對上方成品特性，可供批次規劃使用',
+    )
+  })
+
   it('shows multiple comparison customers and their independent match states', () => {
     const nanette = customers.find(
       (customer) => customer.id === 'nanette',
