@@ -1356,6 +1356,29 @@ it(
               totalMs: tightBoundMachineHighs?.totalMs ?? 0,
             }
           : null,
+      incumbentBoundMachineStage:
+        incumbentBoundMachineFirstStage
+          ? {
+              solveMs: incumbentBoundMachineFirstStage.solveMs,
+              status: incumbentBoundMachineFirstStage.status,
+              objectiveValue:
+                incumbentBoundMachineFirstStage.objectiveValue,
+              fixCount: incumbentBoundMachineFirstStage.fixCount,
+              variableCount:
+                incumbentBoundMachineFirstStage.variableCount,
+              constraintCount:
+                incumbentBoundMachineFirstStage.constraintCount,
+              fractionalAssignmentVariableCount:
+                incumbentBoundMachineFirstStage.fractionalAssignmentVariableCount,
+              maxAssignmentIntegralityError:
+                incumbentBoundMachineFirstStage.maxAssignmentIntegralityError,
+              integralAssignmentReconstructionFeasible:
+                incumbentBoundMachineFirstStage.integralAssignmentReconstructionFeasible,
+              reconstructedAssignmentCount:
+                incumbentBoundMachineFirstStage.reconstructedAssignmentCount,
+              totalMs: incumbentBoundMachineHighs?.totalMs ?? 0,
+            }
+          : null,
       binaryStages: binaryHighs.stages,
       relaxedStages: relaxedHighs.stages,
     }
@@ -1512,6 +1535,31 @@ it(
           groupedAssignmentMachineFirstStage.objectiveValue ?? 0,
           9,
         )
+      }
+    }
+    expect(compressedIncumbentCost).toBe(fixedMinimumCost)
+    expect(compressedIncumbentMachineOperations).toBeGreaterThan(0)
+    if (incumbentBoundMachineFirstStage) {
+      expect(incumbentBoundMachineFirstStage.objective).toBe(
+        'machineOperations',
+      )
+      expect(incumbentBoundMachineFirstStage.fixCount).toBe(1)
+      expect(incumbentBoundMachineFirstStage.variableCount).toBe(
+        stage2ProjectedVariablesWithGroupAssignmentsAndLocalOps,
+      )
+      expect(incumbentBoundMachineFirstStage.constraintCount).toBe(
+        stage2ProjectedConstraintsWithGroupAssignmentsAndLocalOps + 1,
+      )
+      if (incumbentBoundMachineFirstStage.objectiveValue !== null) {
+        expect(
+          incumbentBoundMachineFirstStage.integralAssignmentReconstructionFeasible,
+        ).toBe(true)
+        expect(
+          incumbentBoundMachineFirstStage.reconstructedAssignmentCount,
+        ).toBe(model.serviceableCustomerIds.length)
+        expect(
+          incumbentBoundMachineFirstStage.objectiveValue,
+        ).toBeLessThanOrEqual(compressedIncumbentMachineOperations)
       }
     }
   },
