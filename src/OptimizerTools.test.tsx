@@ -5,6 +5,7 @@ import type { PlanApplicationTransactionDraft } from './domain/planApplicationTr
 import {
   INVENTORY_RECIPE_SEARCH_RESULT_LIMIT,
   JuiceJarRecipeCombobox,
+  MachineBatchFlow,
   PlanApplicationPreview,
   PlanningErrorBlock,
   criterionLabel,
@@ -215,6 +216,37 @@ describe('juice jar recipe search UX', () => {
     expect(html).toContain('既有內容：legacy:unknown-recipe')
     expect(html).toContain('清空')
     expect(html).not.toContain('<option')
+  })
+})
+
+describe('production checklist UI', () => {
+  it('renders each machine batch as an independently checkable completed step', () => {
+    const html = renderToStaticMarkup(
+      <MachineBatchFlow
+        step={{
+          key: 'juice:lemon',
+          kind: 'juicing',
+          equipment: '柑橘榨汁機',
+          fromIngredientIds: [],
+          toIngredientIds: ['lemon'],
+          addedIngredientId: 'lemon',
+          quantity: 5,
+          operationCount: 1,
+          recipeIds: ['recipe-lemon'],
+        }}
+        quantity={5}
+        batchIndex={0}
+        completed={true}
+        onCompletedChange={() => {}}
+      />,
+    )
+
+    expect(html).toContain('type="checkbox"')
+    expect(html).toContain('checked=""')
+    expect(html).toContain('optimizer-operation-flow completed')
+    expect(html).toContain('第 1 批')
+    expect(html).toContain('檸檬 ×5')
+    expect(html).toContain('檸檬原汁 ×5')
   })
 })
 
