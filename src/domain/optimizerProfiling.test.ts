@@ -1466,15 +1466,6 @@ it(
               tightenOperationBoundsFromRecipeBounds: true,
               machineOperationsLowerBound:
                 decomposedMachineOperationLowerBound,
-      combinedMachineOperationLowerBound,
-      combinedMachineOperationLowerBounds: {
-        throughSeasoning:
-          throughSeasoningMachineFirstStage?.objectiveValue ?? null,
-        blending:
-          blendingOnlyMachineFirstStage?.objectiveValue ?? null,
-        finalizing:
-          finalizingOnlyMachineFirstStage?.objectiveValue ?? null,
-      },
               captureMps: true,
               maxStages: 1,
               initialCriterionFixes: [
@@ -2508,6 +2499,15 @@ it(
         },
       },
       decomposedMachineOperationLowerBound,
+      combinedMachineOperationLowerBound,
+      combinedMachineOperationLowerBounds: {
+        throughSeasoning:
+          throughSeasoningMachineFirstStage?.objectiveValue ?? null,
+        blending:
+          blendingOnlyMachineFirstStage?.objectiveValue ?? null,
+        finalizing:
+          finalizingOnlyMachineFirstStage?.objectiveValue ?? null,
+      },
       disjointMachineOperationLowerBounds: {
         juicing:
           juicingOnlyMachineFirstStage?.objectiveValue ?? null,
