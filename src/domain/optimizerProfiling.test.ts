@@ -165,17 +165,16 @@ it(
         recipeIds: recipes.map((recipe) => recipe.candidate.id),
       }),
     )
-    const strictlyCheaperSupersetDominatedRecipeIds =
+    const strictlyCheaperOtherSupersetDominatedRecipeIds =
       new Set<string>()
+    const strictCostSupersetDominatedRecipeIds = new Set<string>()
+    let nondominatedServiceSetCount = 0
+
     for (const dominatedGroup of serviceGroups) {
-      let cheaperSupersetCost = Infinity
+      let bestSupersetCost = Infinity
+      let bestOtherSupersetCost = Infinity
 
       for (const candidateGroup of serviceGroups) {
-        if (
-          candidateGroup.minimumCost >= dominatedGroup.minimumCost
-        ) {
-          continue
-        }
         if (
           (candidateGroup.mask & dominatedGroup.mask) !==
           dominatedGroup.mask
@@ -183,23 +182,35 @@ it(
           continue
         }
 
-        cheaperSupersetCost = Math.min(
-          cheaperSupersetCost,
+        bestSupersetCost = Math.min(
+          bestSupersetCost,
           candidateGroup.minimumCost,
         )
+        if (candidateGroup.mask !== dominatedGroup.mask) {
+          bestOtherSupersetCost = Math.min(
+            bestOtherSupersetCost,
+            candidateGroup.minimumCost,
+          )
+        }
       }
 
-      if (Number.isFinite(cheaperSupersetCost)) {
-        for (const recipeId of dominatedGroup.recipeIds) {
-          const recipe = model.recipes.find(
-            (entry) => entry.candidate.id === recipeId,
-          )
-          if (
-            recipe &&
-            recipe.juiceUnitIngredientCost > cheaperSupersetCost
-          ) {
-            strictlyCheaperSupersetDominatedRecipeIds.add(recipeId)
-          }
+      if (bestSupersetCost >= dominatedGroup.minimumCost) {
+        nondominatedServiceSetCount += 1
+      }
+
+      for (const recipeId of dominatedGroup.recipeIds) {
+        const recipe = model.recipes.find(
+          (entry) => entry.candidate.id === recipeId,
+        )
+        if (!recipe) continue
+
+        if (recipe.juiceUnitIngredientCost > bestSupersetCost) {
+          strictCostSupersetDominatedRecipeIds.add(recipeId)
+        }
+        if (
+          recipe.juiceUnitIngredientCost > bestOtherSupersetCost
+        ) {
+          strictlyCheaperOtherSupersetDominatedRecipeIds.add(recipeId)
         }
       }
     }
@@ -257,11 +268,14 @@ it(
       recipeServiceGroupSizes: recipeServiceGroupSizes.slice(0, 20),
       exactServiceSetCheaperDominatedRecipeCount:
         exactServiceSetCheaperDominatedRecipeIds.size,
-      strictlyCheaperSupersetDominatedRecipeCount:
-        strictlyCheaperSupersetDominatedRecipeIds.size,
+      strictlyCheaperOtherSupersetDominatedRecipeCount:
+        strictlyCheaperOtherSupersetDominatedRecipeIds.size,
+      strictCostSupersetDominatedRecipeCount:
+        strictCostSupersetDominatedRecipeIds.size,
+      nondominatedServiceSetCount,
       recipesRemainingAfterStrictCostSupersetDominance:
         model.recipes.length -
-        strictlyCheaperSupersetDominatedRecipeIds.size,
+        strictCostSupersetDominatedRecipeIds.size,
       finalHighsVariables: binaryHighs.finalVariableCount,
       finalHighsConstraints: binaryHighs.finalConstraintCount,
       candidateGenerationMs,
