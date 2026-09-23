@@ -1974,6 +1974,112 @@ it(
       }
     }
 
+    const enumerateServiceEquivalentTransferCandidates = (
+      rawSelections: Array<{
+        recipeId: string
+        units: number
+      }>,
+    ) => {
+      const baseSelections = rawSelections.map((selection) => ({
+        recipeId: selection.recipeId,
+        units: Math.round(selection.units),
+      }))
+      const unitsByRecipeId = new Map(
+        baseSelections.map((selection) => [
+          selection.recipeId,
+          selection.units,
+        ]),
+      )
+      const recipeById = new Map(
+        strictCostPrunedRecipes.map((recipe) => [
+          recipe.candidate.id,
+          recipe,
+        ]),
+      )
+      const candidates: Array<{
+        machineOperations: number
+        sourceRecipeId: string
+        targetRecipeId: string
+        transferredUnits: number
+        recipeUnits: Array<{
+          recipeId: string
+          units: number
+        }>
+      }> = []
+
+      for (const sourceSelection of baseSelections) {
+        const sourceRecipe = recipeById.get(
+          sourceSelection.recipeId,
+        )
+        if (!sourceRecipe) continue
+        const serviceGroup =
+          stage2RecipesByServiceMask.get(
+            recipeServiceMask(sourceRecipe),
+          ) ?? []
+
+        for (const targetRecipe of serviceGroup) {
+          if (
+            targetRecipe.candidate.id ===
+            sourceRecipe.candidate.id
+          ) {
+            continue
+          }
+          if (
+            targetRecipe.juiceUnitIngredientCost !==
+            sourceRecipe.juiceUnitIngredientCost
+          ) {
+            continue
+          }
+
+          const targetCurrentUnits =
+            unitsByRecipeId.get(targetRecipe.candidate.id) ?? 0
+          const targetUpperBound =
+            tightenedXUpperBoundByRecipeId.get(
+              targetRecipe.candidate.id,
+            ) ?? 0
+          const maxTransfer = Math.min(
+            sourceSelection.units,
+            Math.max(0, targetUpperBound - targetCurrentUnits),
+          )
+
+          for (
+            let transferredUnits = 1;
+            transferredUnits <= maxTransfer;
+            transferredUnits += 1
+          ) {
+            const candidateUnits = new Map(unitsByRecipeId)
+            candidateUnits.set(
+              sourceRecipe.candidate.id,
+              (candidateUnits.get(sourceRecipe.candidate.id) ?? 0) -
+                transferredUnits,
+            )
+            candidateUnits.set(
+              targetRecipe.candidate.id,
+              targetCurrentUnits + transferredUnits,
+            )
+            const recipeUnits = [...candidateUnits.entries()]
+              .filter(([, units]) => units > 0)
+              .map(([recipeId, units]) => ({
+                recipeId,
+                units,
+              }))
+            candidates.push({
+              machineOperations:
+                machineOperationBreakdownForSelection(
+                  recipeUnits,
+                ).total,
+              sourceRecipeId: sourceRecipe.candidate.id,
+              targetRecipeId: targetRecipe.candidate.id,
+              transferredUnits,
+              recipeUnits,
+            })
+          }
+        }
+      }
+
+      return candidates
+    }
+
     const stage1LocalDescentSteps: Array<{
       from: number
       to: number
@@ -2025,6 +2131,140 @@ it(
       stage1LocalDescentRecipeUnits.length > 0
         ? machineOperationBreakdownForSelection(
             stage1LocalDescentRecipeUnits,
+          )
+        : null
+
+    const stage1DepthTwoSearch = (() => {
+      if (
+        !stage1LocalDescentBreakdown ||
+        stage1LocalDescentRecipeUnits.length === 0 ||
+        combinedMachineOperationLowerBound === null ||
+        stage1LocalDescentBreakdown.total <=
+          combinedMachineOperationLowerBound
+      ) {
+        return null
+      }
+
+      let bestMachineOperations =
+        stage1LocalDescentBreakdown.total
+      let bestRecipeUnits: Array<{
+        recipeId: string
+        units: number
+      }> | null = null
+      let bestMoves:
+        | Array<{
+            sourceRecipeId: string
+            targetRecipeId: string
+            transferredUnits: number
+          }>
+        | null = null
+      let evaluatedFirstMoves = 0
+      let evaluatedSecondMoves = 0
+
+      const firstCandidates =
+        enumerateServiceEquivalentTransferCandidates(
+          stage1LocalDescentRecipeUnits,
+        )
+
+      for (const first of firstCandidates) {
+        evaluatedFirstMoves += 1
+        if (
+          first.machineOperations >
+          stage1LocalDescentBreakdown.total + 1
+        ) {
+          continue
+        }
+
+        const secondCandidates =
+          enumerateServiceEquivalentTransferCandidates(
+            first.recipeUnits,
+          )
+        for (const second of secondCandidates) {
+          evaluatedSecondMoves += 1
+          if (
+            second.machineOperations <
+            bestMachineOperations
+          ) {
+            bestMachineOperations =
+              second.machineOperations
+            bestRecipeUnits = second.recipeUnits
+            bestMoves = [
+              {
+                sourceRecipeId: first.sourceRecipeId,
+                targetRecipeId: first.targetRecipeId,
+                transferredUnits: first.transferredUnits,
+              },
+              {
+                sourceRecipeId: second.sourceRecipeId,
+                targetRecipeId: second.targetRecipeId,
+                transferredUnits: second.transferredUnits,
+              },
+            ]
+            if (
+              bestMachineOperations <=
+              combinedMachineOperationLowerBound
+            ) {
+              return {
+                baseMachineOperations:
+                  stage1LocalDescentBreakdown.total,
+                bestMachineOperations,
+                bestMoves,
+                bestRecipeUnits,
+                evaluatedFirstMoves,
+                evaluatedSecondMoves,
+                bestBreakdown:
+                  machineOperationBreakdownForSelection(
+                    bestRecipeUnits,
+                  ),
+              }
+            }
+          }
+        }
+      }
+
+      return {
+        baseMachineOperations:
+          stage1LocalDescentBreakdown.total,
+        bestMachineOperations,
+        bestMoves,
+        bestRecipeUnits,
+        evaluatedFirstMoves,
+        evaluatedSecondMoves,
+        bestBreakdown: bestRecipeUnits
+          ? machineOperationBreakdownForSelection(
+              bestRecipeUnits,
+            )
+          : null,
+      }
+    })()
+
+    const stage1DepthTwoFixedVerification =
+      stage1DepthTwoSearch?.bestMachineOperations ===
+        combinedMachineOperationLowerBound &&
+      stage1DepthTwoSearch.bestRecipeUnits &&
+      compressedCostStage?.objectiveValue !== null
+        ? await profileHighsOptimization(
+            strictCostPrunedModel,
+            ['minimum-machine-operations'],
+            {
+              stageTimeLimitSeconds: 2.5,
+              relaxAssignmentVariables: true,
+              aggregateLocalSingletonOperations: true,
+              aggregateEquivalentAssignments: true,
+              tightenRecipeBoundsFromMinimumCostFix: true,
+              tightenOperationBoundsFromRecipeBounds: true,
+              fixedRecipeUnits:
+                stage1DepthTwoSearch.bestRecipeUnits,
+              maxStages: 1,
+              initialCriterionFixes: [
+                {
+                  criterion: 'minimum-cost',
+                  value: Math.round(
+                    compressedCostStage.objectiveValue,
+                  ),
+                },
+              ],
+            },
           )
         : null
 
@@ -3139,6 +3379,22 @@ it(
       decomposedBoundWarmStartComparison,
       stage1LocalDescentSteps,
       stage1LocalDescentBreakdown,
+      stage1DepthTwoSearch,
+      stage1DepthTwoFixedVerification:
+        stage1DepthTwoFixedVerification?.stages[0]
+          ? {
+              status:
+                stage1DepthTwoFixedVerification.stages[0].status,
+              objectiveValue:
+                stage1DepthTwoFixedVerification.stages[0].objectiveValue,
+              integralAssignmentReconstructionFeasible:
+                stage1DepthTwoFixedVerification.stages[0].integralAssignmentReconstructionFeasible,
+              reconstructedAssignmentCount:
+                stage1DepthTwoFixedVerification.stages[0].reconstructedAssignmentCount,
+              totalMs:
+                stage1DepthTwoFixedVerification.totalMs,
+            }
+          : null,
       stage1LocalDescentFixedVerification:
         stage1LocalDescentFixedVerification?.stages[0]
           ? {
