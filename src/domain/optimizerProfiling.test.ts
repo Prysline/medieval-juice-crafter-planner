@@ -120,15 +120,26 @@ it(
     const solverModuleImportMs =
       performance.now() - solverImportStartedAt
 
-    const highs = await profileHighsOptimization(
+    const priorities = normalizedOptimizationPriorities(request)
+    const binaryHighs = await profileHighsOptimization(
       model,
-      normalizedOptimizationPriorities(request),
-      { stageTimeLimitSeconds: 2.5 },
+      priorities,
+      {
+        stageTimeLimitSeconds: 2.5,
+        maxStages: 1,
+      },
     )
-    const firstStageSolveMs = highs.stages[0]?.solveMs ?? 0
-    const repeatedStageSolveMs = highs.stages
-      .slice(1)
-      .reduce((total, stage) => total + stage.solveMs, 0)
+    const relaxedHighs = await profileHighsOptimization(
+      model,
+      priorities,
+      {
+        stageTimeLimitSeconds: 2.5,
+        relaxAssignmentVariables: true,
+        maxStages: 1,
+      },
+    )
+    const binaryFirstStage = binaryHighs.stages[0]
+    const relaxedFirstStage = relaxedHighs.stages[0]
 
     const report = {
       progress: request.currentProgress,
@@ -151,21 +162,38 @@ it(
       xVariables: model.recipes.length,
       zVariables: model.recipes.length,
       productionEdgeVariables: productionEdgeCount,
-      finalHighsVariables: highs.finalVariableCount,
-      finalHighsConstraints: highs.finalConstraintCount,
+      finalHighsVariables: binaryHighs.finalVariableCount,
+      finalHighsConstraints: binaryHighs.finalConstraintCount,
       candidateGenerationMs,
       optimizerModelBuildMs: modelBuildMs,
       solverModuleImportMs,
-      firstStageSolveMs,
-      repeatedStageSolveMs,
-      highsModelBuildMs: highs.totalBuildMs,
-      highsMpsSerializeMs: highs.totalSerializeMs,
-      highsWasmCreateMs: highs.totalWasmCreateMs,
-      highsMpsParseMs: highs.totalParseMs,
-      highsSolveMs: highs.totalSolveMs,
-      highsTotalMs: highs.totalMs,
-      highsTerminatedAtObjective: highs.terminatedAtObjective,
-      stages: highs.stages,
+      binaryAssignment: {
+        solveMs: binaryFirstStage?.solveMs ?? 0,
+        status: binaryFirstStage?.status ?? 'missing',
+        objectiveValue: binaryFirstStage?.objectiveValue ?? null,
+        variableCount: binaryFirstStage?.variableCount ?? 0,
+        constraintCount: binaryFirstStage?.constraintCount ?? 0,
+        totalMs: binaryHighs.totalMs,
+      },
+      relaxedAssignment: {
+        solveMs: relaxedFirstStage?.solveMs ?? 0,
+        status: relaxedFirstStage?.status ?? 'missing',
+        objectiveValue: relaxedFirstStage?.objectiveValue ?? null,
+        variableCount: relaxedFirstStage?.variableCount ?? 0,
+        constraintCount: relaxedFirstStage?.constraintCount ?? 0,
+        fractionalAssignmentVariableCount:
+          relaxedFirstStage?.fractionalAssignmentVariableCount ?? 0,
+        maxAssignmentIntegralityError:
+          relaxedFirstStage?.maxAssignmentIntegralityError ?? 0,
+        integralAssignmentReconstructionFeasible:
+          relaxedFirstStage?.integralAssignmentReconstructionFeasible ??
+          null,
+        reconstructedAssignmentCount:
+          relaxedFirstStage?.reconstructedAssignmentCount ?? 0,
+        totalMs: relaxedHighs.totalMs,
+      },
+      binaryStages: binaryHighs.stages,
+      relaxedStages: relaxedHighs.stages,
     }
 
     console.info(
@@ -179,9 +207,16 @@ it(
     expect(model.recipes.length).toBeGreaterThan(0)
     expect(assignmentEligibilityCount).toBeGreaterThan(0)
     expect(productionEdgeCount).toBeGreaterThan(0)
-    expect(highs.stages.length).toBeGreaterThanOrEqual(1)
-    expect(highs.finalVariableCount).toBeGreaterThan(0)
-    expect(highs.finalConstraintCount).toBeGreaterThan(0)
+    expect(binaryHighs.stages).toHaveLength(1)
+    expect(relaxedHighs.stages).toHaveLength(1)
+    expect(binaryHighs.finalVariableCount).toBeGreaterThan(0)
+    expect(binaryHighs.finalConstraintCount).toBeGreaterThan(0)
+    expect(relaxedHighs.finalVariableCount).toBe(
+      binaryHighs.finalVariableCount,
+    )
+    expect(relaxedHighs.finalConstraintCount).toBe(
+      binaryHighs.finalConstraintCount,
+    )
   },
   // The profiler gives each HiGHS stage its own short diagnostic solver
   // limit. This larger test-only timeout lets the stage-build diagnostics
