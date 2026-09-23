@@ -10,7 +10,7 @@
 - 顧客只把「全部喜好都滿足」視為完全匹配。
 - 顧客列表可依姓名、最佳完全匹配、最高售價排序。
 - 正式顧客狀態與「今日已供應」分開保存；東港村會顯示 14 / 17 名主線進度。
-- 顧客可查看最低原料成本 full-match 建議，並分開顯示已實測與允許無歧義預測的最低解。
+- 顧客頁的「最佳完全匹配」可切換**最低成本／最高成本**；完整匹配清單依所選原料成本方向排序，預設只顯示前 8 筆，其餘可展開，並分開顯示已實測與允許無歧義預測的最佳解。
 - 配方列表可反查目前已解鎖、且滿意度門檻已達的顧客。
 - 三原料配方保留調味順序；四原料以上的重複調味實測不進一般配方列表。
 - Candidate-2A / PR #62 已建立單一果汁段逐層搜尋；Candidate-2B / PR #68 再加入合法多果汁段搜尋：最多 3 個獨立果汁段、果汁調和深度 2，保留左右順序，並以固定左結合製作樹避免等價樹重複爆炸。Correctness-3 / PR #74 再把搜尋消費語意拆成「第一個可行解（first-feasible）」與「有界完整候選（bounded-exhaustive）」：存在性判定保留提前停止（early stop），顧客完整匹配／推薦與 optimizer 則在既有搜尋預算內比較更深層合法候選。未實測組合仍只推導特性、不推導售價；重複調味後備仍維持單一果汁段。Performance-1 / PR #70 後，配方頁改為每頁最多 50 筆並提供來源／售價篩選，避免 Candidate-2B 候選量造成大量 DOM 卡頓。UX-2A / PR #78 再把果汁罐內容改為可搜尋的 combobox：搜尋目前可用的實測、個人已保存與安全推導配方，每次最多 render 8 筆匹配結果；只存在歧義的推導候選不自動進搜尋，既有未知／舊 recipe ID 仍保留可讀與可清空。
@@ -57,7 +57,7 @@ src/
     availability.ts    # 集中式 progress / village / satisfaction availability
     customerList.ts    # 顧客排序與今日供應顯示純函式
     customerState.ts   # 正式顧客狀態與分村計數
-    customerRecommendation.ts # 單人最低成本 full-match recommendation
+    customerRecommendation.ts # 單人最佳 full-match recommendation：最低／最高原料成本模式、成本排序
     matching.ts        # 完全／部分匹配；ambiguous computed 不宣稱 full match
     recipeCost.ts      # 批次／單杯原料成本
     recipeEvaluator.ts # 單一有序序列 validation / observed overlay / computed evaluation
@@ -83,7 +83,7 @@ src/
     planApplicationValidation.ts # transaction basis 與目前 canonical 狀態的純 stale / mismatch 比對
     purchaseSources.ts # 已知購買來源、最低價／同價保留 decision
     singleTripPacking.ts # 販售趟 finished-drink jars + clean cups 最小必要 slot / overflow
-    multiTripReplenishment.ts # 持久果汁罐 ID、初始內容、多趟販售、實際裝罐時序、leftover / discard 與杯具 policy；Debug-B/C
+    multiTripReplenishment.ts # 持久果汁罐 ID、初始內容、多趟販售、實際裝罐時序、leftover / discard 與杯具 policy；Debug-B/C；PR #96 保留仍有需求的初始配方匹配與 terminal jar reservation
     scheduleRouteReadiness.ts # 作息觀察 normalization 與 route-data blockers
   storage/
     plannerState.ts    # localStorage 讀寫、正式顧客與 legacy migration
@@ -270,7 +270,9 @@ Phase 4 已完成：
 22. PR #68 完成 **Candidate-2B｜多層果汁調和搜尋**；PR #69 完成 **Correctness-2｜剩餘果汁終局罐需求診斷**；PR #70 完成 **Performance-1｜配方分頁／篩選與批次規劃 render 降載**；PR #72 完成 **Correctness-2B｜明確允許倒掉既有果汁**；PR #74 完成 **Correctness-3｜候選搜尋 consumer 語意拆分**；PR #76 完成 **Objective-1｜批次規劃「最高原料成本」**；PR #78 完成 **UX-2A｜果汁罐內容即時搜尋**；PR #80～#82 完成 **UX-2B｜配方研究與顧客比較介面**；PR #84～#86 完成 **Batch-Debug A～C**。Debug-A 修正原料庫存 availability；Debug-B 收斂 jar-switch lower bound / physical schedule authority 並補 internal error；Debug-C 讓明確 discard opt-in 也可處理無終局容器的新製作殘餘，且 transaction preview 區分來源。
 23. PR #89 完成 **Debug-D Production P1｜Stage 1 exact cost certificate**：optimizer eligibility 改為 recipe→customer reverse index；HiGHS stage 只建立 objective / fix 真正需要的結構；minimum-cost 為第一層且沒有 identity-sensitive jar hard feasibility 時，先做 strict-cost dominance，再以每個 service set 的最低成本代表解 Stage 1，固定成本後恢復 equal-cost 真實 recipe identities。production-scale regression 鎖定 9,253 matched recipes → 4,996 strict frontier → 539 representatives、minimum cost = 572、48 / 48 reconstruction；不符合 certificate gate 時保留 generic fallback。
 24. PR #91 完成 **Debug-D Production P2｜Stage 2 exact machine certificate**：只有 P1 exact cost certificate 已成功、目前 sole fix 為 cost、下一 objective 為 machine operations，且 continuation frontier 足夠大時才嘗試。三個互斥子問題提供 through-seasoning 20 + blending 9 + finalizing 21 = **50** 的 exact lower bound；same-service-set + same-cost recipe-unit transfer 只作 witness search，最後必須回完整 binary-assignment / all-edge / fixed-x model 驗證 objective = 50、48 / 48 reconstruction 才接受。certificate 未閉合或模型較小時維持 generic exact solver；grouped / relaxed assignment 不全域啟用。CI #482：40 test files / 306 tests passed、production build success。
-25. PR #93 完成 **Debug-D Production P3｜Stage 3 exact jar certificate**：只在 P1 / P2 certificate 都成功、active fixes 恰為 cost → machine、初始果汁罐全空且沒有 finite jar-switch hard limit時嘗試。production-unit lower-bound probe 證明 cost 572 下只能有 24 production units（要求至少 25 時 relaxed lower bound cost = 581）；P2 finalizing LB = 21，加上 continuation recipes 的 finalizing edge 與 final recipe identity 一對一，推出至少 21 種 final recipe kinds。jar LB 再交給既有 `jarSwitches.ts` authority；本 fixture 兩個空罐得到 **19**，而 P2 verified witness 的 jar UB 也是 **19**。最後完整 binary-assignment / all-edge / fixed-x Stage 3 驗證 optimal = 19、48 / 48 reconstruction。prefilled jar、proof 未閉合或其他 unsupported sequence 均 generic fallback；不把「兩個空罐」硬編成全域規則。PR CI #486：40 test files / 309 tests passed、production build success；main CI #487 同樣 40 / 309 與 build success。下一步是 **Debug-D Production P4｜ordering / fallback / benchmark / cleanup**，之後 Inventory-Intermediate → Candidate-3 → Candidate-4 → Phase 6 → Candidate-5。路線最佳化仍等待跨村移動時間、位置資訊、完整顧客服務時段與商店營業時間資料。
+25. PR #93 完成 **Debug-D Production P3｜Stage 3 exact jar certificate**：只在 P1 / P2 certificate 都成功、active fixes 恰為 cost → machine、初始果汁罐全空且沒有 finite jar-switch hard limit時嘗試。production-unit lower-bound probe 證明 cost 572 下只能有 24 production units（要求至少 25 時 relaxed lower bound cost = 581）；P2 finalizing LB = 21，加上 continuation recipes 的 finalizing edge 與 final recipe identity 一對一，推出至少 21 種 final recipe kinds。jar LB 再交給既有 `jarSwitches.ts` authority；本 fixture 兩個空罐得到 **19**，而 P2 verified witness 的 jar UB 也是 **19**。最後完整 binary-assignment / all-edge / fixed-x Stage 3 驗證 optimal = 19、48 / 48 reconstruction。prefilled jar、proof 未閉合或其他 unsupported sequence 均 generic fallback；不把「兩個空罐」硬編成全域規則。PR CI #486：40 test files / 309 tests passed、production build success；main CI #487 同樣 40 / 309 與 build success。
+26. PR #95 完成 **顧客最佳完全匹配 hotfix**：推薦從固定「最低成本完全匹配」改為「最佳完全匹配」，可切換最低／最高原料成本；完整匹配清單按同一成本方向排序，預設顯示前 8 筆並可展開其餘配方，清單同時顯示原料成本與已知售價。預設仍是最低成本；不改候選搜尋、matching、optimizer 或售價推導規則。CI #491：40 test files / 311 tests passed、production build success。
+27. PR #96 完成 **果汁罐 initial-match 排程 correctness hotfix**：physical jar allocator 會保留仍有需求的初始同配方匹配，並為 terminal leftover recipe 保留同配方實體罐，不再因 greedy recipe 順序先切走免費 initial match、之後又切回而多製造 jar switch。原本 `jar-schedule-inconsistency` 的硬檢查不放寬；新增兩個 regression 分別鎖「初始配方仍需補做」與「terminal recipe 有 matching initial jar」情境。CI #493：40 test files / 313 tests passed、production build success。下一步仍是 **Debug-D Production P4｜ordering / fallback / benchmark / cleanup**，之後 Inventory-Intermediate → Candidate-3 → Candidate-4 → Phase 6 → Candidate-5。路線最佳化仍等待跨村移動時間、位置資訊、完整顧客服務時段與商店營業時間資料。
 
 
 ## Schedule / route readiness boundary
