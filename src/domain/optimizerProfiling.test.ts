@@ -300,11 +300,35 @@ it(
         maxStages: 1,
       },
     )
+    const compressedCostStage = compressedRelaxedHighs.stages[0]
+    const expandedMachineHighs =
+      compressedCostStage?.status === 'optimal' &&
+      compressedCostStage.objectiveValue !== null
+        ? await profileHighsOptimization(
+            strictCostPrunedModel,
+            ['minimum-machine-operations'],
+            {
+              stageTimeLimitSeconds: 10.5,
+              relaxAssignmentVariables: true,
+              maxStages: 1,
+              initialCriterionFixes: [
+                {
+                  criterion: 'minimum-cost',
+                  value: Math.round(
+                    compressedCostStage.objectiveValue,
+                  ),
+                },
+              ],
+            },
+          )
+        : null
     const binaryFirstStage = binaryHighs.stages[0]
     const relaxedFirstStage = relaxedHighs.stages[0]
     const prunedRelaxedFirstStage = prunedRelaxedHighs.stages[0]
     const compressedRelaxedFirstStage =
       compressedRelaxedHighs.stages[0]
+    const expandedMachineFirstStage =
+      expandedMachineHighs?.stages[0]
 
     const report = {
       progress: request.currentProgress,
@@ -412,6 +436,27 @@ it(
           compressedRelaxedFirstStage?.reconstructedAssignmentCount ?? 0,
         totalMs: compressedRelaxedHighs.totalMs,
       },
+      expandedMachineStage: expandedMachineFirstStage
+        ? {
+            solveMs: expandedMachineFirstStage.solveMs,
+            status: expandedMachineFirstStage.status,
+            objectiveValue:
+              expandedMachineFirstStage.objectiveValue,
+            fixCount: expandedMachineFirstStage.fixCount,
+            variableCount: expandedMachineFirstStage.variableCount,
+            constraintCount:
+              expandedMachineFirstStage.constraintCount,
+            fractionalAssignmentVariableCount:
+              expandedMachineFirstStage.fractionalAssignmentVariableCount,
+            maxAssignmentIntegralityError:
+              expandedMachineFirstStage.maxAssignmentIntegralityError,
+            integralAssignmentReconstructionFeasible:
+              expandedMachineFirstStage.integralAssignmentReconstructionFeasible,
+            reconstructedAssignmentCount:
+              expandedMachineFirstStage.reconstructedAssignmentCount,
+            totalMs: expandedMachineHighs?.totalMs ?? 0,
+          }
+        : null,
       binaryStages: binaryHighs.stages,
       relaxedStages: relaxedHighs.stages,
     }
@@ -461,6 +506,18 @@ it(
       expect(compressedRelaxedFirstStage.objectiveValue).toBeCloseTo(
         prunedRelaxedFirstStage.objectiveValue ?? 0,
         9,
+      )
+    }
+    if (expandedMachineFirstStage) {
+      expect(expandedMachineFirstStage.objective).toBe(
+        'machineOperations',
+      )
+      expect(expandedMachineFirstStage.fixCount).toBe(1)
+      expect(
+        expandedMachineFirstStage.integralAssignmentReconstructionFeasible,
+      ).toBe(true)
+      expect(expandedMachineFirstStage.reconstructedAssignmentCount).toBe(
+        model.serviceableCustomerIds.length,
       )
     }
   },
