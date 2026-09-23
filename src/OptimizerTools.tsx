@@ -1493,7 +1493,7 @@ function MachineSlotPill({
   )
 }
 
-function MachineBatchFlow({
+export function MachineBatchFlow({
   step,
   quantity,
   batchIndex,
