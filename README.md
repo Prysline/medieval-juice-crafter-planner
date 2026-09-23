@@ -12,12 +12,12 @@
 - 正式顧客狀態與「今日已供應」分開保存；東港村會顯示 14 / 17 名主線進度。
 - 顧客頁的「最佳完全匹配」可切換**最低成本／最高成本**；完整匹配清單依所選原料成本方向排序，預設只顯示前 8 筆，其餘可展開，並分開顯示已實測與允許無歧義預測的最佳解。
 - 配方列表可反查目前已解鎖、且滿意度門檻已達的顧客。
-- 三原料配方保留調味順序；四原料以上的重複調味實測不進一般配方列表。
+- 正式 observed 配方不以原料數量限制；重複調味／長序列若主要用途是機制研究，仍可留在 research，不因「四原料以上」自動排除正式配方。
 - Candidate-2A / PR #62 已建立單一果汁段逐層搜尋；Candidate-2B / PR #68 再加入合法多果汁段搜尋：最多 3 個獨立果汁段、果汁調和深度 2，保留左右順序，並以固定左結合製作樹避免等價樹重複爆炸。Correctness-3 / PR #74 再把搜尋消費語意拆成「第一個可行解（first-feasible）」與「有界完整候選（bounded-exhaustive）」：存在性判定保留提前停止（early stop），顧客完整匹配／推薦與 optimizer 則在既有搜尋預算內比較更深層合法候選。未實測組合仍只推導特性、不推導售價；重複調味後備仍維持單一果汁段。Performance-1 / PR #70 後，配方頁改為每頁最多 50 筆並提供來源／售價篩選，避免 Candidate-2B 候選量造成大量 DOM 卡頓。UX-2A / PR #78 再把果汁罐內容改為可搜尋的 combobox：搜尋目前可用的實測、個人已保存與安全推導配方，每次最多 render 8 筆匹配結果；只存在歧義的推導候選不自動進搜尋，既有未知／舊 recipe ID 仍保留可讀與可清空。
 - 配方仍顯示「1 份果汁基準單位」的原料成本與單杯原料成本；果汁成品台 1 份果汁可產出 2 杯，但實際一次機器操作可處理 1～5 份，不再把「2 杯」視為一次固定製作批次。
 - 「配方工具」已改為有序原料編排：點原料直接加入，可重複調味、四原料以上、逐項刪除／清空；精確原料順序已有實測資料時以實測結果優先，否則顯示推導結果或歧義。UX-2B / PR #80 後，模擬器另外保留並顯示**完整特性累計（截斷前）**，但 matching 仍只使用實際／可確定成品特性；PR #81 再把單一暫選顧客改成 App session 內的多顧客比較，可從顧客列按「＋ 比較」、跨頁保留、逐筆移除或全部清除。
 - 個人配方只保存自訂名稱、有序 ingredient IDs、備註與建立時間；effects、cost、equipment、matching 每次由目前 domain 重新計算。UX-2B / PR #80 後，個人配方卡會直接顯示具體成品特性；有 effect ambiguity 時把「確定成品特性」與「可能特性」分開，不把可能值當成已確定結果。
-- 「批次規劃」已重構為 production optimizer：可依序指定主要／次要 lexicographic 目標，包含最低成本、最少浪費、**最高原料成本**、最高已知銷售總額、最高已知毛利、最少機器操作與最少果汁罐換裝。Objective-1 / PR #76 後，「最高原料成本」以實際 customer → recipe assignment 所選配方的原料成本計分，不以 production units 灌高成本；它是配方研究目標，不代表最高售價或最高毛利。Phase 1 結果資訊架構已完成：閱讀順序為 **規劃摘要 → 所需物資 → 製作步驟 → 果汁分配 → 販售排程**；水會以免費取得需求顯示。PR #33 後製作步驟以機器為獨立區塊，每次 1～5 份製作拆成各批 slot flow；原料／果汁／水／output 各自用膠囊顯示，`▸` 只代表配方內部順序，`→` 只代表加工／狀態轉換。Workflow-2 / PR #104 後，每個實際 batch 都可獨立勾選完成，支援任意順序、取消、完成數與「全部取消／重新開始」；進度綁定 exact net production plan fingerprint，重新產生相同 plan 可恢復，不同 plan 不會誤套，且 checklist 只寫 `mjc-production-checklist`，不修改 inventory／optimizer／transaction。
+- 「批次規劃」已重構為 production optimizer：可依序指定主要／次要 lexicographic 目標，包含最低成本、最少浪費、**最高原料成本**、最高已知銷售總額、最高已知毛利、最少機器操作與最少果汁罐換裝。Objective-1 / PR #76 後，「最高原料成本」以實際 customer → recipe assignment 所選配方的原料成本計分，不以 production units 灌高成本；它是配方研究目標，不代表最高售價或最高毛利。Phase 1 結果資訊架構已完成：閱讀順序為 **規劃摘要 → 所需物資 → 製作步驟 → 果汁分配 → 販售排程**；水會以免費取得需求顯示。PR #33 後製作步驟以機器為獨立區塊，每次 1～5 份製作拆成各批 slot flow；原料／果汁／水／output 各自用膠囊顯示，`▸` 只代表配方內部順序，`→` 只代表加工／狀態轉換。Workflow-2 / PR #104 後，每個實際 batch 都可獨立勾選完成，支援任意順序、取消、完成數與「全部取消／重新開始」；進度綁定 exact net production plan fingerprint，重新產生相同 plan 可恢復，不同 plan 不會誤套，且 checklist 只寫 `mjc-production-checklist`，不修改 inventory／optimizer／transaction。 Workflow-3 / PR #106、#108、#110 後，「果汁分配」也提供逐顧客正式交付 checkbox：只有目前 active trip 可提交、同趟可任意順序，已提交顧客 checked + disabled 且不能靠取消逆轉；每次提交會原子同步 inventory、physical jar、cup lifecycle、`suppliedCustomerIds` 與 execution cursor，送到一半可直接依目前 canonical 狀態重新規劃剩餘顧客。
 - Core model correction 2B 已把 physical jar identity 接進多趟販售 schedule。Phase 2 capacity contract 也已完成：`mjc-inventory` 保存原料、水、clean / used cups、一般架子數、果汁罐架數與每個 physical jar；PR #39 / Phase 5B1 後批次規劃已有實際 Inventory editor，可逐罐設定 recipe identity / servings。`mjc-planner-settings` 現在保存果汁罐攜帶策略 `juiceJarCarryMode`、固定格數 `reservedJuiceJarSlots` 與 used-cup drop opt-in；舊的 `carriedJuiceJarIds`／count 只會遷移成固定格數，不再保留特定實體罐綁定。沒有果汁罐架時，所有持有的實體果汁罐都必須隨身；有果汁罐架後，規劃器可在各趟之間整罐上架／取出，固定模式只固定果汁罐占用格數，自動模式則依每趟需求計算攜帶數。
 - Inventory / packing D1～D4 與 Phase 4 cup lifecycle 已建立：`PreparationDemand` 消費 production-unit optimizer 結果，已有 stock offset、single-trip packing 與 physical-jar-aware multi-trip replenishment；販售排程現在會用玩家實際持有的 clean / used cups，逐杯追蹤 clean → used stack transition，不再固定預留 1 slot。PR #32 先把 optimizer `leftoverServings` 保留在同一實體罐；PR #37 再把 sales schedule 的 plan-local 罐號改成 persistent `mjc-inventory` jar ID，並攜帶該罐規劃前的 `recipeId / servings` metadata。剩餘成品仍不能跨罐倒果汁；果汁罐只能整罐移動，居家放置只使用果汁罐架。Correctness-2B / PR #72 允許玩家明確 opt-in 時倒掉達成可行性所需的既有內容；Debug-C / PR #86 再把同一 opt-in 擴充到**本次新製作後無法保留的最少殘餘量**。顧客已分配杯數永遠不丟；成品台仍先依合法偶數產量完整裝入實體罐，販售後才在記錄的趟次結束時倒掉殘餘。transaction preview 會分開標示「既有內容」與「本次新製作殘餘」。
 - 特性同分時會先套用已確認的順序規則：**較晚加入原料所提供／最後貢獻的特性排序較高**；只有套用此規則後，cutoff 候選仍同分且最後貢獻位置相同時才保留 ambiguous，且 ambiguous computed candidate 不參與完全匹配推薦。
@@ -49,8 +49,8 @@ src/
     progress.ts        # canonical 主線進度節點與順序
     villages.ts        # 地區與 unlockedAt
     shops.ts           # 已確認的地區商店商品
-    recipes.ts         # 已確認配方；generator 會用相同有序原料序列作 observed overlay
-    recipeResearch.ts  # 四原料以上的機制研究實測，不進一般列表
+    recipes.ts         # 正式已確認配方；直接實測且需依完整有序原料序列覆蓋推導結果即可收錄，不以原料數量限制
+    recipeResearch.ts  # 重複調味、長序列與售價／特性規則等機制研究；不以原料數量作分界
     recipeIngredientCapabilities.ts # v1 果汁基底／調味材料能力邊界
     stages.ts          # 攻略閱讀章節，不作 runtime availability
   domain/
@@ -99,7 +99,7 @@ src/
   types.ts             # 共用 domain / data 型別
   App.tsx              # 顧客／配方／配方工具／批次規劃頁籤；UX-2B shared customer comparison + research filters
   RecipeTools.tsx      # Recipe Simulator + Personal Recipes UI；UX-2B 完整特性累計與多顧客比較
-  OptimizerTools.tsx   # lazy-load optimizer、控制項／結果 UI；UX-2A searchable jar content；Workflow-2 production batch checklist；Debug-C discard source preview
+  OptimizerTools.tsx   # lazy-load optimizer、控制項／結果 UI；UX-2A searchable jar content；Workflow-2 production checklist；Workflow-3C delivery checklist / partial replan；Debug-C discard source preview
   styles.css
   main.tsx             # React 入口
   **/*.test.ts         # domain / storage regression tests
@@ -282,7 +282,8 @@ Phase 4 已完成：
 31. PR #104 完成 **Workflow-2｜製作步驟 checkbox**：新增 `mjc-production-checklist` 純進度 storage；exact net production plan canonical payload 直接作 stable fingerprint，不使用可能 collision 的短 hash；每個 machine batch 以 `step.key#batchIndex` 作 operation identity，可任意順序勾選／取消、顯示完成進度並全部重置。相同 plan 重新產生後可恢復；不同 plan 不套用舊完成狀態。checkbox persistence 與 `mjc-inventory`、`mjc-plan-application-state`、optimizer result / transaction 完全分離。CI #513：42 test files / 329 tests passed；`productionChecklist.test.ts` 6 tests、`OptimizerTools.test.tsx` 8 tests、production build success（1.78 s）。
 32. PR #106 完成 **Workflow-3A｜partial delivery execution trace**：把既有 physical sales plan 轉成可逐步執行的純 domain trace。每趟第一次正式交付前才套用該趟需要的 initial-juice discard、production fills、對應原料／production water 與洗杯；每位顧客各自消耗指定 physical jar 1 杯與 1 個 clean cup，並依同一 backpack capacity 規則逐杯決定 clean → used 或 drop；本趟最後一位完成後才執行 trip-end new-production discard。**趟次必須依序；同一 active trip 內未交付顧客可任意順序。**完整執行後的 inventory 已用 regression 證明與現行 whole-plan transaction 終態一致；另鎖定「上一趟賣空後、下一趟同配方仍是 refill-same-type」的歷史 recipe edge。CI #519：43 test files / 334 tests passed；`deliveryExecution.test.ts` 5 tests、production build success（1.24 s）。
 33. PR #108 完成 **Workflow-3B｜atomic partial commit**：`mjc-plan-application-state` 升級為 v2 canonical envelope，單一 key 同時保存 inventory、`suppliedCustomerIds` 與 plan-bound delivery execution cursor；仍可讀既有 v1。每次 partial delivery 只做一次 canonical `setItem`，cursor 同時保存當下 inventory + supplied customers 的 basis fingerprint；下一次提交若 canonical state 已漂移即拒絕。從其他 UI 手動改 inventory／今日已供應會清除 in-flight cursor；部分送貨後若重新求解，新 plan 只有在 basis 精確等於目前 canonical state 且使用 initial cursor 時才能接管舊 session，不重播已提交事件。CI #524：44 test files / 343 tests passed；`deliveryExecutionCommit.test.ts` 9 tests、production build success（1.83 s）。
-目前下一步是 **Workflow-3C｜delivery checkbox UI / partial replan**：把 3A / 3B authority 接進果汁分配 UI，逐顧客正式提交、已提交不可用取消 checkbox 逆轉，部分送貨後可立即重新求解並以當前 canonical inventory / supplied state 建立新 execution session。Workflow-3 完成後再回 Debug-D Production P4。其後依序 Inventory-Intermediate → Candidate-3 → Candidate-4 → Phase 6 → Candidate-5。路線最佳化仍等待跨村移動時間、位置資訊、完整顧客服務時段與商店營業時間資料。
+34. PR #110 完成 **Workflow-3C｜delivery checklist UI / partial replan**：`果汁分配` 改為逐顧客正式交付 checkbox。只有目前 active trip 的未交付顧客可提交，同趟可任意順序；後續趟維持可見但 disabled。已正式提交顧客顯示 checked + disabled，不能用取消 checkbox 逆轉 physical transaction；顧客頁「今日已供應」與此處共用同一 canonical supplied-customer authority。每次勾選直接走 Workflow-3B atomic commit，同步 inventory、physical jar、cup lifecycle、`suppliedCustomerIds` 與 execution cursor；partial commit 自己造成的 parent/local canonical 同步由 bounded guard 接受，其他手動／外部 canonical 變更仍使舊 plan 失效。第一筆 partial delivery 後舊 whole-plan apply draft 立即失效，避免重複扣物資；可按「依目前狀態重新規劃剩餘顧客」，由新 plan 從目前 canonical state 建立 initial cursor 並接管 execution session。CI #530：44 test files / 348 tests passed；`OptimizerTools.test.tsx` 13 tests、production build success（1.50 s）；冗餘 delivery dynamic-import 警告已清除。
+**Production-Workflow 已完成。**下一步回到 **Debug-D Production P4｜ordering / fallback / benchmark / cleanup**，完成後做 Inventory-Intermediate → Candidate-3 → Candidate-4 → Phase 6 → Candidate-5。路線最佳化仍等待跨村移動時間、位置資訊、完整顧客服務時段與商店營業時間資料。
 
 
 ## Schedule / route readiness boundary
