@@ -48,6 +48,12 @@ import {
   readPlannerSettings,
   writePlannerSettings,
 } from './storage/plannerSettings'
+import {
+  productionOperationId,
+  productionPlanFingerprint,
+  readProductionChecklist,
+  writeProductionChecklist,
+} from './storage/productionChecklist'
 import { commitPlanApplicationTransaction } from './storage/planApplicationCommit'
 import {
   PlanningUserError,
@@ -1491,10 +1497,14 @@ function MachineBatchFlow({
   step,
   quantity,
   batchIndex,
+  completed,
+  onCompletedChange,
 }: {
   step: ProductionStep
   quantity: number
   batchIndex: number
+  completed: boolean
+  onCompletedChange: (completed: boolean) => void
 }) {
   const outputQuantity =
     step.kind === 'finalizing' ? quantity * 2 : quantity
@@ -1506,7 +1516,24 @@ function MachineBatchFlow({
         : sequenceLabel(step.toIngredientIds)
 
   return (
-    <div className="optimizer-operation-flow">
+    <label
+      className={
+        completed
+          ? 'optimizer-operation-flow completed'
+          : 'optimizer-operation-flow'
+      }
+    >
+      <input
+        className="optimizer-operation-checkbox"
+        type="checkbox"
+        checked={completed}
+        onChange={(event) =>
+          onCompletedChange(event.target.checked)
+        }
+        aria-label={
+          `第 ${batchIndex + 1} 批完成：${productionStepLabel(step)}`
+        }
+      />
       <span className="optimizer-batch-index">
         第 {batchIndex + 1} 批
       </span>
@@ -1575,7 +1602,7 @@ function MachineBatchFlow({
           }
         />
       </div>
-    </div>
+    </label>
   )
 }
 
@@ -1913,6 +1940,63 @@ function OptimizerResultPanel({
 }) {
   const selectedSalesTripPlan = salesTripPlans.selected
   const alternateSalesTripPlan = salesTripPlans.alternate
+  const productionPlan = productionLogistics.productionPlan
+  const productionChecklistFingerprint = useMemo(
+    () => productionPlanFingerprint(productionPlan),
+    [productionPlan],
+  )
+  const [
+    completedProductionOperationIds,
+    setCompletedProductionOperationIds,
+  ] = useState<Set<string>>(
+    () =>
+      new Set(
+        readProductionChecklist(
+          window.localStorage,
+          productionPlan,
+        ).completedOperationIds,
+      ),
+  )
+
+  useEffect(() => {
+    const stored = readProductionChecklist(
+      window.localStorage,
+      productionPlan,
+    )
+    setCompletedProductionOperationIds(
+      new Set(stored.completedOperationIds),
+    )
+  }, [productionChecklistFingerprint, productionPlan])
+
+  function setProductionOperationCompleted(
+    operationId: string,
+    completed: boolean,
+  ) {
+    setCompletedProductionOperationIds((current) => {
+      const next = new Set(current)
+      if (completed) {
+        next.add(operationId)
+      } else {
+        next.delete(operationId)
+      }
+      writeProductionChecklist(
+        window.localStorage,
+        productionPlan,
+        next,
+      )
+      return next
+    })
+  }
+
+  function resetProductionChecklist() {
+    writeProductionChecklist(
+      window.localStorage,
+      productionPlan,
+      [],
+    )
+    setCompletedProductionOperationIds(new Set())
+  }
+
   const purchaseItemByIngredientId = new Map(
     result.shoppingList.map((item) => [item.ingredientId, item]),
   )
@@ -2135,6 +2219,23 @@ function OptimizerResultPanel({
           </span>
         </div>
 
+        {productionLogistics.productionPlan.machineOperations.total > 0 && (
+          <div className="optimizer-production-checklist-toolbar">
+            <span>
+              已完成 {completedProductionOperationIds.size} /{' '}
+              {productionLogistics.productionPlan.machineOperations.total} 批
+              · 只記錄玩家進度，不會修改庫存或規劃結果。
+            </span>
+            <button
+              type="button"
+              disabled={completedProductionOperationIds.size === 0}
+              onClick={resetProductionChecklist}
+            >
+              全部取消／重新開始
+            </button>
+          </div>
+        )}
+
         {Object.keys(productionStepsByEquipment).length === 0 ? (
           <p className="empty-tool-state">目前沒有需要新增製作的步驟。</p>
         ) : (
@@ -2173,14 +2274,29 @@ function OptimizerResultPanel({
                       </div>
                       <div className="optimizer-operation-batches">
                         {optimizerOperationQuantities(step.quantity).map(
-                          (quantity, index) => (
-                            <MachineBatchFlow
-                              key={index}
-                              step={step}
-                              quantity={quantity}
-                              batchIndex={index}
-                            />
-                          ),
+                          (quantity, index) => {
+                            const operationId = productionOperationId(
+                              step.key,
+                              index,
+                            )
+                            return (
+                              <MachineBatchFlow
+                                key={operationId}
+                                step={step}
+                                quantity={quantity}
+                                batchIndex={index}
+                                completed={completedProductionOperationIds.has(
+                                  operationId,
+                                )}
+                                onCompletedChange={(completed) =>
+                                  setProductionOperationCompleted(
+                                    operationId,
+                                    completed,
+                                  )
+                                }
+                              />
+                            )
+                          },
                         )}
                       </div>
                     </article>
@@ -2192,7 +2308,7 @@ function OptimizerResultPanel({
         )}
 
         <small className="optimizer-boundary-note">
-          ▸ 表示配方內部原料順序；→ 只表示實際加工或狀態轉換。此區顯示庫存抵扣後真正需要執行的製作量；每個膠囊代表一個機器 slot 內的原料、果汁、水或輸出。
+          ▸ 表示配方內部原料順序；→ 只表示實際加工或狀態轉換。此區顯示庫存抵扣後真正需要執行的製作量；每個膠囊代表一個機器 slot 內的原料、果汁、水或輸出。勾選狀態綁定目前 net production plan；重新產生相同規劃可恢復，規劃內容不同時不會套用舊進度。
         </small>
 
         <div className="optimizer-logistics-summary">
