@@ -55,7 +55,7 @@ describe('recipe simulator UX', () => {
       />,
     )
 
-    expect(html).toContain('成品特性（正式實測）')
+    expect(html).toContain('成品特性（實測）')
     expect(html).toContain('完整特性累計（截斷前）')
     expect(html).toContain('保護心臟（1）')
     expect(html).toContain('輔助瘦身（1）')
@@ -90,7 +90,7 @@ describe('recipe simulator UX', () => {
     )
 
     expect(html).toContain('我的檸檬汁')
-    expect(html).toContain('成品特性（實測）')
+    expect(html).toContain('成品特性（正式實測）')
     expect(html).toContain('酸味（4）')
     expect(html).toContain('增強免疫（3）')
     expect(html).toContain('待研究配方')
