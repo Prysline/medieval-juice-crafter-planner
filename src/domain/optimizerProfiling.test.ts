@@ -930,6 +930,154 @@ it(
         0,
       ) / Math.max(1, tightenedXUpperBounds.length)
 
+    const tightenedXUpperBoundByRecipeId = new Map(
+      strictCostPrunedRecipes.map((recipe, index) => [
+        recipe.candidate.id,
+        tightenedXUpperBounds[index],
+      ]),
+    )
+    const machineSignatureByRecipeId = new Map<
+      string,
+      {
+        sharedMultiplicity: Map<string, number>
+        localMultiplicities: number[]
+      }
+    >()
+
+    for (const recipe of strictCostPrunedRecipes) {
+      const edgeMultiplicityByKey = new Map<string, number>()
+      for (const edge of recipe.productionPath.edges) {
+        edgeMultiplicityByKey.set(
+          edge.key,
+          (edgeMultiplicityByKey.get(edge.key) ?? 0) + 1,
+        )
+      }
+
+      const sharedMultiplicity = new Map<string, number>()
+      const localMultiplicities: number[] = []
+      for (const [edgeKey, multiplicity] of edgeMultiplicityByKey) {
+        const usage = stage2EdgeUsage.get(edgeKey)
+        if ((usage?.recipeIds.size ?? 0) > 1) {
+          sharedMultiplicity.set(edgeKey, multiplicity)
+        } else {
+          localMultiplicities.push(multiplicity)
+        }
+      }
+      localMultiplicities.sort((a, b) => a - b)
+      machineSignatureByRecipeId.set(recipe.candidate.id, {
+        sharedMultiplicity,
+        localMultiplicities,
+      })
+    }
+
+    const machineDominatedRecipeIds = new Set<string>()
+    for (const group of stage2RecipesByServiceMask.values()) {
+      for (const dominated of group) {
+        const dominatedSignature = machineSignatureByRecipeId.get(
+          dominated.candidate.id,
+        )
+        if (!dominatedSignature) continue
+        const dominatedUpperBound =
+          tightenedXUpperBoundByRecipeId.get(
+            dominated.candidate.id,
+          ) ?? maxJuiceUnitsPerRecipe
+
+        for (const candidate of group) {
+          if (candidate.candidate.id === dominated.candidate.id) {
+            continue
+          }
+          const candidateSignature = machineSignatureByRecipeId.get(
+            candidate.candidate.id,
+          )
+          if (!candidateSignature) continue
+          const candidateUpperBound =
+            tightenedXUpperBoundByRecipeId.get(
+              candidate.candidate.id,
+            ) ?? maxJuiceUnitsPerRecipe
+          if (candidateUpperBound < dominatedUpperBound) continue
+
+          let dominates = true
+          let strict = false
+          const sharedKeys = new Set([
+            ...candidateSignature.sharedMultiplicity.keys(),
+            ...dominatedSignature.sharedMultiplicity.keys(),
+          ])
+          for (const edgeKey of sharedKeys) {
+            const candidateMultiplicity =
+              candidateSignature.sharedMultiplicity.get(edgeKey) ?? 0
+            const dominatedMultiplicity =
+              dominatedSignature.sharedMultiplicity.get(edgeKey) ?? 0
+            if (candidateMultiplicity > dominatedMultiplicity) {
+              dominates = false
+              break
+            }
+            if (candidateMultiplicity < dominatedMultiplicity) {
+              strict = true
+            }
+          }
+          if (!dominates) continue
+
+          for (let units = 1; units <= dominatedUpperBound; units += 1) {
+            const candidateLocalOperations =
+              candidateSignature.localMultiplicities.reduce(
+                (total, multiplicity) =>
+                  total +
+                  Math.ceil(
+                    (multiplicity * units) /
+                      PROCESSING_STACK_CAPACITY,
+                  ),
+                0,
+              )
+            const dominatedLocalOperations =
+              dominatedSignature.localMultiplicities.reduce(
+                (total, multiplicity) =>
+                  total +
+                  Math.ceil(
+                    (multiplicity * units) /
+                      PROCESSING_STACK_CAPACITY,
+                  ),
+                0,
+              )
+            if (candidateLocalOperations > dominatedLocalOperations) {
+              dominates = false
+              break
+            }
+            if (candidateLocalOperations < dominatedLocalOperations) {
+              strict = true
+            }
+          }
+          if (!dominates) continue
+
+          if (
+            strict ||
+            candidate.candidate.id < dominated.candidate.id
+          ) {
+            machineDominatedRecipeIds.add(
+              dominated.candidate.id,
+            )
+            break
+          }
+        }
+      }
+    }
+
+    const stage2MachineFrontierRecipes =
+      strictCostPrunedRecipes.filter(
+        (recipe) =>
+          !machineDominatedRecipeIds.has(recipe.candidate.id),
+      )
+    const stage2MachineFrontierGroupSizes = [
+      ...stage2RecipesByServiceMask.values(),
+    ]
+      .map(
+        (group) =>
+          group.filter(
+            (recipe) =>
+              !machineDominatedRecipeIds.has(recipe.candidate.id),
+          ).length,
+      )
+      .sort((a, b) => b - a)
+
     const expandedMachineHighs =
       compressedCostStage?.status === 'optimal' &&
       compressedCostStage.objectiveValue !== null
@@ -1195,6 +1343,12 @@ it(
         stage2AverageTightenedXUpperBound,
       stage2XUpperBoundHistogram:
         stage2XUpperBoundHistogram,
+      stage2MachineDominatedRecipeCount:
+        machineDominatedRecipeIds.size,
+      stage2MachineFrontierRecipeCount:
+        stage2MachineFrontierRecipes.length,
+      stage2MachineFrontierGroupSizes:
+        stage2MachineFrontierGroupSizes.slice(0, 20),
       finalHighsVariables: binaryHighs.finalVariableCount,
       finalHighsConstraints: binaryHighs.finalConstraintCount,
       candidateGenerationMs,
