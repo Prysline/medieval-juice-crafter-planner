@@ -520,9 +520,17 @@ function prepareTrip(
         )
       }
     } else if (fill.fillAction === 'refill-same-type') {
-      if (jar.recipeId !== fill.recipeId || jar.servings <= 0) {
+      if (
+        jar.servings > 0 &&
+        jar.recipeId !== fill.recipeId
+      ) {
         throw new Error(
           `Same-type refill no longer matches physical jar ${fill.physicalJarId}`,
+        )
+      }
+      if (jar.servings === 0 && jar.recipeId !== null) {
+        throw new Error(
+          `Empty physical jar ${fill.physicalJarId} has inconsistent current contents`,
         )
       }
     } else if (fill.fillAction === 'type-switch') {
