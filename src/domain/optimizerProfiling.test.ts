@@ -1575,14 +1575,7 @@ it(
               tightenRecipeBoundsFromMinimumCostFix: true,
               tightenOperationBoundsFromRecipeBounds: true,
               machineOperationsLowerBound:
-                twoWayMachineOperationLowerBound,
-      twoWayMachineOperationLowerBounds: {
-        sharedPrefix:
-          sharedPrefixMachineHighs?.stages[0]?.objectiveValue ?? null,
-        localTail:
-          localTailMachineHighs?.stages[0]?.objectiveValue ?? null,
-      },
-      decomposedMachineOperationLowerBound,
+                decomposedMachineOperationLowerBound,
               captureMps: true,
               maxStages: 1,
               initialCriterionFixes: [
@@ -2574,6 +2567,27 @@ it(
               totalMs: incumbentBoundMachineHighs?.totalMs ?? 0,
             }
           : null,
+      twoWayMachineOperationLowerBound,
+      twoWayMachineOperationLowerBounds: {
+        sharedPrefix: {
+          status:
+            sharedPrefixMachineHighs?.stages[0]?.status ?? null,
+          objectiveValue:
+            sharedPrefixMachineHighs?.stages[0]?.objectiveValue ??
+            null,
+          solveMs:
+            sharedPrefixMachineHighs?.stages[0]?.solveMs ?? null,
+        },
+        localTail: {
+          status:
+            localTailMachineHighs?.stages[0]?.status ?? null,
+          objectiveValue:
+            localTailMachineHighs?.stages[0]?.objectiveValue ??
+            null,
+          solveMs:
+            localTailMachineHighs?.stages[0]?.solveMs ?? null,
+        },
+      },
       decomposedMachineOperationLowerBound,
       disjointMachineOperationLowerBounds: {
         juicing:
