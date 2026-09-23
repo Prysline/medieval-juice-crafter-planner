@@ -219,6 +219,7 @@ function buildHighsStage(
   fixes: ObjectiveFix[],
   options: {
     relaxAssignmentVariables?: boolean
+    aggregateLocalSingletonOperations?: boolean
   } = {},
 ) {
   const model = new Model()
@@ -346,55 +347,127 @@ function buildHighsStage(
     string,
     ReturnType<IntVariable['times']>[]
   >()
+  const machineOperationTerms: ReturnType<IntVariable['times']>[] = []
+  const operationByEdgeKey = new Map<string, IntVariable>()
+
   if (needsProductionOperations) {
-  for (const recipe of domain.recipes) {
-    const x = xByRecipeId.get(recipe.candidate.id)
-    if (!x) continue
+    const edgeMultiplicityByRecipe = new Map<
+      string,
+      Map<string, number>
+    >()
+    const recipeCountByEdgeKey = new Map<string, number>()
 
-    const edgeMultiplicityByKey = new Map<string, number>()
-    for (const edge of recipe.productionPath.edges) {
-      edgeMultiplicityByKey.set(
-        edge.key,
-        (edgeMultiplicityByKey.get(edge.key) ?? 0) + 1,
+    for (const recipe of domain.recipes) {
+      const edgeMultiplicityByKey = new Map<string, number>()
+      for (const edge of recipe.productionPath.edges) {
+        edgeMultiplicityByKey.set(
+          edge.key,
+          (edgeMultiplicityByKey.get(edge.key) ?? 0) + 1,
+        )
+      }
+      edgeMultiplicityByRecipe.set(
+        recipe.candidate.id,
+        edgeMultiplicityByKey,
       )
-    }
 
-    for (const [edgeKey, multiplicity] of edgeMultiplicityByKey) {
-      const term = x.times(multiplicity)
-      const terms = quantityTermsByEdgeKey.get(edgeKey)
-      if (terms) {
-        terms.push(term)
-      } else {
-        quantityTermsByEdgeKey.set(edgeKey, [term])
+      for (const edgeKey of edgeMultiplicityByKey.keys()) {
+        recipeCountByEdgeKey.set(
+          edgeKey,
+          (recipeCountByEdgeKey.get(edgeKey) ?? 0) + 1,
+        )
       }
     }
+
+    let localOperationIndex = 0
+    for (const recipe of domain.recipes) {
+      const x = xByRecipeId.get(recipe.candidate.id)
+      if (!x) continue
+
+      const edgeMultiplicityByKey =
+        edgeMultiplicityByRecipe.get(recipe.candidate.id) ??
+        new Map<string, number>()
+      const localEdgeCountByMultiplicity = new Map<number, number>()
+
+      for (const [edgeKey, multiplicity] of edgeMultiplicityByKey) {
+        if (
+          options.aggregateLocalSingletonOperations &&
+          recipeCountByEdgeKey.get(edgeKey) === 1
+        ) {
+          localEdgeCountByMultiplicity.set(
+            multiplicity,
+            (localEdgeCountByMultiplicity.get(multiplicity) ?? 0) + 1,
+          )
+          continue
+        }
+
+        const term = x.times(multiplicity)
+        const terms = quantityTermsByEdgeKey.get(edgeKey)
+        if (terms) {
+          terms.push(term)
+        } else {
+          quantityTermsByEdgeKey.set(edgeKey, [term])
+        }
+      }
+
+      for (const [multiplicity, localEdgeCount] of
+        localEdgeCountByMultiplicity) {
+        const operationCount = model.intVar(
+          0,
+          maxTotalJuiceUnits,
+          `local_op_${localOperationIndex}`,
+        )
+        operationByEdgeKey.set(
+          `local:${recipe.candidate.id}:m${multiplicity}`,
+          operationCount,
+        )
+        const quantityExpression = x.times(multiplicity)
+
+        model.addConstraint(
+          quantityExpression
+            .minus(
+              operationCount.times(PROCESSING_STACK_CAPACITY),
+            )
+            .leq(0),
+          `local_operation_capacity_${localOperationIndex}`,
+        )
+        model.addConstraint(
+          operationCount.minus(quantityExpression).leq(0),
+          `local_operation_usage_${localOperationIndex}`,
+        )
+        machineOperationTerms.push(
+          operationCount.times(localEdgeCount),
+        )
+        localOperationIndex += 1
+      }
+    }
+
+    ;[...quantityTermsByEdgeKey.entries()].forEach(
+      ([edgeKey, quantityTerms], edgeIndex) => {
+        const operationCount = model.intVar(
+          0,
+          maxTotalJuiceUnits,
+          `op_${edgeIndex}`,
+        )
+        operationByEdgeKey.set(edgeKey, operationCount)
+
+        const quantityExpression = sum(...quantityTerms)
+
+        model.addConstraint(
+          quantityExpression
+            .minus(
+              operationCount.times(PROCESSING_STACK_CAPACITY),
+            )
+            .leq(0),
+          `operation_capacity_${edgeIndex}`,
+        )
+        model.addConstraint(
+          operationCount.minus(quantityExpression).leq(0),
+          `operation_usage_${edgeIndex}`,
+        )
+        machineOperationTerms.push(operationCount.times(1))
+      },
+    )
   }
-
-  }
-  const operationByEdgeKey = new Map<string, IntVariable>()
-  ;[...quantityTermsByEdgeKey.entries()].forEach(
-    ([edgeKey, quantityTerms], edgeIndex) => {
-      const operationCount = model.intVar(
-        0,
-        maxTotalJuiceUnits,
-        `op_${edgeIndex}`,
-      )
-      operationByEdgeKey.set(edgeKey, operationCount)
-
-      const quantityExpression = sum(...quantityTerms)
-
-      model.addConstraint(
-        quantityExpression
-          .minus(operationCount.times(PROCESSING_STACK_CAPACITY))
-          .leq(0),
-        `operation_capacity_${edgeIndex}`,
-      )
-      model.addConstraint(
-        operationCount.minus(quantityExpression).leq(0),
-        `operation_usage_${edgeIndex}`,
-      )
-    },
-  )
   buildPhaseMs.productionOperationsMs =
     performance.now() - phaseStartedAt
 
@@ -427,7 +500,7 @@ function buildHighsStage(
       )
     : undefined
   const machineOperationsExpression = needsAnyObjective('machineOperations')
-    ? sum(...operationByEdgeKey.values())
+    ? sum(...machineOperationTerms)
     : undefined
   buildPhaseMs.baseObjectivesMs = performance.now() - phaseStartedAt
 
@@ -648,6 +721,7 @@ export async function profileHighsOptimization(
     stageTimeLimitSeconds?: number
     relaxAssignmentVariables?: boolean
     maxStages?: number
+    aggregateLocalSingletonOperations?: boolean
     initialCriterionFixes?: Array<{
       criterion: OptimizationCriterion
       value: number
@@ -691,6 +765,8 @@ export async function profileHighsOptimization(
       {
         relaxAssignmentVariables:
           options.relaxAssignmentVariables ?? false,
+        aggregateLocalSingletonOperations:
+          options.aggregateLocalSingletonOperations ?? false,
       },
     )
     const buildMs = performance.now() - buildStartedAt
