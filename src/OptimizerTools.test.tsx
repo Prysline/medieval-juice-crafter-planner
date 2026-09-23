@@ -374,6 +374,34 @@ describe('delivery checklist UI', () => {
     expect(html).toContain('已正式交付')
   })
 
+  it('treats canonical supplied-customer state as the same committed delivery authority', () => {
+    const plan = deliveryPlan()
+    const cursor = deliveryCursor()
+
+    expect(
+      deliveryCustomerControlState(
+        plan,
+        cursor,
+        ['jack'],
+        'jack',
+      ).status,
+    ).toBe('committed')
+
+    const html = renderToStaticMarkup(
+      <DeliveryCustomerCheckbox
+        customerId="jack"
+        plan={plan}
+        cursor={cursor}
+        suppliedCustomerIds={['jack']}
+        onCommit={() => {}}
+      />,
+    )
+
+    expect(html).toContain('checked=""')
+    expect(html).toContain('disabled=""')
+    expect(html).toContain('已正式交付')
+  })
+
   it('treats customers from completed trips as committed even after the cursor advances', () => {
     const plan = deliveryPlan()
     const cursor = deliveryCursor({
