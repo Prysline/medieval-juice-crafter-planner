@@ -110,7 +110,7 @@ describe('shared recipe candidate pool', () => {
         saved('unconfirmed', ['lemon', 'mint', 'mint']),
         confirmedSaved(
           'confirmed',
-          ['lemon', 'sugar', 'mint'],
+          ['lemon', 'sugar', 'sugar'],
           [
             { name: '玩家確認特性', value: 9 },
             { name: '甜味', value: 4 },
