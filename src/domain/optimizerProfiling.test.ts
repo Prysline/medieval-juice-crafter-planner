@@ -882,6 +882,29 @@ it(
             },
           )
         : null
+    const groupedAssignmentMachineHighs =
+      compressedCostStage?.status === 'optimal' &&
+      compressedCostStage.objectiveValue !== null
+        ? await profileHighsOptimization(
+            strictCostPrunedModel,
+            ['minimum-machine-operations'],
+            {
+              stageTimeLimitSeconds: 10.5,
+              relaxAssignmentVariables: true,
+              aggregateLocalSingletonOperations: true,
+              aggregateEquivalentAssignments: true,
+              maxStages: 1,
+              initialCriterionFixes: [
+                {
+                  criterion: 'minimum-cost',
+                  value: Math.round(
+                    compressedCostStage.objectiveValue,
+                  ),
+                },
+              ],
+            },
+          )
+        : null
     const binaryFirstStage = binaryHighs.stages[0]
     const relaxedFirstStage = relaxedHighs.stages[0]
     const prunedRelaxedFirstStage = prunedRelaxedHighs.stages[0]
@@ -891,6 +914,8 @@ it(
       expandedMachineHighs?.stages[0]
     const localCompressedMachineFirstStage =
       localCompressedMachineHighs?.stages[0]
+    const groupedAssignmentMachineFirstStage =
+      groupedAssignmentMachineHighs?.stages[0]
 
     const report = {
       progress: request.currentProgress,
@@ -1119,6 +1144,31 @@ it(
                 localCompressedMachineHighs?.totalMs ?? 0,
             }
           : null,
+      groupedAssignmentMachineStage:
+        groupedAssignmentMachineFirstStage
+          ? {
+              solveMs: groupedAssignmentMachineFirstStage.solveMs,
+              status: groupedAssignmentMachineFirstStage.status,
+              objectiveValue:
+                groupedAssignmentMachineFirstStage.objectiveValue,
+              fixCount:
+                groupedAssignmentMachineFirstStage.fixCount,
+              variableCount:
+                groupedAssignmentMachineFirstStage.variableCount,
+              constraintCount:
+                groupedAssignmentMachineFirstStage.constraintCount,
+              fractionalAssignmentVariableCount:
+                groupedAssignmentMachineFirstStage.fractionalAssignmentVariableCount,
+              maxAssignmentIntegralityError:
+                groupedAssignmentMachineFirstStage.maxAssignmentIntegralityError,
+              integralAssignmentReconstructionFeasible:
+                groupedAssignmentMachineFirstStage.integralAssignmentReconstructionFeasible,
+              reconstructedAssignmentCount:
+                groupedAssignmentMachineFirstStage.reconstructedAssignmentCount,
+              totalMs:
+                groupedAssignmentMachineHighs?.totalMs ?? 0,
+            }
+          : null,
       binaryStages: binaryHighs.stages,
       relaxedStages: relaxedHighs.stages,
     }
@@ -1211,6 +1261,37 @@ it(
           localCompressedMachineFirstStage.objectiveValue,
         ).toBeCloseTo(
           expandedMachineFirstStage.objectiveValue ?? 0,
+          9,
+        )
+      }
+    }
+    if (groupedAssignmentMachineFirstStage) {
+      expect(groupedAssignmentMachineFirstStage.objective).toBe(
+        'machineOperations',
+      )
+      expect(groupedAssignmentMachineFirstStage.fixCount).toBe(1)
+      expect(groupedAssignmentMachineFirstStage.variableCount).toBe(
+        stage2ProjectedVariablesWithGroupAssignmentsAndLocalOps,
+      )
+      expect(groupedAssignmentMachineFirstStage.constraintCount).toBe(
+        stage2ProjectedConstraintsWithGroupAssignmentsAndLocalOps,
+      )
+      if (groupedAssignmentMachineFirstStage.objectiveValue !== null) {
+        expect(
+          groupedAssignmentMachineFirstStage.integralAssignmentReconstructionFeasible,
+        ).toBe(true)
+        expect(
+          groupedAssignmentMachineFirstStage.reconstructedAssignmentCount,
+        ).toBe(model.serviceableCustomerIds.length)
+      }
+      if (
+        localCompressedMachineFirstStage?.status === 'optimal' &&
+        groupedAssignmentMachineFirstStage.status === 'optimal'
+      ) {
+        expect(
+          groupedAssignmentMachineFirstStage.objectiveValue,
+        ).toBeCloseTo(
+          localCompressedMachineFirstStage.objectiveValue ?? 0,
           9,
         )
       }
