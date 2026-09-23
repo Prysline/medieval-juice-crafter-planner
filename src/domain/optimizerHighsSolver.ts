@@ -227,6 +227,7 @@ function buildHighsStage(
     aggregateEquivalentAssignments?: boolean
     tightenRecipeBoundsFromMinimumCostFix?: boolean
     machineOperationsUpperBound?: number
+    fixedRecipeUnits?: Map<string, number>
   } = {},
 ) {
   const model = new Model()
@@ -367,6 +368,15 @@ function buildHighsStage(
       `x_${recipeIndex}`,
     )
     xByRecipeId.set(recipe.candidate.id, x)
+
+    if (options.fixedRecipeUnits) {
+      model.addConstraint(
+        x.eq(
+          options.fixedRecipeUnits.get(recipe.candidate.id) ?? 0,
+        ),
+        `fixed_recipe_units_${recipeIndex}`,
+      )
+    }
 
     if (needsRecipeUsageStructure) {
       const z = model.boolVar(`z_${recipeIndex}`)
@@ -813,7 +823,8 @@ function buildHighsStage(
       Number.isFinite(options.machineOperationsUpperBound)
         ? 1
         : 0
-    )
+    ) +
+    (options.fixedRecipeUnits ? domain.recipes.length : 0)
 
   return {
     model,
@@ -837,6 +848,10 @@ export async function profileHighsOptimization(
     aggregateEquivalentAssignments?: boolean
     tightenRecipeBoundsFromMinimumCostFix?: boolean
     machineOperationsUpperBound?: number
+    fixedRecipeUnits?: Array<{
+      recipeId: string
+      units: number
+    }>
     initialCriterionFixes?: Array<{
       criterion: OptimizationCriterion
       value: number
@@ -869,6 +884,14 @@ export async function profileHighsOptimization(
   const stages: HighsStageProfile[] = []
   const stageTimeLimitSeconds =
     options.stageTimeLimitSeconds ?? 10.5
+  const fixedRecipeUnits = options.fixedRecipeUnits
+    ? new Map(
+        options.fixedRecipeUnits.map((entry) => [
+          entry.recipeId,
+          entry.units,
+        ]),
+      )
+    : undefined
   let terminatedAtObjective: ObjectiveKey | null = null
 
   for (const objectiveKey of objectives) {
@@ -888,6 +911,7 @@ export async function profileHighsOptimization(
           options.tightenRecipeBoundsFromMinimumCostFix ?? false,
         machineOperationsUpperBound:
           options.machineOperationsUpperBound,
+        fixedRecipeUnits,
       },
     )
     const buildMs = performance.now() - buildStartedAt
