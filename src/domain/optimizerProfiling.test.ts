@@ -1430,6 +1430,66 @@ it(
               aggregateEquivalentAssignments: true,
               tightenRecipeBoundsFromMinimumCostFix: true,
               tightenOperationBoundsFromRecipeBounds: true,
+              captureMps: true,
+              maxStages: 1,
+              initialCriterionFixes: [
+                {
+                  criterion: 'minimum-cost',
+                  value: Math.round(
+                    compressedCostStage.objectiveValue,
+                  ),
+                },
+              ],
+            },
+          )
+        : null
+
+    const binaryEncodedMachineHighs =
+      compressedCostStage?.status === 'optimal' &&
+      compressedCostStage.objectiveValue !== null
+        ? await profileHighsOptimization(
+            strictCostPrunedModel,
+            ['minimum-machine-operations'],
+            {
+              stageTimeLimitSeconds: 5.5,
+              relaxAssignmentVariables: true,
+              aggregateLocalSingletonOperations: true,
+              aggregateEquivalentAssignments: true,
+              tightenRecipeBoundsFromMinimumCostFix: true,
+              tightenOperationBoundsFromRecipeBounds: true,
+              binaryEncodeOperationUpperBoundAtMost: 2,
+              captureMps: true,
+              maxStages: 1,
+              initialCriterionFixes: [
+                {
+                  criterion: 'minimum-cost',
+                  value: Math.round(
+                    compressedCostStage.objectiveValue,
+                  ),
+                },
+              ],
+            },
+          )
+        : null
+
+    const fixedBinaryEncodedMachineHighs =
+      compressedCostStage?.status === 'optimal' &&
+      compressedCostStage.objectiveValue !== null &&
+      compressedCostStage.selectedRecipeUnits.length > 0
+        ? await profileHighsOptimization(
+            strictCostPrunedModel,
+            ['minimum-machine-operations'],
+            {
+              stageTimeLimitSeconds: 2.5,
+              relaxAssignmentVariables: true,
+              aggregateLocalSingletonOperations: true,
+              aggregateEquivalentAssignments: true,
+              tightenRecipeBoundsFromMinimumCostFix: true,
+              tightenOperationBoundsFromRecipeBounds: true,
+              binaryEncodeOperationUpperBoundAtMost: 2,
+              fixedRecipeUnits:
+                compressedCostStage.selectedRecipeUnits,
+              captureSolutionValues: true,
               maxStages: 1,
               initialCriterionFixes: [
                 {
@@ -1603,6 +1663,10 @@ it(
       singletonBlendingMachineHighs?.stages[0]
     const tightOperationBoundMachineFirstStage =
       tightOperationBoundMachineHighs?.stages[0]
+    const binaryEncodedMachineFirstStage =
+      binaryEncodedMachineHighs?.stages[0]
+    const fixedBinaryEncodedMachineFirstStage =
+      fixedBinaryEncodedMachineHighs?.stages[0]
     const belowFiftyMachineFirstStage =
       belowFiftyMachineHighs?.stages[0]
     const recipeRelaxedMachineFirstStage =
@@ -1614,7 +1678,7 @@ it(
     const fixedIncumbentMachineFirstStage =
       fixedIncumbentMachineHighs?.stages[0]
 
-    let warmStartHighsComparison: {
+    type WarmStartComparison = {
       wrapperVersion: string
       incumbentMachineOperations: number
       cold: {
@@ -1640,115 +1704,159 @@ it(
         mappedSeedColumnCount: number
         expectedSeedColumnCount: number
       }
-    } | null = null
+    }
 
-    const warmStartMps =
-      tightBoundMachineFirstStage?.capturedMps
-    const warmStartSolutionValues =
+    let warmStartHighsComparison: WarmStartComparison | null = null
+    let binaryEncodedWarmStartComparison:
+      | WarmStartComparison
+      | null = null
+
+    const baselineWarmStartMps =
+      tightOperationBoundMachineFirstStage?.capturedMps
+    const baselineWarmStartSolutionValues =
       fixedIncumbentMachineFirstStage?.capturedSolutionValues
+    const binaryEncodedWarmStartMps =
+      binaryEncodedMachineFirstStage?.capturedMps
+    const binaryEncodedWarmStartSolutionValues =
+      fixedBinaryEncodedMachineFirstStage?.capturedSolutionValues
 
     if (
-      warmStartMps &&
-      warmStartSolutionValues?.length &&
-      fixedIncumbentMachineFirstStage?.status === 'optimal'
+      (
+        baselineWarmStartMps &&
+        baselineWarmStartSolutionValues?.length
+      ) ||
+      (
+        binaryEncodedWarmStartMps &&
+        binaryEncodedWarmStartSolutionValues?.length
+      )
     ) {
       const { default: loadHighs } = await import('highs')
       const highs = await loadHighs()
-      const encodedMps = new TextEncoder().encode(warmStartMps)
 
-      const readProfile = (
-        profileModel: ReturnType<typeof highs.createModel>,
-        solveMs: number,
-      ) => {
-        const primalSolutionStatus = Number(
-          profileModel.info.get('primal_solution_status'),
-        )
-        const hasFeasiblePrimal =
-          primalSolutionStatus ===
-          highs.constants.solutionStatus.feasible
+      const runComparison = (
+        mps: string,
+        solutionValues: Array<{
+          name: string
+          value: number
+        }>,
+      ): WarmStartComparison => {
+        const encodedMps = new TextEncoder().encode(mps)
 
-        return {
-          solveMs,
-          modelStatus: profileModel.getModelStatus(),
-          primalSolutionStatus,
-          hasFeasiblePrimal,
-          objectiveValue: hasFeasiblePrimal
-            ? profileModel.getObjectiveValue()
-            : null,
-          mipDualBound: Number(
-            profileModel.info.get('mip_dual_bound'),
-          ),
-          mipGap: Number(profileModel.info.get('mip_gap')),
-          mipNodeCount: Number(
-            profileModel.info.get('mip_node_count'),
-          ),
+        const readProfile = (
+          profileModel: ReturnType<typeof highs.createModel>,
+          solveMs: number,
+        ) => {
+          const primalSolutionStatus = Number(
+            profileModel.info.get('primal_solution_status'),
+          )
+          const hasFeasiblePrimal =
+            primalSolutionStatus ===
+            highs.constants.solutionStatus.feasible
+
+          return {
+            solveMs,
+            modelStatus: profileModel.getModelStatus(),
+            primalSolutionStatus,
+            hasFeasiblePrimal,
+            objectiveValue: hasFeasiblePrimal
+              ? profileModel.getObjectiveValue()
+              : null,
+            mipDualBound: Number(
+              profileModel.info.get('mip_dual_bound'),
+            ),
+            mipGap: Number(profileModel.info.get('mip_gap')),
+            mipNodeCount: Number(
+              profileModel.info.get('mip_node_count'),
+            ),
+          }
+        }
+
+        const coldModel = highs.createModel({
+          format: 'mps',
+          data: encodedMps,
+        })
+        let coldProfile
+        try {
+          coldModel.options.set({
+            output_flag: false,
+            time_limit: 5.5,
+            mip_rel_gap: 0,
+          })
+          const coldStartedAt = performance.now()
+          coldModel.run()
+          coldProfile = readProfile(
+            coldModel,
+            performance.now() - coldStartedAt,
+          )
+        } finally {
+          coldModel.dispose()
+        }
+
+        const warmModel = highs.createModel({
+          format: 'mps',
+          data: encodedMps,
+        })
+        try {
+          warmModel.options.set({
+            output_flag: false,
+            time_limit: 5.5,
+            mip_rel_gap: 0,
+          })
+          const dimensions = warmModel.getDimensions()
+          const colValue = new Float64Array(dimensions.numCols)
+          let mappedSeedColumnCount = 0
+
+          for (const entry of solutionValues) {
+            const columnIndex = warmModel.getColByName(entry.name)
+            colValue[columnIndex] = entry.value
+            mappedSeedColumnCount += 1
+          }
+
+          const seedResult = warmModel.setSolution({ colValue })
+          const warmStartedAt = performance.now()
+          warmModel.run()
+          const warmProfile = readProfile(
+            warmModel,
+            performance.now() - warmStartedAt,
+          )
+
+          return {
+            wrapperVersion: highs.version.string,
+            incumbentMachineOperations:
+              compressedIncumbentMachineOperations,
+            cold: coldProfile,
+            warm: {
+              ...warmProfile,
+              seedStatus: seedResult.status,
+              mappedSeedColumnCount,
+              expectedSeedColumnCount: solutionValues.length,
+            },
+          }
+        } finally {
+          warmModel.dispose()
         }
       }
 
-      const coldModel = highs.createModel({
-        format: 'mps',
-        data: encodedMps,
-      })
-      let coldProfile
-      try {
-        coldModel.options.set({
-          output_flag: false,
-          time_limit: 5.5,
-          mip_rel_gap: 0,
-        })
-        const coldStartedAt = performance.now()
-        coldModel.run()
-        coldProfile = readProfile(
-          coldModel,
-          performance.now() - coldStartedAt,
+      if (
+        baselineWarmStartMps &&
+        baselineWarmStartSolutionValues?.length &&
+        fixedIncumbentMachineFirstStage?.status === 'optimal'
+      ) {
+        warmStartHighsComparison = runComparison(
+          baselineWarmStartMps,
+          baselineWarmStartSolutionValues,
         )
-      } finally {
-        coldModel.dispose()
       }
 
-      const warmModel = highs.createModel({
-        format: 'mps',
-        data: encodedMps,
-      })
-      try {
-        warmModel.options.set({
-          output_flag: false,
-          time_limit: 5.5,
-          mip_rel_gap: 0,
-        })
-        const dimensions = warmModel.getDimensions()
-        const colValue = new Float64Array(dimensions.numCols)
-        let mappedSeedColumnCount = 0
-
-        for (const entry of warmStartSolutionValues) {
-          const columnIndex = warmModel.getColByName(entry.name)
-          colValue[columnIndex] = entry.value
-          mappedSeedColumnCount += 1
-        }
-
-        const seedResult = warmModel.setSolution({ colValue })
-        const warmStartedAt = performance.now()
-        warmModel.run()
-        const warmProfile = readProfile(
-          warmModel,
-          performance.now() - warmStartedAt,
+      if (
+        binaryEncodedWarmStartMps &&
+        binaryEncodedWarmStartSolutionValues?.length &&
+        fixedBinaryEncodedMachineFirstStage?.status === 'optimal'
+      ) {
+        binaryEncodedWarmStartComparison = runComparison(
+          binaryEncodedWarmStartMps,
+          binaryEncodedWarmStartSolutionValues,
         )
-
-        warmStartHighsComparison = {
-          wrapperVersion: highs.version.string,
-          incumbentMachineOperations:
-            compressedIncumbentMachineOperations,
-          cold: coldProfile,
-          warm: {
-            ...warmProfile,
-            seedStatus: seedResult.status,
-            mappedSeedColumnCount,
-            expectedSeedColumnCount:
-              warmStartSolutionValues.length,
-          },
-        }
-      } finally {
-        warmModel.dispose()
       }
     }
 
@@ -2261,6 +2369,39 @@ it(
             }
           : null,
       warmStartHighsComparison,
+      binaryEncodedWarmStartComparison,
+      binaryEncodedMachineStage:
+        binaryEncodedMachineFirstStage
+          ? {
+              solveMs: binaryEncodedMachineFirstStage.solveMs,
+              status: binaryEncodedMachineFirstStage.status,
+              objectiveValue:
+                binaryEncodedMachineFirstStage.objectiveValue,
+              variableCount:
+                binaryEncodedMachineFirstStage.variableCount,
+              constraintCount:
+                binaryEncodedMachineFirstStage.constraintCount,
+              totalMs:
+                binaryEncodedMachineHighs?.totalMs ?? 0,
+            }
+          : null,
+      fixedBinaryEncodedMachineStage:
+        fixedBinaryEncodedMachineFirstStage
+          ? {
+              solveMs:
+                fixedBinaryEncodedMachineFirstStage.solveMs,
+              status:
+                fixedBinaryEncodedMachineFirstStage.status,
+              objectiveValue:
+                fixedBinaryEncodedMachineFirstStage.objectiveValue,
+              variableCount:
+                fixedBinaryEncodedMachineFirstStage.variableCount,
+              constraintCount:
+                fixedBinaryEncodedMachineFirstStage.constraintCount,
+              totalMs:
+                fixedBinaryEncodedMachineHighs?.totalMs ?? 0,
+            }
+          : null,
       fixedIncumbentMachineStage:
         fixedIncumbentMachineFirstStage
           ? {
