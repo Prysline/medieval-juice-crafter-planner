@@ -139,6 +139,12 @@ function buildHighsStage(
     jarSwitchesMs: 0,
     fixesAndObjectiveMs: 0,
   }
+  const neededObjectiveKeys = new Set<ObjectiveKey>([
+    objective,
+    ...fixes.map((fix) => fix.objective),
+  ])
+  const needsAnyObjective = (...keys: ObjectiveKey[]) =>
+    keys.some((key) => neededObjectiveKeys.has(key))
 
   let phaseStartedAt = performance.now()
   domain.recipes.forEach((recipe, recipeIndex) => {
@@ -261,60 +267,78 @@ function buildHighsStage(
     performance.now() - phaseStartedAt
 
   phaseStartedAt = performance.now()
-  const costExpression = sum(
-    ...domain.recipes.flatMap((recipe) => {
-      const x = xByRecipeId.get(recipe.candidate.id)
-      return x ? [x.times(recipe.juiceUnitIngredientCost)] : []
-    }),
+  const costExpression = needsAnyObjective(
+    'cost',
+    'negativeKnownGrossProfit',
   )
-  const productionUnitsExpression = sum(
-    ...domain.recipes.flatMap((recipe) => {
-      const x = xByRecipeId.get(recipe.candidate.id)
-      return x ? [x] : []
-    }),
-  )
-  const kindExpression = sum(
-    ...domain.recipes.flatMap((recipe) => {
-      const z = zByRecipeId.get(recipe.candidate.id)
-      return z ? [z] : []
-    }),
-  )
-  const machineOperationsExpression = sum(
-    ...operationByEdgeKey.values(),
-  )
+    ? sum(
+        ...domain.recipes.flatMap((recipe) => {
+          const x = xByRecipeId.get(recipe.candidate.id)
+          return x ? [x.times(recipe.juiceUnitIngredientCost)] : []
+        }),
+      )
+    : undefined
+  const productionUnitsExpression = needsAnyObjective('productionUnits')
+    ? sum(
+        ...domain.recipes.flatMap((recipe) => {
+          const x = xByRecipeId.get(recipe.candidate.id)
+          return x ? [x] : []
+        }),
+      )
+    : undefined
+  const kindExpression = needsAnyObjective('kinds')
+    ? sum(
+        ...domain.recipes.flatMap((recipe) => {
+          const z = zByRecipeId.get(recipe.candidate.id)
+          return z ? [z] : []
+        }),
+      )
+    : undefined
+  const machineOperationsExpression = needsAnyObjective('machineOperations')
+    ? sum(...operationByEdgeKey.values())
+    : undefined
   buildPhaseMs.baseObjectivesMs = performance.now() - phaseStartedAt
 
   phaseStartedAt = performance.now()
-  const assignedIngredientCostExpression = sum(
-    ...domain.serviceableCustomerIds.flatMap((customerId) =>
-      domain.recipes.flatMap((recipe) => {
-        const y = yByCustomerRecipe.get(
-          `${customerId}\u001f${recipe.candidate.id}`,
-        )
-        return y ? [y.times(recipe.juiceUnitIngredientCost)] : []
-      }),
-    ),
+  const assignedIngredientCostExpression = needsAnyObjective(
+    'negativeAssignedIngredientCost',
   )
+    ? sum(
+        ...domain.serviceableCustomerIds.flatMap((customerId) =>
+          domain.recipes.flatMap((recipe) => {
+            const y = yByCustomerRecipe.get(
+              `${customerId}\u001f${recipe.candidate.id}`,
+            )
+            return y ? [y.times(recipe.juiceUnitIngredientCost)] : []
+          }),
+        ),
+      )
+    : undefined
   buildPhaseMs.assignedIngredientCostMs =
     performance.now() - phaseStartedAt
 
   phaseStartedAt = performance.now()
   const formalCustomerIds = new Set(domain.request.formalCustomerIds)
-  const knownRevenueExpression = sum(
-    ...domain.serviceableCustomerIds.flatMap((customerId) => {
-      if (!formalCustomerIds.has(customerId)) return []
-
-      return domain.recipes.flatMap((recipe) => {
-        const salePrice = recipe.candidate.salePrice
-        if (salePrice === null) return []
-
-        const y = yByCustomerRecipe.get(
-          `${customerId}\u001f${recipe.candidate.id}`,
-        )
-        return y ? [y.times(salePrice)] : []
-      })
-    }),
+  const knownRevenueExpression = needsAnyObjective(
+    'negativeKnownRevenue',
+    'negativeKnownGrossProfit',
   )
+    ? sum(
+        ...domain.serviceableCustomerIds.flatMap((customerId) => {
+          if (!formalCustomerIds.has(customerId)) return []
+
+          return domain.recipes.flatMap((recipe) => {
+            const salePrice = recipe.candidate.salePrice
+            if (salePrice === null) return []
+
+            const y = yByCustomerRecipe.get(
+              `${customerId}\u001f${recipe.candidate.id}`,
+            )
+            return y ? [y.times(salePrice)] : []
+          })
+        }),
+      )
+    : undefined
   buildPhaseMs.knownRevenueMs = performance.now() - phaseStartedAt
 
   phaseStartedAt = performance.now()
@@ -421,21 +445,32 @@ function buildHighsStage(
     productionUnits: productionUnitsExpression,
     kinds: kindExpression,
     negativeAssignedIngredientCost:
-      assignedIngredientCostExpression.times(-1),
-    negativeKnownRevenue: knownRevenueExpression.times(-1),
-    negativeKnownGrossProfit: costExpression.minus(knownRevenueExpression),
+      assignedIngredientCostExpression?.times(-1),
+    negativeKnownRevenue: knownRevenueExpression?.times(-1),
+    negativeKnownGrossProfit:
+      costExpression && knownRevenueExpression
+        ? costExpression.minus(knownRevenueExpression)
+        : undefined,
     machineOperations: machineOperationsExpression,
     jarSwitches,
   }
 
+  const requiredObjectiveExpression = (key: ObjectiveKey) => {
+    const expression = expressions[key]
+    if (!expression) {
+      throw new Error(`Missing HiGHS expression for objective ${key}`)
+    }
+    return expression
+  }
+
   fixes.forEach((fix, index) => {
     model.addConstraint(
-      expressions[fix.objective].eq(fix.value),
+      requiredObjectiveExpression(fix.objective).eq(fix.value),
       `fix_${fix.objective}_${index}`,
     )
   })
 
-  model.minimize(expressions[objective])
+  model.minimize(requiredObjectiveExpression(objective))
   buildPhaseMs.fixesAndObjectiveMs = performance.now() - phaseStartedAt
 
   const nonEmptyInitialJarCount = initialJars.filter(
