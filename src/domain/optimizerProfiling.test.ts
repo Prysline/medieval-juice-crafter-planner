@@ -10,6 +10,7 @@ import {
   recipeCandidatesInCurrentSearchScope,
 } from './recipeCandidatePool'
 import { calculateRecipeIngredientCost } from './recipeCost'
+import { PROCESSING_STACK_CAPACITY } from './inventoryRules'
 import { productionPathForCandidate } from './productionPlan'
 
 it(
