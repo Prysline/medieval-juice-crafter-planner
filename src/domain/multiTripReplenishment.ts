@@ -7,7 +7,10 @@ import {
 import type { JuiceJarInventoryItem } from '../types'
 import type { PreparationDemand } from './preparationDemand'
 import type { PreparationShortfall } from './preparationShortfall'
-import { minimumJarTypeSwitchesForInitialJars } from './jarSwitches'
+import {
+  planMinimumJarTypeSwitchSequences,
+  type MinimumJarSwitchSequencePlan,
+} from './jarSwitches'
 import { PlanningUserError } from './planningErrors'
 
 export type UsedCupTripPolicy =
@@ -487,130 +490,46 @@ function queueLoadSort(a: JarQueue, b: JarQueue): number {
 function buildJarQueuesWithSwitches(
   recipes: RecipeJarDemand[],
   queues: JarQueue[],
+  sequencePlan: MinimumJarSwitchSequencePlan,
 ): JarQueue[] {
-  const availableQueues = queues.filter(
-    (queue) => !queue.lockedByRetainedInitialContents,
+  const recipeById = new Map(
+    recipes.map((recipe) => [recipe.recipeId, recipe]),
   )
-  if (recipes.length > 0 && availableQueues.length === 0) {
-    throw new PlanningUserError(
-      'retained-juice-conflict',
-      {},
-      'No available physical juice jar can accept another recipe without discarding retained juice',
-    )
-  }
-
-  const terminalRecipes = [...recipes]
-    .filter((recipe) => recipe.leftoverServings > 0)
-    .sort(
-      (a, b) =>
-        b.leftoverServings - a.leftoverServings ||
-        b.chunks.length - a.chunks.length ||
-        b.servings - a.servings ||
-        a.recipeName.localeCompare(b.recipeName, 'zh-Hant') ||
-        a.recipeId.localeCompare(b.recipeId),
-    )
-    .slice(0, availableQueues.length)
-  const terminalRecipeIds = new Set(
-    terminalRecipes.map((recipe) => recipe.recipeId),
+  const queueById = new Map(
+    queues.map((queue) => [queue.physicalJarId, queue]),
   )
+  const placedRecipeIds = new Set<string>()
 
-  // A terminal recipe must end the day in its final physical jar. When a
-  // reusable jar already carries the same recipe, reserve that free match
-  // before unrelated recipes can switch the jar away and force a later
-  // switch back.
-  const reservedTerminalQueueByRecipeId = new Map<
-    string,
-    JarQueue
-  >()
-  const reservedTerminalQueueIds = new Set<string>()
-  for (const recipe of terminalRecipes) {
-    const matchingQueue = availableQueues
-      .filter(
-        (queue) =>
-          !reservedTerminalQueueIds.has(queue.physicalJarId) &&
-          queueCurrentRecipeId(queue) === recipe.recipeId,
-      )
-      .sort((a, b) =>
-        queueSelectionSort(recipe.recipeId, a, b),
-      )[0]
-
-    if (!matchingQueue) continue
-    reservedTerminalQueueByRecipeId.set(
-      recipe.recipeId,
-      matchingQueue,
-    )
-    reservedTerminalQueueIds.add(matchingQueue.physicalJarId)
-  }
-
-  const unreservedQueues = availableQueues.filter(
-    (queue) =>
-      !reservedTerminalQueueIds.has(queue.physicalJarId),
-  )
-  const nonTerminalTargetQueues =
-    unreservedQueues.length > 0
-      ? unreservedQueues
-      : availableQueues
-  const matchingRecipeIdsAtStart = new Set(
-    nonTerminalTargetQueues.flatMap((queue) => {
-      const recipeId = queueCurrentRecipeId(queue)
-      return recipeId ? [recipeId] : []
-    }),
-  )
-  const nonTerminalRecipes = recipes
-    .filter(
-      (recipe) => !terminalRecipeIds.has(recipe.recipeId),
-    )
-    .map((recipe, index) => ({ recipe, index }))
-    .sort(
-      (a, b) =>
-        Number(
-          !matchingRecipeIdsAtStart.has(a.recipe.recipeId),
-        ) -
-          Number(
-            !matchingRecipeIdsAtStart.has(b.recipe.recipeId),
-          ) ||
-        a.index - b.index,
-    )
-    .map(({ recipe }) => recipe)
-
-  // Preserve free initial/current matches before scheduling recipes that
-  // necessarily require a type switch. Reserved terminal jars are only used
-  // here when every reusable jar is terminal-reserved, in which case the
-  // later consistency check still guards against an unrealizable lower bound.
-  for (const recipe of nonTerminalRecipes) {
-    const target = [...nonTerminalTargetQueues].sort((a, b) =>
-      queueSelectionSort(recipe.recipeId, a, b),
-    )[0]
-    if (!target) {
+  for (const sequence of sequencePlan.sequences) {
+    const queue = queueById.get(sequence.physicalJarId)
+    if (!queue) {
       throw new Error(
-        'No carried physical juice jar can accept the remaining sales recipe',
+        `Jar sequence references unknown physical jar ${sequence.physicalJarId}`,
       )
     }
-    appendRecipeChunks(target, recipe, recipe.chunks)
+
+    for (const recipeId of sequence.recipeIds) {
+      const recipe = recipeById.get(recipeId)
+      if (!recipe) {
+        throw new Error(
+          `Jar sequence references unknown recipe ${recipeId}`,
+        )
+      }
+      if (placedRecipeIds.has(recipeId)) {
+        throw new Error(
+          `Jar sequence placed recipe ${recipeId} more than once`,
+        )
+      }
+
+      appendRecipeChunks(queue, recipe, recipe.chunks)
+      placedRecipeIds.add(recipeId)
+    }
   }
 
-  const terminalPool = availableQueues.filter(
-    (queue) =>
-      !reservedTerminalQueueIds.has(queue.physicalJarId),
-  )
-  for (const recipe of terminalRecipes) {
-    const reserved =
-      reservedTerminalQueueByRecipeId.get(recipe.recipeId)
-    let target = reserved
-
-    if (!target) {
-      terminalPool.sort((a, b) =>
-        queueSelectionSort(recipe.recipeId, a, b),
-      )
-      target = terminalPool.shift()
-    }
-
-    if (!target) {
-      throw new Error(
-        'Leftover terminal jar allocation exceeded reusable carried jar capacity',
-      )
-    }
-    appendRecipeChunks(target, recipe, recipe.chunks)
+  if (placedRecipeIds.size !== recipes.length) {
+    throw new Error(
+      'Jar sequence plan did not place every produced recipe',
+    )
   }
 
   return queues
@@ -794,12 +713,14 @@ function buildPhysicalJarQueues(
   queues: JarQueue[]
   discardedInitialJuice: MultiTripDiscardedInitialJuice[]
   plannedNewProductionDiscards: PlannedNewProductionDiscard[]
+  expectedMinimumSwitches: number
 } {
   if (recipes.length === 0) {
     return {
       queues,
       discardedInitialJuice: [],
       plannedNewProductionDiscards: [],
+      expectedMinimumSwitches: 0,
     }
   }
 
@@ -870,15 +791,34 @@ function buildPhysicalJarQueues(
       : recipe,
   )
 
+  const reusableQueues = queues.filter(
+    (queue) => !queue.lockedByRetainedInitialContents,
+  )
+  const sequencePlan = planMinimumJarTypeSwitchSequences(
+    reusableQueues.map((queue) => ({
+      physicalJarId: queue.physicalJarId,
+      currentRecipeId: queueCurrentRecipeId(queue),
+    })),
+    schedulableRecipes.map((recipe) => recipe.recipeId),
+    schedulableRecipes
+      .filter((recipe) => recipe.leftoverServings > 0)
+      .map((recipe) => recipe.recipeId),
+  )
+
   const builtQueues =
     schedulableRecipes.length > reusableQueueCount
-      ? buildJarQueuesWithSwitches(schedulableRecipes, queues)
+      ? buildJarQueuesWithSwitches(
+          schedulableRecipes,
+          queues,
+          sequencePlan,
+        )
       : buildJarQueuesWithoutSwitches(schedulableRecipes, queues)
 
   return {
     queues: builtQueues,
     discardedInitialJuice,
     plannedNewProductionDiscards,
+    expectedMinimumSwitches: sequencePlan.minimumSwitches,
   }
 }
 
@@ -1855,13 +1795,7 @@ export function buildMultiTripReplenishmentPlan(
   const jarTypeSwitches =
     countJarTypeSwitchesFromSchedule(trips, carriedJuiceJars)
   const expectedMinimumSwitches =
-    minimumJarTypeSwitchesForInitialJars(
-      carriedJuiceJars.map((jar) => ({
-        recipeId: jar.initialRecipeId,
-        servings: jar.initialServings,
-      })),
-      salesRecipes.map((recipe) => recipe.recipeId),
-    )
+    queueBuild.expectedMinimumSwitches
 
   if (jarTypeSwitches !== expectedMinimumSwitches) {
     throw new PlanningUserError(
@@ -1870,7 +1804,7 @@ export function buildMultiTripReplenishmentPlan(
         expectedJarTypeSwitches: expectedMinimumSwitches,
         actualJarTypeSwitches: jarTypeSwitches,
       },
-      `Physical jar schedule realized ${jarTypeSwitches} switch(es), expected the initial-content-aware minimum ${expectedMinimumSwitches}`,
+      `Physical jar schedule realized ${jarTypeSwitches} switch(es), expected the terminal-aware physical minimum ${expectedMinimumSwitches}`,
     )
   }
 
