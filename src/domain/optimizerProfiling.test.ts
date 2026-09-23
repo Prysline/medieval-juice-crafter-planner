@@ -1590,6 +1590,64 @@ it(
           )
         : null
 
+    const exactFiftyMachineHighs =
+      compressedCostStage?.status === 'optimal' &&
+      compressedCostStage.objectiveValue !== null &&
+      decomposedMachineOperationLowerBound === 50
+        ? await profileHighsOptimization(
+            strictCostPrunedModel,
+            ['minimum-machine-operations'],
+            {
+              stageTimeLimitSeconds: 5.5,
+              relaxAssignmentVariables: true,
+              aggregateLocalSingletonOperations: true,
+              aggregateEquivalentAssignments: true,
+              tightenRecipeBoundsFromMinimumCostFix: true,
+              tightenOperationBoundsFromRecipeBounds: true,
+              machineOperationsLowerBound: 50,
+              machineOperationsUpperBound: 50,
+              maxStages: 1,
+              initialCriterionFixes: [
+                {
+                  criterion: 'minimum-cost',
+                  value: Math.round(
+                    compressedCostStage.objectiveValue,
+                  ),
+                },
+              ],
+            },
+          )
+        : null
+
+    const atMostFiftyOneMachineHighs =
+      compressedCostStage?.status === 'optimal' &&
+      compressedCostStage.objectiveValue !== null &&
+      decomposedMachineOperationLowerBound === 50
+        ? await profileHighsOptimization(
+            strictCostPrunedModel,
+            ['minimum-machine-operations'],
+            {
+              stageTimeLimitSeconds: 5.5,
+              relaxAssignmentVariables: true,
+              aggregateLocalSingletonOperations: true,
+              aggregateEquivalentAssignments: true,
+              tightenRecipeBoundsFromMinimumCostFix: true,
+              tightenOperationBoundsFromRecipeBounds: true,
+              machineOperationsLowerBound: 50,
+              machineOperationsUpperBound: 51,
+              maxStages: 1,
+              initialCriterionFixes: [
+                {
+                  criterion: 'minimum-cost',
+                  value: Math.round(
+                    compressedCostStage.objectiveValue,
+                  ),
+                },
+              ],
+            },
+          )
+        : null
+
     const tightOperationBoundMachineHighs =
       compressedCostStage?.status === 'optimal' &&
       compressedCostStage.objectiveValue !== null
@@ -1792,6 +1850,10 @@ it(
       localTailMachineHighs?.stages[0]
     const decomposedBoundMachineFirstStage =
       decomposedBoundMachineHighs?.stages[0]
+    const exactFiftyMachineFirstStage =
+      exactFiftyMachineHighs?.stages[0]
+    const atMostFiftyOneMachineFirstStage =
+      atMostFiftyOneMachineHighs?.stages[0]
     const tightOperationBoundMachineFirstStage =
       tightOperationBoundMachineHighs?.stages[0]
     const binaryEncodedMachineFirstStage = null
@@ -2611,6 +2673,37 @@ it(
             }
           : null,
       decomposedBoundWarmStartComparison,
+      exactFiftyMachineStage: exactFiftyMachineFirstStage
+        ? {
+            solveMs: exactFiftyMachineFirstStage.solveMs,
+            status: exactFiftyMachineFirstStage.status,
+            objectiveValue: exactFiftyMachineFirstStage.objectiveValue,
+            variableCount: exactFiftyMachineFirstStage.variableCount,
+            constraintCount: exactFiftyMachineFirstStage.constraintCount,
+            integralAssignmentReconstructionFeasible:
+              exactFiftyMachineFirstStage.integralAssignmentReconstructionFeasible,
+            reconstructedAssignmentCount:
+              exactFiftyMachineFirstStage.reconstructedAssignmentCount,
+            totalMs: exactFiftyMachineHighs?.totalMs ?? 0,
+          }
+        : null,
+      atMostFiftyOneMachineStage: atMostFiftyOneMachineFirstStage
+        ? {
+            solveMs: atMostFiftyOneMachineFirstStage.solveMs,
+            status: atMostFiftyOneMachineFirstStage.status,
+            objectiveValue:
+              atMostFiftyOneMachineFirstStage.objectiveValue,
+            variableCount:
+              atMostFiftyOneMachineFirstStage.variableCount,
+            constraintCount:
+              atMostFiftyOneMachineFirstStage.constraintCount,
+            integralAssignmentReconstructionFeasible:
+              atMostFiftyOneMachineFirstStage.integralAssignmentReconstructionFeasible,
+            reconstructedAssignmentCount:
+              atMostFiftyOneMachineFirstStage.reconstructedAssignmentCount,
+            totalMs: atMostFiftyOneMachineHighs?.totalMs ?? 0,
+          }
+        : null,
       warmStartHighsComparison,
       binaryEncodedWarmStartComparison,
       binaryEncodedMachineStage: null,
