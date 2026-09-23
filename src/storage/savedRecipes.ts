@@ -3,6 +3,35 @@ import type { StorageLike } from './plannerState'
 
 export const SAVED_RECIPES_STORAGE_KEY = 'mjc-saved-recipes'
 
+function isConfirmedResult(
+  value: unknown,
+): value is NonNullable<SavedRecipe['confirmedResult']> {
+  if (!value || typeof value !== 'object') return false
+  const result = value as NonNullable<SavedRecipe['confirmedResult']>
+
+  return (
+    Array.isArray(result.effects) &&
+    result.effects.every(
+      (effect) =>
+        effect &&
+        typeof effect === 'object' &&
+        typeof effect.name === 'string' &&
+        effect.name.length > 0 &&
+        typeof effect.value === 'number' &&
+        Number.isFinite(effect.value),
+    ) &&
+    (
+      result.salePrice === null ||
+      (
+        typeof result.salePrice === 'number' &&
+        Number.isFinite(result.salePrice) &&
+        result.salePrice >= 0
+      )
+    ) &&
+    typeof result.confirmedAt === 'string'
+  )
+}
+
 function isSavedRecipe(value: unknown): value is SavedRecipe {
   if (!value || typeof value !== 'object') return false
 
@@ -16,7 +45,11 @@ function isSavedRecipe(value: unknown): value is SavedRecipe {
     recipe.ingredientIds.length > 0 &&
     recipe.ingredientIds.every((id) => typeof id === 'string') &&
     typeof recipe.createdAt === 'string' &&
-    (recipe.note === undefined || typeof recipe.note === 'string')
+    (recipe.note === undefined || typeof recipe.note === 'string') &&
+    (
+      recipe.confirmedResult === undefined ||
+      isConfirmedResult(recipe.confirmedResult)
+    )
   )
 }
 
