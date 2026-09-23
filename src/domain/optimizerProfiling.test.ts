@@ -2221,6 +2221,13 @@ it(
               aggregateEquivalentAssignments: true,
               tightenRecipeBoundsFromMinimumCostFix: true,
               tightenOperationBoundsFromRecipeBounds: true,
+              machineOperationPartitionLowerBounds: {
+                juicing: 8,
+                seasoning: 12,
+                sharedBlending: 7,
+                singletonBlending: 2,
+                finalizing: 21,
+              },
               maxStages: 1,
               initialCriterionFixes: [
                 {
