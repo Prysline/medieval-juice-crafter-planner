@@ -1578,9 +1578,9 @@ it(
                 twoWayMachineOperationLowerBound,
       twoWayMachineOperationLowerBounds: {
         sharedPrefix:
-          sharedPrefixMachineFirstStage?.objectiveValue ?? null,
+          sharedPrefixMachineHighs?.stages[0]?.objectiveValue ?? null,
         localTail:
-          localTailMachineFirstStage?.objectiveValue ?? null,
+          localTailMachineHighs?.stages[0]?.objectiveValue ?? null,
       },
       decomposedMachineOperationLowerBound,
               captureMps: true,
