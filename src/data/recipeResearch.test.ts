@@ -45,6 +45,102 @@ describe('recipe research invariants', () => {
     }
   })
 
+  it('stores the 2026-09-23 observed recipe batch as canonical observed recipes', () => {
+    const observations = [
+      {
+        id: 'banana-mint',
+        observedDisplayName: '香蕉 - 薄荷（調製飲品）',
+        salePrice: 35,
+        ingredients: ['香蕉', '薄荷'],
+        effects: [
+          { name: '清新口氣', value: 4 },
+          { name: '紓解壓力', value: 4 },
+          { name: '補充精力', value: 4 },
+        ],
+      },
+      {
+        id: 'lemon-sugar-cinnamon',
+        observedDisplayName: '甜味 咆哮',
+        salePrice: 42,
+        ingredients: ['檸檬', '糖', '肉桂'],
+        effects: [
+          { name: '甜味', value: 5 },
+          { name: '調節血糖', value: 4 },
+          { name: '酸味', value: 4 },
+          { name: '輔助瘦身', value: 3 },
+        ],
+      },
+      {
+        id: 'banana-mint-sugar',
+        observedDisplayName: '活力 戀人',
+        salePrice: 47,
+        ingredients: ['香蕉', '薄荷', '糖'],
+        effects: [
+          { name: '補充精力', value: 7 },
+          { name: '甜味', value: 6 },
+          { name: '清新口氣', value: 4 },
+          { name: '紓解壓力', value: 4 },
+        ],
+      },
+      {
+        id: 'pear-mint-sugar-cinnamon',
+        observedDisplayName: '甜味 暴風',
+        salePrice: 70,
+        ingredients: ['梨', '薄荷', '糖', '肉桂'],
+        effects: [
+          { name: '甜味', value: 5 },
+          { name: '調節血糖', value: 4 },
+          { name: '保護心臟', value: 4 },
+          { name: '清新口氣', value: 4 },
+          { name: '促進消化', value: 4 },
+        ],
+      },
+      {
+        id: 'orange-sugar-mint-cinnamon',
+        observedDisplayName: '甜味 滋響',
+        salePrice: 67,
+        ingredients: ['橙子', '糖', '薄荷', '肉桂'],
+        effects: [
+          { name: '甜味', value: 5 },
+          { name: '調節血糖', value: 4 },
+          { name: '芳香', value: 4 },
+          { name: '清新口氣', value: 4 },
+          { name: '增強免疫', value: 4 },
+        ],
+      },
+      {
+        id: 'carrot-mint-sugar-cinnamon',
+        observedDisplayName: '血糖平衡 勇士',
+        salePrice: 66,
+        ingredients: ['紅蘿蔔', '薄荷', '糖', '肉桂'],
+        effects: [
+          { name: '調節血糖', value: 7 },
+          { name: '甜味', value: 5 },
+          { name: '清新口氣', value: 4 },
+          { name: '改善視力', value: 4 },
+          { name: '芳香', value: 3 },
+        ],
+      },
+      {
+        id: 'banana-mint-sugar-cinnamon',
+        observedDisplayName: '活力 純真',
+        salePrice: 73,
+        ingredients: ['香蕉', '薄荷', '糖', '肉桂'],
+        effects: [
+          { name: '補充精力', value: 7 },
+          { name: '甜味', value: 6 },
+          { name: '調節血糖', value: 4 },
+          { name: '清新口氣', value: 4 },
+          { name: '紓解壓力', value: 4 },
+        ],
+      },
+    ] as const
+
+    for (const observation of observations) {
+      expect(recipeById(observation.id)).toMatchObject(observation)
+    }
+  })
+
   it('stores the four new tranquil-fountain screenshots as canonical observed recipes', () => {
     expect(recipeById('banana-cinnamon')).toMatchObject({
       observedDisplayName: '香蕉－肉桂（調製飲品）',
