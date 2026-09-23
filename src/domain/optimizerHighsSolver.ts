@@ -175,46 +175,57 @@ function buildHighsStage(
     )
   })
 
-  const productionEdgeKeys = [
-    ...new Set(
-      domain.recipes.flatMap((recipe) =>
-        recipe.productionPath.edges.map((edge) => edge.key),
-      ),
-    ),
-  ]
+  const quantityTermsByEdgeKey = new Map<
+    string,
+    ReturnType<IntVariable['times']>[]
+  >()
+  for (const recipe of domain.recipes) {
+    const x = xByRecipeId.get(recipe.candidate.id)
+    if (!x) continue
+
+    const edgeMultiplicityByKey = new Map<string, number>()
+    for (const edge of recipe.productionPath.edges) {
+      edgeMultiplicityByKey.set(
+        edge.key,
+        (edgeMultiplicityByKey.get(edge.key) ?? 0) + 1,
+      )
+    }
+
+    for (const [edgeKey, multiplicity] of edgeMultiplicityByKey) {
+      const term = x.times(multiplicity)
+      const terms = quantityTermsByEdgeKey.get(edgeKey)
+      if (terms) {
+        terms.push(term)
+      } else {
+        quantityTermsByEdgeKey.set(edgeKey, [term])
+      }
+    }
+  }
+
   const operationByEdgeKey = new Map<string, IntVariable>()
+  ;[...quantityTermsByEdgeKey.entries()].forEach(
+    ([edgeKey, quantityTerms], edgeIndex) => {
+      const operationCount = model.intVar(
+        0,
+        maxTotalJuiceUnits,
+        `op_${edgeIndex}`,
+      )
+      operationByEdgeKey.set(edgeKey, operationCount)
 
-  productionEdgeKeys.forEach((edgeKey, edgeIndex) => {
-    const operationCount = model.intVar(
-      0,
-      maxTotalJuiceUnits,
-      `op_${edgeIndex}`,
-    )
-    operationByEdgeKey.set(edgeKey, operationCount)
+      const quantityExpression = sum(...quantityTerms)
 
-    const quantityExpression = sum(
-      ...domain.recipes.flatMap((recipe) => {
-        const edgeMultiplicity = recipe.productionPath.edges.filter(
-          (edge) => edge.key === edgeKey,
-        ).length
-        if (edgeMultiplicity === 0) return []
-
-        const x = xByRecipeId.get(recipe.candidate.id)
-        return x ? [x.times(edgeMultiplicity)] : []
-      }),
-    )
-
-    model.addConstraint(
-      quantityExpression
-        .minus(operationCount.times(PROCESSING_STACK_CAPACITY))
-        .leq(0),
-      `operation_capacity_${edgeIndex}`,
-    )
-    model.addConstraint(
-      operationCount.minus(quantityExpression).leq(0),
-      `operation_usage_${edgeIndex}`,
-    )
-  })
+      model.addConstraint(
+        quantityExpression
+          .minus(operationCount.times(PROCESSING_STACK_CAPACITY))
+          .leq(0),
+        `operation_capacity_${edgeIndex}`,
+      )
+      model.addConstraint(
+        operationCount.minus(quantityExpression).leq(0),
+        `operation_usage_${edgeIndex}`,
+      )
+    },
+  )
 
   const costExpression = sum(
     ...domain.recipes.flatMap((recipe) => {
