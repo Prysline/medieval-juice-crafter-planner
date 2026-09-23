@@ -1648,6 +1648,42 @@ it(
           )
         : null
 
+    const partitionBoundExactFiftyMachineHighs =
+      compressedCostStage?.status === 'optimal' &&
+      compressedCostStage.objectiveValue !== null &&
+      decomposedMachineOperationLowerBound === 50
+        ? await profileHighsOptimization(
+            strictCostPrunedModel,
+            ['minimum-machine-operations'],
+            {
+              stageTimeLimitSeconds: 5.5,
+              relaxAssignmentVariables: true,
+              aggregateLocalSingletonOperations: true,
+              aggregateEquivalentAssignments: true,
+              tightenRecipeBoundsFromMinimumCostFix: true,
+              tightenOperationBoundsFromRecipeBounds: true,
+              machineOperationsLowerBound: 50,
+              machineOperationsUpperBound: 50,
+              machineOperationPartitionLowerBounds: {
+                juicing: 8,
+                seasoning: 12,
+                sharedBlending: 7,
+                singletonBlending: 2,
+                finalizing: 21,
+              },
+              maxStages: 1,
+              initialCriterionFixes: [
+                {
+                  criterion: 'minimum-cost',
+                  value: Math.round(
+                    compressedCostStage.objectiveValue,
+                  ),
+                },
+              ],
+            },
+          )
+        : null
+
     const tightOperationBoundMachineHighs =
       compressedCostStage?.status === 'optimal' &&
       compressedCostStage.objectiveValue !== null
@@ -1854,6 +1890,8 @@ it(
       exactFiftyMachineHighs?.stages[0]
     const atMostFiftyOneMachineFirstStage =
       atMostFiftyOneMachineHighs?.stages[0]
+    const partitionBoundExactFiftyMachineFirstStage =
+      partitionBoundExactFiftyMachineHighs?.stages[0]
     const tightOperationBoundMachineFirstStage =
       tightOperationBoundMachineHighs?.stages[0]
     const binaryEncodedMachineFirstStage = null
@@ -2704,6 +2742,27 @@ it(
             totalMs: atMostFiftyOneMachineHighs?.totalMs ?? 0,
           }
         : null,
+      partitionBoundExactFiftyMachineStage:
+        partitionBoundExactFiftyMachineFirstStage
+          ? {
+              solveMs:
+                partitionBoundExactFiftyMachineFirstStage.solveMs,
+              status:
+                partitionBoundExactFiftyMachineFirstStage.status,
+              objectiveValue:
+                partitionBoundExactFiftyMachineFirstStage.objectiveValue,
+              variableCount:
+                partitionBoundExactFiftyMachineFirstStage.variableCount,
+              constraintCount:
+                partitionBoundExactFiftyMachineFirstStage.constraintCount,
+              integralAssignmentReconstructionFeasible:
+                partitionBoundExactFiftyMachineFirstStage.integralAssignmentReconstructionFeasible,
+              reconstructedAssignmentCount:
+                partitionBoundExactFiftyMachineFirstStage.reconstructedAssignmentCount,
+              totalMs:
+                partitionBoundExactFiftyMachineHighs?.totalMs ?? 0,
+            }
+          : null,
       warmStartHighsComparison,
       binaryEncodedWarmStartComparison,
       binaryEncodedMachineStage: null,
