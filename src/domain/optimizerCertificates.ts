@@ -153,6 +153,48 @@ export function prepareMinimumCostStageCertificate(
 }
 
 
+export function finalizingEdgesAreRecipeIdentityUnique(
+  domain: BatchOptimizationModel,
+): boolean {
+  if (domain.recipes.length === 0) return false
+
+  const seenEdgeKeys = new Set<string>()
+  for (const recipe of domain.recipes) {
+    const finalizingEdges = recipe.productionPath.edges.filter(
+      (edge) => edge.kind === 'finalizing',
+    )
+    if (finalizingEdges.length !== 1) return false
+
+    const [edge] = finalizingEdges
+    if (seenEdgeKeys.has(edge.key)) return false
+    seenEdgeKeys.add(edge.key)
+  }
+
+  return true
+}
+
+export function minimumRecipeKindsFromFinalizingBound(
+  totalProductionUnits: number,
+  finalizingOperations: number,
+): number {
+  const units = Math.max(0, Math.floor(totalProductionUnits))
+  const operations = Math.max(0, Math.floor(finalizingOperations))
+  if (PROCESSING_STACK_CAPACITY <= 1) {
+    return operations > 0 ? operations : 0
+  }
+
+  return Math.max(
+    0,
+    Math.ceil(
+      (
+        PROCESSING_STACK_CAPACITY * operations -
+        units
+      ) /
+        (PROCESSING_STACK_CAPACITY - 1),
+    ),
+  )
+}
+
 export interface RecipeUnitSelection {
   recipeId: string
   units: number
