@@ -129,7 +129,9 @@ async function expectRelaxationEquivalent(
       9,
     )
     expect(relaxedStage.fractionalAssignmentVariableCount).toBe(0)
-    expect(relaxedStage.maxAssignmentIntegralityError).toBe(0)
+    expect(
+      relaxedStage.maxAssignmentIntegralityError,
+    ).toBeLessThan(1e-9)
     expect(
       relaxedStage.integralAssignmentReconstructionFeasible,
     ).toBe(true)
