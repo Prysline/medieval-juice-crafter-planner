@@ -1296,6 +1296,33 @@ it(
           )
         : null
 
+    const belowFiftyMachineHighs =
+      compressedCostStage?.status === 'optimal' &&
+      compressedCostStage.objectiveValue !== null
+        ? await profileHighsOptimization(
+            strictCostPrunedModel,
+            ['minimum-machine-operations'],
+            {
+              stageTimeLimitSeconds: 10.5,
+              relaxAssignmentVariables: true,
+              aggregateLocalSingletonOperations: true,
+              aggregateEquivalentAssignments: true,
+              tightenRecipeBoundsFromMinimumCostFix: true,
+              tightenOperationBoundsFromRecipeBounds: true,
+              machineOperationsUpperBound: 49,
+              maxStages: 1,
+              initialCriterionFixes: [
+                {
+                  criterion: 'minimum-cost',
+                  value: Math.round(
+                    compressedCostStage.objectiveValue,
+                  ),
+                },
+              ],
+            },
+          )
+        : null
+
     const recipeRelaxedMachineHighs =
       compressedCostStage?.status === 'optimal' &&
       compressedCostStage.objectiveValue !== null
@@ -1418,6 +1445,8 @@ it(
       tightBoundMachineHighs?.stages[0]
     const tightOperationBoundMachineFirstStage =
       tightOperationBoundMachineHighs?.stages[0]
+    const belowFiftyMachineFirstStage =
+      belowFiftyMachineHighs?.stages[0]
     const recipeRelaxedMachineFirstStage =
       recipeRelaxedMachineHighs?.stages[0]
     const operationRelaxedMachineFirstStage =
@@ -1770,6 +1799,25 @@ it(
                 tightOperationBoundMachineFirstStage.reconstructedAssignmentCount,
               totalMs:
                 tightOperationBoundMachineHighs?.totalMs ?? 0,
+            }
+          : null,
+      belowFiftyMachineStage:
+        belowFiftyMachineFirstStage
+          ? {
+              solveMs: belowFiftyMachineFirstStage.solveMs,
+              status: belowFiftyMachineFirstStage.status,
+              objectiveValue:
+                belowFiftyMachineFirstStage.objectiveValue,
+              variableCount:
+                belowFiftyMachineFirstStage.variableCount,
+              constraintCount:
+                belowFiftyMachineFirstStage.constraintCount,
+              integralAssignmentReconstructionFeasible:
+                belowFiftyMachineFirstStage.integralAssignmentReconstructionFeasible,
+              reconstructedAssignmentCount:
+                belowFiftyMachineFirstStage.reconstructedAssignmentCount,
+              totalMs:
+                belowFiftyMachineHighs?.totalMs ?? 0,
             }
           : null,
       recipeRelaxedMachineStage:
