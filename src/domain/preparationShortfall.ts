@@ -96,19 +96,29 @@ function allocateFinishedJarStock(
 ): FinishedJarStockUsage[] {
   let remainingDemand = Math.max(0, Math.floor(assignedServings))
 
-  return jars.map((jar) => {
-    const initialServings = Math.max(0, Math.floor(jar.servings))
-    const servingsUsed = Math.min(initialServings, remainingDemand)
-    remainingDemand -= servingsUsed
+  // Consume smaller same-recipe jars first so existing stock is still used
+  // before new production while maximizing the number of physical jars that
+  // become completely empty and reusable later in the day.
+  return [...jars]
+    .sort(
+      (a, b) =>
+        Math.max(0, Math.floor(a.servings)) -
+          Math.max(0, Math.floor(b.servings)) ||
+        a.id.localeCompare(b.id),
+    )
+    .map((jar) => {
+      const initialServings = Math.max(0, Math.floor(jar.servings))
+      const servingsUsed = Math.min(initialServings, remainingDemand)
+      remainingDemand -= servingsUsed
 
-    return {
-      physicalJarId: jar.id,
-      recipeId,
-      initialServings,
-      servingsUsed,
-      servingsRemaining: initialServings - servingsUsed,
-    }
-  })
+      return {
+        physicalJarId: jar.id,
+        recipeId,
+        initialServings,
+        servingsUsed,
+        servingsRemaining: initialServings - servingsUsed,
+      }
+    })
 }
 
 export function buildPreparationShortfall(
