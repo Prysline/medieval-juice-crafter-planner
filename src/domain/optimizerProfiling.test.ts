@@ -626,7 +626,7 @@ it(
       model,
       priorities,
       {
-        stageTimeLimitSeconds: 2.5,
+        stageTimeLimitSeconds: 0.25,
         maxStages: 1,
       },
     )
@@ -634,7 +634,7 @@ it(
       model,
       priorities,
       {
-        stageTimeLimitSeconds: 10.5,
+        stageTimeLimitSeconds: 0.25,
         relaxAssignmentVariables: true,
         maxStages: 1,
       },
@@ -643,7 +643,7 @@ it(
       strictCostPrunedModel,
       priorities,
       {
-        stageTimeLimitSeconds: 10.5,
+        stageTimeLimitSeconds: 0.25,
         relaxAssignmentVariables: true,
         maxStages: 1,
       },
@@ -936,7 +936,7 @@ it(
             strictCostPrunedModel,
             ['minimum-machine-operations'],
             {
-              stageTimeLimitSeconds: 10.5,
+              stageTimeLimitSeconds: 0.25,
               relaxAssignmentVariables: true,
               maxStages: 1,
               initialCriterionFixes: [
@@ -957,7 +957,7 @@ it(
             strictCostPrunedModel,
             ['minimum-machine-operations'],
             {
-              stageTimeLimitSeconds: 10.5,
+              stageTimeLimitSeconds: 0.25,
               relaxAssignmentVariables: true,
               aggregateLocalSingletonOperations: true,
               maxStages: 1,
@@ -979,7 +979,7 @@ it(
             strictCostPrunedModel,
             ['minimum-machine-operations'],
             {
-              stageTimeLimitSeconds: 10.5,
+              stageTimeLimitSeconds: 0.25,
               relaxAssignmentVariables: true,
               aggregateLocalSingletonOperations: true,
               aggregateEquivalentAssignments: true,
@@ -1002,7 +1002,7 @@ it(
             strictCostPrunedModel,
             ['minimum-machine-operations'],
             {
-              stageTimeLimitSeconds: 10.5,
+              stageTimeLimitSeconds: 0.25,
               relaxAssignmentVariables: true,
               aggregateLocalSingletonOperations: true,
               aggregateEquivalentAssignments: true,
