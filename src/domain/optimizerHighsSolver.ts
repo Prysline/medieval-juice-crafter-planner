@@ -52,6 +52,10 @@ export interface HighsStageProfile {
   maxAssignmentIntegralityError: number
   integralAssignmentReconstructionFeasible: boolean | null
   reconstructedAssignmentCount: number
+  selectedRecipeUnits: Array<{
+    recipeId: string
+    units: number
+  }>
   buildMs: number
   buildPhases: HighsBuildPhaseProfile
   serializeMs: number
@@ -878,6 +882,10 @@ export async function profileHighsOptimization(
     let maxAssignmentIntegralityError = 0
     let integralAssignmentReconstructionFeasible: boolean | null = null
     let reconstructedAssignmentCount = 0
+    const selectedRecipeUnits: Array<{
+      recipeId: string
+      units: number
+    }> = []
 
     try {
       const parseStartedAt = performance.now()
@@ -904,6 +912,18 @@ export async function profileHighsOptimization(
         Number.isFinite(solution.objective)
           ? solution.objective
           : null
+
+      if (solution.solution) {
+        for (const [recipeId, x] of built.xByRecipeId) {
+          const units = solution.solution.get(x.name) ?? 0
+          if (units > 1e-7) {
+            selectedRecipeUnits.push({
+              recipeId,
+              units,
+            })
+          }
+        }
+      }
 
       if (
         options.relaxAssignmentVariables &&
@@ -946,6 +966,7 @@ export async function profileHighsOptimization(
       maxAssignmentIntegralityError,
       integralAssignmentReconstructionFeasible,
       reconstructedAssignmentCount,
+      selectedRecipeUnits,
       buildMs,
       buildPhases: built.buildPhaseMs,
       serializeMs,
