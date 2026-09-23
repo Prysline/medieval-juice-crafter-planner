@@ -30,6 +30,26 @@ interface ObjectiveFix {
   value: number
 }
 
+export interface HighsStageProfile {
+  objective: ObjectiveKey
+  fixCount: number
+  variableCount: number
+  constraintCount: number
+  buildMs: number
+  solveMs: number
+  status: string
+  objectiveValue: number
+}
+
+export interface HighsOptimizationProfile {
+  stages: HighsStageProfile[]
+  totalBuildMs: number
+  totalSolveMs: number
+  totalMs: number
+  finalVariableCount: number
+  finalConstraintCount: number
+}
+
 function requiredFiniteNumber(
   value: number | undefined,
   label: string,
@@ -356,11 +376,115 @@ function buildHighsStage(
 
   model.minimize(expressions[objective])
 
+  const nonEmptyInitialJarCount = initialJars.filter(
+    (jar) => jar.recipeId && jar.servings > 0,
+  ).length
+  const reusableJarVariableCount =
+    emptyJarCount === 0 ? nonEmptyInitialJarCount : 0
+  const variableCount =
+    domain.recipes.length * 2 +
+    yByCustomerRecipe.size +
+    operationByEdgeKey.size +
+    1 +
+    reusableJarVariableCount
+  const constraintCount =
+    domain.recipes.length * 3 +
+    domain.serviceableCustomerIds.length +
+    operationByEdgeKey.size * 2 +
+    2 +
+    fixes.length +
+    (emptyJarCount === 0 ? nonEmptyInitialJarCount + 1 : 0) +
+    (
+      typeof maxJarTypeSwitches === 'number' &&
+      Number.isFinite(maxJarTypeSwitches)
+        ? 1
+        : 0
+    )
+
   return {
     model,
     xByRecipeId,
     yByCustomerRecipe,
     operationByEdgeKey,
+    variableCount,
+    constraintCount,
+  }
+}
+
+export async function profileHighsOptimization(
+  domain: BatchOptimizationModel,
+  priorities: OptimizationCriterion[],
+): Promise<HighsOptimizationProfile> {
+  if (domain.serviceableCustomerIds.length === 0) {
+    return {
+      stages: [],
+      totalBuildMs: 0,
+      totalSolveMs: 0,
+      totalMs: 0,
+      finalVariableCount: 0,
+      finalConstraintCount: 0,
+    }
+  }
+
+  const totalStartedAt = performance.now()
+  const objectives = objectiveOrder(priorities)
+  const fixes: ObjectiveFix[] = []
+  const stages: HighsStageProfile[] = []
+
+  for (const objectiveKey of objectives) {
+    const buildStartedAt = performance.now()
+    const built = buildHighsStage(domain, objectiveKey, fixes)
+    const buildMs = performance.now() - buildStartedAt
+
+    const solveStartedAt = performance.now()
+    const solution = await built.model.solve()
+    const solveMs = performance.now() - solveStartedAt
+
+    if (solution.status !== 'optimal') {
+      throw new PlanningUserError(
+        'optimizer-no-solution',
+        { solverStatus: solution.status },
+        `HiGHS optimizer ended with status: ${solution.status}`,
+      )
+    }
+
+    const optimum = Math.round(
+      requiredFiniteNumber(
+        solution.objective,
+        `${objectiveKey} objective`,
+      ),
+    )
+
+    stages.push({
+      objective: objectiveKey,
+      fixCount: fixes.length,
+      variableCount: built.variableCount,
+      constraintCount: built.constraintCount,
+      buildMs,
+      solveMs,
+      status: solution.status,
+      objectiveValue: optimum,
+    })
+    fixes.push({
+      objective: objectiveKey,
+      value: optimum,
+    })
+  }
+
+  const finalStage = stages.at(-1)
+  return {
+    stages,
+    totalBuildMs: stages.reduce(
+      (total, stage) => total + stage.buildMs,
+      0,
+    ),
+    totalSolveMs: stages.reduce(
+      (total, stage) => total + stage.solveMs,
+      0,
+    ),
+    totalMs: performance.now() - totalStartedAt,
+    finalVariableCount: finalStage?.variableCount ?? 0,
+    finalConstraintCount: finalStage?.constraintCount ?? 0,
   }
 }
 
