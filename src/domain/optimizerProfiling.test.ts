@@ -3,6 +3,7 @@ import { customers as canonicalCustomers } from '../data/customers'
 import {
   buildOptimizationModel,
   minimumJarTypeSwitchesForRecipeIds,
+  normalizedInitialCarriedJuiceJars,
   normalizedOptimizationPriorities,
   type OptimizationRequest,
 } from './optimizerModel'
@@ -2312,6 +2313,62 @@ it(
           )
         : null
 
+    const stage3CostOptimalProductionUnitUpperBound =
+      fixedMinimumCost !== null &&
+      stage3AtLeast25UnitCostLowerBoundStage?.status === 'optimal' &&
+      stage3AtLeast25UnitCostLowerBoundStage.objectiveValue !== null &&
+      stage3AtLeast25UnitCostLowerBoundStage.objectiveValue >
+        fixedMinimumCost
+        ? 24
+        : null
+    const stage3FinalizingOperationLowerBound =
+      finalizingOnlyMachineFirstStage?.status === 'optimal' &&
+      finalizingOnlyMachineFirstStage.objectiveValue !== null
+        ? Math.round(
+            finalizingOnlyMachineFirstStage.objectiveValue,
+          )
+        : null
+    const stage3FinalizingEdgesAreRecipeUnique =
+      edgeKindStats.finalizing.uniqueEdges ===
+        strictCostPrunedRecipes.length &&
+      edgeKindStats.finalizing.singletonEdges ===
+        strictCostPrunedRecipes.length
+    const stage3DistinctRecipeKindLowerBound =
+      stage3CostOptimalProductionUnitUpperBound !== null &&
+      stage3FinalizingOperationLowerBound !== null &&
+      stage3FinalizingEdgesAreRecipeUnique
+        ? Math.ceil(
+            (
+              PROCESSING_STACK_CAPACITY *
+                stage3FinalizingOperationLowerBound -
+              stage3CostOptimalProductionUnitUpperBound
+            ) /
+              (PROCESSING_STACK_CAPACITY - 1),
+          )
+        : null
+    const stage3InitialJars =
+      normalizedInitialCarriedJuiceJars(request)
+    const stage3AllInitialJarsEmpty = stage3InitialJars.every(
+      (jar) => !jar.recipeId || jar.servings <= 0,
+    )
+    const stage3JarLowerBound =
+      stage3AllInitialJarsEmpty &&
+      stage3DistinctRecipeKindLowerBound !== null
+        ? minimumJarTypeSwitchesForRecipeIds(
+            request,
+            Array.from(
+              { length: stage3DistinctRecipeKindLowerBound },
+              (_, index) => `__stage3_lb_kind_${index}`,
+            ),
+          )
+        : null
+    const stage3ExactJarSwitches =
+      stage3JarLowerBound !== null &&
+      stage3WitnessJarUpperBound !== null &&
+      stage3JarLowerBound === stage3WitnessJarUpperBound
+        ? stage3JarLowerBound
+        : null
+
     const postCertificateJarHighs =
       lowerBoundWitnessFixedVerification?.stages[0]?.status ===
         'optimal' &&
@@ -3733,6 +3790,20 @@ it(
                 stage3CostFixedServiceCoverJarLowerBoundHighs?.totalMs ?? 0,
             }
           : null,
+      stage3JarCertificate: {
+        costOptimalProductionUnitUpperBound:
+          stage3CostOptimalProductionUnitUpperBound,
+        finalizingOperationLowerBound:
+          stage3FinalizingOperationLowerBound,
+        finalizingEdgesAreRecipeUnique:
+          stage3FinalizingEdgesAreRecipeUnique,
+        distinctRecipeKindLowerBound:
+          stage3DistinctRecipeKindLowerBound,
+        allInitialJarsEmpty: stage3AllInitialJarsEmpty,
+        jarLowerBound: stage3JarLowerBound,
+        jarUpperBound: stage3WitnessJarUpperBound,
+        exactJarSwitches: stage3ExactJarSwitches,
+      },
       stage3WitnessDistinctRecipeCount:
         stage3WitnessRecipeIds.length,
       stage3WitnessJarUpperBound,
@@ -3935,6 +4006,37 @@ it(
     console.info(
       `[Debug-D1 optimizer profile] ${JSON.stringify(report)}`,
     )
+
+    expect(stage3AtLeast25UnitCostLowerBoundStage?.status).toBe(
+      'optimal',
+    )
+    expect(
+      stage3AtLeast25UnitCostLowerBoundStage?.objectiveValue ??
+        -Infinity,
+    ).toBeGreaterThan(fixedMinimumCost ?? Infinity)
+    expect(stage3CostOptimalProductionUnitUpperBound).toBe(24)
+    expect(stage3FinalizingOperationLowerBound).toBe(21)
+    expect(stage3FinalizingEdgesAreRecipeUnique).toBe(true)
+    expect(stage3DistinctRecipeKindLowerBound).toBe(21)
+    expect(stage3AllInitialJarsEmpty).toBe(true)
+    expect(stage3JarLowerBound).toBe(19)
+    expect(stage3WitnessRecipeIds).toHaveLength(21)
+    expect(stage3WitnessJarUpperBound).toBe(19)
+    expect(stage3WitnessFixedJarHighs?.stages[0]?.status).toBe(
+      'optimal',
+    )
+    expect(
+      stage3WitnessFixedJarHighs?.stages[0]?.objectiveValue,
+    ).toBeCloseTo(19, 9)
+    expect(
+      stage3WitnessFixedJarHighs?.stages[0]
+        ?.integralAssignmentReconstructionFeasible,
+    ).toBe(true)
+    expect(
+      stage3WitnessFixedJarHighs?.stages[0]
+        ?.reconstructedAssignmentCount,
+    ).toBe(model.serviceableCustomerIds.length)
+    expect(stage3ExactJarSwitches).toBe(19)
 
     expect(candidatePool.entries.length).toBeGreaterThan(0)
     expect(generatedCurrentCandidates.length).toBeGreaterThan(0)
