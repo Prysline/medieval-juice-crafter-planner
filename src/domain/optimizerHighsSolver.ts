@@ -221,6 +221,7 @@ function buildHighsStage(
     relaxAssignmentVariables?: boolean
     aggregateLocalSingletonOperations?: boolean
     aggregateEquivalentAssignments?: boolean
+    tightenRecipeBoundsFromMinimumCostFix?: boolean
   } = {},
 ) {
   const model = new Model()
@@ -324,11 +325,40 @@ function buildHighsStage(
     return [...groupsByEligibility.values()]
   })()
 
+  const fixedMinimumCost = fixes.find(
+    (fix) => fix.objective === 'cost',
+  )?.value
+
   let phaseStartedAt = performance.now()
   domain.recipes.forEach((recipe, recipeIndex) => {
+    const customerCapacityUpperBound = Math.max(
+      1,
+      Math.ceil(recipe.eligibleCustomerIds.length / 2),
+    )
+    const costUpperBound =
+      options.tightenRecipeBoundsFromMinimumCostFix &&
+      typeof fixedMinimumCost === 'number' &&
+      fixedMinimumCost >= 0 &&
+      recipe.juiceUnitIngredientCost > 0
+        ? Math.floor(
+            fixedMinimumCost / recipe.juiceUnitIngredientCost,
+          )
+        : maxJuiceUnitsPerRecipe
+    const recipeUpperBound =
+      options.tightenRecipeBoundsFromMinimumCostFix
+        ? Math.max(
+            0,
+            Math.min(
+              maxJuiceUnitsPerRecipe,
+              customerCapacityUpperBound,
+              costUpperBound,
+            ),
+          )
+        : maxJuiceUnitsPerRecipe
+
     const x = model.intVar(
       0,
-      maxJuiceUnitsPerRecipe,
+      recipeUpperBound,
       `x_${recipeIndex}`,
     )
     xByRecipeId.set(recipe.candidate.id, x)
@@ -778,6 +808,7 @@ export async function profileHighsOptimization(
     maxStages?: number
     aggregateLocalSingletonOperations?: boolean
     aggregateEquivalentAssignments?: boolean
+    tightenRecipeBoundsFromMinimumCostFix?: boolean
     initialCriterionFixes?: Array<{
       criterion: OptimizationCriterion
       value: number
@@ -825,6 +856,8 @@ export async function profileHighsOptimization(
           options.aggregateLocalSingletonOperations ?? false,
         aggregateEquivalentAssignments:
           options.aggregateEquivalentAssignments ?? false,
+        tightenRecipeBoundsFromMinimumCostFix:
+          options.tightenRecipeBoundsFromMinimumCostFix ?? false,
       },
     )
     const buildMs = performance.now() - buildStartedAt
