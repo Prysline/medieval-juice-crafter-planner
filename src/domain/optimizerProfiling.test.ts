@@ -1019,6 +1019,33 @@ it(
             },
           )
         : null
+    const incumbentBoundMachineHighs =
+      compressedCostStage?.status === 'optimal' &&
+      compressedCostStage.objectiveValue !== null &&
+      compressedIncumbentMachineOperations > 0
+        ? await profileHighsOptimization(
+            strictCostPrunedModel,
+            ['minimum-machine-operations'],
+            {
+              stageTimeLimitSeconds: 10.5,
+              relaxAssignmentVariables: true,
+              aggregateLocalSingletonOperations: true,
+              aggregateEquivalentAssignments: true,
+              tightenRecipeBoundsFromMinimumCostFix: true,
+              machineOperationsUpperBound:
+                compressedIncumbentMachineOperations,
+              maxStages: 1,
+              initialCriterionFixes: [
+                {
+                  criterion: 'minimum-cost',
+                  value: Math.round(
+                    compressedCostStage.objectiveValue,
+                  ),
+                },
+              ],
+            },
+          )
+        : null
     const binaryFirstStage = binaryHighs.stages[0]
     const relaxedFirstStage = relaxedHighs.stages[0]
     const prunedRelaxedFirstStage = prunedRelaxedHighs.stages[0]
@@ -1032,6 +1059,8 @@ it(
       groupedAssignmentMachineHighs?.stages[0]
     const tightBoundMachineFirstStage =
       tightBoundMachineHighs?.stages[0]
+    const incumbentBoundMachineFirstStage =
+      incumbentBoundMachineHighs?.stages[0]
 
     const report = {
       progress: request.currentProgress,
