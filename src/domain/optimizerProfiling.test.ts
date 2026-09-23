@@ -2160,20 +2160,26 @@ it(
           : null,
     }
 
-    const certifiedLowerBoundWitness =
+    const certifiedLowerBoundWitnessEntry =
       combinedMachineOperationLowerBound === null
-        ? null
-        : (
-            Object.entries(lowerBoundWitnessSearches).find(
-              ([, search]) =>
-                search?.breakdown.total ===
-                combinedMachineOperationLowerBound,
-            ) ?? null
+        ? undefined
+        : Object.entries(lowerBoundWitnessSearches).find(
+            ([, search]) =>
+              search?.breakdown.total ===
+              combinedMachineOperationLowerBound,
           )
+    const certifiedLowerBoundWitness =
+      certifiedLowerBoundWitnessEntry?.[1]
+        ? {
+            source: certifiedLowerBoundWitnessEntry[0],
+            search: certifiedLowerBoundWitnessEntry[1],
+          }
+        : null
 
     const lowerBoundWitnessFixedVerification =
       certifiedLowerBoundWitness &&
-      compressedCostStage?.objectiveValue !== null
+      compressedCostStage?.status === 'optimal' &&
+      compressedCostStage.objectiveValue !== null
         ? await profileHighsOptimization(
             strictCostPrunedModel,
             ['minimum-machine-operations'],
@@ -2185,7 +2191,7 @@ it(
               tightenRecipeBoundsFromMinimumCostFix: true,
               tightenOperationBoundsFromRecipeBounds: true,
               fixedRecipeUnits:
-                certifiedLowerBoundWitness[1].recipeUnits,
+                certifiedLowerBoundWitness.search.recipeUnits,
               maxStages: 1,
               initialCriterionFixes: [
                 {
@@ -3498,7 +3504,7 @@ it(
       decomposedBoundWarmStartComparison,
       lowerBoundWitnessSearches,
       certifiedLowerBoundWitness:
-        certifiedLowerBoundWitness?.[0] ?? null,
+        certifiedLowerBoundWitness?.source ?? null,
       lowerBoundWitnessFixedVerification:
         lowerBoundWitnessFixedVerification?.stages[0]
           ? {
