@@ -970,6 +970,84 @@ it(
       })
     }
 
+    const projectedOperationUpperBounds: number[] = []
+    const projectedSharedQuantityUpperByEdge = new Map<
+      string,
+      number
+    >()
+
+    for (const recipe of strictCostPrunedRecipes) {
+      const recipeUpperBound =
+        tightenedXUpperBoundByRecipeId.get(recipe.candidate.id) ?? 0
+      const signature = machineSignatureByRecipeId.get(
+        recipe.candidate.id,
+      )
+      if (!signature) continue
+
+      for (const multiplicity of new Set(
+        signature.localMultiplicities,
+      )) {
+        projectedOperationUpperBounds.push(
+          Math.ceil(
+            (multiplicity * recipeUpperBound) /
+              PROCESSING_STACK_CAPACITY,
+          ),
+        )
+      }
+
+      for (const [edgeKey, multiplicity] of
+        signature.sharedMultiplicity) {
+        projectedSharedQuantityUpperByEdge.set(
+          edgeKey,
+          (projectedSharedQuantityUpperByEdge.get(edgeKey) ?? 0) +
+            multiplicity * recipeUpperBound,
+        )
+      }
+    }
+
+    for (const quantityUpperBound of
+      projectedSharedQuantityUpperByEdge.values()) {
+      projectedOperationUpperBounds.push(
+        Math.ceil(
+          quantityUpperBound / PROCESSING_STACK_CAPACITY,
+        ),
+      )
+    }
+
+    const projectedOperationUpperBoundHistogramMap =
+      new Map<number, number>()
+    for (const upperBound of projectedOperationUpperBounds) {
+      projectedOperationUpperBoundHistogramMap.set(
+        upperBound,
+        (projectedOperationUpperBoundHistogramMap.get(upperBound) ?? 0) +
+          1,
+      )
+    }
+    const stage2ProjectedOperationUpperBoundHistogram = [
+      ...projectedOperationUpperBoundHistogramMap.entries(),
+    ]
+      .map(([upperBound, count]) => ({ upperBound, count }))
+      .sort(
+        (left, right) => left.upperBound - right.upperBound,
+      )
+    const stage2OperationVarsWithUpperBoundOne =
+      projectedOperationUpperBounds.filter(
+        (upperBound) => upperBound <= 1,
+      ).length
+    const stage2OperationVarsWithUpperBoundAtMostTwo =
+      projectedOperationUpperBounds.filter(
+        (upperBound) => upperBound <= 2,
+      ).length
+    const stage2MaxProjectedOperationUpperBound = Math.max(
+      0,
+      ...projectedOperationUpperBounds,
+    )
+    const stage2AverageProjectedOperationUpperBound =
+      projectedOperationUpperBounds.reduce(
+        (total, upperBound) => total + upperBound,
+        0,
+      ) / Math.max(1, projectedOperationUpperBounds.length)
+
     const machineDominatedRecipeIds = new Set<string>()
     for (const group of stage2RecipesByServiceMask.values()) {
       for (const dominated of group) {
@@ -1453,6 +1531,11 @@ it(
         stage2AverageTightenedXUpperBound,
       stage2XUpperBoundHistogram:
         stage2XUpperBoundHistogram,
+      stage2ProjectedOperationUpperBoundHistogram,
+      stage2OperationVarsWithUpperBoundOne,
+      stage2OperationVarsWithUpperBoundAtMostTwo,
+      stage2MaxProjectedOperationUpperBound,
+      stage2AverageProjectedOperationUpperBound,
       stage2MachineDominatedRecipeCount:
         machineDominatedRecipeIds.size,
       stage2MachineFrontierRecipeCount:
