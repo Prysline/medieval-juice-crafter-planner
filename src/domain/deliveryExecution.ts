@@ -576,37 +576,6 @@ function applyTripEndDiscards(
   }
 }
 
-function validateCompletedTripJars(
-  inventory: InventoryState,
-  trip: DeliveryExecutionTrip,
-) {
-  for (const load of trip.deliveries.reduce(
-    (
-      map,
-      delivery,
-    ) => {
-      const current = map.get(delivery.physicalJarId) ?? {
-        recipeId: delivery.recipeId,
-        recipeName: delivery.recipeName,
-      }
-      map.set(delivery.physicalJarId, current)
-      return map
-    },
-    new Map<
-      string,
-      { recipeId: string; recipeName: string }
-    >(),
-  )) {
-    const [physicalJarId, recipe] = load
-    const sourceLoad = trip.deliveries.find(
-      (delivery) =>
-        delivery.physicalJarId === physicalJarId &&
-        delivery.recipeId === recipe.recipeId,
-    )
-    if (!sourceLoad) continue
-  }
-}
-
 export function applyDeliveryExecutionCustomer(
   plan: DeliveryExecutionPlan,
   sourceInventory: InventoryState,
