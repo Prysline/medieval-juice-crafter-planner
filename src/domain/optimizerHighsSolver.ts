@@ -983,6 +983,13 @@ function buildHighsStage(
         ? 1
         : 0
     ) +
+    (
+      needsProductionOperations &&
+      typeof options.machineOperationsLowerBound === 'number' &&
+      Number.isFinite(options.machineOperationsLowerBound)
+        ? 1
+        : 0
+    ) +
     (options.fixedRecipeUnits ? domain.recipes.length : 0)
 
   return {
