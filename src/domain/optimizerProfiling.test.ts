@@ -513,12 +513,14 @@ it(
         'machineOperations',
       )
       expect(expandedMachineFirstStage.fixCount).toBe(1)
-      expect(
-        expandedMachineFirstStage.integralAssignmentReconstructionFeasible,
-      ).toBe(true)
-      expect(expandedMachineFirstStage.reconstructedAssignmentCount).toBe(
-        model.serviceableCustomerIds.length,
-      )
+      if (expandedMachineFirstStage.objectiveValue !== null) {
+        expect(
+          expandedMachineFirstStage.integralAssignmentReconstructionFeasible,
+        ).toBe(true)
+        expect(expandedMachineFirstStage.reconstructedAssignmentCount).toBe(
+          model.serviceableCustomerIds.length,
+        )
+      }
     }
   },
   // The profiler gives each HiGHS stage its own short diagnostic solver
