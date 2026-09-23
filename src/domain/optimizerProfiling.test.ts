@@ -229,6 +229,34 @@ it(
       recipes: strictCostPrunedRecipes,
     }
 
+    const representativeByServiceMask = new Map<
+      bigint,
+      (typeof model.recipes)[number]
+    >()
+    for (const recipe of strictCostPrunedRecipes) {
+      const mask = recipeServiceMask(recipe)
+      const current = representativeByServiceMask.get(mask)
+      if (
+        !current ||
+        recipe.juiceUnitIngredientCost <
+          current.juiceUnitIngredientCost
+      ) {
+        representativeByServiceMask.set(mask, recipe)
+      }
+    }
+    const costStageCompressedRecipes = [
+      ...representativeByServiceMask.values(),
+    ]
+    const costStageCompressedAssignmentEligibility =
+      costStageCompressedRecipes.reduce(
+        (total, recipe) => total + recipe.eligibleCustomerIds.length,
+        0,
+      )
+    const costStageCompressedModel = {
+      ...model,
+      recipes: costStageCompressedRecipes,
+    }
+
     const solverImportStartedAt = performance.now()
     const { profileHighsOptimization } = await import(
       './optimizerHighsSolver'
@@ -263,9 +291,20 @@ it(
         maxStages: 1,
       },
     )
+    const compressedRelaxedHighs = await profileHighsOptimization(
+      costStageCompressedModel,
+      priorities,
+      {
+        stageTimeLimitSeconds: 10.5,
+        relaxAssignmentVariables: true,
+        maxStages: 1,
+      },
+    )
     const binaryFirstStage = binaryHighs.stages[0]
     const relaxedFirstStage = relaxedHighs.stages[0]
     const prunedRelaxedFirstStage = prunedRelaxedHighs.stages[0]
+    const compressedRelaxedFirstStage =
+      compressedRelaxedHighs.stages[0]
 
     const report = {
       progress: request.currentProgress,
@@ -301,6 +340,10 @@ it(
         strictCostPrunedRecipes.length,
       assignmentEligibilityRemainingAfterStrictCostSupersetDominance:
         strictCostPrunedAssignmentEligibility,
+      costStageCompressedRecipeCount:
+        costStageCompressedRecipes.length,
+      costStageCompressedAssignmentEligibility:
+        costStageCompressedAssignmentEligibility,
       finalHighsVariables: binaryHighs.finalVariableCount,
       finalHighsConstraints: binaryHighs.finalConstraintCount,
       candidateGenerationMs,
@@ -348,6 +391,27 @@ it(
           prunedRelaxedFirstStage?.reconstructedAssignmentCount ?? 0,
         totalMs: prunedRelaxedHighs.totalMs,
       },
+      compressedRelaxedAssignment: {
+        solveMs: compressedRelaxedFirstStage?.solveMs ?? 0,
+        status: compressedRelaxedFirstStage?.status ?? 'missing',
+        objectiveValue:
+          compressedRelaxedFirstStage?.objectiveValue ?? null,
+        variableCount:
+          compressedRelaxedFirstStage?.variableCount ?? 0,
+        constraintCount:
+          compressedRelaxedFirstStage?.constraintCount ?? 0,
+        fractionalAssignmentVariableCount:
+          compressedRelaxedFirstStage?.fractionalAssignmentVariableCount ??
+          0,
+        maxAssignmentIntegralityError:
+          compressedRelaxedFirstStage?.maxAssignmentIntegralityError ?? 0,
+        integralAssignmentReconstructionFeasible:
+          compressedRelaxedFirstStage?.integralAssignmentReconstructionFeasible ??
+          null,
+        reconstructedAssignmentCount:
+          compressedRelaxedFirstStage?.reconstructedAssignmentCount ?? 0,
+        totalMs: compressedRelaxedHighs.totalMs,
+      },
       binaryStages: binaryHighs.stages,
       relaxedStages: relaxedHighs.stages,
     }
@@ -374,14 +438,28 @@ it(
       binaryHighs.finalConstraintCount,
     )
     expect(prunedRelaxedHighs.stages).toHaveLength(1)
+    expect(compressedRelaxedHighs.stages).toHaveLength(1)
     expect(strictCostPrunedRecipes.length).toBeGreaterThan(0)
     expect(strictCostPrunedRecipes.length).toBeLessThan(model.recipes.length)
+    expect(costStageCompressedRecipes.length).toBeGreaterThan(0)
+    expect(costStageCompressedRecipes.length).toBeLessThan(
+      strictCostPrunedRecipes.length,
+    )
     if (
       relaxedFirstStage?.status === 'optimal' &&
       prunedRelaxedFirstStage?.status === 'optimal'
     ) {
       expect(prunedRelaxedFirstStage.objectiveValue).toBeCloseTo(
         relaxedFirstStage.objectiveValue ?? 0,
+        9,
+      )
+    }
+    if (
+      prunedRelaxedFirstStage?.status === 'optimal' &&
+      compressedRelaxedFirstStage?.status === 'optimal'
+    ) {
+      expect(compressedRelaxedFirstStage.objectiveValue).toBeCloseTo(
+        prunedRelaxedFirstStage.objectiveValue ?? 0,
         9,
       )
     }
