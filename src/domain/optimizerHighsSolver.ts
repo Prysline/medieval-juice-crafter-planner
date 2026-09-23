@@ -648,6 +648,10 @@ export async function profileHighsOptimization(
     stageTimeLimitSeconds?: number
     relaxAssignmentVariables?: boolean
     maxStages?: number
+    initialCriterionFixes?: Array<{
+      criterion: OptimizationCriterion
+      value: number
+    }>
   } = {},
 ): Promise<HighsOptimizationProfile> {
   if (domain.serviceableCustomerIds.length === 0) {
@@ -667,7 +671,12 @@ export async function profileHighsOptimization(
 
   const totalStartedAt = performance.now()
   const objectives = objectiveOrder(priorities)
-  const fixes: ObjectiveFix[] = []
+  const fixes: ObjectiveFix[] = (
+    options.initialCriterionFixes ?? []
+  ).map((fix) => ({
+    objective: criterionKey(fix.criterion),
+    value: fix.value,
+  }))
   const stages: HighsStageProfile[] = []
   const stageTimeLimitSeconds =
     options.stageTimeLimitSeconds ?? 10.5
