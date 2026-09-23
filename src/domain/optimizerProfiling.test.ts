@@ -1466,6 +1466,15 @@ it(
               tightenOperationBoundsFromRecipeBounds: true,
               machineOperationsLowerBound:
                 decomposedMachineOperationLowerBound,
+      combinedMachineOperationLowerBound,
+      combinedMachineOperationLowerBounds: {
+        throughSeasoning:
+          throughSeasoningMachineFirstStage?.objectiveValue ?? null,
+        blending:
+          blendingOnlyMachineFirstStage?.objectiveValue ?? null,
+        finalizing:
+          finalizingOnlyMachineFirstStage?.objectiveValue ?? null,
+      },
               captureMps: true,
               maxStages: 1,
               initialCriterionFixes: [
@@ -1680,6 +1689,8 @@ it(
       singletonBlendingMachineHighs?.stages[0]
     const finalizingOnlyMachineFirstStage =
       finalizingOnlyMachineHighs?.stages[0]
+    const blendingOnlyMachineFirstStage =
+      blendingOnlyMachineHighs?.stages[0]
     const sharedPrefixMachineFirstStage =
       sharedPrefixMachineHighs?.stages[0]
     const localTailMachineFirstStage =
@@ -2306,6 +2317,21 @@ it(
               reconstructedAssignmentCount:
                 throughSeasoningMachineFirstStage.reconstructedAssignmentCount,
               totalMs: throughSeasoningMachineHighs?.totalMs ?? 0,
+            }
+          : null,
+      blendingOnlyMachineStage:
+        blendingOnlyMachineFirstStage
+          ? {
+              solveMs: blendingOnlyMachineFirstStage.solveMs,
+              status: blendingOnlyMachineFirstStage.status,
+              objectiveValue: blendingOnlyMachineFirstStage.objectiveValue,
+              variableCount: blendingOnlyMachineFirstStage.variableCount,
+              constraintCount: blendingOnlyMachineFirstStage.constraintCount,
+              integralAssignmentReconstructionFeasible:
+                blendingOnlyMachineFirstStage.integralAssignmentReconstructionFeasible,
+              reconstructedAssignmentCount:
+                blendingOnlyMachineFirstStage.reconstructedAssignmentCount,
+              totalMs: blendingOnlyMachineHighs?.totalMs ?? 0,
             }
           : null,
       throughBlendingMachineStage:
