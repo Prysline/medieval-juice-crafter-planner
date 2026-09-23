@@ -481,6 +481,69 @@ it(
     const totalOnlyNormalizedMachineStats =
       normalizedGroupStats(totalOnlyNormalizedMachineGroups)
 
+    const sharedKindsSignature = (
+      recipe: (typeof model.recipes)[number],
+      includedKinds: Set<
+        (typeof recipe.productionPath.edges)[number]['kind']
+      >,
+    ) => {
+      const multiplicityByEdgeKey = new Map<string, number>()
+      for (const edge of recipe.productionPath.edges) {
+        if (!includedKinds.has(edge.kind)) continue
+        const usage = stage2EdgeUsage.get(edge.key)
+        if ((usage?.recipeIds.size ?? 0) <= 1) continue
+
+        multiplicityByEdgeKey.set(
+          edge.key,
+          (multiplicityByEdgeKey.get(edge.key) ?? 0) + 1,
+        )
+      }
+
+      return [
+        recipeServiceMask(recipe).toString(),
+        recipe.juiceUnitIngredientCost.toString(),
+        [...multiplicityByEdgeKey.entries()]
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([edgeKey, multiplicity]) => `${edgeKey}×${multiplicity}`)
+          .join('\u001d'),
+      ].join('\u001c')
+    }
+
+    const sharedKindGroupingStats = (
+      includedKinds: Set<
+        (typeof strictCostPrunedRecipes)[number]['productionPath']['edges'][number]['kind']
+      >,
+    ) => {
+      const groups = new Map<
+        string,
+        (typeof model.recipes)[number][]
+      >()
+      for (const recipe of strictCostPrunedRecipes) {
+        const signature = sharedKindsSignature(
+          recipe,
+          includedKinds,
+        )
+        const group = groups.get(signature)
+        if (group) {
+          group.push(recipe)
+        } else {
+          groups.set(signature, [recipe])
+        }
+      }
+      return normalizedGroupStats(groups)
+    }
+
+    const stage2SharedJuicingGrouping =
+      sharedKindGroupingStats(new Set(['juicing']))
+    const stage2SharedJuicingSeasoningGrouping =
+      sharedKindGroupingStats(
+        new Set(['juicing', 'seasoning']),
+      )
+    const stage2SharedJuicingSeasoningBlendingGrouping =
+      sharedKindGroupingStats(
+        new Set(['juicing', 'seasoning', 'blending']),
+      )
+
     const solverImportStartedAt = performance.now()
     const { profileHighsOptimization } = await import(
       './optimizerHighsSolver'
@@ -612,6 +675,9 @@ it(
         conservativeNormalizedMachineStats,
       stage2TotalOnlyNormalizedMachineEquivalence:
         totalOnlyNormalizedMachineStats,
+      stage2SharedJuicingGrouping,
+      stage2SharedJuicingSeasoningGrouping,
+      stage2SharedJuicingSeasoningBlendingGrouping,
       finalHighsVariables: binaryHighs.finalVariableCount,
       finalHighsConstraints: binaryHighs.finalConstraintCount,
       candidateGenerationMs,
