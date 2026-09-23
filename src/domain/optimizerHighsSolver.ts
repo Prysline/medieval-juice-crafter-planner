@@ -226,6 +226,7 @@ function buildHighsStage(
     aggregateLocalSingletonOperations?: boolean
     aggregateEquivalentAssignments?: boolean
     tightenRecipeBoundsFromMinimumCostFix?: boolean
+    machineOperationsUpperBound?: number
   } = {},
 ) {
   const model = new Model()
@@ -591,6 +592,21 @@ function buildHighsStage(
   const machineOperationsExpression = needsAnyObjective('machineOperations')
     ? sum(...machineOperationTerms)
     : undefined
+  if (
+    machineOperationsExpression &&
+    typeof options.machineOperationsUpperBound === 'number' &&
+    Number.isFinite(options.machineOperationsUpperBound)
+  ) {
+    model.addConstraint(
+      machineOperationsExpression.leq(
+        Math.max(
+          0,
+          Math.floor(options.machineOperationsUpperBound),
+        ),
+      ),
+      'machine_operations_upper_bound',
+    )
+  }
   buildPhaseMs.baseObjectivesMs = performance.now() - phaseStartedAt
 
   phaseStartedAt = performance.now()
@@ -790,6 +806,13 @@ function buildHighsStage(
       Number.isFinite(maxJarTypeSwitches)
         ? 1
         : 0
+    ) +
+    (
+      needsProductionOperations &&
+      typeof options.machineOperationsUpperBound === 'number' &&
+      Number.isFinite(options.machineOperationsUpperBound)
+        ? 1
+        : 0
     )
 
   return {
@@ -813,6 +836,7 @@ export async function profileHighsOptimization(
     aggregateLocalSingletonOperations?: boolean
     aggregateEquivalentAssignments?: boolean
     tightenRecipeBoundsFromMinimumCostFix?: boolean
+    machineOperationsUpperBound?: number
     initialCriterionFixes?: Array<{
       criterion: OptimizationCriterion
       value: number
@@ -862,6 +886,8 @@ export async function profileHighsOptimization(
           options.aggregateEquivalentAssignments ?? false,
         tightenRecipeBoundsFromMinimumCostFix:
           options.tightenRecipeBoundsFromMinimumCostFix ?? false,
+        machineOperationsUpperBound:
+          options.machineOperationsUpperBound,
       },
     )
     const buildMs = performance.now() - buildStartedAt
