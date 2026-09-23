@@ -1258,6 +1258,7 @@ it(
               aggregateLocalSingletonOperations: true,
               aggregateEquivalentAssignments: true,
               tightenRecipeBoundsFromMinimumCostFix: true,
+              captureMps: true,
               maxStages: 1,
               initialCriterionFixes: [
                 {
@@ -1562,6 +1563,7 @@ it(
               tightenRecipeBoundsFromMinimumCostFix: true,
               fixedRecipeUnits:
                 compressedCostStage.selectedRecipeUnits,
+              captureSolutionValues: true,
               maxStages: 1,
               initialCriterionFixes: [
                 {
@@ -1611,6 +1613,144 @@ it(
       incumbentBoundMachineHighs?.stages[0]
     const fixedIncumbentMachineFirstStage =
       fixedIncumbentMachineHighs?.stages[0]
+
+    let warmStartHighsComparison: {
+      wrapperVersion: string
+      incumbentMachineOperations: number
+      cold: {
+        solveMs: number
+        modelStatus: number
+        primalSolutionStatus: number
+        hasFeasiblePrimal: boolean
+        objectiveValue: number | null
+        mipDualBound: number
+        mipGap: number
+        mipNodeCount: number
+      }
+      warm: {
+        solveMs: number
+        modelStatus: number
+        primalSolutionStatus: number
+        hasFeasiblePrimal: boolean
+        objectiveValue: number | null
+        mipDualBound: number
+        mipGap: number
+        mipNodeCount: number
+        seedStatus: number
+        mappedSeedColumnCount: number
+        expectedSeedColumnCount: number
+      }
+    } | null = null
+
+    const warmStartMps =
+      tightBoundMachineFirstStage?.capturedMps
+    const warmStartSolutionValues =
+      fixedIncumbentMachineFirstStage?.capturedSolutionValues
+
+    if (
+      warmStartMps &&
+      warmStartSolutionValues?.length &&
+      fixedIncumbentMachineFirstStage?.status === 'optimal'
+    ) {
+      const { default: loadHighs } = await import('highs')
+      const highs = await loadHighs()
+      const encodedMps = new TextEncoder().encode(warmStartMps)
+
+      const readProfile = (
+        profileModel: ReturnType<typeof highs.createModel>,
+        solveMs: number,
+      ) => {
+        const primalSolutionStatus = Number(
+          profileModel.info.get('primal_solution_status'),
+        )
+        const hasFeasiblePrimal =
+          primalSolutionStatus ===
+          highs.constants.solutionStatus.feasible
+
+        return {
+          solveMs,
+          modelStatus: profileModel.getModelStatus(),
+          primalSolutionStatus,
+          hasFeasiblePrimal,
+          objectiveValue: hasFeasiblePrimal
+            ? profileModel.getObjectiveValue()
+            : null,
+          mipDualBound: Number(
+            profileModel.info.get('mip_dual_bound'),
+          ),
+          mipGap: Number(profileModel.info.get('mip_gap')),
+          mipNodeCount: Number(
+            profileModel.info.get('mip_node_count'),
+          ),
+        }
+      }
+
+      const coldModel = highs.createModel({
+        format: 'mps',
+        data: encodedMps,
+      })
+      let coldProfile
+      try {
+        coldModel.options.set({
+          output_flag: false,
+          time_limit: 5.5,
+          mip_rel_gap: 0,
+        })
+        const coldStartedAt = performance.now()
+        coldModel.run()
+        coldProfile = readProfile(
+          coldModel,
+          performance.now() - coldStartedAt,
+        )
+      } finally {
+        coldModel.dispose()
+      }
+
+      const warmModel = highs.createModel({
+        format: 'mps',
+        data: encodedMps,
+      })
+      try {
+        warmModel.options.set({
+          output_flag: false,
+          time_limit: 5.5,
+          mip_rel_gap: 0,
+        })
+        const dimensions = warmModel.getDimensions()
+        const colValue = new Float64Array(dimensions.numCols)
+        let mappedSeedColumnCount = 0
+
+        for (const entry of warmStartSolutionValues) {
+          const columnIndex = warmModel.getColByName(entry.name)
+          colValue[columnIndex] = entry.value
+          mappedSeedColumnCount += 1
+        }
+
+        const seedResult = warmModel.setSolution({ colValue })
+        const warmStartedAt = performance.now()
+        warmModel.run()
+        const warmProfile = readProfile(
+          warmModel,
+          performance.now() - warmStartedAt,
+        )
+
+        warmStartHighsComparison = {
+          wrapperVersion: highs.version.string,
+          incumbentMachineOperations:
+            compressedIncumbentMachineOperations,
+          cold: coldProfile,
+          warm: {
+            ...warmProfile,
+            seedStatus: seedResult.status,
+            mappedSeedColumnCount,
+            expectedSeedColumnCount:
+              warmStartSolutionValues.length,
+          },
+        }
+      } finally {
+        warmModel.dispose()
+      }
+    }
 
     const report = {
       progress: request.currentProgress,
@@ -2120,6 +2260,7 @@ it(
               totalMs: incumbentBoundMachineHighs?.totalMs ?? 0,
             }
           : null,
+      warmStartHighsComparison,
       fixedIncumbentMachineStage:
         fixedIncumbentMachineFirstStage
           ? {
@@ -2218,6 +2359,25 @@ it(
       expect(
         fixedIncumbentMachineFirstStage.reconstructedAssignmentCount,
       ).toBe(model.serviceableCustomerIds.length)
+    }
+
+    if (warmStartHighsComparison) {
+      expect(
+        warmStartHighsComparison.warm.mappedSeedColumnCount,
+      ).toBe(
+        warmStartHighsComparison.warm.expectedSeedColumnCount,
+      )
+      expect(
+        warmStartHighsComparison.warm.hasFeasiblePrimal,
+      ).toBe(true)
+      expect(
+        warmStartHighsComparison.warm.objectiveValue,
+      ).not.toBeNull()
+      expect(
+        warmStartHighsComparison.warm.objectiveValue ?? Infinity,
+      ).toBeLessThanOrEqual(
+        compressedIncumbentMachineOperations + 1e-7,
+      )
     }
 
     if (expandedMachineFirstStage) {
