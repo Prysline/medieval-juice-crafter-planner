@@ -18,7 +18,9 @@ import {
 } from './domain/customerList'
 import {
   customerRecipeRecommendationsFromSearch,
+  sortFullMatchCandidatesByIngredientCost,
   type CustomerRecipeRecommendations,
+  type RecommendationCostMode,
 } from './domain/customerRecommendation'
 import {
   countFormalCustomersByVillage,
@@ -128,6 +130,10 @@ function App() {
   ] = useState<string | null>(null)
   const [customerPreferenceMode, setCustomerPreferenceMode] =
     useState<FilterMatchMode>('all')
+  const [
+    customerRecommendationCostMode,
+    setCustomerRecommendationCostMode,
+  ] = useState<RecommendationCostMode>('minimum')
   const [recipeSortKey, setRecipeSortKey] = useState<RecipeSortKey>('salePrice')
   const [recipeSortDirection, setRecipeSortDirection] =
     useState<SortDirection>('desc')
@@ -296,9 +302,12 @@ function App() {
             currentProgress,
             satisfactionByVillage,
           ),
-          matches: matchingRecipeCandidatesForCustomer(
-            [...candidates],
-            customer,
+          matches: sortFullMatchCandidatesByIngredientCost(
+            matchingRecipeCandidatesForCustomer(
+              [...candidates],
+              customer,
+            ),
+            customerRecommendationCostMode,
           ),
         }
       })
@@ -344,6 +353,7 @@ function App() {
           searches?.observedOnly.candidates ?? [],
           searches?.allowComputed.candidates ?? [],
           row.customer,
+          customerRecommendationCostMode,
         ),
       }
     })
@@ -358,6 +368,7 @@ function App() {
     customerPreferenceIngredientFilter,
     customerPreferenceEffectFilter,
     customerPreferenceMode,
+    customerRecommendationCostMode,
     showSuppliedToday,
     suppliedCustomerIds,
     customerSortDirection,
@@ -791,6 +802,30 @@ function App() {
             </button>
             <button
               type="button"
+              className={
+                customerRecommendationCostMode === 'minimum'
+                  ? 'active'
+                  : ''
+              }
+              aria-pressed={customerRecommendationCostMode === 'minimum'}
+              onClick={() => setCustomerRecommendationCostMode('minimum')}
+            >
+              最佳：最低成本
+            </button>
+            <button
+              type="button"
+              className={
+                customerRecommendationCostMode === 'maximum'
+                  ? 'active'
+                  : ''
+              }
+              aria-pressed={customerRecommendationCostMode === 'maximum'}
+              onClick={() => setCustomerRecommendationCostMode('maximum')}
+            >
+              最佳：最高成本
+            </button>
+            <button
+              type="button"
               className={showSuppliedToday ? 'active' : ''}
               aria-pressed={showSuppliedToday}
               onClick={() => setShowSuppliedToday((current) => !current)}
@@ -847,6 +882,7 @@ function App() {
                 customer={customer}
                 matches={matches}
                 recommendations={recommendations}
+                recommendationCostMode={customerRecommendationCostMode}
                 unlocked={unlocked}
                 formal={isFormalCustomer(customer.id, formalCustomerIds)}
                 suppliedToday={suppliedCustomerIds.includes(customer.id)}
@@ -1132,6 +1168,7 @@ function CustomerRow({
   customer,
   matches,
   recommendations,
+  recommendationCostMode,
   unlocked,
   formal,
   suppliedToday,
@@ -1143,6 +1180,7 @@ function CustomerRow({
   customer: Customer
   matches: RecipeCandidate[]
   recommendations: CustomerRecipeRecommendations
+  recommendationCostMode: RecommendationCostMode
   unlocked: boolean
   formal: boolean
   suppliedToday: boolean
@@ -1152,6 +1190,8 @@ function CustomerRow({
   onToggleComparison: () => void
 }) {
   const bestMatch = matches[0]
+  const visibleMatches = matches.slice(0, 8)
+  const remainingMatches = matches.slice(8)
   const preferencesKnown = customer.preferences !== null
 
   const rowClassName = [
@@ -1271,6 +1311,7 @@ function CustomerRow({
         <RecommendationDetails
           formal={formal}
           recommendations={recommendations}
+          costMode={recommendationCostMode}
         />
 
         <div className="match-list">
@@ -1281,18 +1322,26 @@ function CustomerRow({
           {!preferencesKnown ? (
             <p className="muted">喜好尚未確認，無法判斷完全匹配配方。</p>
           ) : matches.length > 0 ? (
-            <ol>
-              {matches.map((recipe) => (
-                <li key={recipe.id}>
-                  <span>{formatRecipeDisplayName(recipe.name)}</span>
-                  <strong>
-                    {recipe.salePrice === null
-                      ? '售價未知'
-                      : '售價 ' + formatMoney(recipe.salePrice)}
-                  </strong>
-                </li>
-              ))}
-            </ol>
+            <>
+              <ol>
+                {visibleMatches.map((recipe) => (
+                  <FullMatchRecipeItem key={recipe.id} recipe={recipe} />
+                ))}
+              </ol>
+              {remainingMatches.length > 0 && (
+                <details className="match-list-more">
+                  <summary>顯示其餘 {remainingMatches.length} 種</summary>
+                  <ol start={visibleMatches.length + 1}>
+                    {remainingMatches.map((recipe) => (
+                      <FullMatchRecipeItem
+                        key={recipe.id}
+                        recipe={recipe}
+                      />
+                    ))}
+                  </ol>
+                </details>
+              )}
+            </>
           ) : (
             <p className="muted">目前主線進度沒有能完全滿足所有喜好的已知配方。</p>
           )}
@@ -1382,6 +1431,26 @@ function SupplyToggle({
   )
 }
 
+function FullMatchRecipeItem({
+  recipe,
+}: {
+  recipe: RecipeCandidate
+}) {
+  const cost = calculateRecipeIngredientCost(recipe)
+
+  return (
+    <li>
+      <span>{formatRecipeDisplayName(recipe.name)}</span>
+      <strong>
+        {formatRecipeCost(cost)} ·{' '}
+        {recipe.salePrice === null
+          ? '售價未知'
+          : '售價 ' + formatMoney(recipe.salePrice)}
+      </strong>
+    </li>
+  )
+}
+
 function RecommendationCompact({
   recommendation,
 }: {
@@ -1398,16 +1467,18 @@ function RecommendationCompact({
       : sources.has('computed')
         ? '預測'
         : '實測'
+  const costLabel =
+    recommendation.costMode === 'minimum' ? '最低成本' : '最高成本'
   const recipeLabel =
     recommendation.candidates.length === 1
       ? formatRecipeDisplayName(
           recommendation.candidates[0].candidate.name,
         )
-      : `${recommendation.candidates.length} 種同價最低`
+      : `${recommendation.candidates.length} 種同價${recommendation.costMode === 'minimum' ? '最低' : '最高'}`
 
   return (
     <span className="recommendation-compact">
-      最低成本：{recipeLabel} · {formatMoney(recommendation.batchIngredientCost)}／批 ·{' '}
+      {costLabel}：{recipeLabel} · {formatMoney(recommendation.batchIngredientCost)}／批 ·{' '}
       {sourceLabel}
     </span>
   )
@@ -1416,23 +1487,27 @@ function RecommendationCompact({
 function RecommendationDetails({
   formal,
   recommendations,
+  costMode,
 }: {
   formal: boolean
   recommendations: CustomerRecipeRecommendations
+  costMode: RecommendationCostMode
 }) {
-  const title = formal ? '最低成本完全匹配' : '最低成本試喝建議'
+  const title = formal ? '最佳完全匹配' : '最佳試喝建議'
+  const costLabel = costMode === 'minimum' ? '最低成本' : '最高成本'
 
   return (
     <div className="recommendation-box">
       <div className="section-title">
         <strong>{title}</strong>
+        <span>{costLabel}</span>
       </div>
       <RecommendationLine
-        label="已實測最低成本"
+        label={`已實測${costLabel}`}
         recommendation={recommendations.observedOnly}
       />
       <RecommendationLine
-        label="含預測最低成本"
+        label={`含預測${costLabel}`}
         recommendation={recommendations.allowComputed}
       />
     </div>
