@@ -63,8 +63,8 @@ src/
     recipeEvaluator.ts # 單一有序序列 validation / observed overlay / computed evaluation
     recipeIdentity.ts  # UX-2A：computed:<ordered ingredient IDs> 的穩定持久 identity 契約
     recipeGenerator.ts # Candidate-2A/2B：建立單一果汁段與合法多果汁段搜尋層，再交由 evaluator 評估
-    recipeSearch.ts    # 共用搜尋：first-feasible 保留提前停止；bounded-exhaustive 在既有搜尋預算內收集比較候選，並沿用重複調味後備邊界
-    recipeCandidatePool.ts # Candidate-1/2A/2B：依完整有序序列合併來源、保存搜尋層資訊；UX-2A 提供目前可用的實測／已保存／安全推導庫存搜尋集合
+    recipeSearch.ts    # 共用搜尋：first-feasible／bounded-exhaustive；trusted-only 只讀正式實測＋已確認個人配方，不展開 generated computed search
+    recipeCandidatePool.ts # 依完整有序序列合併來源；PR #112 後 authority = observed > personal > computed，並保存 saved provenance / 搜尋層資訊
     listFilters.ts     # UX-2B：顧客／配方研究 filter 的純判定；確定特性與 ambiguity 可能特性分開
     optimizerModel.ts  # optimizer request、recipe→eligible customer reverse index 與 gating；Debug-B 共用 jar-switch lower bound
     optimizerCertificates.ts # Debug-DP1/P2/P3：Stage 1 cost certificate；Stage 2 machine witness helpers；Stage 3 finalizing identity / distinct-kind proof helpers
@@ -88,7 +88,7 @@ src/
     scheduleRouteReadiness.ts # 作息觀察 normalization 與 route-data blockers
   storage/
     plannerState.ts    # localStorage 讀寫、正式顧客與 legacy migration
-    savedRecipes.ts    # 個人配方 schema validation / CRUD
+    savedRecipes.ts    # 個人配方 schema validation / CRUD；PR #112 可選保存玩家確認的 final-effect snapshot
     inventoryState.ts  # mjc-inventory schema normalization / storage
     plannerSettings.ts # mjc-planner-settings：persistent carried jar IDs、legacy count migration 與 used-cup drop opt-in
     productionChecklist.ts # Workflow-2：mjc-production-checklist；exact production-plan fingerprint + batch completion progress，純玩家進度、不改 domain state
@@ -98,14 +98,14 @@ src/
     deliveryExecutionCommit.ts # Workflow-3B：partial delivery 的 atomic single-write commit；同步 inventory / supplied customers / execution cursor，並鎖 canonical basis drift
   types.ts             # 共用 domain / data 型別
   App.tsx              # 顧客／配方／配方工具／批次規劃頁籤；UX-2B shared customer comparison + research filters
-  RecipeTools.tsx      # Recipe Simulator + Personal Recipes UI；UX-2B 完整特性累計與多顧客比較
-  OptimizerTools.tsx   # lazy-load optimizer、控制項／結果 UI；UX-2A searchable jar content；Workflow-2 production checklist；Workflow-3C delivery checklist / partial replan；Debug-C discard source preview
+  RecipeTools.tsx      # Recipe Simulator + Personal Recipes UI；UX-2B 完整特性累計／多顧客比較；PR #112 個人實測確認
+  OptimizerTools.tsx   # lazy-load optimizer、控制項／結果 UI；PR #112 預設 trusted-only（正式實測＋已確認個人配方）；Workflow-2/3 checklist / partial replan
   styles.css
   main.tsx             # React 入口
   **/*.test.ts         # domain / storage regression tests
 ```
 
-Candidate-2A / PR #62 已把固定深度枚舉改成**單一果汁段漸進搜尋**：不重複原料最多 4 種，重複調味後備最多 6 個總原料；單段每層 2048、總計 4096 candidates。Candidate-2B / PR #68 在同一套 progressive search 上加入**合法多果汁段搜尋**：最多 3 個獨立果汁段、Blender depth 2；兩段總 seasoning depth 0～4，三段 0～2；每個 blend layer 最多 6000、blended unique 總計 11000 candidates。這些數字都是網站搜尋預算，不是遊戲規則。Blender 左右輸入順序保留，三段搜尋只保留與現行 production graph 一致的 left-deep canonical tree；Blender 未解鎖時候選可留在 metadata，但不進目前搜尋。全部 unique structure 都找不到保證完全匹配後，才進 Candidate-2A 的單段 repeated-seasoning fallback。Correctness-3 / PR #74 不修改上述候選產生器／搜尋預算，而是拆分消費端語意：`first-feasible` 用於存在性判定並保留提前停止；`bounded-exhaustive` 讓顧客完整列表、最低成本推薦與 optimizer 在既有搜尋層／預算內持續比較合法候選，不會因較淺層先出現完全匹配就漏掉較深層候選。Candidate-1 / PR #60 的共用候選配方池仍以完整有序原料序列去重並保留實測／已保存／安全推導／仍有歧義等來源。Performance-1 / PR #70 先把大型配方列表改為分頁＋篩選，並暫時把果汁罐內容限制為目前可用的實測／個人已保存配方。UX-2A / PR #78 已取代這個暫時限制：果汁罐內容改為 searchable combobox，可即時搜尋實測、已保存與安全推導配方，單次最多顯示 8 筆；完整名稱／完整原料序列／完整 ID 精確命中優先，避免短配方被大量較長候選擠出結果。只存在 `ambiguous-computed` 的未保存候選不自動列入；既有未知／legacy jar content 不會被清掉，仍以原 recipe ID 顯示並可由玩家明確清空。安全推導配方的持久 identity 明確固定為 `computed:<ordered ingredient IDs>`，只依 canonical 有序原料 ID，不依 generator layer、搜尋排序、budget 或顯示名稱，因此既有 inventory schema 不需 migration。
+Candidate-2A / PR #62 已把固定深度枚舉改成**單一果汁段漸進搜尋**：不重複原料最多 4 種，重複調味後備最多 6 個總原料；單段每層 2048、總計 4096 candidates。Candidate-2B / PR #68 在同一套 progressive search 上加入**合法多果汁段搜尋**：最多 3 個獨立果汁段、Blender depth 2；兩段總 seasoning depth 0～4，三段 0～2；每個 blend layer 最多 6000、blended unique 總計 11000 candidates。這些數字都是網站搜尋預算，不是遊戲規則。Blender 左右輸入順序保留，三段搜尋只保留與現行 production graph 一致的 left-deep canonical tree；Blender 未解鎖時候選可留在 metadata，但不進目前搜尋。全部 unique structure 都找不到保證完全匹配後，才進 Candidate-2A 的單段 repeated-seasoning fallback。Correctness-3 / PR #74 不修改上述候選產生器／搜尋預算，而是拆分消費端語意：`first-feasible` 用於存在性判定並保留提前停止；`bounded-exhaustive` 讓顧客完整列表、最低成本推薦與 optimizer 在既有搜尋層／預算內持續比較合法候選，不會因較淺層先出現完全匹配就漏掉較深層候選。Candidate-1 / PR #60 的共用候選配方池仍以完整有序原料序列去重；PR #112 再把來源 authority 明確拆成 **正式實測 observed > 玩家已確認 personal > computed**。個人配方單純「已保存」不等於可信證據：只有玩家明確確認目前顯示的最終成品特性與遊戲一致後，才保存 `confirmedResult` snapshot 並以 `personal` 參與 trusted planning；舊 saved recipe 沒有 snapshot 仍保留但不自動升格。同序列若已有正式 observed，正式資料一定覆蓋 personal snapshot。Performance-1 / PR #70 先把大型配方列表改為分頁＋篩選，並暫時把果汁罐內容限制為目前可用的實測／個人已保存配方。UX-2A / PR #78 已取代這個暫時限制：果汁罐內容改為 searchable combobox，可即時搜尋實測、已保存與安全推導配方，單次最多顯示 8 筆；完整名稱／完整原料序列／完整 ID 精確命中優先，避免短配方被大量較長候選擠出結果。只存在 `ambiguous-computed` 的未保存候選不自動列入；既有未知／legacy jar content 不會被清掉，仍以原 recipe ID 顯示並可由玩家明確清空。安全推導配方的持久 identity 明確固定為 `computed:<ordered ingredient IDs>`，只依 canonical 有序原料 ID，不依 generator layer、搜尋排序、budget 或顯示名稱，因此既有 inventory schema 不需 migration。
 
 手動配方模擬器使用有序原料順序：重複調味與四原料以上都可評估；每遇到新的需榨汁原料就開始下一個果汁段。兩杯果汁經果汁調和器組合時，網站只做 `front.sequence + back.sequence`，不另造果汁調和器專用配方格式。含多個需榨汁原料的序列至少需要實際程式進度 key `juice-blender-unlocked`，設備需求會包含果汁調和器。UX-2B / PR #80 後，`RecipeSequenceEvaluation` 另外保存完整有序原料在 slot cutoff 前的全部 effect totals，供研究與配方改良比較；這些總值**不會回灌 `candidate.effects`、matching 或 optimizer**。PR #81 把目標顧客改成 App-level session comparison，可同時比較多位顧客並跨主頁籤保留，但不寫入 localStorage。PR #82 再加入顧客村落／喜好原料／喜好特性與全部／任一喜好條件篩選，以及配方原料總數／具體原料／確定特性／可能特性／來源／售價篩選；村落仍是硬範圍，全部／任一只套用喜好條件。
 
@@ -123,7 +123,7 @@ slotCount = min(5, 不重複原料種類數 + 1)
 
 ## Production optimizer domain
 
-optimizer request 會帶入主線進度、分村滿意度、今日已供應顧客、candidate policy，以及有順序的 lexicographic priorities。domain 自己透過既有 availability / matching gate 過濾顧客與配方，不把正確性只交給 UI。
+optimizer request 會帶入主線進度、分村滿意度、今日已供應顧客、candidate policy，以及有順序的 lexicographic priorities。domain 自己透過既有 availability / matching gate 過濾顧客與配方，不把正確性只交給 UI。PR #112 後批次規劃 UI 預設為 `trusted-only`：**只使用正式實測配方＋已確認個人配方，不展開 generated computed candidate search**；第二個模式才使用「正式實測＋已確認個人配方＋無歧義預測」。舊 `observed-only` contract 仍保留給既有 caller / regression。
 
 核心數量單位已從「固定 2 杯 batch」改為 **juice production unit**：
 
@@ -283,7 +283,8 @@ Phase 4 已完成：
 32. PR #106 完成 **Workflow-3A｜partial delivery execution trace**：把既有 physical sales plan 轉成可逐步執行的純 domain trace。每趟第一次正式交付前才套用該趟需要的 initial-juice discard、production fills、對應原料／production water 與洗杯；每位顧客各自消耗指定 physical jar 1 杯與 1 個 clean cup，並依同一 backpack capacity 規則逐杯決定 clean → used 或 drop；本趟最後一位完成後才執行 trip-end new-production discard。**趟次必須依序；同一 active trip 內未交付顧客可任意順序。**完整執行後的 inventory 已用 regression 證明與現行 whole-plan transaction 終態一致；另鎖定「上一趟賣空後、下一趟同配方仍是 refill-same-type」的歷史 recipe edge。CI #519：43 test files / 334 tests passed；`deliveryExecution.test.ts` 5 tests、production build success（1.24 s）。
 33. PR #108 完成 **Workflow-3B｜atomic partial commit**：`mjc-plan-application-state` 升級為 v2 canonical envelope，單一 key 同時保存 inventory、`suppliedCustomerIds` 與 plan-bound delivery execution cursor；仍可讀既有 v1。每次 partial delivery 只做一次 canonical `setItem`，cursor 同時保存當下 inventory + supplied customers 的 basis fingerprint；下一次提交若 canonical state 已漂移即拒絕。從其他 UI 手動改 inventory／今日已供應會清除 in-flight cursor；部分送貨後若重新求解，新 plan 只有在 basis 精確等於目前 canonical state 且使用 initial cursor 時才能接管舊 session，不重播已提交事件。CI #524：44 test files / 343 tests passed；`deliveryExecutionCommit.test.ts` 9 tests、production build success（1.83 s）。
 34. PR #110 完成 **Workflow-3C｜delivery checklist UI / partial replan**：`果汁分配` 改為逐顧客正式交付 checkbox。只有目前 active trip 的未交付顧客可提交，同趟可任意順序；後續趟維持可見但 disabled。已正式提交顧客顯示 checked + disabled，不能用取消 checkbox 逆轉 physical transaction；顧客頁「今日已供應」與此處共用同一 canonical supplied-customer authority。每次勾選直接走 Workflow-3B atomic commit，同步 inventory、physical jar、cup lifecycle、`suppliedCustomerIds` 與 execution cursor；partial commit 自己造成的 parent/local canonical 同步由 bounded guard 接受，其他手動／外部 canonical 變更仍使舊 plan 失效。第一筆 partial delivery 後舊 whole-plan apply draft 立即失效，避免重複扣物資；可按「依目前狀態重新規劃剩餘顧客」，由新 plan 從目前 canonical state 建立 initial cursor 並接管 execution session。CI #530：44 test files / 348 tests passed；`OptimizerTools.test.tsx` 13 tests、production build success（1.50 s）；冗餘 delivery dynamic-import 警告已清除。
-**Production-Workflow 已完成。**下一步回到 **Debug-D Production P4｜ordering / fallback / benchmark / cleanup**，完成後做 Inventory-Intermediate → Candidate-3 → Candidate-4 → Phase 6 → Candidate-5。路線最佳化仍等待跨村移動時間、位置資訊、完整顧客服務時段與商店營業時間資料。
+35. PR #112 完成 **Trusted Personal Recipes｜正式實測＋已確認個人配方**：`SavedRecipe` 可選保存玩家明確確認的 `confirmedResult` final-effect snapshot；舊 saved recipe 不需 migration，也不會因已保存就自動升格為可信 optimizer evidence。候選 authority 固定為 `observed > personal > computed`；同序列正式實測永遠優先。批次規劃預設新增 `trusted-only`，只使用正式實測＋已確認個人配方，完全不展開 generated computed search；第二個模式才加入無歧義預測。含 effect ambiguity 的預測不能用確認捷徑升格。CI #536：44 test files / 352 tests passed、production build success（1.93 s），既有 production-scale optimizer certificate regression 全數維持通過。
+**Production-Workflow 已完成；可信個人配方前置修正也已完成。**下一步回到 **Debug-D Production P4｜ordering / fallback / benchmark / cleanup**，完成後做 Inventory-Intermediate → Candidate-3 → Candidate-4 → Phase 6 → Candidate-5。完整 Candidate-4 的細緻來源控制仍保留在後續，不因本次 trusted-only 前置修正視為已完成。路線最佳化仍等待跨村移動時間、位置資訊、完整顧客服務時段與商店營業時間資料。
 
 
 ## Schedule / route readiness boundary
