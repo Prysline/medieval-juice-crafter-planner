@@ -113,6 +113,97 @@ it(
       ),
     ).size
 
+    const customerBitById = new Map(
+      model.serviceableCustomerIds.map(
+        (customerId, index) => [customerId, 1n << BigInt(index)],
+      ),
+    )
+    const recipeServiceMask = (recipe: (typeof model.recipes)[number]) =>
+      recipe.eligibleCustomerIds.reduce(
+        (mask, customerId) =>
+          mask | (customerBitById.get(customerId) ?? 0n),
+        0n,
+      )
+
+    const recipesByServiceMask = new Map<
+      bigint,
+      (typeof model.recipes)[number][]
+    >()
+    for (const recipe of model.recipes) {
+      const mask = recipeServiceMask(recipe)
+      const group = recipesByServiceMask.get(mask)
+      if (group) {
+        group.push(recipe)
+      } else {
+        recipesByServiceMask.set(mask, [recipe])
+      }
+    }
+
+    const recipeServiceGroupSizes = [...recipesByServiceMask.values()]
+      .map((group) => group.length)
+      .sort((a, b) => b - a)
+    const exactServiceSetCheaperDominatedRecipeIds = new Set<string>()
+    for (const group of recipesByServiceMask.values()) {
+      const minimumCost = Math.min(
+        ...group.map((recipe) => recipe.juiceUnitIngredientCost),
+      )
+      for (const recipe of group) {
+        if (recipe.juiceUnitIngredientCost > minimumCost) {
+          exactServiceSetCheaperDominatedRecipeIds.add(
+            recipe.candidate.id,
+          )
+        }
+      }
+    }
+
+    const serviceGroups = [...recipesByServiceMask.entries()].map(
+      ([mask, recipes]) => ({
+        mask,
+        minimumCost: Math.min(
+          ...recipes.map((recipe) => recipe.juiceUnitIngredientCost),
+        ),
+        recipeIds: recipes.map((recipe) => recipe.candidate.id),
+      }),
+    )
+    const strictlyCheaperSupersetDominatedRecipeIds =
+      new Set<string>()
+    for (const dominatedGroup of serviceGroups) {
+      let cheaperSupersetCost = Infinity
+
+      for (const candidateGroup of serviceGroups) {
+        if (
+          candidateGroup.minimumCost >= dominatedGroup.minimumCost
+        ) {
+          continue
+        }
+        if (
+          (candidateGroup.mask & dominatedGroup.mask) !==
+          dominatedGroup.mask
+        ) {
+          continue
+        }
+
+        cheaperSupersetCost = Math.min(
+          cheaperSupersetCost,
+          candidateGroup.minimumCost,
+        )
+      }
+
+      if (Number.isFinite(cheaperSupersetCost)) {
+        for (const recipeId of dominatedGroup.recipeIds) {
+          const recipe = model.recipes.find(
+            (entry) => entry.candidate.id === recipeId,
+          )
+          if (
+            recipe &&
+            recipe.juiceUnitIngredientCost > cheaperSupersetCost
+          ) {
+            strictlyCheaperSupersetDominatedRecipeIds.add(recipeId)
+          }
+        }
+      }
+    }
+
     const solverImportStartedAt = performance.now()
     const { profileHighsOptimization } = await import(
       './optimizerHighsSolver'
@@ -162,6 +253,15 @@ it(
       xVariables: model.recipes.length,
       zVariables: model.recipes.length,
       productionEdgeVariables: productionEdgeCount,
+      recipeServiceSetCount: recipesByServiceMask.size,
+      recipeServiceGroupSizes: recipeServiceGroupSizes.slice(0, 20),
+      exactServiceSetCheaperDominatedRecipeCount:
+        exactServiceSetCheaperDominatedRecipeIds.size,
+      strictlyCheaperSupersetDominatedRecipeCount:
+        strictlyCheaperSupersetDominatedRecipeIds.size,
+      recipesRemainingAfterStrictCostSupersetDominance:
+        model.recipes.length -
+        strictlyCheaperSupersetDominatedRecipeIds.size,
       finalHighsVariables: binaryHighs.finalVariableCount,
       finalHighsConstraints: binaryHighs.finalConstraintCount,
       candidateGenerationMs,
