@@ -71,6 +71,42 @@ it(
       (total, recipe) => total + recipe.eligibleCustomerIds.length,
       0,
     )
+
+    const eligibleRecipeIdsByCustomer = new Map(
+      model.serviceableCustomerIds.map((customerId) => [
+        customerId,
+        model.recipes
+          .filter((recipe) => recipe.eligibleCustomerIds.includes(customerId))
+          .map((recipe) => recipe.candidate.id)
+          .sort(),
+      ]),
+    )
+    const customerGroupsByEligibility = new Map<
+      string,
+      string[]
+    >()
+    for (const customerId of model.serviceableCustomerIds) {
+      const signature = (
+        eligibleRecipeIdsByCustomer.get(customerId) ?? []
+      ).join('\u001e')
+      const group = customerGroupsByEligibility.get(signature)
+      if (group) {
+        group.push(customerId)
+      } else {
+        customerGroupsByEligibility.set(signature, [customerId])
+      }
+    }
+    const groupedAssignmentVariableUpperBound = [
+      ...customerGroupsByEligibility.entries(),
+    ].reduce((total, [signature]) => {
+      if (!signature) return total
+      return total + signature.split('\u001e').length
+    }, 0)
+    const customerEligibilityGroupSizes = [
+      ...customerGroupsByEligibility.values(),
+    ]
+      .map((group) => group.length)
+      .sort((a, b) => b - a)
     const productionEdgeCount = new Set(
       model.recipes.flatMap((recipe) =>
         recipe.productionPath.edges.map((edge) => edge.key),
@@ -109,6 +145,9 @@ it(
       customerMatchedOptimizerRecipes: model.recipes.length,
       customerRecipeAssignmentEligibility: assignmentEligibilityCount,
       yVariables: assignmentEligibilityCount,
+      customerEligibilityGroupCount: customerGroupsByEligibility.size,
+      customerEligibilityGroupSizes,
+      groupedAssignmentVariableUpperBound,
       xVariables: model.recipes.length,
       zVariables: model.recipes.length,
       productionEdgeVariables: productionEdgeCount,
