@@ -1297,6 +1297,33 @@ it(
             },
           )
         : null
+    const seasoningOnlyMachineHighs =
+      compressedCostStage?.status === 'optimal' &&
+      compressedCostStage.objectiveValue !== null
+        ? await profileHighsOptimization(
+            strictCostPrunedModel,
+            ['minimum-machine-operations'],
+            {
+              stageTimeLimitSeconds: 5.5,
+              relaxAssignmentVariables: true,
+              aggregateLocalSingletonOperations: true,
+              aggregateEquivalentAssignments: true,
+              tightenRecipeBoundsFromMinimumCostFix: true,
+              tightenOperationBoundsFromRecipeBounds: true,
+              machineOperationKinds: ['seasoning'],
+              maxStages: 1,
+              initialCriterionFixes: [
+                {
+                  criterion: 'minimum-cost',
+                  value: Math.round(
+                    compressedCostStage.objectiveValue,
+                  ),
+                },
+              ],
+            },
+          )
+        : null
+
     const throughSeasoningMachineHighs =
       compressedCostStage?.status === 'optimal' &&
       compressedCostStage.objectiveValue !== null
@@ -1367,11 +1394,7 @@ it(
               aggregateEquivalentAssignments: true,
               tightenRecipeBoundsFromMinimumCostFix: true,
               tightenOperationBoundsFromRecipeBounds: true,
-              machineOperationKinds: [
-                'juicing',
-                'seasoning',
-                'blending',
-              ],
+              machineOperationKinds: ['blending'],
               excludeSingletonMachineOperationKinds: ['blending'],
               maxStages: 1,
               initialCriterionFixes: [
@@ -1398,12 +1421,85 @@ it(
               aggregateEquivalentAssignments: true,
               tightenRecipeBoundsFromMinimumCostFix: true,
               tightenOperationBoundsFromRecipeBounds: true,
-              machineOperationKinds: [
-                'juicing',
-                'seasoning',
-                'blending',
-              ],
+              machineOperationKinds: ['blending'],
               excludeSharedMachineOperationKinds: ['blending'],
+              maxStages: 1,
+              initialCriterionFixes: [
+                {
+                  criterion: 'minimum-cost',
+                  value: Math.round(
+                    compressedCostStage.objectiveValue,
+                  ),
+                },
+              ],
+            },
+          )
+        : null
+
+    const finalizingOnlyMachineHighs =
+      compressedCostStage?.status === 'optimal' &&
+      compressedCostStage.objectiveValue !== null
+        ? await profileHighsOptimization(
+            strictCostPrunedModel,
+            ['minimum-machine-operations'],
+            {
+              stageTimeLimitSeconds: 5.5,
+              relaxAssignmentVariables: true,
+              aggregateLocalSingletonOperations: true,
+              aggregateEquivalentAssignments: true,
+              tightenRecipeBoundsFromMinimumCostFix: true,
+              tightenOperationBoundsFromRecipeBounds: true,
+              machineOperationKinds: ['finalizing'],
+              maxStages: 1,
+              initialCriterionFixes: [
+                {
+                  criterion: 'minimum-cost',
+                  value: Math.round(
+                    compressedCostStage.objectiveValue,
+                  ),
+                },
+              ],
+            },
+          )
+        : null
+
+    const disjointMachineOperationStages = [
+      juicingOnlyMachineHighs?.stages[0],
+      seasoningOnlyMachineHighs?.stages[0],
+      sharedBlendingMachineHighs?.stages[0],
+      singletonBlendingMachineHighs?.stages[0],
+      finalizingOnlyMachineHighs?.stages[0],
+    ]
+    const decomposedMachineOperationLowerBound =
+      disjointMachineOperationStages.every(
+        (stage) =>
+          stage?.status === 'optimal' &&
+          stage.objectiveValue !== null,
+      )
+        ? disjointMachineOperationStages.reduce(
+            (total, stage) =>
+              total + Math.round(stage?.objectiveValue ?? 0),
+            0,
+          )
+        : null
+
+    const decomposedBoundMachineHighs =
+      compressedCostStage?.status === 'optimal' &&
+      compressedCostStage.objectiveValue !== null &&
+      decomposedMachineOperationLowerBound !== null
+        ? await profileHighsOptimization(
+            strictCostPrunedModel,
+            ['minimum-machine-operations'],
+            {
+              stageTimeLimitSeconds: 0.25,
+              relaxAssignmentVariables: true,
+              aggregateLocalSingletonOperations: true,
+              aggregateEquivalentAssignments: true,
+              tightenRecipeBoundsFromMinimumCostFix: true,
+              tightenOperationBoundsFromRecipeBounds: true,
+              machineOperationsLowerBound:
+                decomposedMachineOperationLowerBound,
+              captureMps: true,
               maxStages: 1,
               initialCriterionFixes: [
                 {
@@ -1451,7 +1547,7 @@ it(
             strictCostPrunedModel,
             ['minimum-machine-operations'],
             {
-              stageTimeLimitSeconds: 5.5,
+              stageTimeLimitSeconds: 0.25,
               relaxAssignmentVariables: true,
               aggregateLocalSingletonOperations: true,
               aggregateEquivalentAssignments: true,
@@ -1653,6 +1749,8 @@ it(
       tightBoundMachineHighs?.stages[0]
     const juicingOnlyMachineFirstStage =
       juicingOnlyMachineHighs?.stages[0]
+    const seasoningOnlyMachineFirstStage =
+      seasoningOnlyMachineHighs?.stages[0]
     const throughSeasoningMachineFirstStage =
       throughSeasoningMachineHighs?.stages[0]
     const throughBlendingMachineFirstStage =
@@ -1661,6 +1759,10 @@ it(
       sharedBlendingMachineHighs?.stages[0]
     const singletonBlendingMachineFirstStage =
       singletonBlendingMachineHighs?.stages[0]
+    const finalizingOnlyMachineFirstStage =
+      finalizingOnlyMachineHighs?.stages[0]
+    const decomposedBoundMachineFirstStage =
+      decomposedBoundMachineHighs?.stages[0]
     const tightOperationBoundMachineFirstStage =
       tightOperationBoundMachineHighs?.stages[0]
     const binaryEncodedMachineFirstStage =
@@ -1710,6 +1812,9 @@ it(
     let binaryEncodedWarmStartComparison:
       | WarmStartComparison
       | null = null
+    let decomposedBoundWarmStartComparison:
+      | WarmStartComparison['warm']
+      | null = null
 
     const baselineWarmStartMps =
       tightOperationBoundMachineFirstStage?.capturedMps
@@ -1717,6 +1822,8 @@ it(
       fixedIncumbentMachineFirstStage?.capturedSolutionValues
     const binaryEncodedWarmStartMps =
       binaryEncodedMachineFirstStage?.capturedMps
+    const decomposedBoundWarmStartMps =
+      decomposedBoundMachineFirstStage?.capturedMps
     const binaryEncodedWarmStartSolutionValues =
       fixedBinaryEncodedMachineFirstStage?.capturedSolutionValues
 
@@ -1726,8 +1833,8 @@ it(
         baselineWarmStartSolutionValues?.length
       ) ||
       (
-        binaryEncodedWarmStartMps &&
-        binaryEncodedWarmStartSolutionValues?.length
+        decomposedBoundWarmStartMps &&
+        baselineWarmStartSolutionValues?.length
       )
     ) {
       const { default: loadHighs } = await import('highs')
@@ -1837,6 +1944,69 @@ it(
         }
       }
 
+      const runWarmOnly = (
+        mps: string,
+        solutionValues: Array<{
+          name: string
+          value: number
+        }>,
+      ): WarmStartComparison['warm'] => {
+        const encodedMps = new TextEncoder().encode(mps)
+        const warmModel = highs.createModel({
+          format: 'mps',
+          data: encodedMps,
+        })
+        try {
+          warmModel.options.set({
+            output_flag: false,
+            time_limit: 5.5,
+            mip_rel_gap: 0,
+          })
+          const dimensions = warmModel.getDimensions()
+          const colValue = new Float64Array(dimensions.numCols)
+          let mappedSeedColumnCount = 0
+
+          for (const entry of solutionValues) {
+            const columnIndex = warmModel.getColByName(entry.name)
+            colValue[columnIndex] = entry.value
+            mappedSeedColumnCount += 1
+          }
+
+          const seedResult = warmModel.setSolution({ colValue })
+          const warmStartedAt = performance.now()
+          warmModel.run()
+          const solveMs = performance.now() - warmStartedAt
+          const primalSolutionStatus = Number(
+            warmModel.info.get('primal_solution_status'),
+          )
+          const hasFeasiblePrimal =
+            primalSolutionStatus ===
+            highs.constants.solutionStatus.feasible
+
+          return {
+            solveMs,
+            modelStatus: warmModel.getModelStatus(),
+            primalSolutionStatus,
+            hasFeasiblePrimal,
+            objectiveValue: hasFeasiblePrimal
+              ? warmModel.getObjectiveValue()
+              : null,
+            mipDualBound: Number(
+              warmModel.info.get('mip_dual_bound'),
+            ),
+            mipGap: Number(warmModel.info.get('mip_gap')),
+            mipNodeCount: Number(
+              warmModel.info.get('mip_node_count'),
+            ),
+            seedStatus: seedResult.status,
+            mappedSeedColumnCount,
+            expectedSeedColumnCount: solutionValues.length,
+          }
+        } finally {
+          warmModel.dispose()
+        }
+      }
+
       if (
         baselineWarmStartMps &&
         baselineWarmStartSolutionValues?.length &&
@@ -1849,13 +2019,13 @@ it(
       }
 
       if (
-        binaryEncodedWarmStartMps &&
-        binaryEncodedWarmStartSolutionValues?.length &&
-        fixedBinaryEncodedMachineFirstStage?.status === 'optimal'
+        decomposedBoundWarmStartMps &&
+        baselineWarmStartSolutionValues?.length &&
+        fixedIncumbentMachineFirstStage?.status === 'optimal'
       ) {
-        binaryEncodedWarmStartComparison = runComparison(
-          binaryEncodedWarmStartMps,
-          binaryEncodedWarmStartSolutionValues,
+        decomposedBoundWarmStartComparison = runWarmOnly(
+          decomposedBoundWarmStartMps,
+          baselineWarmStartSolutionValues,
         )
       }
     }
@@ -2368,6 +2538,35 @@ it(
               totalMs: incumbentBoundMachineHighs?.totalMs ?? 0,
             }
           : null,
+      decomposedMachineOperationLowerBound,
+      disjointMachineOperationLowerBounds: {
+        juicing:
+          juicingOnlyMachineFirstStage?.objectiveValue ?? null,
+        seasoning:
+          seasoningOnlyMachineFirstStage?.objectiveValue ?? null,
+        sharedBlending:
+          sharedBlendingMachineFirstStage?.objectiveValue ?? null,
+        singletonBlending:
+          singletonBlendingMachineFirstStage?.objectiveValue ?? null,
+        finalizing:
+          finalizingOnlyMachineFirstStage?.objectiveValue ?? null,
+      },
+      decomposedBoundMachineStage:
+        decomposedBoundMachineFirstStage
+          ? {
+              solveMs: decomposedBoundMachineFirstStage.solveMs,
+              status: decomposedBoundMachineFirstStage.status,
+              objectiveValue:
+                decomposedBoundMachineFirstStage.objectiveValue,
+              variableCount:
+                decomposedBoundMachineFirstStage.variableCount,
+              constraintCount:
+                decomposedBoundMachineFirstStage.constraintCount,
+              totalMs:
+                decomposedBoundMachineHighs?.totalMs ?? 0,
+            }
+          : null,
+      decomposedBoundWarmStartComparison,
       warmStartHighsComparison,
       binaryEncodedWarmStartComparison,
       binaryEncodedMachineStage:
@@ -2500,6 +2699,39 @@ it(
       expect(
         fixedIncumbentMachineFirstStage.reconstructedAssignmentCount,
       ).toBe(model.serviceableCustomerIds.length)
+    }
+
+    if (decomposedMachineOperationLowerBound !== null) {
+      expect(
+        decomposedMachineOperationLowerBound,
+      ).toBeLessThanOrEqual(
+        compressedIncumbentMachineOperations,
+      )
+    }
+
+    if (decomposedBoundWarmStartComparison) {
+      expect(
+        decomposedBoundWarmStartComparison.mappedSeedColumnCount,
+      ).toBe(
+        decomposedBoundWarmStartComparison.expectedSeedColumnCount,
+      )
+      expect(
+        decomposedBoundWarmStartComparison.hasFeasiblePrimal,
+      ).toBe(true)
+      expect(
+        decomposedBoundWarmStartComparison.objectiveValue,
+      ).not.toBeNull()
+      expect(
+        decomposedBoundWarmStartComparison.objectiveValue ??
+          Infinity,
+      ).toBeLessThanOrEqual(
+        compressedIncumbentMachineOperations + 1e-7,
+      )
+      expect(
+        decomposedBoundWarmStartComparison.mipDualBound,
+      ).toBeGreaterThanOrEqual(
+        (decomposedMachineOperationLowerBound ?? 0) - 1e-7,
+      )
     }
 
     if (warmStartHighsComparison) {
