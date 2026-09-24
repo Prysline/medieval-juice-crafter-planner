@@ -1122,43 +1122,36 @@ describe('multi-trip replenishment', () => {
     expect(droppable.trips[0].droppedUsedCups).toBe(0)
   })
 
-  it('keeps one prepared jar load across cup-limited trips instead of refilling it', () => {
+  it('never splits one prepared physical jar load across cup-limited trips', () => {
+    expect(() =>
+      buildPlan(
+        namedRecipes(['A'], 10),
+        'retain-and-wash',
+        1,
+        { cleanCups: 5, usedCups: 0 },
+      ),
+    ).toThrow(/No remaining sales load can fit/)
+  })
+
+  it('keeps each physical jar load wholly inside one trip when other complete loads can be scheduled later', () => {
     const result = buildPlan(
-      namedRecipes(['A'], 10),
+      namedRecipes(['A'], 15),
       'retain-and-wash',
-      1,
-      { cleanCups: 5, usedCups: 0 },
+      2,
+      { cleanCups: 10, usedCups: 0 },
     )
 
-    expect(result.tripCount).toBe(2)
+    const tripNumbersByJar = new Map<string, Set<number>>()
+    for (const trip of result.trips) {
+      for (const load of trip.juiceJars) {
+        const trips = tripNumbersByJar.get(load.physicalJarId) ?? new Set<number>()
+        trips.add(trip.tripNumber)
+        tripNumbersByJar.set(load.physicalJarId, trips)
+      }
+    }
     expect(
-      result.trips.map((trip) => ({
-        servings: trip.juiceJars[0].servings,
-        fillAction: trip.juiceJars[0].fillAction,
-        plannedFillServings:
-          trip.juiceJars[0].plannedFillServings,
-      })),
-    ).toEqual([
-      {
-        servings: 5,
-        fillAction: 'initial-fill',
-        plannedFillServings: 10,
-      },
-      {
-        servings: 5,
-        fillAction: 'continue-loaded',
-        plannedFillServings: 0,
-      },
-    ])
-    expect(result.productionJarFills).toEqual([
-      expect.objectContaining({
-        physicalJarId: 'jar-1',
-        recipeId: 'a',
-        beforeTripNumber: 1,
-        servings: 10,
-        fillAction: 'initial-fill',
-      }),
-    ])
+      [...tripNumbersByJar.values()].every((trips) => trips.size === 1),
+    ).toBe(true)
     expectScheduleConsistency(result)
   })
 
