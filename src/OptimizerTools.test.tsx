@@ -213,6 +213,32 @@ describe('juice jar recipe search UX', () => {
     ).toEqual([])
   })
 
+  it('builds raw juice stock directly and gates it by current progress', () => {
+    const opening = intermediateJuiceInventoryEntries([], 'opening')
+    expect(opening.map((entry) => entry.identity)).toEqual([
+      'juice-state:v1:orange',
+      'juice-state:v1:lemon',
+    ])
+    expect(searchIntermediateJuiceEntries(opening, '橙汁')).toEqual([
+      expect.objectContaining({ identity: 'juice-state:v1:orange' }),
+    ])
+    expect(searchIntermediateJuiceEntries(opening, '橙子')).toEqual([
+      expect.objectContaining({ identity: 'juice-state:v1:orange' }),
+    ])
+    expect(searchIntermediateJuiceEntries(opening, 'orange')).toEqual([
+      expect.objectContaining({ identity: 'juice-state:v1:orange' }),
+    ])
+    expect(opening.some((entry) => entry.identity === 'juice-state:v1:banana')).toBe(false)
+
+    const juicer = intermediateJuiceInventoryEntries([], 'juicer-unlocked')
+    expect(juicer.some((entry) => entry.identity === 'juice-state:v1:carrot')).toBe(true)
+    expect(juicer.some((entry) => entry.identity === 'juice-state:v1:pear')).toBe(true)
+    expect(juicer.some((entry) => entry.identity === 'juice-state:v1:banana')).toBe(false)
+
+    const fountain = intermediateJuiceInventoryEntries([], 'tranquil-fountain-unlocked')
+    expect(fountain.some((entry) => entry.identity === 'juice-state:v1:banana')).toBe(true)
+  })
+
   it('derives searchable intermediate states without treating the final recipe as a separate stock identity', () => {
     const intermediate = intermediateJuiceInventoryEntries(entries)
     expect(intermediate.length).toBeGreaterThan(0)
