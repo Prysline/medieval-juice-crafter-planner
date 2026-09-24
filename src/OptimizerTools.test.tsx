@@ -8,6 +8,7 @@ import type {
 import type { PlanApplicationTransactionDraft } from './domain/planApplicationTransaction'
 import {
   DeliveryCustomerCheckbox,
+  DeliveryRecipeGroupCheckbox,
   INVENTORY_RECIPE_SEARCH_RESULT_LIMIT,
   JuiceJarRecipeCombobox,
   MachineBatchFlow,
@@ -16,6 +17,7 @@ import {
   criterionLabel,
   deliveryCanonicalSyncStatus,
   deliveryCustomerControlState,
+  deliveryRecipeGroupControlState,
   moveInventoryRecipeSearchIndex,
   optimizerCriterionOptions,
   optimizerInventoryIngredients,
@@ -346,6 +348,147 @@ describe('delivery checklist UI', () => {
     expect(activeHtml).toContain('勾選即正式寫入')
     expect(laterHtml).toContain('disabled=""')
     expect(laterHtml).toContain('請先完成第 1 趟')
+  })
+
+  it('lets a recipe heading complete all currently active customers in that recipe', () => {
+    const plan = deliveryPlan()
+    const cursor = deliveryCursor()
+
+    expect(
+      deliveryRecipeGroupControlState(
+        plan,
+        cursor,
+        [],
+        ['jack', 'leticia'],
+      ),
+    ).toEqual({
+      checked: false,
+      partial: false,
+      canCommit: true,
+      pendingCustomerIds: ['jack', 'leticia'],
+    })
+
+    const html = renderToStaticMarkup(
+      <DeliveryRecipeGroupCheckbox
+        recipeName="A"
+        customerIds={['jack', 'leticia']}
+        plan={plan}
+        cursor={cursor}
+        suppliedCustomerIds={[]}
+        onCommit={() => {}}
+      />,
+    )
+
+    expect(html).toContain('type="checkbox"')
+    expect(html).not.toContain('disabled=""')
+    expect(html).toContain('A')
+    expect(html).toContain('A整組交付完成')
+  })
+
+  it('shows recipe completion as mixed when only some assigned customers are committed', () => {
+    const plan = deliveryPlan()
+    const cursor = deliveryCursor({
+      tripPrepared: true,
+      completedCustomerIdsInTrip: ['jack'],
+    })
+
+    expect(
+      deliveryRecipeGroupControlState(
+        plan,
+        cursor,
+        [],
+        ['jack', 'leticia'],
+      ),
+    ).toEqual({
+      checked: false,
+      partial: true,
+      canCommit: true,
+      pendingCustomerIds: ['leticia'],
+    })
+
+    const html = renderToStaticMarkup(
+      <DeliveryRecipeGroupCheckbox
+        recipeName="A"
+        customerIds={['jack', 'leticia']}
+        plan={plan}
+        cursor={cursor}
+        suppliedCustomerIds={[]}
+        onCommit={() => {}}
+      />,
+    )
+
+    expect(html).toContain('aria-checked="mixed"')
+    expect(html).toContain('optimizer-delivery-recipe-group partial')
+  })
+
+  it('renders a fully delivered recipe checked and non-reversible', () => {
+    const plan = deliveryPlan()
+    const cursor = deliveryCursor({
+      nextTripNumber: 2,
+      tripPrepared: false,
+      completedCustomerIdsInTrip: [],
+    })
+
+    expect(
+      deliveryRecipeGroupControlState(
+        plan,
+        cursor,
+        [],
+        ['jack', 'leticia'],
+      ),
+    ).toEqual({
+      checked: true,
+      partial: false,
+      canCommit: false,
+      pendingCustomerIds: [],
+    })
+
+    const html = renderToStaticMarkup(
+      <DeliveryRecipeGroupCheckbox
+        recipeName="A"
+        customerIds={['jack', 'leticia']}
+        plan={plan}
+        cursor={cursor}
+        suppliedCustomerIds={[]}
+        onCommit={() => {}}
+      />,
+    )
+
+    expect(html).toContain('checked=""')
+    expect(html).toContain('disabled=""')
+  })
+
+  it('keeps a recipe group disabled when its remaining customers are blocked by the current trip gate', () => {
+    const plan = deliveryPlan()
+    const cursor = deliveryCursor()
+
+    expect(
+      deliveryRecipeGroupControlState(
+        plan,
+        cursor,
+        [],
+        ['jack', 'florida'],
+      ),
+    ).toEqual({
+      checked: false,
+      partial: false,
+      canCommit: false,
+      pendingCustomerIds: ['jack', 'florida'],
+    })
+
+    const html = renderToStaticMarkup(
+      <DeliveryRecipeGroupCheckbox
+        recipeName="跨趟配方"
+        customerIds={['jack', 'florida']}
+        plan={plan}
+        cursor={cursor}
+        suppliedCustomerIds={[]}
+        onCommit={() => {}}
+      />,
+    )
+
+    expect(html).toContain('disabled=""')
+    expect(html).toContain('目前仍有顧客受現行趟次限制')
   })
 
   it('renders committed deliveries checked and non-reversible', () => {
