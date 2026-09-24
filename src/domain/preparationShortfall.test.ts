@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { InventoryState } from '../types'
 import type { PreparationDemand } from './preparationDemand'
+import { juiceStateIdentity } from './juiceStateIdentity'
 import { buildPreparationShortfall } from './preparationShortfall'
 
 const demand: PreparationDemand = {
@@ -255,6 +256,61 @@ describe('preparation stock shortfall', () => {
     expect(result.waterUnitsToFetch).toBe(1)
     expect(state).toEqual(before)
   })
+
+
+  it('offsets upstream raw ingredients with existing intermediate juice stock', () => {
+    const identity = juiceStateIdentity(['lemon'])
+    const result = buildPreparationShortfall(
+      demand,
+      inventory({
+        intermediateJuiceUnits: {
+          [identity]: 1,
+        },
+      }),
+    )
+
+    expect(result.ingredients).toEqual(
+      expect.arrayContaining([
+        {
+          ingredientId: 'lemon',
+          name: '檸檬',
+          requiredUnits: 1,
+          inventoryUnitsAvailable: 0,
+          inventoryUnitsUsed: 0,
+          purchaseUnits: 1,
+        },
+        {
+          ingredientId: 'sugar',
+          name: '糖',
+          requiredUnits: 2,
+          inventoryUnitsAvailable: 0,
+          inventoryUnitsUsed: 0,
+          purchaseUnits: 2,
+        },
+      ]),
+    )
+    expect(result.productionWaterUnitsRequired).toBe(2)
+    expect(result.intermediateStockUsage).toEqual([
+      {
+        identity,
+        ingredientIds: ['lemon'],
+        availableUnits: 1,
+        usedUnits: 1,
+        remainingUnits: 0,
+      },
+    ])
+    expect(
+      result.netProductionPlan?.steps.map((step) => ({
+        key: step.key,
+        quantity: step.quantity,
+      })),
+    ).toEqual([
+      { key: 'juice:lemon', quantity: 1 },
+      { key: 'season:lemon>sugar', quantity: 2 },
+      { key: 'finish:lemon>sugar', quantity: 2 },
+    ])
+  })
+
 
   it('does not count used cups as clean before a washing plan exists', () => {
     const result = buildPreparationShortfall(

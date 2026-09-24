@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { InventoryState, PlannerSettings } from '../types'
 import type { PreparationShortfall } from './preparationShortfall'
 import type { MultiTripProductionJarFill } from './multiTripReplenishment'
+import { juiceStateIdentity } from './juiceStateIdentity'
+import { buildStockOffsetProductionPlan } from './productionPlan'
 import {
   buildNetProductionPlan,
   buildProductionLogisticsPlan,
@@ -155,6 +157,64 @@ describe('production logistics', () => {
       ]),
     )
   })
+
+
+  it('starts from existing intermediate juice without replaying skipped upstream machines', () => {
+    const identity = juiceStateIdentity(['lemon'])
+    const netProductionPlan = buildStockOffsetProductionPlan(
+      [
+        {
+          recipeId: 'recipe',
+          recipeName: 'Recipe',
+          ingredientIds: ['lemon', 'sugar'],
+          juiceUnits: 1,
+          assignedServings: 2,
+        },
+      ],
+      { [identity]: 1 },
+    )
+
+    const result = buildProductionLogisticsPlan(
+      shortfall(['lemon', 'sugar'], 1, {
+        netProductionPlan,
+        intermediateStockUsage:
+          netProductionPlan.intermediateStockUsage,
+        productionWaterUnitsRequired: 1,
+        waterUnitsAvailable: 1,
+        waterUnitsUsed: 1,
+        waterUnitsToFetch: 0,
+      }),
+      inventory({
+        ingredientUnits: { sugar: 1 },
+        intermediateJuiceUnits: { [identity]: 1 },
+        waterUnits: 1,
+      }),
+      settings(),
+      receiverTimeline(1),
+    )
+
+    expect(result.feasible).toBe(true)
+    expect(
+      result.actions
+        .filter((action) => action.kind === 'run-machine')
+        .map((action) => action.equipment),
+    ).toEqual(['調味器', '果汁成品台'])
+    expect(
+      result.actions.some(
+        (action) =>
+          action.kind === 'acquire-ingredient' &&
+          action.label.includes('檸檬'),
+      ),
+    ).toBe(false)
+    expect(
+      result.actions.some(
+        (action) =>
+          action.kind === 'move-shelf-to-backpack' &&
+          action.label.includes('檸檬'),
+      ),
+    ).toBe(true)
+  })
+
 
   it('produces a feasible machine trace and fetches useful water in one trip', () => {
     const result = buildProductionLogisticsPlan(
