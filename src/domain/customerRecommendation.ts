@@ -42,11 +42,14 @@ function usesUniqueIngredients(candidate: RecipeCandidate): boolean {
   return new Set(candidate.ingredients).size === candidate.ingredients.length
 }
 
-function eligibleForCostMode(
-  candidate: RecipeCandidate,
+function preferUniqueIngredientsForMaximumCost(
+  candidates: readonly RecipeCandidate[],
   costMode: RecommendationCostMode,
-): boolean {
-  return costMode !== 'maximum' || usesUniqueIngredients(candidate)
+): RecipeCandidate[] {
+  if (costMode !== 'maximum') return [...candidates]
+
+  const uniqueCandidates = candidates.filter(usesUniqueIngredients)
+  return uniqueCandidates.length > 0 ? uniqueCandidates : [...candidates]
 }
 
 function costedFullMatches(
@@ -55,11 +58,17 @@ function costedFullMatches(
   policy: RecommendationPolicy,
   costMode: RecommendationCostMode,
 ): CostedRecipeCandidate[] {
-  return candidates.flatMap((candidate) => {
-    if (!eligibleForPolicy(candidate, policy)) return []
-    if (!eligibleForCostMode(candidate, costMode)) return []
-    if (!recipeCandidateMatchesCustomer(candidate, customer)) return []
+  const fullMatches = candidates.filter(
+    (candidate) =>
+      eligibleForPolicy(candidate, policy) &&
+      recipeCandidateMatchesCustomer(candidate, customer),
+  )
+  const preferredMatches = preferUniqueIngredientsForMaximumCost(
+    fullMatches,
+    costMode,
+  )
 
+  return preferredMatches.flatMap((candidate) => {
     const cost = calculateRecipeIngredientCost(candidate)
     if (
       cost.batchIngredientCost === null ||
@@ -124,8 +133,7 @@ export function sortFullMatchCandidatesByIngredientCost(
   candidates: readonly RecipeCandidate[],
   costMode: RecommendationCostMode,
 ): RecipeCandidate[] {
-  return candidates
-    .filter((candidate) => eligibleForCostMode(candidate, costMode))
+  return preferUniqueIngredientsForMaximumCost(candidates, costMode)
     .map((candidate, index) => ({
       candidate,
       index,
