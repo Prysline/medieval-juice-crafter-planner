@@ -12,6 +12,9 @@ function basis(): PlanApplicationBasisState {
         lemon: 3,
         sugar: 2,
       },
+      intermediateJuiceUnits: {
+        'juice-state:v1:lemon': 1,
+      },
       waterUnits: 4,
       cleanCups: 2,
       usedCups: 1,
@@ -54,6 +57,9 @@ function draftFromBasis(
     before: {
       inventory: {
         ingredientUnits: { ...source.inventory.ingredientUnits },
+        intermediateJuiceUnits: {
+          ...(source.inventory.intermediateJuiceUnits ?? {}),
+        },
         waterUnits: source.inventory.waterUnits,
         cleanCups: source.inventory.cleanCups,
         usedCups: source.inventory.usedCups,
@@ -82,6 +88,9 @@ function draftFromBasis(
     after: {
       inventory: {
         ingredientUnits: { ...source.inventory.ingredientUnits },
+        intermediateJuiceUnits: {
+          ...(source.inventory.intermediateJuiceUnits ?? {}),
+        },
         waterUnits: source.inventory.waterUnits,
         cleanCups: source.inventory.cleanCups,
         usedCups: source.inventory.usedCups,
@@ -207,6 +216,25 @@ describe('plan application transaction basis validation', () => {
       valid: false,
       stale: true,
       mismatches: ['planner-settings'],
+    })
+  })
+
+  it('treats intermediate juice stock as an inventory planning dependency', () => {
+    const original = basis()
+    const changed = basis()
+    changed.inventory.intermediateJuiceUnits = {
+      'juice-state:v1:lemon': 2,
+    }
+
+    expect(
+      validatePlanApplicationTransactionBasis(
+        draftFromBasis(original),
+        changed,
+      ),
+    ).toEqual({
+      valid: false,
+      stale: true,
+      mismatches: ['inventory'],
     })
   })
 
