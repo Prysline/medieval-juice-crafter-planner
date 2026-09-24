@@ -38,15 +38,37 @@ function eligibleForPolicy(
   return true
 }
 
+function usesUniqueIngredients(candidate: RecipeCandidate): boolean {
+  return new Set(candidate.ingredients).size === candidate.ingredients.length
+}
+
+function preferUniqueIngredientsForMaximumCost(
+  candidates: readonly RecipeCandidate[],
+  costMode: RecommendationCostMode,
+): RecipeCandidate[] {
+  if (costMode !== 'maximum') return [...candidates]
+
+  const uniqueCandidates = candidates.filter(usesUniqueIngredients)
+  return uniqueCandidates.length > 0 ? uniqueCandidates : [...candidates]
+}
+
 function costedFullMatches(
   candidates: readonly RecipeCandidate[],
   customer: Customer,
   policy: RecommendationPolicy,
+  costMode: RecommendationCostMode,
 ): CostedRecipeCandidate[] {
-  return candidates.flatMap((candidate) => {
-    if (!eligibleForPolicy(candidate, policy)) return []
-    if (!recipeCandidateMatchesCustomer(candidate, customer)) return []
+  const fullMatches = candidates.filter(
+    (candidate) =>
+      eligibleForPolicy(candidate, policy) &&
+      recipeCandidateMatchesCustomer(candidate, customer),
+  )
+  const preferredMatches = preferUniqueIngredientsForMaximumCost(
+    fullMatches,
+    costMode,
+  )
 
+  return preferredMatches.flatMap((candidate) => {
     const cost = calculateRecipeIngredientCost(candidate)
     if (
       cost.batchIngredientCost === null ||
@@ -69,7 +91,12 @@ export function bestFullMatchRecommendation(
   policy: RecommendationPolicy,
   costMode: RecommendationCostMode,
 ): BestRecipeRecommendation | null {
-  const costed = costedFullMatches(candidates, customer, policy)
+  const costed = costedFullMatches(
+    candidates,
+    customer,
+    policy,
+    costMode,
+  )
   if (costed.length === 0) return null
 
   const targetBatchCost =
@@ -106,7 +133,7 @@ export function sortFullMatchCandidatesByIngredientCost(
   candidates: readonly RecipeCandidate[],
   costMode: RecommendationCostMode,
 ): RecipeCandidate[] {
-  return candidates
+  return preferUniqueIngredientsForMaximumCost(candidates, costMode)
     .map((candidate, index) => ({
       candidate,
       index,

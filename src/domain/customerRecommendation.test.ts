@@ -71,6 +71,39 @@ describe('customer lowest-cost recommendations', () => {
     ).toEqual(['expensive'])
   })
 
+  it('prefers unique ingredients for highest-cost prediction even when a repeated recipe costs more', () => {
+    const recommendation = bestFullMatchRecommendation(
+      [
+        fixtureCandidate('unique', ['橙子', '薄荷']),
+        fixtureCandidate('repeated-expensive', ['橙子', '薄荷', '薄荷']),
+      ],
+      syntheticCustomer,
+      'observed-only',
+      'maximum',
+    )
+
+    expect(recommendation?.candidates.map(({ candidate }) => candidate.id)).toEqual([
+      'unique',
+    ])
+    expect(recommendation?.batchIngredientCost).toBe(25)
+  })
+
+  it('falls back to repeated ingredients for highest-cost prediction when no unique full match exists', () => {
+    const recommendation = bestFullMatchRecommendation(
+      [
+        fixtureCandidate('repeated-only', ['橙子', '薄荷', '薄荷']),
+      ],
+      syntheticCustomer,
+      'observed-only',
+      'maximum',
+    )
+
+    expect(recommendation?.candidates.map(({ candidate }) => candidate.id)).toEqual([
+      'repeated-only',
+    ])
+    expect(recommendation?.batchIngredientCost).toBe(39)
+  })
+
   it('sorts full matches by ingredient cost in the selected direction', () => {
     const cheap = fixtureCandidate('cheap', ['檸檬', '糖'])
     const expensive = fixtureCandidate('expensive', ['橙子', '薄荷'])
@@ -87,6 +120,23 @@ describe('customer lowest-cost recommendations', () => {
         'maximum',
       ).map((candidate) => candidate.id),
     ).toEqual(['expensive', 'cheap'])
+
+    const repeated = fixtureCandidate(
+      'repeated-expensive',
+      ['橙子', '薄荷', '薄荷'],
+    )
+    expect(
+      sortFullMatchCandidatesByIngredientCost(
+        [cheap, expensive, repeated],
+        'maximum',
+      ).map((candidate) => candidate.id),
+    ).toEqual(['expensive', 'cheap'])
+    expect(
+      sortFullMatchCandidatesByIngredientCost(
+        [repeated],
+        'maximum',
+      ).map((candidate) => candidate.id),
+    ).toEqual(['repeated-expensive'])
   })
 
   it('keeps every tied cheapest recipe instead of inventing a tie-break', () => {
