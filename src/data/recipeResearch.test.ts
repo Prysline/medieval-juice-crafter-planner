@@ -263,6 +263,19 @@ describe('recipe research invariants', () => {
           { name: '補充精力', value: 4 },
         ],
       },
+      {
+        id: 'orange-sugar-mint-cinnamon-pear-blend',
+        observedDisplayName: '護心 暗影',
+        salePrice: 92,
+        ingredients: ['橙子', '糖', '薄荷', '肉桂', '梨'],
+        effects: [
+          { name: '保護心臟', value: 5 },
+          { name: '甜味', value: 5 },
+          { name: '促進消化', value: 4 },
+          { name: '調節血糖', value: 4 },
+          { name: '芳香', value: 4 },
+        ],
+      },
     ] as const
 
     for (const observation of observations) {
