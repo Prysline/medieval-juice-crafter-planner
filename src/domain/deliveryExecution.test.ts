@@ -7,6 +7,7 @@ import type { MultiTripReplenishmentPlan } from './multiTripReplenishment'
 import {
   applyDeliveryExecutionCustomer,
   buildDeliveryExecutionPlan,
+  buildCanonicalDeliveryTransaction,
   createDeliveryExecutionCursor,
 } from './deliveryExecution'
 import {
@@ -1228,6 +1229,225 @@ describe('delivery execution trace', () => {
     expect(second.inventory.intermediateJuiceUnits).toEqual({
       [identity]: 1,
     })
+  })
+
+  it('builds a canonical delivery from a later planned trip when the jar is already prepared', () => {
+    const plan: DeliveryExecutionPlan = {
+      planFingerprint: 'canonical-later-trip',
+      policy: 'retain-and-wash',
+      trips: [
+        {
+          tripNumber: 1,
+          productionFills: [],
+          initialJuiceDiscards: [],
+          ingredientRequirements: [],
+          intermediateRequirements: [],
+          productionWaterUnits: 0,
+          cupsWashedBeforeTrip: 0,
+          cupWashWaterUnits: 0,
+          cleanCupsBeforeTrip: 2,
+          usedCupsBeforeTrip: 0,
+          cleanCupsAfterTrip: 1,
+          usedCupsAfterTrip: 1,
+          juiceJarSlotsCarried: 1,
+          deliveries: [{
+            customerId: 'customer-first',
+            physicalJarId: 'jar-first',
+            recipeId: 'recipe-first',
+            recipeName: 'First',
+          }],
+          newProductionDiscards: [],
+        },
+        {
+          tripNumber: 2,
+          productionFills: [],
+          initialJuiceDiscards: [],
+          ingredientRequirements: [],
+          intermediateRequirements: [],
+          productionWaterUnits: 0,
+          cupsWashedBeforeTrip: 0,
+          cupWashWaterUnits: 0,
+          cleanCupsBeforeTrip: 1,
+          usedCupsBeforeTrip: 1,
+          cleanCupsAfterTrip: 0,
+          usedCupsAfterTrip: 2,
+          juiceJarSlotsCarried: 1,
+          deliveries: [{
+            customerId: 'customer-later',
+            physicalJarId: 'jar-later',
+            recipeId: 'recipe-later',
+            recipeName: 'Later',
+          }],
+          newProductionDiscards: [],
+        },
+      ],
+      finalCleanCups: 0,
+      finalUsedCups: 2,
+      finalPhysicalCupCount: 2,
+    }
+    const inventory: InventoryState = {
+      ingredientUnits: {},
+      intermediateJuiceUnits: {},
+      waterUnits: 0,
+      cleanCups: 2,
+      usedCups: 0,
+      juiceJars: [
+        { id: 'jar-first', recipeId: 'recipe-first', servings: 1 },
+        { id: 'jar-later', recipeId: 'recipe-later', servings: 1 },
+      ],
+      shelfCount: 0,
+      jarRackCount: 0,
+    }
+
+    const draft = buildCanonicalDeliveryTransaction(
+      plan,
+      inventory,
+      [],
+      'customer-later',
+    )
+
+    expect(draft.status).toBe('ready')
+    if (draft.status !== 'ready') return
+    expect(draft.result.plannedTripNumber).toBe(2)
+    expect(draft.result.inventory.cleanCups).toBe(1)
+    expect(draft.result.inventory.usedCups).toBe(1)
+    expect(draft.result.inventory.juiceJars).toEqual([
+      { id: 'jar-first', recipeId: 'recipe-first', servings: 1 },
+      { id: 'jar-later', recipeId: null, servings: 0 },
+    ])
+    expect(inventory).toMatchObject({
+      cleanCups: 2,
+      usedCups: 0,
+    })
+  })
+
+  it('does not replay planned-trip preparation when a later-trip jar is not prepared', () => {
+    const plan: DeliveryExecutionPlan = {
+      planFingerprint: 'canonical-needs-preparation',
+      policy: 'retain-and-wash',
+      trips: [{
+        tripNumber: 1,
+        productionFills: [{
+          physicalJarId: 'jar-a',
+          recipeId: 'recipe-a',
+          recipeName: 'A',
+          beforeTripNumber: 1,
+          servings: 2,
+          servingsAfterFill: 2,
+          fillAction: 'initial-fill',
+          previousRecipeId: null,
+          previousRecipeName: null,
+          receiver: 'carried-jar',
+        }],
+        initialJuiceDiscards: [],
+        ingredientRequirements: [{ ingredientId: 'lemon', units: 1 }],
+        intermediateRequirements: [],
+        productionWaterUnits: 1,
+        cupsWashedBeforeTrip: 0,
+        cupWashWaterUnits: 0,
+        cleanCupsBeforeTrip: 1,
+        usedCupsBeforeTrip: 0,
+        cleanCupsAfterTrip: 0,
+        usedCupsAfterTrip: 1,
+        juiceJarSlotsCarried: 1,
+        deliveries: [{
+          customerId: 'customer-a',
+          physicalJarId: 'jar-a',
+          recipeId: 'recipe-a',
+          recipeName: 'A',
+        }],
+        newProductionDiscards: [],
+      }],
+      finalCleanCups: 0,
+      finalUsedCups: 1,
+      finalPhysicalCupCount: 1,
+    }
+    const inventory: InventoryState = {
+      ingredientUnits: { lemon: 1 },
+      intermediateJuiceUnits: {},
+      waterUnits: 1,
+      cleanCups: 1,
+      usedCups: 0,
+      juiceJars: [{ id: 'jar-a', recipeId: null, servings: 0 }],
+      shelfCount: 0,
+      jarRackCount: 0,
+    }
+
+    const draft = buildCanonicalDeliveryTransaction(
+      plan,
+      inventory,
+      [],
+      'customer-a',
+    )
+
+    expect(draft).toEqual({
+      status: 'needs-preparation',
+      customerId: 'customer-a',
+      plannedTripNumber: 1,
+      physicalJarId: 'jar-a',
+      recipeId: 'recipe-a',
+    })
+    expect(inventory).toEqual({
+      ingredientUnits: { lemon: 1 },
+      intermediateJuiceUnits: {},
+      waterUnits: 1,
+      cleanCups: 1,
+      usedCups: 0,
+      juiceJars: [{ id: 'jar-a', recipeId: null, servings: 0 }],
+      shelfCount: 0,
+      jarRackCount: 0,
+    })
+  })
+
+  it('rejects a canonical delivery for an already supplied customer', () => {
+    const plan: DeliveryExecutionPlan = {
+      planFingerprint: 'canonical-supplied',
+      policy: 'retain-and-wash',
+      trips: [{
+        tripNumber: 1,
+        productionFills: [],
+        initialJuiceDiscards: [],
+        ingredientRequirements: [],
+        intermediateRequirements: [],
+        productionWaterUnits: 0,
+        cupsWashedBeforeTrip: 0,
+        cupWashWaterUnits: 0,
+        cleanCupsBeforeTrip: 1,
+        usedCupsBeforeTrip: 0,
+        cleanCupsAfterTrip: 0,
+        usedCupsAfterTrip: 1,
+        juiceJarSlotsCarried: 1,
+        deliveries: [{
+          customerId: 'customer-a',
+          physicalJarId: 'jar-a',
+          recipeId: 'recipe-a',
+          recipeName: 'A',
+        }],
+        newProductionDiscards: [],
+      }],
+      finalCleanCups: 0,
+      finalUsedCups: 1,
+      finalPhysicalCupCount: 1,
+    }
+    const inventory: InventoryState = {
+      ingredientUnits: {},
+      intermediateJuiceUnits: {},
+      waterUnits: 0,
+      cleanCups: 1,
+      usedCups: 0,
+      juiceJars: [{ id: 'jar-a', recipeId: 'recipe-a', servings: 1 }],
+      shelfCount: 0,
+      jarRackCount: 0,
+    }
+
+    expect(() =>
+      buildCanonicalDeliveryTransaction(
+        plan,
+        inventory,
+        ['customer-a'],
+        'customer-a',
+      ),
+    ).toThrow('Customer customer-a is already supplied')
   })
 
 })
