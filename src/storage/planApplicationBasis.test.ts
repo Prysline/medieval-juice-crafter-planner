@@ -66,6 +66,9 @@ function draftFromBasis(
 ): PlanApplicationTransactionDraft {
   const inventory = {
     ingredientUnits: { ...source.inventory.ingredientUnits },
+    intermediateJuiceUnits: {
+      ...(source.inventory.intermediateJuiceUnits ?? {}),
+    },
     waterUnits: source.inventory.waterUnits,
     cleanCups: source.inventory.cleanCups,
     usedCups: source.inventory.usedCups,
@@ -180,6 +183,7 @@ describe('stored plan application basis', () => {
         ingredientUnits: {
           lemon: 3,
         },
+        intermediateJuiceUnits: {},
         waterUnits: 4,
         cleanCups: 2,
         usedCups: 1,
