@@ -2439,8 +2439,10 @@ export function DeliveryCustomerCheckbox({
     control.status === 'committed'
       ? '已記錄今日供應'
       : control.status === 'active'
-        ? `規劃第 ${control.tripNumber} 趟 · 果汁罐 ${control.physicalJarId} · 可依實際送達順序勾選`
-        : '可記錄今日已供應；目前沒有對應的物理交付事件'
+        ? control.tripNumber !== null && control.physicalJarId !== null
+          ? `規劃第 ${control.tripNumber} 趟 · 果汁罐 ${control.physicalJarId} · 可依實際送達順序勾選`
+          : '可記錄今日已供應；目前沒有對應的物理交付事件'
+        : '目前沒有對應的規劃顧客'
 
   return (
     <label
