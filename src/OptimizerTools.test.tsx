@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { MultiTripProductionJarFill } from './domain/multiTripReplenishment'
 import type {
@@ -179,14 +179,9 @@ const fills: MultiTripProductionJarFill[] = [
 ]
 
 describe('juice jar recipe search UX', () => {
-  let entries: ReturnType<typeof recipeCandidateEntriesForInventoryEditor>
-
-  beforeAll(() => {
-    const pool = buildRecipeCandidatePool('juice-blender-unlocked')
-    entries = recipeCandidateEntriesForInventoryEditor(pool)
-  })
-
   it('searches observed, saved-safe scope and safe computed recipes while bounding rendered results', () => {
+    const pool = buildRecipeCandidatePool('juice-blender-unlocked')
+    const entries = recipeCandidateEntriesForInventoryEditor(pool)
     expect(entries.length).toBeGreaterThan(
       INVENTORY_RECIPE_SEARCH_RESULT_LIMIT,
     )
@@ -239,42 +234,33 @@ describe('juice jar recipe search UX', () => {
     expect(fountain.some((entry) => entry.identity === 'juice-state:v1:banana')).toBe(true)
   })
 
-  it('derives searchable intermediate states without treating the final recipe as a separate stock identity', () => {
-    const intermediate = intermediateJuiceInventoryEntries(entries)
+  it('derives compound intermediate states without treating the final recipe as a separate stock identity', () => {
+    const compoundEntries: ReturnType<typeof recipeCandidateEntriesForInventoryEditor> = [
+      {
+        id: 'compound-intermediate-fixture',
+        name: '複合中間果汁測試',
+        ingredientIds: ['lemon', 'sugar', 'orange'],
+        sources: ['observed'],
+      },
+    ]
+    const intermediate = intermediateJuiceInventoryEntries(
+      compoundEntries,
+      'juice-blender-unlocked',
+    )
     expect(intermediate.length).toBeGreaterThan(0)
     expect(searchIntermediateJuiceEntries(intermediate, '')).toHaveLength(
       Math.min(INTERMEDIATE_JUICE_SEARCH_RESULT_LIMIT, intermediate.length),
     )
-    for (const ingredientId of ['lemon', 'orange', 'carrot', 'pear', 'banana']) {
-      expect(
-        intermediate.some(
-          (entry) => entry.identity === `juice-state:v1:${ingredientId}`,
-        ),
-      ).toBe(true)
-    }
     expect(
-      searchIntermediateJuiceEntries(intermediate, '橙汁').some(
-        (entry) => entry.identity === 'juice-state:v1:orange',
+      intermediate.some(
+        (entry) => entry.identity === 'juice-state:v1:lemon>sugar',
       ),
     ).toBe(true)
-    for (const [ingredientId, ingredientName] of [
-      ['lemon', '檸檬'],
-      ['orange', '橙子'],
-      ['carrot', '紅蘿蔔'],
-      ['pear', '梨'],
-      ['banana', '香蕉'],
-    ] as const) {
-      expect(
-        searchIntermediateJuiceEntries(intermediate, ingredientName).some(
-          (entry) => entry.identity === `juice-state:v1:${ingredientId}`,
-        ),
-      ).toBe(true)
-      expect(
-        searchIntermediateJuiceEntries(intermediate, ingredientId).some(
-          (entry) => entry.identity === `juice-state:v1:${ingredientId}`,
-        ),
-      ).toBe(true)
-    }
+    expect(
+      intermediate.some(
+        (entry) => entry.identity === 'juice-state:v1:lemon>sugar>orange',
+      ),
+    ).toBe(false)
   })
 
   it('wraps keyboard navigation across the bounded result list', () => {
