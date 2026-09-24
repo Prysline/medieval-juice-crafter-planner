@@ -9,6 +9,7 @@ import {
   buildDeliveryExecutionPlan,
   buildCanonicalDeliveryTransaction,
   createDeliveryExecutionCursor,
+  type DeliveryExecutionPlan,
 } from './deliveryExecution'
 import {
   buildPlanApplicationTransactionDraft,
