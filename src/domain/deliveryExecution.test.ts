@@ -546,6 +546,44 @@ function twoTripPlan(): MultiTripReplenishmentPlan {
   }
 }
 
+describe('canonical delivery preparation provenance', () => {
+  it('keeps ingredient, intermediate, and water requirements scoped to each physical fill', () => {
+    const plan = buildDeliveryExecutionPlan(shortfall(), salesPlan())
+    const trip = plan.trips[0]
+
+    expect(trip?.preparationLoads).toEqual([
+      {
+        physicalJarId: 'jar-b',
+        recipeId: 'recipe-b',
+        recipeName: 'B',
+        plannedTripNumber: 1,
+        fill: expect.objectContaining({
+          physicalJarId: 'jar-b',
+          recipeId: 'recipe-b',
+          servings: 2,
+        }),
+        ingredientRequirements: [
+          { ingredientId: 'sugar', units: 1 },
+        ],
+        intermediateRequirements: [],
+        productionWaterUnits: 1,
+      },
+    ])
+
+    const draft = buildCanonicalDeliveryTransaction(
+      plan,
+      inventory(),
+      [],
+      'customer-b',
+    )
+    expect(draft.status).toBe('needs-preparation')
+    if (draft.status !== 'needs-preparation') return
+    expect(draft.preparation).toEqual(
+      trip?.preparationLoads?.[0],
+    )
+  })
+})
+
 describe('delivery execution trace', () => {
   it('materializes trip preparation once and allows arbitrary customer order inside the active trip', () => {
     const plan = buildDeliveryExecutionPlan(shortfall(), salesPlan())
