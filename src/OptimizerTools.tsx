@@ -966,23 +966,15 @@ function OptimizerTools({
   function commitDeliveryCustomers(
     customerIds: readonly string[],
   ) {
-    if (
-      runState.status !== 'success' ||
-      !runState.deliveryExecutionPlan ||
-      !runState.deliveryCursor
-    ) {
-      return
-    }
+    if (runState.status !== 'success') return
 
+    const assignedCustomerIds = new Set(
+      runState.result.recipePlans.flatMap((plan) => plan.customerIds),
+    )
     const pendingCustomerIds = customerIds.filter(
       (customerId) =>
-        !suppliedCustomerIds.includes(customerId) &&
-        deliveryCustomerControlState(
-          runState.deliveryExecutionPlan,
-          runState.deliveryCursor,
-          suppliedCustomerIds,
-          customerId,
-        ).status !== 'unavailable',
+        assignedCustomerIds.has(customerId) &&
+        !suppliedCustomerIds.includes(customerId),
     )
     if (pendingCustomerIds.length === 0) return
 
@@ -2382,11 +2374,13 @@ export function deliveryCustomerControlState(
   suppliedCustomerIds: readonly string[],
   customerId: string,
 ): DeliveryCustomerControlState {
+  const committed = suppliedCustomerIds.includes(customerId)
+
   if (!plan || !cursor) {
     return {
-      status: 'unavailable',
+      status: committed ? 'committed' : 'active',
       tripNumber: null,
-      activeTripNumber: null,
+      activeTripNumber: cursor?.nextTripNumber ?? null,
       physicalJarId: null,
     }
   }
@@ -2408,8 +2402,6 @@ export function deliveryCustomerControlState(
       physicalJarId: null,
     }
   }
-
-  const committed = suppliedCustomerIds.includes(customerId)
 
   return {
     status: committed ? 'committed' : 'active',
@@ -2448,7 +2440,7 @@ export function DeliveryCustomerCheckbox({
       ? '已記錄今日供應'
       : control.status === 'active'
         ? `規劃第 ${control.tripNumber} 趟 · 果汁罐 ${control.physicalJarId} · 可依實際送達順序勾選`
-        : '目前沒有對應的規劃交付事件'
+        : '可記錄今日已供應；目前沒有對應的物理交付事件'
 
   return (
     <label
