@@ -186,6 +186,9 @@ const deliveryMismatchLabels: Record<
 const customerById = new Map(
   customers.map((customer) => [customer.id, customer]),
 )
+const ingredientById = new Map(
+  ingredients.map((ingredient) => [ingredient.id, ingredient]),
+)
 const ingredientNameById = new Map(
   ingredients.map((ingredient) => [ingredient.id, ingredient.name]),
 )
@@ -247,6 +250,14 @@ export interface IntermediateJuiceInventoryEntry {
   label: string
 }
 
+function ingredientIsAvailableAtProgress(
+  ingredientId: string,
+  currentProgress: ProgressMilestoneId,
+): boolean {
+  const ingredient = ingredientById.get(ingredientId)
+  return ingredient ? ingredientIsAvailable(ingredient, currentProgress) : false
+}
+
 export function intermediateJuiceInventoryEntries(
   entries: readonly RecipeCandidatePoolEntry[],
   currentProgress?: ProgressMilestoneId,
@@ -261,10 +272,7 @@ export function intermediateJuiceInventoryEntries(
       !capability.roles.includes('juice-base') ||
       !capability.baseEquipment ||
       (currentProgress !== undefined &&
-        !ingredientIsAvailable(
-          ingredients.find((ingredient) => ingredient.id === capability.ingredientId)!,
-          currentProgress,
-        ))
+        !ingredientIsAvailableAtProgress(capability.ingredientId, currentProgress))
     ) {
       continue
     }
