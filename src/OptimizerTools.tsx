@@ -2370,7 +2370,7 @@ export function PlanApplicationPreview({
 }
 
 export interface DeliveryCustomerControlState {
-  status: 'committed' | 'active' | 'later' | 'unavailable'
+  status: 'committed' | 'active' | 'unavailable'
   tripNumber: number | null
   activeTripNumber: number | null
   physicalJarId: string | null
@@ -2418,11 +2418,7 @@ export function deliveryCustomerControlState(
     )
 
   return {
-    status: committed
-      ? 'committed'
-      : trip.tripNumber === cursor.nextTripNumber
-        ? 'active'
-        : 'later',
+    status: committed ? 'committed' : 'active',
     tripNumber: trip.tripNumber,
     activeTripNumber: cursor.nextTripNumber,
     physicalJarId: delivery.physicalJarId,
@@ -2455,12 +2451,10 @@ export function DeliveryCustomerCheckbox({
 
   const detail =
     control.status === 'committed'
-      ? '已正式交付'
+      ? '已記錄今日供應'
       : control.status === 'active'
-        ? `第 ${control.tripNumber} 趟 · 果汁罐 ${control.physicalJarId} · 勾選即正式寫入`
-        : control.status === 'later'
-          ? `第 ${control.tripNumber} 趟 · 請先完成第 ${control.activeTripNumber} 趟`
-          : '目前沒有可提交的實體交付事件'
+        ? `規劃第 ${control.tripNumber} 趟 · 果汁罐 ${control.physicalJarId} · 可依實際送達順序勾選`
+        : '目前沒有對應的規劃交付事件'
 
   return (
     <label
@@ -2582,11 +2576,7 @@ export function DeliveryRecipeGroupCheckbox({
               ? 'optimizer-delivery-recipe-group active'
               : 'optimizer-delivery-recipe-group'
       }
-      title={
-        !control.checked && !control.canCommit
-          ? '目前仍有顧客受現行趟次限制，請先使用個別顧客勾選。'
-          : undefined
-      }
+      title={undefined}
     >
       <input
         ref={inputRef}
@@ -3129,8 +3119,8 @@ function OptimizerResultPanel({
 
         <div className="optimizer-delivery-toolbar">
           <span>
-            勾選個別顧客或配方標題，代表對應顧客已實際收到果汁，會立即同步果汁罐、杯具、庫存與「今日已供應」。
-            已提交的交付不能靠取消 checkbox 復原。
+            勾選個別顧客或配方標題，代表對應顧客已實際收到果汁；可依實際送達順序勾選，不受規劃趟次限制。勾選會更新「今日已供應」，但不會假裝尚未發生的前置趟次、裝瓶或杯具操作已完成；之後若要套用庫存變更，請依目前狀態重新規劃。
+            已記錄的供應不能靠取消 checkbox 復原。
           </span>
           {transactionDraftInvalidatedByPartialDelivery && (
             <button type="button" onClick={onReplan}>
