@@ -100,12 +100,12 @@ const capabilityByIngredientId = new Map<
   ]),
 )
 
-function sequenceKey(ids: string[]): string {
+function sequenceKey(ids: readonly string[]): string {
   return ids.join('>')
 }
 
 export function productionPathForIngredientIds(
-  ingredientIds: string[],
+  ingredientIds: readonly string[],
 ): RecipeProductionPath | null {
   if (ingredientIds.length === 0) return null
 
