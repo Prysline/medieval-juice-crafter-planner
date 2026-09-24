@@ -10,6 +10,7 @@ import {
   DeliveryCustomerCheckbox,
   DeliveryRecipeGroupCheckbox,
   INVENTORY_RECIPE_SEARCH_RESULT_LIMIT,
+  INTERMEDIATE_JUICE_SEARCH_RESULT_LIMIT,
   JuiceJarRecipeCombobox,
   MachineBatchFlow,
   PlanApplicationPreview,
@@ -21,6 +22,8 @@ import {
   moveInventoryRecipeSearchIndex,
   optimizerCriterionOptions,
   optimizerInventoryIngredients,
+  intermediateJuiceInventoryEntries,
+  searchIntermediateJuiceEntries,
   searchInventoryRecipeEntries,
 } from './OptimizerTools'
 import {
@@ -204,6 +207,22 @@ describe('juice jar recipe search UX', () => {
     expect(
       searchInventoryRecipeEntries(entries, 'definitely-no-such-recipe'),
     ).toEqual([])
+  })
+
+  it('derives searchable intermediate states without treating the final recipe as a separate stock identity', () => {
+    const intermediate = intermediateJuiceInventoryEntries(entries)
+    expect(intermediate.length).toBeGreaterThan(0)
+    expect(searchIntermediateJuiceEntries(intermediate, '')).toHaveLength(
+      Math.min(INTERMEDIATE_JUICE_SEARCH_RESULT_LIMIT, intermediate.length),
+    )
+    expect(
+      intermediate.some((entry) => entry.identity === 'juice-state:v1:lemon'),
+    ).toBe(true)
+    expect(
+      searchIntermediateJuiceEntries(intermediate, '檸檬').some(
+        (entry) => entry.ingredientIds.includes('lemon'),
+      ),
+    ).toBe(true)
   })
 
   it('wraps keyboard navigation across the bounded result list', () => {
