@@ -17,6 +17,11 @@ export interface DeliveryExecutionIngredientRequirement {
   units: number
 }
 
+export interface DeliveryExecutionIntermediateRequirement {
+  identity: string
+  units: number
+}
+
 export interface DeliveryExecutionCustomer {
   customerId: string
   physicalJarId: string
@@ -29,6 +34,7 @@ export interface DeliveryExecutionTrip {
   productionFills: readonly MultiTripProductionJarFill[]
   initialJuiceDiscards: readonly MultiTripDiscardedInitialJuice[]
   ingredientRequirements: readonly DeliveryExecutionIngredientRequirement[]
+  intermediateRequirements: readonly DeliveryExecutionIntermediateRequirement[]
   productionWaterUnits: number
   cupsWashedBeforeTrip: number
   cupWashWaterUnits: number
@@ -64,6 +70,13 @@ export interface DeliveryExecutionIngredientChange {
   externalUnitsRequired: number
 }
 
+export interface DeliveryExecutionIntermediateChange {
+  identity: string
+  requiredUnits: number
+  beforeUnits: number
+  afterUnits: number
+}
+
 export interface DeliveryExecutionWaterChange {
   requiredUnits: number
   productionUnitsRequired: number
@@ -83,6 +96,7 @@ export interface DeliveryExecutionCupChange {
 export interface DeliveryExecutionStepChanges {
   tripPreparedNow: boolean
   ingredients: readonly DeliveryExecutionIngredientChange[]
+  intermediateJuice: readonly DeliveryExecutionIntermediateChange[]
   water: DeliveryExecutionWaterChange
   initialJuiceDiscards: readonly MultiTripDiscardedInitialJuice[]
   productionFills: readonly MultiTripProductionJarFill[]
@@ -195,6 +209,26 @@ function normalizedPlanPayload(
     finalCleanCups: salesPlan.finalCleanCups,
     finalUsedCups: salesPlan.finalUsedCups,
     finalPhysicalCupCount: salesPlan.finalPhysicalCupCount,
+    intermediateStockUsage: (shortfall.intermediateStockUsage ?? []).map(
+      (usage) => ({
+        identity: usage.identity,
+        ingredientIds: [...usage.ingredientIds],
+        availableUnits: usage.availableUnits,
+        usedUnits: usage.usedUnits,
+        remainingUnits: usage.remainingUnits,
+      }),
+    ),
+    stockOffsetRecipeUsage: (shortfall.stockOffsetRecipeUsage ?? []).map(
+      (usage) => ({
+        recipeId: usage.recipeId,
+        ingredientUnits: { ...usage.ingredientUnits },
+        intermediateStockUnits: { ...usage.intermediateStockUnits },
+        units: usage.units.map((unit) => ({
+          ingredientUnits: { ...unit.ingredientUnits },
+          intermediateStockUnits: { ...unit.intermediateStockUnits },
+        })),
+      }),
+    ),
     recipes: shortfall.recipes.map((recipe) => ({
       recipeId: recipe.recipeId,
       juiceUnitsToPrepare: recipe.juiceUnitsToPrepare,
@@ -275,6 +309,14 @@ export function buildDeliveryExecutionPlan(
     }
   }
 
+  const stockOffsetUsageByRecipeId = new Map(
+    (shortfall.stockOffsetRecipeUsage ?? []).map((usage) => [
+      usage.recipeId,
+      usage,
+    ]),
+  )
+  const stockOffsetUnitCursor = new Map<string, number>()
+
   const seenCustomers = new Set<string>()
   const trips = salesPlan.trips.map(
     (trip, index): DeliveryExecutionTrip => {
@@ -326,6 +368,7 @@ export function buildDeliveryExecutionPlan(
           a.physicalJarId.localeCompare(b.physicalJarId),
         )
       const ingredientUnits = new Map<string, number>()
+      const intermediateUnits = new Map<string, number>()
       let productionWaterUnits = 0
 
       for (const fill of productionFills) {
@@ -337,12 +380,51 @@ export function buildDeliveryExecutionPlan(
         }
         const juiceUnits = fill.servings / 2
         productionWaterUnits += juiceUnits
-        for (const ingredient of recipe.ingredientUnitsPerJuiceUnit) {
-          ingredientUnits.set(
-            ingredient.ingredientId,
-            (ingredientUnits.get(ingredient.ingredientId) ?? 0) +
-              ingredient.quantityPerJuiceUnit * juiceUnits,
+
+        const stockOffsetUsage =
+          stockOffsetUsageByRecipeId.get(fill.recipeId)
+        if (stockOffsetUsage) {
+          const start =
+            stockOffsetUnitCursor.get(fill.recipeId) ?? 0
+          const units = stockOffsetUsage.units.slice(
+            start,
+            start + juiceUnits,
           )
+          if (units.length !== juiceUnits) {
+            throw new Error(
+              `Stock-offset execution provenance drifted for ${fill.recipeId}`,
+            )
+          }
+          stockOffsetUnitCursor.set(
+            fill.recipeId,
+            start + juiceUnits,
+          )
+          for (const unit of units) {
+            for (const [ingredientId, quantity] of Object.entries(
+              unit.ingredientUnits,
+            )) {
+              ingredientUnits.set(
+                ingredientId,
+                (ingredientUnits.get(ingredientId) ?? 0) + quantity,
+              )
+            }
+            for (const [identity, quantity] of Object.entries(
+              unit.intermediateStockUnits,
+            )) {
+              intermediateUnits.set(
+                identity,
+                (intermediateUnits.get(identity) ?? 0) + quantity,
+              )
+            }
+          }
+        } else {
+          for (const ingredient of recipe.ingredientUnitsPerJuiceUnit) {
+            ingredientUnits.set(
+              ingredient.ingredientId,
+              (ingredientUnits.get(ingredient.ingredientId) ?? 0) +
+                ingredient.quantityPerJuiceUnit * juiceUnits,
+            )
+          }
         }
       }
 
@@ -370,6 +452,9 @@ export function buildDeliveryExecutionPlan(
           .sort((a, b) =>
             a.ingredientId.localeCompare(b.ingredientId),
           ),
+        intermediateRequirements: [...intermediateUnits.entries()]
+          .map(([identity, units]) => ({ identity, units }))
+          .sort((a, b) => a.identity.localeCompare(b.identity)),
         productionWaterUnits,
         cupsWashedBeforeTrip: trip.cupsWashedBeforeTrip,
         cupWashWaterUnits: trip.cupWashWaterUnits,
@@ -441,6 +526,7 @@ function prepareTrip(
   trip: DeliveryExecutionTrip,
 ): {
   ingredientChanges: DeliveryExecutionIngredientChange[]
+  intermediateChanges: DeliveryExecutionIntermediateChange[]
   waterChange: DeliveryExecutionWaterChange
 } {
   if (
@@ -491,6 +577,31 @@ function prepareTrip(
           consumedFromInventory,
           externalUnitsRequired:
             requirement.units - consumedFromInventory,
+        }
+      },
+    )
+
+  const intermediateChanges =
+    trip.intermediateRequirements.map(
+      (requirement): DeliveryExecutionIntermediateChange => {
+        const before =
+          inventory.intermediateJuiceUnits?.[requirement.identity] ?? 0
+        if (before < requirement.units) {
+          throw new Error(
+            `Trip ${trip.tripNumber} intermediate juice stock no longer matches ${requirement.identity}`,
+          )
+        }
+        const after = before - requirement.units
+        if (after > 0) {
+          inventory.intermediateJuiceUnits![requirement.identity] = after
+        } else {
+          delete inventory.intermediateJuiceUnits![requirement.identity]
+        }
+        return {
+          identity: requirement.identity,
+          requiredUnits: requirement.units,
+          beforeUnits: before,
+          afterUnits: after,
         }
       },
     )
@@ -555,6 +666,7 @@ function prepareTrip(
 
   return {
     ingredientChanges,
+    intermediateChanges,
     waterChange: {
       requiredUnits: totalWaterRequired,
       productionUnitsRequired: trip.productionWaterUnits,
@@ -636,6 +748,7 @@ export function applyDeliveryExecutionCustomer(
 
   const inventory = cloneInventory(sourceInventory)
   let ingredientChanges: DeliveryExecutionIngredientChange[] = []
+  let intermediateChanges: DeliveryExecutionIntermediateChange[] = []
   let waterChange: DeliveryExecutionWaterChange = {
     requiredUnits: 0,
     productionUnitsRequired: 0,
@@ -647,6 +760,7 @@ export function applyDeliveryExecutionCustomer(
   if (!cursor.tripPrepared) {
     const prepared = prepareTrip(inventory, trip)
     ingredientChanges = prepared.ingredientChanges
+    intermediateChanges = prepared.intermediateChanges
     waterChange = prepared.waterChange
   }
 
@@ -751,6 +865,7 @@ export function applyDeliveryExecutionCustomer(
     changes: {
       tripPreparedNow: !cursor.tripPrepared,
       ingredients: ingredientChanges,
+      intermediateJuice: intermediateChanges,
       water: waterChange,
       initialJuiceDiscards: cursor.tripPrepared
         ? []
