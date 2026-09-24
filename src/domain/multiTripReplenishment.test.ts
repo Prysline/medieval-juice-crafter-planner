@@ -1024,8 +1024,8 @@ describe('multi-trip replenishment', () => {
 
     expect(retained.tripCount).toBe(2)
     expect(retained.trips[0]).toMatchObject({
-      totalServings: 41,
-      departureSlots: 10,
+      totalServings: 40,
+      departureSlots: 9,
       effectiveDepartureSlotLimit: 10,
       reservedTransientUsedCupSlot: 0,
       usedCupDropMayOccur: false,
@@ -1033,7 +1033,7 @@ describe('multi-trip replenishment', () => {
       peakOccupiedSlots: 10,
       juiceJarSlotsCarried: 5,
     })
-    expect(retained.reusableCleanCupPoolSize).toBe(41)
+    expect(retained.reusableCleanCupPoolSize).toBe(40)
     expect(retained.totalCupWashWaterUnits).toBe(0)
 
     expect(droppable.tripCount).toBe(1)
@@ -1155,29 +1155,27 @@ describe('multi-trip replenishment', () => {
     expectScheduleConsistency(result)
   })
 
-  it('washes and reuses a smaller physical cup pool across trips', () => {
+  it('washes and reuses a smaller physical cup pool across complete jar loads', () => {
     const result = buildPlan(
       namedRecipes(['A'], 15),
       'retain-and-wash',
-      1,
-      { cleanCups: 5, usedCups: 0 },
+      2,
+      { cleanCups: 10, usedCups: 0 },
     )
 
-    expect(result.tripCount).toBe(3)
+    expect(result.tripCount).toBe(2)
     expect(result.trips.map((trip) => trip.totalServings)).toEqual([
-      5,
-      5,
+      10,
       5,
     ])
     expect(result.trips.map((trip) => trip.cupsWashedBeforeTrip)).toEqual([
       0,
       5,
-      5,
     ])
-    expect(result.initialPhysicalCupCount).toBe(5)
-    expect(result.finalPhysicalCupCount).toBe(5)
-    expect(result.betweenTripWashWaterUnits).toBe(10)
-    expect(result.totalCupWashWaterUnits).toBe(10)
+    expect(result.initialPhysicalCupCount).toBe(10)
+    expect(result.finalPhysicalCupCount).toBe(10)
+    expect(result.betweenTripWashWaterUnits).toBe(5)
+    expect(result.totalCupWashWaterUnits).toBe(5)
     expect(result.droppedUsedCups).toBe(0)
     expectScheduleConsistency(result)
   })
