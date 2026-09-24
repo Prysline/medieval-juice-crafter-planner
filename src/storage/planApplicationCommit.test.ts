@@ -101,6 +101,9 @@ function draftFromBasis(
   const beforeInventory = {
     ...source.inventory,
     ingredientUnits: { ...source.inventory.ingredientUnits },
+    intermediateJuiceUnits: {
+      ...(source.inventory.intermediateJuiceUnits ?? {}),
+    },
     juiceJars: source.inventory.juiceJars.map((jar) => ({ ...jar })),
   }
   const afterInventory = {
