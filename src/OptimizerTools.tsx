@@ -252,7 +252,7 @@ export function intermediateJuiceInventoryEntries(
         byIdentity.set(identity, {
           identity,
           ingredientIds: [...edge.toIngredientIds],
-          label: sequenceLabel(edge.toIngredientIds),
+          label: sequenceLabel([...edge.toIngredientIds]),
         })
       }
     }
