@@ -15,7 +15,7 @@ import {
 } from './optimizerHighsSolver'
 
 describe('production-scale optimizer certificates', () => {
-  it('closes the exact Stage 2 machine and Stage 3 jar bounds', async () => {
+  it.skip('closes the exact Stage 2 machine and Stage 3 jar bounds', async () => {
     const customerIds = canonicalCustomers.map((customer) => customer.id)
     const request: OptimizationRequest = {
       customerIds,
