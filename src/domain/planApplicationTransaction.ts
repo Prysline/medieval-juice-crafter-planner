@@ -58,6 +58,14 @@ export interface IngredientTransactionChange {
   readonly acquiredAndConsumedUnits: number
 }
 
+export interface IntermediateJuiceTransactionChange {
+  readonly identity: string
+  readonly ingredientIds: readonly string[]
+  readonly beforeUnits: number
+  readonly afterUnits: number
+  readonly consumedUnits: number
+}
+
 export interface WaterTransactionChange {
   readonly beforeUnits: number
   readonly afterUnits: number
@@ -93,6 +101,7 @@ export interface DiscardedJuiceTransactionChange {
 
 export interface PlanApplicationTransactionChanges {
   readonly ingredients: readonly IngredientTransactionChange[]
+  readonly intermediateJuice: readonly IntermediateJuiceTransactionChange[]
   readonly water: WaterTransactionChange
   readonly cups: CupTransactionChange
   readonly juiceJars: readonly JuiceJarTransactionChange[]
@@ -220,6 +229,11 @@ function freezeChanges(
 ): PlanApplicationTransactionChanges {
   changes.ingredients.forEach((change) => Object.freeze(change))
   Object.freeze(changes.ingredients)
+  changes.intermediateJuice.forEach((change) => {
+    Object.freeze(change.ingredientIds)
+    Object.freeze(change)
+  })
+  Object.freeze(changes.intermediateJuice)
   Object.freeze(changes.water)
   Object.freeze(changes.cups)
   changes.juiceJars.forEach((change) => {
@@ -415,6 +429,25 @@ function validatePlanBasis(
     }
   }
 
+  for (const stock of preparationShortfall.intermediateStockUsage ?? []) {
+    const beforeUnits =
+      basis.inventory.intermediateJuiceUnits?.[stock.identity] ?? 0
+    if (stock.availableUnits !== beforeUnits) {
+      throw new Error(
+        `Preparation intermediate juice inventory does not match ${stock.identity}`,
+      )
+    }
+    if (
+      stock.usedUnits < 0 ||
+      stock.usedUnits > beforeUnits ||
+      stock.remainingUnits !== beforeUnits - stock.usedUnits
+    ) {
+      throw new Error(
+        `Preparation intermediate juice usage exceeds inventory for ${stock.identity}`,
+      )
+    }
+  }
+
   for (const ingredient of preparationShortfall.ingredients) {
     const beforeUnits =
       basis.inventory.ingredientUnits[ingredient.ingredientId] ?? 0
@@ -546,6 +579,48 @@ function buildIngredientTransaction(
   return { ingredientUnits, changes }
 }
 
+function buildIntermediateJuiceTransaction(
+  shortfall: PreparationShortfall,
+  before: PlanApplicationInventorySnapshot,
+): {
+  intermediateJuiceUnits: Record<string, number>
+  changes: IntermediateJuiceTransactionChange[]
+} {
+  const intermediateJuiceUnits = { ...before.intermediateJuiceUnits }
+  const changes = (shortfall.intermediateStockUsage ?? [])
+    .map((stock): IntermediateJuiceTransactionChange => {
+      const beforeUnits = before.intermediateJuiceUnits[stock.identity] ?? 0
+      if (
+        stock.availableUnits !== beforeUnits ||
+        stock.usedUnits < 0 ||
+        stock.usedUnits > beforeUnits
+      ) {
+        throw new Error(
+          `Intermediate juice transaction no longer matches ${stock.identity}`,
+        )
+      }
+
+      const afterUnits = beforeUnits - stock.usedUnits
+      if (afterUnits > 0) {
+        intermediateJuiceUnits[stock.identity] = afterUnits
+      } else {
+        delete intermediateJuiceUnits[stock.identity]
+      }
+
+      return {
+        identity: stock.identity,
+        ingredientIds: [...stock.ingredientIds],
+        beforeUnits,
+        afterUnits,
+        consumedUnits: stock.usedUnits,
+      }
+    })
+    .filter((change) => change.consumedUnits > 0)
+    .sort((a, b) => a.identity.localeCompare(b.identity))
+
+  return { intermediateJuiceUnits, changes }
+}
+
 function finalJarContents(
   before: PlanApplicationInventorySnapshot,
   salesPlan: MultiTripReplenishmentPlan,
@@ -674,6 +749,11 @@ export function buildPlanApplicationTransactionDraft(
     preparationShortfall,
     beforeInventory,
   )
+  const intermediateJuiceTransaction =
+    buildIntermediateJuiceTransaction(
+      preparationShortfall,
+      beforeInventory,
+    )
 
   const totalWaterUnitsRequired =
     preparationShortfall.productionWaterUnitsRequired +
@@ -692,6 +772,8 @@ export function buildPlanApplicationTransactionDraft(
   const afterInventory: PlanApplicationInventorySnapshot = {
     ...beforeInventory,
     ingredientUnits: ingredientTransaction.ingredientUnits,
+    intermediateJuiceUnits:
+      intermediateJuiceTransaction.intermediateJuiceUnits,
     waterUnits: afterWaterUnits,
     cleanCups: salesPlan.finalCleanCups,
     usedCups: salesPlan.finalUsedCups,
@@ -728,6 +810,7 @@ export function buildPlanApplicationTransactionDraft(
   )
   const changes: PlanApplicationTransactionChanges = {
     ingredients: ingredientTransaction.changes,
+    intermediateJuice: intermediateJuiceTransaction.changes,
     water: {
       beforeUnits: beforeInventory.waterUnits,
       afterUnits: afterWaterUnits,
