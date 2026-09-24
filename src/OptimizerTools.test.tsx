@@ -329,6 +329,29 @@ function deliveryCursor(
 }
 
 describe('delivery checklist UI', () => {
+  it('keeps the canonical supplied checklist usable without a physical execution plan', () => {
+    expect(
+      deliveryCustomerControlState(null, null, [], 'florida'),
+    ).toMatchObject({
+      status: 'active',
+      tripNumber: null,
+      physicalJarId: null,
+    })
+
+    const html = renderToStaticMarkup(
+      <DeliveryCustomerCheckbox
+        customerId="florida"
+        plan={null}
+        cursor={null}
+        suppliedCustomerIds={[]}
+        onCommit={() => {}}
+      />,
+    )
+
+    expect(html).not.toContain('disabled=""')
+    expect(html).toContain('可記錄今日已供應')
+  })
+
   it('keeps planned trip metadata without blocking out-of-order delivery checkboxes', () => {
     const plan = deliveryPlan()
     const cursor = deliveryCursor()
