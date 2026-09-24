@@ -521,8 +521,9 @@ describe('optimizer model', () => {
       customers: [{
         id: 'test-customer',
         name: '測試顧客',
-        village: 'town' as const,
-        unlockedAt: 'seasoner-unlocked' as const,
+        occupation: '測試',
+        villageId: 'east-harbor' as const,
+        satisfactionRequired: 0,
         preferences: [],
       }],
       candidates: [repeated, unique],
