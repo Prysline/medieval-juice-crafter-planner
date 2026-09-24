@@ -249,6 +249,7 @@ export interface IntermediateJuiceInventoryEntry {
 
 export function intermediateJuiceInventoryEntries(
   entries: readonly RecipeCandidatePoolEntry[],
+  currentProgress?: ProgressMilestoneId,
 ): IntermediateJuiceInventoryEntry[] {
   const byIdentity = new Map<string, IntermediateJuiceInventoryEntry>()
 
@@ -258,7 +259,12 @@ export function intermediateJuiceInventoryEntries(
   for (const capability of recipeIngredientCapabilities) {
     if (
       !capability.roles.includes('juice-base') ||
-      !capability.baseEquipment
+      !capability.baseEquipment ||
+      (currentProgress !== undefined &&
+        !ingredientIsAvailable(
+          ingredients.find((ingredient) => ingredient.id === capability.ingredientId)!,
+          currentProgress,
+        ))
     ) {
       continue
     }
@@ -823,8 +829,8 @@ function OptimizerTools({
   )
 
   const intermediateInventoryEntries = useMemo(
-    () => intermediateJuiceInventoryEntries(inventoryRecipeEntries),
-    [inventoryRecipeEntries],
+    () => intermediateJuiceInventoryEntries(inventoryRecipeEntries, currentProgress),
+    [inventoryRecipeEntries, currentProgress],
   )
 
   const accessibleJuiceJars = useMemo(
