@@ -341,7 +341,7 @@ export function buildStockOffsetProductionPlan(
   const quantityByStepKey = new Map<string, number>()
   const recipeUsageById = new Map<string, StockOffsetRecipeUsage>()
 
-  function recipeUsage(recipeId: string): StockOffsetRecipeUsage {
+  function usageForRecipe(recipeId: string): StockOffsetRecipeUsage {
     const existing = recipeUsageById.get(recipeId)
     if (existing) return existing
     const created: StockOffsetRecipeUsage = {
@@ -379,7 +379,7 @@ export function buildStockOffsetProductionPlan(
       stock.remainingToAllocate -= used
       stock.usedUnits += used
       stock.remainingUnits = stock.availableUnits - stock.usedUnits
-      const usage = recipeUsage(recipeId)
+      const usage = usageForRecipe(recipeId)
       usage.intermediateStockUnits[stock.identity] =
         (usage.intermediateStockUnits[stock.identity] ?? 0) + used
       unitUsage.intermediateStockUnits[stock.identity] =
@@ -402,7 +402,7 @@ export function buildStockOffsetProductionPlan(
       (producer.kind === 'juicing' || producer.kind === 'seasoning') &&
       producer.addedIngredientId
     ) {
-      const usage = recipeUsage(recipeId)
+      const usage = usageForRecipe(recipeId)
       usage.ingredientUnits[producer.addedIngredientId] =
         (usage.ingredientUnits[producer.addedIngredientId] ?? 0) +
         remaining
@@ -455,7 +455,7 @@ export function buildStockOffsetProductionPlan(
       )
     }
     addStepQuantity(fullFinalizer, recipe.juiceUnits)
-    const usage = recipeUsage(recipe.recipeId)
+    const usage = usageForRecipe(recipe.recipeId)
     for (let unit = 0; unit < recipe.juiceUnits; unit += 1) {
       const unitUsage: StockOffsetRecipeUnitUsage = {
         ingredientUnits: {},
