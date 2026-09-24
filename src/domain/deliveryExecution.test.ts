@@ -581,6 +581,19 @@ describe('canonical delivery preparation provenance', () => {
     expect(draft.preparation).toEqual(
       trip?.preparationLoads?.[0],
     )
+    expect(draft.events).toEqual({
+      initialJuiceDiscards: [],
+      ingredientRequirements: [
+        { ingredientId: 'sugar', units: 1 },
+      ],
+      intermediateRequirements: [],
+      productionWaterUnits: 1,
+      productionFill: expect.objectContaining({
+        physicalJarId: 'jar-b',
+        recipeId: 'recipe-b',
+        servings: 2,
+      }),
+    })
   })
 })
 
@@ -1426,6 +1439,7 @@ describe('delivery execution trace', () => {
       physicalJarId: 'jar-a',
       recipeId: 'recipe-a',
       preparation: null,
+      events: null,
     })
     expect(inventory).toEqual({
       ingredientUnits: { lemon: 1 },
