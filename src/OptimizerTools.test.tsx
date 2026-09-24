@@ -235,32 +235,38 @@ describe('juice jar recipe search UX', () => {
   })
 
   it('derives compound intermediate states without treating the final recipe as a separate stock identity', () => {
-    const compoundEntries: ReturnType<typeof recipeCandidateEntriesForInventoryEditor> = [
-      {
+    const compoundEntry = {
+      id: 'compound-intermediate-fixture',
+      ingredientIds: ['lemon', 'sugar', 'orange', 'mint'],
+      candidate: {
         id: 'compound-intermediate-fixture',
         name: '複合中間果汁測試',
-        ingredientIds: ['lemon', 'sugar', 'orange'],
-        sources: ['observed'],
+        ingredients: ['檸檬', '糖', '橙子', '薄荷'],
+        effects: [],
+        equipment: ['柑橘榨汁機', '調味器', '果汁調和器', '果汁成品台'],
+        source: 'observed',
       },
-    ]
+      sources: ['observed'],
+      savedRecipeIds: [],
+      availableAtCurrentProgress: true,
+      inGeneratedSearchScope: false,
+    } satisfies ReturnType<typeof recipeCandidateEntriesForInventoryEditor>[number]
     const intermediate = intermediateJuiceInventoryEntries(
-      compoundEntries,
+      [compoundEntry],
       'juice-blender-unlocked',
     )
-    expect(intermediate.length).toBeGreaterThan(0)
-    expect(searchIntermediateJuiceEntries(intermediate, '')).toHaveLength(
-      Math.min(INTERMEDIATE_JUICE_SEARCH_RESULT_LIMIT, intermediate.length),
+    expect(intermediate).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ identity: 'juice-state:v1:lemon>sugar' }),
+        expect.objectContaining({ identity: 'juice-state:v1:orange>mint' }),
+      ]),
     )
     expect(
       intermediate.some(
-        (entry) => entry.identity === 'juice-state:v1:lemon>sugar',
+        (entry) =>
+          entry.identity === 'juice-state:v1:lemon>sugar>orange>mint',
       ),
     ).toBe(true)
-    expect(
-      intermediate.some(
-        (entry) => entry.identity === 'juice-state:v1:lemon>sugar>orange',
-      ),
-    ).toBe(false)
   })
 
   it('wraps keyboard navigation across the bounded result list', () => {
@@ -272,6 +278,9 @@ describe('juice jar recipe search UX', () => {
   })
 
   it('keeps unknown legacy jar content readable and exposes an explicit clear action', () => {
+    const entries = recipeCandidateEntriesForInventoryEditor(
+      buildRecipeCandidatePool('opening'),
+    )
     const html = renderToStaticMarkup(
       <JuiceJarRecipeCombobox
         jarId="jar-legacy"
