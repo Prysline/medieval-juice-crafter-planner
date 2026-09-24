@@ -18,6 +18,9 @@ function basis(): PlanApplicationBasisState {
       ingredientUnits: {
         lemon: 3,
       },
+      intermediateJuiceUnits: {
+        'juice-state:v1:lemon': 2,
+      },
       waterUnits: 4,
       cleanCups: 2,
       usedCups: 2,
@@ -426,6 +429,9 @@ describe('plan application transaction', () => {
     expect(draft.before.inventory).toEqual(input.basis.inventory)
     expect(draft.after.inventory.ingredientUnits).toEqual({
       lemon: 2,
+    })
+    expect(draft.after.inventory.intermediateJuiceUnits).toEqual({
+      'juice-state:v1:lemon': 2,
     })
     expect(draft.after.inventory.waterUnits).toBe(2)
     expect(draft.after.inventory.cleanCups).toBe(0)
