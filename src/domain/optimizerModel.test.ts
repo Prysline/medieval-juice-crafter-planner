@@ -498,4 +498,50 @@ describe('optimizer model', () => {
       model.recipes[0].productionPath.edges.map((edge) => edge.kind),
     ).toContain('blending')
   })
+  it('excludes repeated-ingredient candidates when maximum ingredient cost is a priority', () => {
+    const repeated = {
+      id: 'repeat-expensive',
+      name: '重複高成本',
+      ingredients: ['檸檬', '糖', '糖'],
+      effects: [],
+      source: 'computed' as const,
+      salePrice: null,
+      unlockedAt: 'seasoner-unlocked' as const,
+    }
+    const unique = {
+      id: 'unique-expensive',
+      name: '不重複高成本',
+      ingredients: ['檸檬', '糖'],
+      effects: [],
+      source: 'computed' as const,
+      salePrice: null,
+      unlockedAt: 'seasoner-unlocked' as const,
+    }
+    const source = {
+      customers: [{
+        id: 'test-customer',
+        name: '測試顧客',
+        village: 'town' as const,
+        unlockedAt: 'seasoner-unlocked' as const,
+        preferences: [],
+      }],
+      candidates: [repeated, unique],
+    }
+    const request = {
+      customerIds: ['test-customer'],
+      currentProgress: 'seasoner-unlocked' as const,
+      suppliedCustomerIds: [],
+      satisfactionByVillage: {},
+      formalCustomerIds: [],
+      candidatePolicy: 'allow-unambiguous-computed' as const,
+      objective: 'maximum-ingredient-cost' as const,
+      priorities: ['maximum-ingredient-cost' as const],
+      availableJuiceJarCount: 1,
+    }
+    const model = buildOptimizationModel(request, source)
+    expect(model.recipes.map((recipe) => recipe.candidate.id)).not.toContain(
+      'repeat-expensive',
+    )
+  })
+
 })
