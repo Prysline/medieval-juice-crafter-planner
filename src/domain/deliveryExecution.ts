@@ -104,6 +104,9 @@ function cloneInventory(inventory: InventoryState): InventoryState {
   return {
     ...inventory,
     ingredientUnits: { ...inventory.ingredientUnits },
+    intermediateJuiceUnits: {
+      ...(inventory.intermediateJuiceUnits ?? {}),
+    },
     juiceJars: inventory.juiceJars.map((jar) => ({ ...jar })),
   }
 }
