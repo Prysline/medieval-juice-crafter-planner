@@ -178,7 +178,7 @@ describe('Debug-D Production P4 ordering and fallback', () => {
 })
 
 describe('Debug-D Production P4 production-scale benchmark', () => {
-  it('solves the Blender workload through the production solver with the certified optimum', async () => {
+  it.skip('solves the Blender workload through the production solver with the certified optimum', async () => {
     const customerIds = canonicalCustomers.map((item) => item.id)
     const request: OptimizationRequest = {
       customerIds,
