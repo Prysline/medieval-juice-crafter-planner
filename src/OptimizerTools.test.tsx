@@ -215,6 +215,13 @@ describe('juice jar recipe search UX', () => {
     expect(searchIntermediateJuiceEntries(intermediate, '')).toHaveLength(
       Math.min(INTERMEDIATE_JUICE_SEARCH_RESULT_LIMIT, intermediate.length),
     )
+    for (const ingredientId of ['lemon', 'orange', 'carrot', 'pear', 'banana']) {
+      expect(
+        intermediate.some(
+          (entry) => entry.identity === `juice-state:v1:${ingredientId}`,
+        ),
+      ).toBe(true)
+    }
     expect(
       intermediate.some((entry) => entry.identity === 'juice-state:v1:lemon'),
     ).toBe(true)
