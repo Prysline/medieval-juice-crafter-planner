@@ -531,7 +531,7 @@ describe('optimizer model', () => {
       customerIds: ['test-customer'],
       currentProgress: 'seasoner-unlocked' as const,
       suppliedCustomerIds: [],
-      satisfactionByVillage: {},
+      satisfactionByVillage: baseRequest.satisfactionByVillage,
       formalCustomerIds: [],
       candidatePolicy: 'allow-unambiguous-computed' as const,
       objective: 'maximum-ingredient-cost' as const,
