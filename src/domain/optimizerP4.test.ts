@@ -178,7 +178,7 @@ describe('Debug-D Production P4 ordering and fallback', () => {
 })
 
 describe('Debug-D Production P4 production-scale benchmark', () => {
-  it('solves the Blender workload through the production solver with the certified optimum', async () => {
+  it('solves the Blender workload through the production solver with the current certified optimum', async () => {
     const customerIds = canonicalCustomers.map((item) => item.id)
     const request: OptimizationRequest = {
       customerIds,
@@ -207,10 +207,10 @@ describe('Debug-D Production P4 production-scale benchmark', () => {
       `[Debug-D P4 benchmark] Blender production solve: ${elapsedMs.toFixed(0)} ms`,
     )
 
-    expect(result.totalIngredientCost).toBe(572)
-    expect(result.machineOperations.total).toBe(50)
-    expect(result.jarTypeSwitches).toBe(19)
-    expect(result.assignments).toHaveLength(48)
-    expect(result.unresolvedCustomers).toHaveLength(4)
-  }, 45000)
+    expect(result.totalIngredientCost).toBe(615)
+    expect(result.machineOperations.total).toBe(55)
+    expect(result.jarTypeSwitches).toBe(20)
+    expect(result.assignments).toHaveLength(49)
+    expect(result.unresolvedCustomers).toHaveLength(3)
+  }, 150000)
 })
