@@ -61,6 +61,10 @@ function sameInventory(
 ): boolean {
   return (
     sameStringRecord(draft.ingredientUnits, current.ingredientUnits) &&
+    sameStringRecord(
+      draft.intermediateJuiceUnits,
+      current.intermediateJuiceUnits ?? {},
+    ) &&
     draft.waterUnits === current.waterUnits &&
     draft.cleanCups === current.cleanCups &&
     draft.usedCups === current.usedCups &&
