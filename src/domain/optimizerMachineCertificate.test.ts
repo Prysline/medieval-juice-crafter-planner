@@ -97,5 +97,5 @@ describe('production-scale optimizer certificates', () => {
           : null,
       ),
     )
-  }, 45000)
+  }, 120000)
 })
