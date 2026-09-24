@@ -61,6 +61,9 @@ class MemoryStorage implements StorageLike {
 function initialInventory() {
   return {
     ingredientUnits: { lemon: 3, mint: 2 },
+    intermediateJuiceUnits: {
+      'juice-state:v1:lemon': 2,
+    },
     waterUnits: 6,
     cleanCups: 3,
     usedCups: 1,
