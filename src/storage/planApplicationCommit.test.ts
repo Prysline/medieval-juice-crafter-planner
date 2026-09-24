@@ -61,6 +61,9 @@ class MemoryStorage implements StorageLike {
 function initialInventory() {
   return {
     ingredientUnits: { lemon: 3, mint: 2 },
+    intermediateJuiceUnits: {
+      'juice-state:v1:lemon': 2,
+    },
     waterUnits: 6,
     cleanCups: 3,
     usedCups: 1,
@@ -98,6 +101,9 @@ function draftFromBasis(
   const beforeInventory = {
     ...source.inventory,
     ingredientUnits: { ...source.inventory.ingredientUnits },
+    intermediateJuiceUnits: {
+      ...(source.inventory.intermediateJuiceUnits ?? {}),
+    },
     juiceJars: source.inventory.juiceJars.map((jar) => ({ ...jar })),
   }
   const afterInventory = {

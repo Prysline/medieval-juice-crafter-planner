@@ -38,6 +38,7 @@ function transactionDraft(): PlanApplicationTransactionDraft {
     before: {
       inventory: {
         ingredientUnits: { lemon: 3 },
+        intermediateJuiceUnits: {},
         waterUnits: 4,
         cleanCups: 2,
         usedCups: 1,
@@ -68,6 +69,7 @@ function transactionDraft(): PlanApplicationTransactionDraft {
     after: {
       inventory: {
         ingredientUnits: { lemon: 2 },
+        intermediateJuiceUnits: {},
         waterUnits: 2,
         cleanCups: 0,
         usedCups: 3,

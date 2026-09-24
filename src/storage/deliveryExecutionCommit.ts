@@ -70,6 +70,11 @@ function canonicalInventoryPayload(
         ([left], [right]) => left.localeCompare(right),
       ),
     ),
+    intermediateJuiceUnits: Object.fromEntries(
+      Object.entries(normalized.intermediateJuiceUnits ?? {}).sort(
+        ([left], [right]) => left.localeCompare(right),
+      ),
+    ),
     waterUnits: normalized.waterUnits,
     cleanCups: normalized.cleanCups,
     usedCups: normalized.usedCups,

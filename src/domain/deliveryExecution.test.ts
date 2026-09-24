@@ -17,6 +17,9 @@ import {
 function inventory(): InventoryState {
   return {
     ingredientUnits: { sugar: 1 },
+    intermediateJuiceUnits: {
+      'juice-state:v1:lemon/mint': 3,
+    },
     waterUnits: 2,
     cleanCups: 1,
     usedCups: 1,
@@ -572,6 +575,9 @@ describe('delivery execution trace', () => {
     })
     expect(first.inventory).toMatchObject({
       ingredientUnits: {},
+      intermediateJuiceUnits: {
+        'juice-state:v1:lemon/mint': 3,
+      },
       waterUnits: 0,
       cleanCups: 1,
       usedCups: 1,

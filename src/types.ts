@@ -217,14 +217,22 @@ export type RecipeSequenceEvaluation =
 
 export interface JuiceJarInventoryItem {
   id: string
-  /** null 代表空罐；非空罐只保存單一 recipe identity。 */
+  /** null 代表空罐；非空罐只保存單一 final recipe identity。 */
   recipeId: string | null
   servings: number
 }
 
+export type IntermediateJuiceInventory = Record<string, number>
+
 export interface InventoryState {
   /** 只保存原料總數量；stack 5 與實際裝載由 domain 規則計算。 */
   ingredientUnits: Record<string, number>
+  /**
+   * 以 canonical juice-state identity 為 key 保存尚未經果汁成品台的 juice units。
+   * optional 只用來容納舊的 in-memory / persisted shape；storage normalize 後一定會補成 {}。
+   * 不得把這些 key 當成 final recipeId。
+   */
+  intermediateJuiceUnits?: IntermediateJuiceInventory
   waterUnits: number
   /** clean + used = 玩家目前實際持有的杯具總數。 */
   cleanCups: number

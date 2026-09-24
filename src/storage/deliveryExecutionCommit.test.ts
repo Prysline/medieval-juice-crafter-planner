@@ -11,6 +11,7 @@ import {
 } from './inventoryState'
 import {
   commitDeliveryExecutionCustomer,
+  deliveryExecutionCanonicalBasisFingerprint,
 } from './deliveryExecutionCommit'
 import {
   PLAN_APPLICATION_STATE_STORAGE_KEY,
@@ -60,6 +61,9 @@ class MemoryStorage implements StorageLike {
 function initialInventory(): InventoryState {
   return {
     ingredientUnits: {},
+    intermediateJuiceUnits: {
+      'juice-state:v1:lemon/mint': 2,
+    },
     waterUnits: 0,
     cleanCups: 2,
     usedCups: 0,
@@ -168,6 +172,22 @@ function initialBasis() {
 }
 
 describe('partial delivery atomic commit', () => {
+  it('includes intermediate juice stock in the canonical execution basis', () => {
+    const base = initialInventory()
+    const changed: InventoryState = {
+      ...base,
+      intermediateJuiceUnits: {
+        'juice-state:v1:lemon/mint': 3,
+      },
+    }
+
+    expect(
+      deliveryExecutionCanonicalBasisFingerprint(base, []),
+    ).not.toBe(
+      deliveryExecutionCanonicalBasisFingerprint(changed, []),
+    )
+  })
+
   it('atomically writes inventory, supplied customers, and execution cursor once', () => {
     const storage = legacyStorage()
     const plan = planA()

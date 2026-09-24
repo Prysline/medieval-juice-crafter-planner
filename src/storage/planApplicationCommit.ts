@@ -34,6 +34,9 @@ function inventoryFromTransaction(
 ): InventoryState {
   return normalizeInventoryState({
     ingredientUnits: { ...draft.after.inventory.ingredientUnits },
+    intermediateJuiceUnits: {
+      ...draft.after.inventory.intermediateJuiceUnits,
+    },
     waterUnits: draft.after.inventory.waterUnits,
     cleanCups: draft.after.inventory.cleanCups,
     usedCups: draft.after.inventory.usedCups,
