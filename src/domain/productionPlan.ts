@@ -422,7 +422,12 @@ export function buildStockOffsetProductionPlan(
     }
 
     if (producer.kind === 'blending') {
-      requireIntermediate(producer.fromIngredientIds, remaining, recipeId)
+      requireIntermediate(
+        producer.fromIngredientIds,
+        remaining,
+        recipeId,
+        unitUsage,
+      )
       requireIntermediate(
         producer.secondaryFromIngredientIds ?? [],
         remaining,
