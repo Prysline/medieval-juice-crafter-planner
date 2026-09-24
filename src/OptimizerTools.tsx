@@ -246,7 +246,7 @@ export function intermediateJuiceInventoryEntries(
     if (!path) continue
     for (const edge of path.edges) {
       if (edge.kind === 'finalizing' || edge.toIngredientIds.length === 0) continue
-      const identity = juiceStateIdentity([...edge.toIngredientIds])
+      const identity = juiceStateIdentity(edge.toIngredientIds)
       if (!byIdentity.has(identity)) {
         byIdentity.set(identity, {
           identity,
