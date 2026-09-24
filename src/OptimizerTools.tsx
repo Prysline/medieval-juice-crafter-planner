@@ -68,11 +68,10 @@ import {
 } from './storage/productionChecklist'
 import { commitPlanApplicationTransaction } from './storage/planApplicationCommit'
 import {
-  commitDeliveryExecutionCustomer,
   deliveryExecutionCanonicalBasisFingerprint,
   type DeliveryExecutionCommitStaleField,
 } from './storage/deliveryExecutionCommit'
-import { readSuppliedCustomerIds } from './storage/plannerState'
+import { writeSuppliedCustomerIds } from './storage/plannerState'
 import {
   PlanningUserError,
   presentPlanningError,
@@ -975,113 +974,50 @@ function OptimizerTools({
       return
     }
 
-    const plan = runState.deliveryExecutionPlan
-    let cursor = runState.deliveryCursor
-    let committedInventory = inventoryState
-    let committedSupplied = [...suppliedCustomerIds]
     const pendingCustomerIds = customerIds.filter(
       (customerId) =>
+        !suppliedCustomerIds.includes(customerId) &&
         deliveryCustomerControlState(
-          plan,
-          cursor,
-          committedSupplied,
+          runState.deliveryExecutionPlan,
+          runState.deliveryCursor,
+          suppliedCustomerIds,
           customerId,
-        ).status !== 'committed',
+        ).status !== 'unavailable',
     )
-
     if (pendingCustomerIds.length === 0) return
 
-    const allCurrentlyActive = pendingCustomerIds.every(
-      (customerId) =>
-        deliveryCustomerControlState(
-          plan,
-          cursor,
-          committedSupplied,
-          customerId,
-        ).status === 'active',
-    )
-    if (!allCurrentlyActive) {
-      setDeliveryUiState({
-        status: 'error',
-        message:
-          '此配方仍有顧客受現行趟次限制，請先使用個別顧客勾選。',
-      })
-      return
-    }
-
-    const beforeInventory = inventoryState
+    // The trip schedule is planning guidance, not an authority over the
+    // player's real delivery order. Recording an out-of-order delivery must
+    // therefore update only the canonical supplied-customer state. Replaying
+    // a later planned trip here would falsely imply that earlier jar/cup and
+    // production events had happened. Any physical transaction draft is
+    // invalid after this manual delivery record and must be replanned from the
+    // current inventory before inventory-affecting execution continues.
     const beforeSupplied = [...suppliedCustomerIds]
-    const appliedCustomerIds: string[] = []
-
-    for (const customerId of pendingCustomerIds) {
-      const committed = commitDeliveryExecutionCustomer(
-        {
-          plan,
-          cursor,
-          customerId,
-          expectedBasis: runState.deliveryExpectedBasis,
-        },
-        window.localStorage,
+    const committedSupplied = [
+      ...new Set([...beforeSupplied, ...pendingCustomerIds]),
+    ]
+    const beforeFingerprint =
+      deliveryExecutionCanonicalBasisFingerprint(
+        inventoryState,
+        beforeSupplied,
       )
-
-      if (committed.status === 'stale') {
-        setDeliveryUiState({
-          status: 'stale',
-          mismatches: committed.mismatches,
-        })
-        setInventoryState(readInventoryState(window.localStorage))
-        onSuppliedCustomerIdsCommitted(
-          readSuppliedCustomerIds(window.localStorage),
-        )
-        setRunState({ status: 'idle' })
-        return
-      }
-
-      if (committed.status === 'error') {
-        setDeliveryUiState({
-          status: 'error',
-          message: committed.message,
-        })
-        return
-      }
-
-      committedInventory = committed.inventory
-      committedSupplied = [...committed.suppliedCustomerIds]
-      cursor = committed.cursor
-      appliedCustomerIds.push(customerId)
-    }
-
     const targetFingerprint =
       deliveryExecutionCanonicalBasisFingerprint(
-        committedInventory,
+        inventoryState,
         committedSupplied,
       )
     deliveryCanonicalSyncGuardRef.current = {
       targetFingerprint,
-      allowedFingerprints: [
-        deliveryExecutionCanonicalBasisFingerprint(
-          beforeInventory,
-          beforeSupplied,
-        ),
-        deliveryExecutionCanonicalBasisFingerprint(
-          committedInventory,
-          beforeSupplied,
-        ),
-        deliveryExecutionCanonicalBasisFingerprint(
-          beforeInventory,
-          committedSupplied,
-        ),
-        targetFingerprint,
-      ],
+      allowedFingerprints: [beforeFingerprint, targetFingerprint],
     }
 
-    setInventoryState(committedInventory)
+    writeSuppliedCustomerIds(window.localStorage, committedSupplied)
     onSuppliedCustomerIdsCommitted(committedSupplied)
     setRunState((current) =>
       current.status === 'success'
         ? {
             ...current,
-            deliveryCursor: cursor,
             transactionDraft: null,
             transactionDraftInvalidatedByPartialDelivery: true,
           }
@@ -1090,7 +1026,7 @@ function OptimizerTools({
     setApplicationState({ status: 'idle' })
     setDeliveryUiState({
       status: 'applied',
-      customerIds: appliedCustomerIds,
+      customerIds: pendingCustomerIds,
     })
   }
 
