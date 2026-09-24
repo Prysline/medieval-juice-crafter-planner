@@ -329,7 +329,7 @@ function deliveryCursor(
 }
 
 describe('delivery checklist UI', () => {
-  it('keeps only the active trip checkable while later trips stay disabled', () => {
+  it('keeps planned trip metadata without blocking out-of-order delivery checkboxes', () => {
     const plan = deliveryPlan()
     const cursor = deliveryCursor()
 
@@ -343,7 +343,7 @@ describe('delivery checklist UI', () => {
     expect(
       deliveryCustomerControlState(plan, cursor, [], 'florida'),
     ).toMatchObject({
-      status: 'later',
+      status: 'active',
       tripNumber: 2,
       activeTripNumber: 1,
     })
@@ -369,9 +369,9 @@ describe('delivery checklist UI', () => {
 
     expect(activeHtml).toContain('type="checkbox"')
     expect(activeHtml).not.toContain('disabled=""')
-    expect(activeHtml).toContain('勾選即正式寫入')
-    expect(laterHtml).toContain('disabled=""')
-    expect(laterHtml).toContain('請先完成第 1 趟')
+    expect(activeHtml).toContain('可依實際送達順序勾選')
+    expect(laterHtml).not.toContain('disabled=""')
+    expect(laterHtml).toContain('規劃第 2 趟')
   })
 
   it('lets a recipe heading complete all currently active customers in that recipe', () => {
@@ -482,7 +482,7 @@ describe('delivery checklist UI', () => {
     expect(html).toContain('disabled=""')
   })
 
-  it('keeps a recipe group disabled when its remaining customers are blocked by the current trip gate', () => {
+  it('lets a recipe group record customers spanning multiple planned trips', () => {
     const plan = deliveryPlan()
     const cursor = deliveryCursor()
 
@@ -496,7 +496,7 @@ describe('delivery checklist UI', () => {
     ).toEqual({
       checked: false,
       partial: false,
-      canCommit: false,
+      canCommit: true,
       pendingCustomerIds: ['jack', 'florida'],
     })
 
@@ -511,8 +511,7 @@ describe('delivery checklist UI', () => {
       />,
     )
 
-    expect(html).toContain('disabled=""')
-    expect(html).toContain('目前仍有顧客受現行趟次限制')
+    expect(html).not.toContain('disabled=""')
   })
 
   it('renders committed deliveries checked and non-reversible', () => {
@@ -538,7 +537,7 @@ describe('delivery checklist UI', () => {
 
     expect(html).toContain('checked=""')
     expect(html).toContain('disabled=""')
-    expect(html).toContain('已正式交付')
+    expect(html).toContain('已記錄今日供應')
   })
 
   it('treats canonical supplied-customer state as the same committed delivery authority', () => {
@@ -566,7 +565,7 @@ describe('delivery checklist UI', () => {
 
     expect(html).toContain('checked=""')
     expect(html).toContain('disabled=""')
-    expect(html).toContain('已正式交付')
+    expect(html).toContain('已記錄今日供應')
   })
 
   it('treats customers from completed trips as committed even after the cursor advances', () => {
