@@ -179,8 +179,12 @@ const fills: MultiTripProductionJarFill[] = [
 ]
 
 describe('juice jar recipe search UX', () => {
-  const pool = buildRecipeCandidatePool('juice-blender-unlocked')
-  const entries = recipeCandidateEntriesForInventoryEditor(pool)
+  let entries: ReturnType<typeof recipeCandidateEntriesForInventoryEditor>
+
+  beforeAll(() => {
+    const pool = buildRecipeCandidatePool('juice-blender-unlocked')
+    entries = recipeCandidateEntriesForInventoryEditor(pool)
+  })
 
   it('searches observed, saved-safe scope and safe computed recipes while bounding rendered results', () => {
     expect(entries.length).toBeGreaterThan(
