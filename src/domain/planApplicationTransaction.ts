@@ -25,6 +25,7 @@ export interface PlanApplicationJarSnapshot {
 
 export interface PlanApplicationInventorySnapshot {
   readonly ingredientUnits: Readonly<Record<string, number>>
+  readonly intermediateJuiceUnits: Readonly<Record<string, number>>
   readonly waterUnits: number
   readonly cleanCups: number
   readonly usedCups: number
@@ -158,6 +159,9 @@ function snapshotInventory(
 ): PlanApplicationInventorySnapshot {
   return {
     ingredientUnits: { ...inventory.ingredientUnits },
+    intermediateJuiceUnits: {
+      ...(inventory.intermediateJuiceUnits ?? {}),
+    },
     waterUnits: inventory.waterUnits,
     cleanCups: inventory.cleanCups,
     usedCups: inventory.usedCups,
@@ -194,6 +198,7 @@ function freezeInventorySnapshot(
   snapshot: PlanApplicationInventorySnapshot,
 ): PlanApplicationInventorySnapshot {
   Object.freeze(snapshot.ingredientUnits)
+  Object.freeze(snapshot.intermediateJuiceUnits)
   snapshot.juiceJars.forEach((jar) => Object.freeze(jar))
   Object.freeze(snapshot.juiceJars)
   return Object.freeze(snapshot)
