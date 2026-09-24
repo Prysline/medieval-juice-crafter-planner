@@ -261,6 +261,50 @@ describe('production plan stock offset', () => {
     ])
   })
 
+  it('prefers the deepest available stock before using its ancestor stock', () => {
+    const baseIdentity = juiceStateIdentity(['lemon'])
+    const seasonedIdentity = juiceStateIdentity(['lemon', 'sugar'])
+    const result = buildStockOffsetProductionPlan(
+      [
+        {
+          recipeId: 'lemon-sugar-mint',
+          recipeName: 'Lemon Sugar Mint',
+          ingredientIds: ['lemon', 'sugar', 'mint'],
+          juiceUnits: 2,
+          assignedServings: 4,
+        },
+      ],
+      {
+        [baseIdentity]: 1,
+        [seasonedIdentity]: 1,
+      },
+    )
+
+    expect(
+      result.steps.find((step) => step.key === 'juice:lemon'),
+    ).toBeUndefined()
+    expect(
+      result.steps.find(
+        (step) => step.key === 'season:lemon>sugar',
+      ),
+    ).toMatchObject({ quantity: 1 })
+    expect(
+      result.steps.find(
+        (step) => step.key === 'season:lemon>sugar>mint',
+      ),
+    ).toMatchObject({ quantity: 2 })
+    expect(result.intermediateStockUsage).toEqual([
+      expect.objectContaining({
+        identity: seasonedIdentity,
+        usedUnits: 1,
+      }),
+      expect.objectContaining({
+        identity: baseIdentity,
+        usedUnits: 1,
+      }),
+    ])
+  })
+
   it('uses already blended stock while keeping finalizing work', () => {
     const identity = juiceStateIdentity([
       'lemon',
