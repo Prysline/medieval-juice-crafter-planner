@@ -176,33 +176,51 @@ export function buildPreparationShortfall(
     }
   })
 
-  const stockOffsetPlan = buildStockOffsetProductionPlan(
-    recipes
-      .filter((recipe) => recipe.juiceUnitsToPrepare > 0)
-      .map((recipe) => ({
-        recipeId: recipe.recipeId,
-        recipeName: recipe.recipeName,
-        ingredientIds: [...recipe.ingredientIds],
-        juiceUnits: recipe.juiceUnitsToPrepare,
-        assignedServings: recipe.servingsToProduce,
-      })),
+  const hasIntermediateStock = Object.values(
     inventory.intermediateJuiceUnits ?? {},
-  )
+  ).some((quantity) => Math.floor(quantity) > 0)
+
+  const stockOffsetPlan = hasIntermediateStock
+    ? buildStockOffsetProductionPlan(
+        recipes
+          .filter((recipe) => recipe.juiceUnitsToPrepare > 0)
+          .map((recipe) => ({
+            recipeId: recipe.recipeId,
+            recipeName: recipe.recipeName,
+            ingredientIds: [...recipe.ingredientIds],
+            juiceUnits: recipe.juiceUnitsToPrepare,
+            assignedServings: recipe.servingsToProduce,
+          })),
+        inventory.intermediateJuiceUnits ?? {},
+      )
+    : null
 
   const requiredByIngredient = new Map<string, number>()
-  for (const step of stockOffsetPlan.steps) {
-    if (
-      (step.kind !== 'juicing' && step.kind !== 'seasoning') ||
-      !step.addedIngredientId
-    ) {
-      continue
-    }
+  if (stockOffsetPlan) {
+    for (const step of stockOffsetPlan.steps) {
+      if (
+        (step.kind !== 'juicing' && step.kind !== 'seasoning') ||
+        !step.addedIngredientId
+      ) {
+        continue
+      }
 
-    requiredByIngredient.set(
-      step.addedIngredientId,
-      (requiredByIngredient.get(step.addedIngredientId) ?? 0) +
-        step.quantity,
-    )
+      requiredByIngredient.set(
+        step.addedIngredientId,
+        (requiredByIngredient.get(step.addedIngredientId) ?? 0) +
+          step.quantity,
+      )
+    }
+  } else {
+    for (const recipe of recipes) {
+      for (const ingredient of recipe.ingredientUnitsPerJuiceUnit) {
+        requiredByIngredient.set(
+          ingredient.ingredientId,
+          (requiredByIngredient.get(ingredient.ingredientId) ?? 0) +
+            ingredient.quantityPerJuiceUnit * recipe.juiceUnitsToPrepare,
+        )
+      }
+    }
   }
 
   const ingredientShortfalls = [...requiredByIngredient.entries()]
@@ -227,9 +245,14 @@ export function buildPreparationShortfall(
     })
     .sort((a, b) => a.name.localeCompare(b.name, 'zh-Hant'))
 
-  const productionWaterUnitsRequired = stockOffsetPlan.steps
-    .filter((step) => step.kind === 'finalizing')
-    .reduce((sum, step) => sum + step.quantity, 0)
+  const productionWaterUnitsRequired = stockOffsetPlan
+    ? stockOffsetPlan.steps
+        .filter((step) => step.kind === 'finalizing')
+        .reduce((sum, step) => sum + step.quantity, 0)
+    : recipes.reduce(
+        (sum, recipe) => sum + recipe.juiceUnitsToPrepare,
+        0,
+      )
   const waterUnitsUsed = Math.min(
     productionWaterUnitsRequired,
     inventory.waterUnits,
@@ -237,11 +260,16 @@ export function buildPreparationShortfall(
 
   return {
     recipes,
-    netProductionPlan: {
-      steps: stockOffsetPlan.steps,
-      machineOperations: stockOffsetPlan.machineOperations,
-    },
-    intermediateStockUsage: stockOffsetPlan.intermediateStockUsage,
+    ...(stockOffsetPlan
+      ? {
+          netProductionPlan: {
+            steps: stockOffsetPlan.steps,
+            machineOperations: stockOffsetPlan.machineOperations,
+          },
+          intermediateStockUsage:
+            stockOffsetPlan.intermediateStockUsage,
+        }
+      : {}),
     ingredients: ingredientShortfalls,
     productionWaterUnitsRequired,
     waterUnitsAvailable: inventory.waterUnits,
