@@ -43,6 +43,8 @@ import {
   type RecipeCandidatePoolEntry,
 } from './domain/recipeCandidatePool'
 import type { ProductionLogisticsPlan } from './domain/productionLogistics'
+import { productionPathForIngredientIds } from './domain/productionPlan'
+import { juiceStateIdentity } from './domain/juiceStateIdentity'
 import type { PlanApplicationTransactionDraft } from './domain/planApplicationTransaction'
 import type { PlanApplicationBasisMismatchField } from './domain/planApplicationValidation'
 import {
@@ -228,6 +230,53 @@ export function criterionLabel(criterion: OptimizationCriterion): string {
 }
 
 export const INVENTORY_RECIPE_SEARCH_RESULT_LIMIT = 8
+export const INTERMEDIATE_JUICE_SEARCH_RESULT_LIMIT = 8
+
+export interface IntermediateJuiceInventoryEntry {
+  identity: string
+  ingredientIds: string[]
+  label: string
+}
+
+export function intermediateJuiceInventoryEntries(
+  entries: readonly RecipeCandidatePoolEntry[],
+): IntermediateJuiceInventoryEntry[] {
+  const byIdentity = new Map<string, IntermediateJuiceInventoryEntry>()
+  for (const entry of entries) {
+    const path = productionPathForIngredientIds(entry.ingredientIds)
+    if (!path) continue
+    for (const edge of path.edges) {
+      if (edge.kind === 'finalizing' || edge.toIngredientIds.length === 0) continue
+      const identity = juiceStateIdentity(edge.toIngredientIds)
+      if (!byIdentity.has(identity)) {
+        byIdentity.set(identity, {
+          identity,
+          ingredientIds: [...edge.toIngredientIds],
+          label: sequenceLabel(edge.toIngredientIds),
+        })
+      }
+    }
+  }
+  return [...byIdentity.values()].sort(
+    (a, b) => a.label.localeCompare(b.label, 'zh-Hant') || a.identity.localeCompare(b.identity),
+  )
+}
+
+export function searchIntermediateJuiceEntries(
+  entries: readonly IntermediateJuiceInventoryEntry[],
+  query: string,
+  limit = INTERMEDIATE_JUICE_SEARCH_RESULT_LIMIT,
+): IntermediateJuiceInventoryEntry[] {
+  const normalized = normalizeRecipeSearchText(query)
+  return entries
+    .filter((entry) =>
+      !normalized ||
+      normalizeRecipeSearchText(entry.label).includes(normalized) ||
+      normalizeRecipeSearchText(entry.ingredientIds.join(' ')).includes(normalized),
+    )
+    .slice(0, Math.max(0, Math.floor(limit)))
+}
+
 
 export function optimizerInventoryIngredients(
   currentProgress: ProgressMilestoneId,
@@ -538,6 +587,56 @@ export function JuiceJarRecipeCombobox({
   )
 }
 
+export function IntermediateJuiceCombobox({
+  entries,
+  onChoose,
+}: {
+  entries: readonly IntermediateJuiceInventoryEntry[]
+  onChoose: (entry: IntermediateJuiceInventoryEntry) => void
+}) {
+  const listboxId = useId()
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+  const results = useMemo(
+    () => (open ? searchIntermediateJuiceEntries(entries, query) : []),
+    [entries, open, query],
+  )
+  return (
+    <div className="optimizer-recipe-combobox" onBlur={(event) => {
+      if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false)
+    }}>
+      <input
+        role="combobox"
+        aria-label="新增中間果汁"
+        aria-expanded={open}
+        aria-controls={open ? listboxId : undefined}
+        placeholder="搜尋果汁階段…"
+        value={query}
+        onFocus={() => setOpen(true)}
+        onChange={(event) => { setQuery(event.target.value); setOpen(true) }}
+      />
+      {open && (
+        <div className="optimizer-recipe-combobox-list" id={listboxId} role="listbox">
+          {results.length ? results.map((entry) => (
+            <button
+              type="button"
+              role="option"
+              aria-selected="false"
+              className="optimizer-recipe-combobox-option"
+              key={entry.identity}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => { onChoose(entry); setQuery(''); setOpen(false) }}
+            >
+              <strong>{entry.label}</strong>
+              <small>{entry.ingredientIds.map(ingredientLabel).join(' → ')}</small>
+            </button>
+          )) : <p className="optimizer-recipe-combobox-empty">找不到可用的中間果汁階段。</p>}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function jarFillActionLabel(load: MultiTripJuiceJarLoad): string {
   if (load.fillAction === 'use-existing') return '使用既有成品'
   if (load.fillAction === 'continue-loaded') return '沿用罐內成品'
@@ -653,6 +752,11 @@ function OptimizerTools({
     [recipeCandidatePool],
   )
 
+  const intermediateInventoryEntries = useMemo(
+    () => intermediateJuiceInventoryEntries(inventoryRecipeEntries),
+    [inventoryRecipeEntries],
+  )
+
   const accessibleJuiceJars = useMemo(
     () => selectAccessibleJuiceJars(inventoryState),
     [inventoryState],
@@ -703,6 +807,14 @@ function OptimizerTools({
       ...inventoryState,
       ingredientUnits: nextUnits,
     })
+  }
+
+  function setIntermediateJuiceInventory(identity: string, quantity: number) {
+    const nextUnits = { ...(inventoryState.intermediateJuiceUnits ?? {}) }
+    const normalized = Math.max(0, Math.floor(quantity))
+    if (normalized === 0) delete nextUnits[identity]
+    else nextUnits[identity] = normalized
+    persistInventory({ ...inventoryState, intermediateJuiceUnits: nextUnits })
   }
 
   function updateJuiceJar(
@@ -1466,6 +1578,43 @@ function OptimizerTools({
                 </label>
               ))}
             </div>
+          </div>
+
+          <div className="optimizer-inventory-subsection">
+            <div className="optimizer-inventory-subheading">
+              <strong>中間果汁庫存</strong>
+              <span>以果汁單位計；只記錄尚未加水成為販售成品的階段</span>
+            </div>
+            <IntermediateJuiceCombobox
+              entries={intermediateInventoryEntries.filter(
+                (entry) => !(entry.identity in (inventoryState.intermediateJuiceUnits ?? {})),
+              )}
+              onChoose={(entry) => setIntermediateJuiceInventory(entry.identity, 1)}
+            />
+            {Object.keys(inventoryState.intermediateJuiceUnits ?? {}).length === 0 ? (
+              <p className="optimizer-inventory-empty">目前沒有中間果汁庫存。</p>
+            ) : (
+              <div className="optimizer-ingredient-inventory">
+                {Object.entries(inventoryState.intermediateJuiceUnits ?? {})
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .map(([identity, units]) => {
+                    const entry = intermediateInventoryEntries.find((item) => item.identity === identity)
+                    return (
+                      <label key={identity}>
+                        <span>{entry?.label ?? identity}</span>
+                        <input
+                          aria-label={`${entry?.label ?? identity} 中間果汁單位`}
+                          type="number"
+                          inputMode="numeric"
+                          min={0}
+                          value={units}
+                          onChange={(event) => setIntermediateJuiceInventory(identity, Number(event.target.value) || 0)}
+                        />
+                      </label>
+                    )
+                  })}
+              </div>
+            )}
           </div>
 
           <div className="optimizer-inventory-subsection">
