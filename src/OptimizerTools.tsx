@@ -2409,13 +2409,7 @@ export function deliveryCustomerControlState(
     }
   }
 
-  const committed =
-    suppliedCustomerIds.includes(customerId) ||
-    trip.tripNumber < cursor.nextTripNumber ||
-    (
-      trip.tripNumber === cursor.nextTripNumber &&
-      cursor.completedCustomerIdsInTrip.includes(customerId)
-    )
+  const committed = suppliedCustomerIds.includes(customerId)
 
   return {
     status: committed ? 'committed' : 'active',
