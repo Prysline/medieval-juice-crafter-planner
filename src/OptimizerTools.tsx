@@ -299,14 +299,36 @@ export function searchIntermediateJuiceEntries(
   limit = INTERMEDIATE_JUICE_SEARCH_RESULT_LIMIT,
 ): IntermediateJuiceInventoryEntry[] {
   const normalized = normalizeRecipeSearchText(query)
-  return entries
-    .filter((entry) =>
-      !normalized ||
-      normalizeRecipeSearchText(entry.label).includes(normalized) ||
-      normalizeRecipeSearchText(entry.ingredientIds.join(' ')).includes(normalized) ||
-      normalizeRecipeSearchText(entry.ingredientIds.map(ingredientLabel).join(' ')).includes(normalized),
+  const boundedLimit = Math.max(0, Math.floor(limit))
+  const ranked = entries
+    .map((entry) => {
+      if (!normalized) return { entry, rank: 0 }
+      const label = normalizeRecipeSearchText(entry.label)
+      const ingredientIds = normalizeRecipeSearchText(entry.ingredientIds.join(' '))
+      const ingredientNames = normalizeRecipeSearchText(
+        entry.ingredientIds.map(ingredientLabel).join(' '),
+      )
+      if (label === normalized) return { entry, rank: 0 }
+      if (label.includes(normalized)) return { entry, rank: 1 }
+      if (ingredientNames.includes(normalized)) return { entry, rank: 2 }
+      if (ingredientIds.includes(normalized)) return { entry, rank: 3 }
+      return null
+    })
+    .filter(
+      (match): match is { entry: IntermediateJuiceInventoryEntry; rank: number } =>
+        match !== null,
     )
-    .slice(0, Math.max(0, Math.floor(limit)))
+
+  if (normalized) {
+    ranked.sort(
+      (a, b) =>
+        a.rank - b.rank ||
+        a.entry.label.localeCompare(b.entry.label, 'zh-Hant') ||
+        a.entry.identity.localeCompare(b.entry.identity),
+    )
+  }
+
+  return ranked.slice(0, boundedLimit).map(({ entry }) => entry)
 }
 
 
