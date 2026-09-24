@@ -305,13 +305,29 @@ export function searchIntermediateJuiceEntries(
       if (!normalized) return { entry, rank: 0 }
       const label = normalizeRecipeSearchText(entry.label)
       const ingredientIds = normalizeRecipeSearchText(entry.ingredientIds.join(' '))
-      const ingredientNames = normalizeRecipeSearchText(
-        entry.ingredientIds.map(ingredientLabel).join(' '),
+      const ingredientNameList = entry.ingredientIds.map((ingredientId) =>
+        normalizeRecipeSearchText(ingredientLabel(ingredientId)),
       )
+      const ingredientIdList = entry.ingredientIds.map((ingredientId) =>
+        normalizeRecipeSearchText(ingredientId),
+      )
+      const ingredientNames = ingredientNameList.join(' ')
       if (label === normalized) return { entry, rank: 0 }
-      if (label.includes(normalized)) return { entry, rank: 1 }
-      if (ingredientNames.includes(normalized)) return { entry, rank: 2 }
-      if (ingredientIds.includes(normalized)) return { entry, rank: 3 }
+      if (
+        entry.ingredientIds.length === 1 &&
+        ingredientNameList[0] === normalized
+      ) {
+        return { entry, rank: 1 }
+      }
+      if (
+        entry.ingredientIds.length === 1 &&
+        ingredientIdList[0] === normalized
+      ) {
+        return { entry, rank: 2 }
+      }
+      if (label.includes(normalized)) return { entry, rank: 3 }
+      if (ingredientNames.includes(normalized)) return { entry, rank: 4 }
+      if (ingredientIds.includes(normalized)) return { entry, rank: 5 }
       return null
     })
     .filter(
