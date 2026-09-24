@@ -10,6 +10,7 @@ import {
   DeliveryCustomerCheckbox,
   DeliveryRecipeGroupCheckbox,
   INVENTORY_RECIPE_SEARCH_RESULT_LIMIT,
+  INTERMEDIATE_JUICE_SEARCH_RESULT_LIMIT,
   JuiceJarRecipeCombobox,
   MachineBatchFlow,
   PlanApplicationPreview,
@@ -21,6 +22,8 @@ import {
   moveInventoryRecipeSearchIndex,
   optimizerCriterionOptions,
   optimizerInventoryIngredients,
+  intermediateJuiceInventoryEntries,
+  searchIntermediateJuiceEntries,
   searchInventoryRecipeEntries,
 } from './OptimizerTools'
 import {
@@ -98,6 +101,7 @@ function transactionDraft(): PlanApplicationTransactionDraft {
       },
     },
     changes: {
+      intermediateJuice: [],
       ingredients: [
         {
           ingredientId: 'lemon',
@@ -205,6 +209,22 @@ describe('juice jar recipe search UX', () => {
     ).toEqual([])
   })
 
+  it('derives searchable intermediate states without treating the final recipe as a separate stock identity', () => {
+    const intermediate = intermediateJuiceInventoryEntries(entries)
+    expect(intermediate.length).toBeGreaterThan(0)
+    expect(searchIntermediateJuiceEntries(intermediate, '')).toHaveLength(
+      Math.min(INTERMEDIATE_JUICE_SEARCH_RESULT_LIMIT, intermediate.length),
+    )
+    expect(
+      intermediate.some((entry) => entry.identity === 'juice-state:v1:lemon'),
+    ).toBe(true)
+    expect(
+      searchIntermediateJuiceEntries(intermediate, '檸檬').some(
+        (entry) => entry.ingredientIds.includes('lemon'),
+      ),
+    ).toBe(true)
+  })
+
   it('wraps keyboard navigation across the bounded result list', () => {
     expect(moveInventoryRecipeSearchIndex(0, 'next', 3)).toBe(1)
     expect(moveInventoryRecipeSearchIndex(2, 'next', 3)).toBe(0)
@@ -240,6 +260,7 @@ function deliveryPlan(): DeliveryExecutionPlan {
         productionFills: [],
         initialJuiceDiscards: [],
         ingredientRequirements: [],
+        intermediateRequirements: [],
         productionWaterUnits: 0,
         cupsWashedBeforeTrip: 0,
         cupWashWaterUnits: 0,
@@ -269,6 +290,7 @@ function deliveryPlan(): DeliveryExecutionPlan {
         productionFills: [],
         initialJuiceDiscards: [],
         ingredientRequirements: [],
+        intermediateRequirements: [],
         productionWaterUnits: 0,
         cupsWashedBeforeTrip: 2,
         cupWashWaterUnits: 2,
@@ -307,7 +329,30 @@ function deliveryCursor(
 }
 
 describe('delivery checklist UI', () => {
-  it('keeps only the active trip checkable while later trips stay disabled', () => {
+  it('keeps the canonical supplied checklist usable without a physical execution plan', () => {
+    expect(
+      deliveryCustomerControlState(null, null, [], 'florida'),
+    ).toMatchObject({
+      status: 'active',
+      tripNumber: null,
+      physicalJarId: null,
+    })
+
+    const html = renderToStaticMarkup(
+      <DeliveryCustomerCheckbox
+        customerId="florida"
+        plan={null}
+        cursor={null}
+        suppliedCustomerIds={[]}
+        onCommit={() => {}}
+      />,
+    )
+
+    expect(html).not.toContain('disabled=""')
+    expect(html).toContain('可記錄今日已供應')
+  })
+
+  it('keeps planned trip metadata without blocking out-of-order delivery checkboxes', () => {
     const plan = deliveryPlan()
     const cursor = deliveryCursor()
 
@@ -321,7 +366,7 @@ describe('delivery checklist UI', () => {
     expect(
       deliveryCustomerControlState(plan, cursor, [], 'florida'),
     ).toMatchObject({
-      status: 'later',
+      status: 'active',
       tripNumber: 2,
       activeTripNumber: 1,
     })
@@ -347,9 +392,9 @@ describe('delivery checklist UI', () => {
 
     expect(activeHtml).toContain('type="checkbox"')
     expect(activeHtml).not.toContain('disabled=""')
-    expect(activeHtml).toContain('勾選即正式寫入')
-    expect(laterHtml).toContain('disabled=""')
-    expect(laterHtml).toContain('請先完成第 1 趟')
+    expect(activeHtml).toContain('可依實際送達順序勾選')
+    expect(laterHtml).not.toContain('disabled=""')
+    expect(laterHtml).toContain('規劃第 2 趟')
   })
 
   it('lets a recipe heading complete all currently active customers in that recipe', () => {
@@ -387,7 +432,7 @@ describe('delivery checklist UI', () => {
     expect(html).toContain('A整組交付完成')
   })
 
-  it('shows recipe completion as mixed when only some assigned customers are committed', () => {
+  it('shows recipe completion as mixed when canonical supplied state contains only some assigned customers', () => {
     const plan = deliveryPlan()
     const cursor = deliveryCursor({
       tripPrepared: true,
@@ -398,7 +443,7 @@ describe('delivery checklist UI', () => {
       deliveryRecipeGroupControlState(
         plan,
         cursor,
-        [],
+        ['jack'],
         ['jack', 'leticia'],
       ),
     ).toEqual({
@@ -414,7 +459,7 @@ describe('delivery checklist UI', () => {
         customerIds={['jack', 'leticia']}
         plan={plan}
         cursor={cursor}
-        suppliedCustomerIds={[]}
+        suppliedCustomerIds={['jack']}
         onCommit={() => {}}
       />,
     )
@@ -423,7 +468,7 @@ describe('delivery checklist UI', () => {
     expect(html).toContain('optimizer-delivery-recipe-group partial')
   })
 
-  it('renders a fully delivered recipe checked and non-reversible', () => {
+  it('does not infer recipe completion from an advanced physical cursor', () => {
     const plan = deliveryPlan()
     const cursor = deliveryCursor({
       nextTripNumber: 2,
@@ -439,10 +484,10 @@ describe('delivery checklist UI', () => {
         ['jack', 'leticia'],
       ),
     ).toEqual({
-      checked: true,
+      checked: false,
       partial: false,
-      canCommit: false,
-      pendingCustomerIds: [],
+      canCommit: true,
+      pendingCustomerIds: ['jack', 'leticia'],
     })
 
     const html = renderToStaticMarkup(
@@ -456,11 +501,11 @@ describe('delivery checklist UI', () => {
       />,
     )
 
-    expect(html).toContain('checked=""')
-    expect(html).toContain('disabled=""')
+    expect(html).not.toContain('checked=""')
+    expect(html).not.toContain('disabled=""')
   })
 
-  it('keeps a recipe group disabled when its remaining customers are blocked by the current trip gate', () => {
+  it('lets a recipe group record customers spanning multiple planned trips', () => {
     const plan = deliveryPlan()
     const cursor = deliveryCursor()
 
@@ -474,7 +519,7 @@ describe('delivery checklist UI', () => {
     ).toEqual({
       checked: false,
       partial: false,
-      canCommit: false,
+      canCommit: true,
       pendingCustomerIds: ['jack', 'florida'],
     })
 
@@ -489,11 +534,10 @@ describe('delivery checklist UI', () => {
       />,
     )
 
-    expect(html).toContain('disabled=""')
-    expect(html).toContain('目前仍有顧客受現行趟次限制')
+    expect(html).not.toContain('disabled=""')
   })
 
-  it('renders committed deliveries checked and non-reversible', () => {
+  it('does not infer canonical delivery from the physical cursor', () => {
     const plan = deliveryPlan()
     const cursor = deliveryCursor({
       tripPrepared: true,
@@ -502,7 +546,7 @@ describe('delivery checklist UI', () => {
 
     expect(
       deliveryCustomerControlState(plan, cursor, [], 'jack').status,
-    ).toBe('committed')
+    ).toBe('active')
 
     const html = renderToStaticMarkup(
       <DeliveryCustomerCheckbox
@@ -514,9 +558,9 @@ describe('delivery checklist UI', () => {
       />,
     )
 
-    expect(html).toContain('checked=""')
-    expect(html).toContain('disabled=""')
-    expect(html).toContain('已正式交付')
+    expect(html).not.toContain('checked=""')
+    expect(html).not.toContain('disabled=""')
+    expect(html).toContain('可依實際送達順序勾選')
   })
 
   it('treats canonical supplied-customer state as the same committed delivery authority', () => {
@@ -544,10 +588,10 @@ describe('delivery checklist UI', () => {
 
     expect(html).toContain('checked=""')
     expect(html).toContain('disabled=""')
-    expect(html).toContain('已正式交付')
+    expect(html).toContain('已記錄今日供應')
   })
 
-  it('treats customers from completed trips as committed even after the cursor advances', () => {
+  it('keeps earlier planned-trip customers active until canonical supplied state records them', () => {
     const plan = deliveryPlan()
     const cursor = deliveryCursor({
       nextTripNumber: 2,
@@ -557,7 +601,7 @@ describe('delivery checklist UI', () => {
 
     expect(
       deliveryCustomerControlState(plan, cursor, [], 'leticia').status,
-    ).toBe('committed')
+    ).toBe('active')
     expect(
       deliveryCustomerControlState(plan, cursor, [], 'florida').status,
     ).toBe('active')

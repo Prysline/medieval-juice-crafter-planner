@@ -69,8 +69,21 @@ export interface IntermediateJuiceStockUsage {
   remainingUnits: number
 }
 
+export interface StockOffsetRecipeUnitUsage {
+  ingredientUnits: Record<string, number>
+  intermediateStockUnits: Record<string, number>
+}
+
+export interface StockOffsetRecipeUsage {
+  recipeId: string
+  ingredientUnits: Record<string, number>
+  intermediateStockUnits: Record<string, number>
+  units: StockOffsetRecipeUnitUsage[]
+}
+
 export interface StockOffsetProductionPlan extends ProductionPlan {
   intermediateStockUsage: IntermediateJuiceStockUsage[]
+  recipeUsage: StockOffsetRecipeUsage[]
 }
 
 const ingredientIdByName = new Map(
@@ -87,12 +100,12 @@ const capabilityByIngredientId = new Map<
   ]),
 )
 
-function sequenceKey(ids: string[]): string {
+function sequenceKey(ids: readonly string[]): string {
   return ids.join('>')
 }
 
 export function productionPathForIngredientIds(
-  ingredientIds: string[],
+  ingredientIds: readonly string[],
 ): RecipeProductionPath | null {
   if (ingredientIds.length === 0) return null
 
@@ -326,6 +339,20 @@ export function buildStockOffsetProductionPlan(
   }
 
   const quantityByStepKey = new Map<string, number>()
+  const recipeUsageById = new Map<string, StockOffsetRecipeUsage>()
+
+  function usageForRecipe(recipeId: string): StockOffsetRecipeUsage {
+    const existing = recipeUsageById.get(recipeId)
+    if (existing) return existing
+    const created: StockOffsetRecipeUsage = {
+      recipeId,
+      ingredientUnits: {},
+      intermediateStockUnits: {},
+      units: [],
+    }
+    recipeUsageById.set(recipeId, created)
+    return created
+  }
 
   function addStepQuantity(step: ProductionStep, quantity: number) {
     if (quantity <= 0) return
@@ -338,6 +365,8 @@ export function buildStockOffsetProductionPlan(
   function requireIntermediate(
     ingredientIds: string[],
     quantity: number,
+    recipeId: string,
+    unitUsage: StockOffsetRecipeUnitUsage,
   ) {
     if (quantity <= 0) return
 
@@ -350,6 +379,13 @@ export function buildStockOffsetProductionPlan(
       stock.remainingToAllocate -= used
       stock.usedUnits += used
       stock.remainingUnits = stock.availableUnits - stock.usedUnits
+      const usage = usageForRecipe(recipeId)
+      if (used > 0) {
+        usage.intermediateStockUnits[stock.identity] =
+          (usage.intermediateStockUnits[stock.identity] ?? 0) + used
+        unitUsage.intermediateStockUnits[stock.identity] =
+          (unitUsage.intermediateStockUnits[stock.identity] ?? 0) + used
+      }
       remaining -= used
     }
 
@@ -364,24 +400,77 @@ export function buildStockOffsetProductionPlan(
 
     addStepQuantity(producer, remaining)
 
+    if (
+      (producer.kind === 'juicing' || producer.kind === 'seasoning') &&
+      producer.addedIngredientId
+    ) {
+      const usage = usageForRecipe(recipeId)
+      usage.ingredientUnits[producer.addedIngredientId] =
+        (usage.ingredientUnits[producer.addedIngredientId] ?? 0) +
+        remaining
+      unitUsage.ingredientUnits[producer.addedIngredientId] =
+        (unitUsage.ingredientUnits[producer.addedIngredientId] ?? 0) +
+        remaining
+    }
+
     if (producer.kind === 'seasoning') {
-      requireIntermediate(producer.fromIngredientIds, remaining)
+      requireIntermediate(
+        producer.fromIngredientIds,
+        remaining,
+        recipeId,
+        unitUsage,
+      )
       return
     }
 
     if (producer.kind === 'blending') {
-      requireIntermediate(producer.fromIngredientIds, remaining)
+      requireIntermediate(
+        producer.fromIngredientIds,
+        remaining,
+        recipeId,
+        unitUsage,
+      )
       requireIntermediate(
         producer.secondaryFromIngredientIds ?? [],
         remaining,
+        recipeId,
+        unitUsage,
       )
     }
   }
 
-  for (const step of fullPlan.steps) {
-    if (step.kind !== 'finalizing') continue
-    addStepQuantity(step, step.quantity)
-    requireIntermediate(step.fromIngredientIds, step.quantity)
+  for (const recipe of recipes) {
+    if (recipe.juiceUnits <= 0) continue
+    const path = productionPathForIngredientIds(recipe.ingredientIds)
+    const finalizer = path?.edges.find((edge) => edge.kind === 'finalizing')
+    if (!finalizer) {
+      throw new Error(
+        `Unsupported production path for recipe ${recipe.recipeId}`,
+      )
+    }
+    const fullFinalizer = fullPlan.steps.find(
+      (step) => step.key === finalizer.key,
+    )
+    if (!fullFinalizer) {
+      throw new Error(
+        `Missing finalizer for recipe ${recipe.recipeId}`,
+      )
+    }
+    addStepQuantity(fullFinalizer, recipe.juiceUnits)
+    const usage = usageForRecipe(recipe.recipeId)
+    for (let unit = 0; unit < recipe.juiceUnits; unit += 1) {
+      const unitUsage: StockOffsetRecipeUnitUsage = {
+        ingredientUnits: {},
+        intermediateStockUnits: {},
+      }
+      requireIntermediate(
+        finalizer.fromIngredientIds,
+        1,
+        recipe.recipeId,
+        unitUsage,
+      )
+      usage.units.push(unitUsage)
+    }
   }
 
   const kindOrder: Record<ProductionStepKind, number> = {
@@ -440,9 +529,22 @@ export function buildStockOffsetProductionPlan(
         a.identity.localeCompare(b.identity),
     )
 
+  const recipeUsage = [...recipeUsageById.values()]
+    .map((usage): StockOffsetRecipeUsage => ({
+      recipeId: usage.recipeId,
+      ingredientUnits: { ...usage.ingredientUnits },
+      intermediateStockUnits: { ...usage.intermediateStockUnits },
+      units: usage.units.map((unit) => ({
+        ingredientUnits: { ...unit.ingredientUnits },
+        intermediateStockUnits: { ...unit.intermediateStockUnits },
+      })),
+    }))
+    .sort((a, b) => a.recipeId.localeCompare(b.recipeId))
+
   return {
     steps,
     machineOperations,
     intermediateStockUsage,
+    recipeUsage,
   }
 }

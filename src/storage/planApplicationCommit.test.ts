@@ -145,6 +145,7 @@ function draftFromBasis(
       suppliedCustomerIds: [...source.suppliedCustomerIds, 'alia'],
     },
     changes: {
+      intermediateJuice: [],
       ingredients: [{
         ingredientId: 'lemon',
         beforeUnits: 3,

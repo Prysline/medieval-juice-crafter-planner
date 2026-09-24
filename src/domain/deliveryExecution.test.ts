@@ -1002,4 +1002,232 @@ describe('delivery execution trace', () => {
       usedCups: 1,
     })
   })
+  it('uses planned intermediate stock once when preparing a trip and matches whole-plan stock consumption', () => {
+    const identity = 'juice-state:v1:lemon/sugar'
+    const stockShortfall: PreparationShortfall = {
+      recipes: [
+        {
+          recipeId: 'recipe-stock',
+          recipeName: 'Stock',
+          ingredientIds: ['lemon', 'sugar', 'mint'],
+          assignedServings: 2,
+          finishedServingsAvailable: 0,
+          finishedServingsUsed: 0,
+          finishedServingsRemaining: 0,
+          finishedStockSources: [],
+          servingsToProduce: 2,
+          juiceUnitsToPrepare: 1,
+          newlyProducedServings: 2,
+          newProductionLeftoverServings: 0,
+          ingredientUnitsPerJuiceUnit: [
+            { ingredientId: 'lemon', quantityPerJuiceUnit: 1 },
+            { ingredientId: 'sugar', quantityPerJuiceUnit: 1 },
+            { ingredientId: 'mint', quantityPerJuiceUnit: 1 },
+          ],
+        },
+      ],
+      netProductionPlan: {
+        steps: [],
+        machineOperations: {
+          total: 0,
+          juicing: 0,
+          seasoning: 0,
+          finalizing: 0,
+          blending: 0,
+        },
+      },
+      intermediateStockUsage: [
+        {
+          identity,
+          ingredientIds: ['lemon', 'sugar'],
+          availableUnits: 2,
+          usedUnits: 1,
+          remainingUnits: 1,
+        },
+      ],
+      stockOffsetRecipeUsage: [
+        {
+          recipeId: 'recipe-stock',
+          ingredientUnits: { mint: 1 },
+          intermediateStockUnits: { [identity]: 1 },
+          units: [
+            {
+              ingredientUnits: { mint: 1 },
+              intermediateStockUnits: { [identity]: 1 },
+            },
+          ],
+        },
+      ],
+      ingredients: [
+        {
+          ingredientId: 'mint',
+          name: '薄荷',
+          requiredUnits: 1,
+          inventoryUnitsAvailable: 1,
+          inventoryUnitsUsed: 1,
+          purchaseUnits: 0,
+        },
+      ],
+      productionWaterUnitsRequired: 1,
+      waterUnitsAvailable: 1,
+      waterUnitsUsed: 1,
+      waterUnitsToFetch: 0,
+      cleanCupUses: 2,
+      cleanCupsAvailable: 2,
+      cleanCupShortfallBeforeWashing: 0,
+      usedCupsAvailable: 0,
+    }
+    const stockPlan: MultiTripReplenishmentPlan = {
+      policy: 'retain-and-wash',
+      jarCarryMode: 'fixed-slots',
+      reservedJuiceJarSlots: 1,
+      minimumCarriedJuiceJarSlots: 1,
+      carriedJuiceJarCount: 1,
+      carriedJuiceJars: [
+        {
+          physicalJarId: 'jar-stock',
+          initialRecipeId: null,
+          initialServings: 0,
+        },
+      ],
+      physicalJarsUsed: 1,
+      totalJarLoads: 1,
+      distinctFinalJuiceTypes: 1,
+      jarTypeSwitches: 0,
+      trips: [
+        {
+          tripNumber: 1,
+          juiceJars: [
+            {
+              physicalJarId: 'jar-stock',
+              recipeId: 'recipe-stock',
+              recipeName: 'Stock',
+              customerIds: ['customer-1', 'customer-2'],
+              servings: 2,
+              retainedLeftoverServings: 0,
+              plannedFillServings: 2,
+              slotCost: 1,
+              fillAction: 'initial-fill',
+              previousRecipeId: null,
+              previousRecipeName: null,
+            },
+          ],
+          carriedPhysicalJarIds: ['jar-stock'],
+          totalServings: 2,
+          cleanCupStacks: 1,
+          cleanCupsCarried: 2,
+          departureSlots: 2,
+          effectiveDepartureSlotLimit: 10,
+          spareDepartureSlots: 8,
+          reservedTransientUsedCupSlot: 1,
+          usedCupDropMayOccur: false,
+          droppedUsedCups: 0,
+          cupsWashedBeforeTrip: 0,
+          cupWashWaterUnits: 0,
+          cleanCupsBeforeTrip: 2,
+          usedCupsBeforeTrip: 0,
+          cleanCupsAfterTrip: 0,
+          usedCupsAfterTrip: 2,
+          physicalCupsAfterTrip: 2,
+          peakCupSlots: 2,
+          peakOccupiedSlots: 3,
+          juiceJarSlotsCarried: 1,
+        },
+      ],
+      tripCount: 1,
+      totalAssignedServings: 2,
+      totalLeftoverServings: 0,
+      leftoverJarContents: [],
+      productionJarFills: [
+        {
+          physicalJarId: 'jar-stock',
+          recipeId: 'recipe-stock',
+          recipeName: 'Stock',
+          beforeTripNumber: 1,
+          servings: 2,
+          servingsAfterFill: 2,
+          fillAction: 'initial-fill',
+          previousRecipeId: null,
+          previousRecipeName: null,
+          receiver: 'carried-jar',
+        },
+      ],
+      allowDiscardRetainedJuice: false,
+      discardedInitialJuice: [],
+      discardedNewProductionJuice: [],
+      maxJuiceJarSlotsCarried: 1,
+      cleanCupUnitsRequiredWithoutMiddayWashing: 2,
+      reusableCleanCupPoolSize: 2,
+      initialCleanCups: 2,
+      initialUsedCups: 0,
+      initialPhysicalCupCount: 2,
+      finalCleanCups: 0,
+      finalUsedCups: 2,
+      finalPhysicalCupCount: 2,
+      droppedUsedCups: 0,
+      initialWashWaterUnits: 0,
+      betweenTripWashWaterUnits: 0,
+      totalCupWashWaterUnits: 0,
+      returnsHomeBetweenTrips: false,
+    }
+    const start: InventoryState = {
+      ingredientUnits: { lemon: 9, sugar: 9, mint: 1 },
+      intermediateJuiceUnits: { [identity]: 2 },
+      waterUnits: 1,
+      cleanCups: 2,
+      usedCups: 0,
+      juiceJars: [
+        { id: 'jar-stock', recipeId: null, servings: 0 },
+      ],
+      shelfCount: 0,
+      jarRackCount: 0,
+    }
+
+    const plan = buildDeliveryExecutionPlan(stockShortfall, stockPlan)
+    let cursor = createDeliveryExecutionCursor(plan)
+    const first = applyDeliveryExecutionCustomer(
+      plan,
+      start,
+      cursor,
+      'customer-1',
+    )
+    cursor = first.cursor
+
+    expect(first.changes.intermediateJuice).toEqual([
+      {
+        identity,
+        requiredUnits: 1,
+        beforeUnits: 2,
+        afterUnits: 1,
+      },
+    ])
+    expect(first.changes.ingredients).toEqual([
+      {
+        ingredientId: 'mint',
+        requiredUnits: 1,
+        consumedFromInventory: 1,
+        externalUnitsRequired: 0,
+      },
+    ])
+    expect(first.inventory.intermediateJuiceUnits).toEqual({
+      [identity]: 1,
+    })
+    expect(first.inventory.ingredientUnits).toEqual({
+      lemon: 9,
+      sugar: 9,
+    })
+
+    const second = applyDeliveryExecutionCustomer(
+      plan,
+      first.inventory,
+      cursor,
+      'customer-2',
+    )
+    expect(second.changes.intermediateJuice).toEqual([])
+    expect(second.changes.ingredients).toEqual([])
+    expect(second.inventory.intermediateJuiceUnits).toEqual({
+      [identity]: 1,
+    })
+  })
+
 })

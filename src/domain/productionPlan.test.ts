@@ -432,4 +432,87 @@ describe('production plan stock offset', () => {
       remainingUnits: 0,
     })
   })
+  it('keeps per-unit provenance aligned with the shared stock allocation', () => {
+    const seasonedIdentity = juiceStateIdentity(['lemon', 'sugar'])
+    const result = buildStockOffsetProductionPlan(
+      [
+        {
+          recipeId: 'lemon-sugar-mint',
+          recipeName: 'Lemon Sugar Mint',
+          ingredientIds: ['lemon', 'sugar', 'mint'],
+          juiceUnits: 2,
+          assignedServings: 4,
+        },
+      ],
+      { [seasonedIdentity]: 1 },
+    )
+
+    expect(result.recipeUsage).toEqual([
+      {
+        recipeId: 'lemon-sugar-mint',
+        ingredientUnits: {
+          lemon: 1,
+          sugar: 1,
+          mint: 2,
+        },
+        intermediateStockUnits: {
+          [seasonedIdentity]: 1,
+        },
+        units: [
+          {
+            ingredientUnits: { mint: 1 },
+            intermediateStockUnits: {
+              [seasonedIdentity]: 1,
+            },
+          },
+          {
+            ingredientUnits: {
+              lemon: 1,
+              sugar: 1,
+              mint: 1,
+            },
+            intermediateStockUnits: {},
+          },
+        ],
+      },
+    ])
+  })
+
+  it('keeps shared stock single-use across recipe provenance', () => {
+    const baseIdentity = juiceStateIdentity(['lemon'])
+    const result = buildStockOffsetProductionPlan(
+      [
+        {
+          recipeId: 'a',
+          recipeName: 'A',
+          ingredientIds: ['lemon', 'sugar'],
+          juiceUnits: 1,
+          assignedServings: 2,
+        },
+        {
+          recipeId: 'b',
+          recipeName: 'B',
+          ingredientIds: ['lemon', 'mint'],
+          juiceUnits: 1,
+          assignedServings: 2,
+        },
+      ],
+      { [baseIdentity]: 1 },
+    )
+
+    expect(
+      result.recipeUsage.reduce(
+        (sum, usage) =>
+          sum + (usage.intermediateStockUnits[baseIdentity] ?? 0),
+        0,
+      ),
+    ).toBe(1)
+    expect(
+      result.recipeUsage.reduce(
+        (sum, usage) => sum + (usage.ingredientUnits.lemon ?? 0),
+        0,
+      ),
+    ).toBe(1)
+  })
+
 })

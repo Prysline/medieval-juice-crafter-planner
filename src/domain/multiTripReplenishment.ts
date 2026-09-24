@@ -1184,44 +1184,27 @@ function buildTrips(
     for (const jar of candidates) {
       if (trip.juiceJars.length >= maxConcurrentJars) continue
 
-      let servingsToTake = 0
       const proposedJarSlots = jarSlotsFor(
         trip.juiceJars.length + 1,
       )
       if (proposedJarSlots > BACKPACK_SLOT_CAPACITY) continue
 
-      for (
-        let candidateServings = jar.servings;
-        candidateServings >= 1;
-        candidateServings -= 1
-      ) {
-        const transition = simulateCupTrip(
-          cupState,
-          trip.totalServings + candidateServings,
-          policy,
-          proposedJarSlots,
-        )
-        if (transition) {
-          servingsToTake = candidateServings
-          break
-        }
-      }
+      // A prepared physical jar load is the atomic sales-trip unit. If the
+      // whole load cannot fit the current cup/backpack state, leave it for a
+      // later trip instead of splitting the same jar contents across trips.
+      const transition = simulateCupTrip(
+        cupState,
+        trip.totalServings + jar.servings,
+        policy,
+        proposedJarSlots,
+      )
+      if (!transition) continue
 
-      if (servingsToTake === 0) continue
-
-      const isPartialLoad = servingsToTake < jar.servings
-      trip.juiceJars.push({
-        ...jar,
-        servings: servingsToTake,
-        customerIds: jar.customerIds.slice(0, servingsToTake),
-        retainedLeftoverServings: isPartialLoad
-          ? 0
-          : jar.retainedLeftoverServings,
-      })
-      trip.totalServings += servingsToTake
+      trip.juiceJars.push({ ...jar })
+      trip.totalServings += jar.servings
       selectedServingsByJarId.set(
         jar.physicalJarId,
-        servingsToTake,
+        jar.servings,
       )
     }
 
@@ -1282,17 +1265,12 @@ function buildTrips(
         )
       }
 
-      if (served === head.servings) {
-        queue.loads.shift()
-        continue
+      if (served !== head.servings) {
+        throw new Error(
+          'Physical jar load must remain atomic within one sales trip',
+        )
       }
-
-      head.servings -= served
-      head.customerIds = head.customerIds.slice(served)
-      head.plannedFillServings = 0
-      head.fillAction = 'continue-loaded'
-      head.previousRecipeId = head.recipeId
-      head.previousRecipeName = head.recipeName
+      queue.loads.shift()
     }
 
     trips.push({

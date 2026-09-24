@@ -532,6 +532,41 @@ describe('plan application transaction', () => {
     expect(Object.isFrozen(draft.changes)).toBe(true)
   })
 
+
+  it('consumes only planned intermediate stock and preserves the unused remainder', () => {
+    const preparation = shortfall()
+    preparation.intermediateStockUsage = [
+      {
+        identity: 'juice-state:v1:lemon',
+        ingredientIds: ['lemon'],
+        availableUnits: 2,
+        usedUnits: 1,
+        remainingUnits: 1,
+      },
+    ]
+
+    const draft = buildPlanApplicationTransactionDraft({
+      basis: basis(),
+      result: optimizationResult(),
+      preparationShortfall: preparation,
+      productionLogistics: productionLogistics(),
+      salesPlan: salesPlan(),
+    })
+
+    expect(draft.after.inventory.intermediateJuiceUnits).toEqual({
+      'juice-state:v1:lemon': 1,
+    })
+    expect(draft.changes.intermediateJuice).toEqual([
+      {
+        identity: 'juice-state:v1:lemon',
+        ingredientIds: ['lemon'],
+        beforeUnits: 2,
+        afterUnits: 1,
+        consumedUnits: 1,
+      },
+    ])
+  })
+
   it('uses existing water first and exposes any additional same-day water requirement', () => {
     const transactionBasis = basis()
     transactionBasis.inventory.waterUnits = 0

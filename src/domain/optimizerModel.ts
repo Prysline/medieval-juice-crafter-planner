@@ -187,6 +187,14 @@ function candidateIsEligible(
 ): boolean {
   if (candidate.effectAmbiguity) return false
   if (
+    normalizedOptimizationPriorities(request).includes(
+      'maximum-ingredient-cost',
+    ) &&
+    new Set(candidate.ingredients).size !== candidate.ingredients.length
+  ) {
+    return false
+  }
+  if (
     request.candidatePolicy === 'observed-only' &&
     candidate.source !== 'observed'
   ) {

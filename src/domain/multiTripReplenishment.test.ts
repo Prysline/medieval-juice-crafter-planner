@@ -1024,16 +1024,16 @@ describe('multi-trip replenishment', () => {
 
     expect(retained.tripCount).toBe(2)
     expect(retained.trips[0]).toMatchObject({
-      totalServings: 41,
-      departureSlots: 10,
+      totalServings: 40,
+      departureSlots: 9,
       effectiveDepartureSlotLimit: 10,
-      reservedTransientUsedCupSlot: 0,
+      reservedTransientUsedCupSlot: 1,
       usedCupDropMayOccur: false,
       droppedUsedCups: 0,
       peakOccupiedSlots: 10,
       juiceJarSlotsCarried: 5,
     })
-    expect(retained.reusableCleanCupPoolSize).toBe(41)
+    expect(retained.reusableCleanCupPoolSize).toBe(40)
     expect(retained.totalCupWashWaterUnits).toBe(0)
 
     expect(droppable.tripCount).toBe(1)
@@ -1122,69 +1122,60 @@ describe('multi-trip replenishment', () => {
     expect(droppable.trips[0].droppedUsedCups).toBe(0)
   })
 
-  it('keeps one prepared jar load across cup-limited trips instead of refilling it', () => {
-    const result = buildPlan(
-      namedRecipes(['A'], 10),
-      'retain-and-wash',
-      1,
-      { cleanCups: 5, usedCups: 0 },
-    )
-
-    expect(result.tripCount).toBe(2)
-    expect(
-      result.trips.map((trip) => ({
-        servings: trip.juiceJars[0].servings,
-        fillAction: trip.juiceJars[0].fillAction,
-        plannedFillServings:
-          trip.juiceJars[0].plannedFillServings,
-      })),
-    ).toEqual([
-      {
-        servings: 5,
-        fillAction: 'initial-fill',
-        plannedFillServings: 10,
-      },
-      {
-        servings: 5,
-        fillAction: 'continue-loaded',
-        plannedFillServings: 0,
-      },
-    ])
-    expect(result.productionJarFills).toEqual([
-      expect.objectContaining({
-        physicalJarId: 'jar-1',
-        recipeId: 'a',
-        beforeTripNumber: 1,
-        servings: 10,
-        fillAction: 'initial-fill',
-      }),
-    ])
-    expectScheduleConsistency(result)
+  it('never splits one prepared physical jar load across cup-limited trips', () => {
+    expect(() =>
+      buildPlan(
+        namedRecipes(['A'], 10),
+        'retain-and-wash',
+        1,
+        { cleanCups: 5, usedCups: 0 },
+      ),
+    ).toThrow(/No remaining sales load can fit/)
   })
 
-  it('washes and reuses a smaller physical cup pool across trips', () => {
+  it('keeps each physical jar load wholly inside one trip when other complete loads can be scheduled later', () => {
     const result = buildPlan(
       namedRecipes(['A'], 15),
       'retain-and-wash',
-      1,
-      { cleanCups: 5, usedCups: 0 },
+      2,
+      { cleanCups: 10, usedCups: 0 },
     )
 
-    expect(result.tripCount).toBe(3)
+    const tripNumbersByJar = new Map<string, Set<number>>()
+    for (const trip of result.trips) {
+      for (const load of trip.juiceJars) {
+        const trips = tripNumbersByJar.get(load.physicalJarId) ?? new Set<number>()
+        trips.add(trip.tripNumber)
+        tripNumbersByJar.set(load.physicalJarId, trips)
+      }
+    }
+    expect(
+      [...tripNumbersByJar.values()].every((trips) => trips.size === 1),
+    ).toBe(true)
+    expectScheduleConsistency(result)
+  })
+
+  it('washes and reuses a smaller physical cup pool across complete jar loads', () => {
+    const result = buildPlan(
+      namedRecipes(['A'], 15),
+      'retain-and-wash',
+      2,
+      { cleanCups: 10, usedCups: 0 },
+    )
+
+    expect(result.tripCount).toBe(2)
     expect(result.trips.map((trip) => trip.totalServings)).toEqual([
-      5,
-      5,
+      10,
       5,
     ])
     expect(result.trips.map((trip) => trip.cupsWashedBeforeTrip)).toEqual([
       0,
       5,
-      5,
     ])
-    expect(result.initialPhysicalCupCount).toBe(5)
-    expect(result.finalPhysicalCupCount).toBe(5)
-    expect(result.betweenTripWashWaterUnits).toBe(10)
-    expect(result.totalCupWashWaterUnits).toBe(10)
+    expect(result.initialPhysicalCupCount).toBe(10)
+    expect(result.finalPhysicalCupCount).toBe(10)
+    expect(result.betweenTripWashWaterUnits).toBe(5)
+    expect(result.totalCupWashWaterUnits).toBe(5)
     expect(result.droppedUsedCups).toBe(0)
     expectScheduleConsistency(result)
   })

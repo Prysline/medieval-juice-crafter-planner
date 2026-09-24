@@ -43,6 +43,8 @@ import {
   type RecipeCandidatePoolEntry,
 } from './domain/recipeCandidatePool'
 import type { ProductionLogisticsPlan } from './domain/productionLogistics'
+import { productionPathForIngredientIds } from './domain/productionPlan'
+import { juiceStateIdentity } from './domain/juiceStateIdentity'
 import type { PlanApplicationTransactionDraft } from './domain/planApplicationTransaction'
 import type { PlanApplicationBasisMismatchField } from './domain/planApplicationValidation'
 import {
@@ -66,11 +68,10 @@ import {
 } from './storage/productionChecklist'
 import { commitPlanApplicationTransaction } from './storage/planApplicationCommit'
 import {
-  commitDeliveryExecutionCustomer,
   deliveryExecutionCanonicalBasisFingerprint,
   type DeliveryExecutionCommitStaleField,
 } from './storage/deliveryExecutionCommit'
-import { readSuppliedCustomerIds } from './storage/plannerState'
+import { writeSuppliedCustomerIds } from './storage/plannerState'
 import {
   PlanningUserError,
   presentPlanningError,
@@ -213,7 +214,7 @@ function ingredientLabel(ingredientId: string): string {
   return ingredientNameById.get(ingredientId) ?? ingredientId
 }
 
-function sequenceLabel(ingredientIds: string[]): string {
+function sequenceLabel(ingredientIds: readonly string[]): string {
   return formatRecipeSequence(ingredientIds.map(ingredientLabel))
 }
 
@@ -228,6 +229,53 @@ export function criterionLabel(criterion: OptimizationCriterion): string {
 }
 
 export const INVENTORY_RECIPE_SEARCH_RESULT_LIMIT = 8
+export const INTERMEDIATE_JUICE_SEARCH_RESULT_LIMIT = 8
+
+export interface IntermediateJuiceInventoryEntry {
+  identity: string
+  ingredientIds: string[]
+  label: string
+}
+
+export function intermediateJuiceInventoryEntries(
+  entries: readonly RecipeCandidatePoolEntry[],
+): IntermediateJuiceInventoryEntry[] {
+  const byIdentity = new Map<string, IntermediateJuiceInventoryEntry>()
+  for (const entry of entries) {
+    const path = productionPathForIngredientIds(entry.ingredientIds)
+    if (!path) continue
+    for (const edge of path.edges) {
+      if (edge.kind === 'finalizing' || edge.toIngredientIds.length === 0) continue
+      const identity = juiceStateIdentity(edge.toIngredientIds)
+      if (!byIdentity.has(identity)) {
+        byIdentity.set(identity, {
+          identity,
+          ingredientIds: [...edge.toIngredientIds],
+          label: sequenceLabel([...edge.toIngredientIds]),
+        })
+      }
+    }
+  }
+  return [...byIdentity.values()].sort(
+    (a, b) => a.label.localeCompare(b.label, 'zh-Hant') || a.identity.localeCompare(b.identity),
+  )
+}
+
+export function searchIntermediateJuiceEntries(
+  entries: readonly IntermediateJuiceInventoryEntry[],
+  query: string,
+  limit = INTERMEDIATE_JUICE_SEARCH_RESULT_LIMIT,
+): IntermediateJuiceInventoryEntry[] {
+  const normalized = normalizeRecipeSearchText(query)
+  return entries
+    .filter((entry) =>
+      !normalized ||
+      normalizeRecipeSearchText(entry.label).includes(normalized) ||
+      normalizeRecipeSearchText(entry.ingredientIds.join(' ')).includes(normalized),
+    )
+    .slice(0, Math.max(0, Math.floor(limit)))
+}
+
 
 export function optimizerInventoryIngredients(
   currentProgress: ProgressMilestoneId,
@@ -538,6 +586,56 @@ export function JuiceJarRecipeCombobox({
   )
 }
 
+export function IntermediateJuiceCombobox({
+  entries,
+  onChoose,
+}: {
+  entries: readonly IntermediateJuiceInventoryEntry[]
+  onChoose: (entry: IntermediateJuiceInventoryEntry) => void
+}) {
+  const listboxId = useId()
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+  const results = useMemo(
+    () => (open ? searchIntermediateJuiceEntries(entries, query) : []),
+    [entries, open, query],
+  )
+  return (
+    <div className="optimizer-recipe-combobox" onBlur={(event) => {
+      if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false)
+    }}>
+      <input
+        role="combobox"
+        aria-label="新增中間果汁"
+        aria-expanded={open}
+        aria-controls={open ? listboxId : undefined}
+        placeholder="搜尋果汁階段…"
+        value={query}
+        onFocus={() => setOpen(true)}
+        onChange={(event) => { setQuery(event.target.value); setOpen(true) }}
+      />
+      {open && (
+        <div className="optimizer-recipe-combobox-list" id={listboxId} role="listbox">
+          {results.length ? results.map((entry) => (
+            <button
+              type="button"
+              role="option"
+              aria-selected="false"
+              className="optimizer-recipe-combobox-option"
+              key={entry.identity}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => { onChoose(entry); setQuery(''); setOpen(false) }}
+            >
+              <strong>{entry.label}</strong>
+              <small>{entry.ingredientIds.map(ingredientLabel).join(' → ')}</small>
+            </button>
+          )) : <p className="optimizer-recipe-combobox-empty">找不到可用的中間果汁階段。</p>}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function jarFillActionLabel(load: MultiTripJuiceJarLoad): string {
   if (load.fillAction === 'use-existing') return '使用既有成品'
   if (load.fillAction === 'continue-loaded') return '沿用罐內成品'
@@ -653,6 +751,11 @@ function OptimizerTools({
     [recipeCandidatePool],
   )
 
+  const intermediateInventoryEntries = useMemo(
+    () => intermediateJuiceInventoryEntries(inventoryRecipeEntries),
+    [inventoryRecipeEntries],
+  )
+
   const accessibleJuiceJars = useMemo(
     () => selectAccessibleJuiceJars(inventoryState),
     [inventoryState],
@@ -703,6 +806,14 @@ function OptimizerTools({
       ...inventoryState,
       ingredientUnits: nextUnits,
     })
+  }
+
+  function setIntermediateJuiceInventory(identity: string, quantity: number) {
+    const nextUnits = { ...(inventoryState.intermediateJuiceUnits ?? {}) }
+    const normalized = Math.max(0, Math.floor(quantity))
+    if (normalized === 0) delete nextUnits[identity]
+    else nextUnits[identity] = normalized
+    persistInventory({ ...inventoryState, intermediateJuiceUnits: nextUnits })
   }
 
   function updateJuiceJar(
@@ -855,121 +966,50 @@ function OptimizerTools({
   function commitDeliveryCustomers(
     customerIds: readonly string[],
   ) {
-    if (
-      runState.status !== 'success' ||
-      !runState.deliveryExecutionPlan ||
-      !runState.deliveryCursor
-    ) {
-      return
-    }
+    if (runState.status !== 'success') return
 
-    const plan = runState.deliveryExecutionPlan
-    let cursor = runState.deliveryCursor
-    let committedInventory = inventoryState
-    let committedSupplied = [...suppliedCustomerIds]
+    const assignedCustomerIds = new Set(
+      runState.result.recipePlans.flatMap((plan) => plan.customerIds),
+    )
     const pendingCustomerIds = customerIds.filter(
       (customerId) =>
-        deliveryCustomerControlState(
-          plan,
-          cursor,
-          committedSupplied,
-          customerId,
-        ).status !== 'committed',
+        assignedCustomerIds.has(customerId) &&
+        !suppliedCustomerIds.includes(customerId),
     )
-
     if (pendingCustomerIds.length === 0) return
 
-    const allCurrentlyActive = pendingCustomerIds.every(
-      (customerId) =>
-        deliveryCustomerControlState(
-          plan,
-          cursor,
-          committedSupplied,
-          customerId,
-        ).status === 'active',
-    )
-    if (!allCurrentlyActive) {
-      setDeliveryUiState({
-        status: 'error',
-        message:
-          '此配方仍有顧客受現行趟次限制，請先使用個別顧客勾選。',
-      })
-      return
-    }
-
-    const beforeInventory = inventoryState
+    // The trip schedule is planning guidance, not an authority over the
+    // player's real delivery order. Recording an out-of-order delivery must
+    // therefore update only the canonical supplied-customer state. Replaying
+    // a later planned trip here would falsely imply that earlier jar/cup and
+    // production events had happened. Any physical transaction draft is
+    // invalid after this manual delivery record and must be replanned from the
+    // current inventory before inventory-affecting execution continues.
     const beforeSupplied = [...suppliedCustomerIds]
-    const appliedCustomerIds: string[] = []
-
-    for (const customerId of pendingCustomerIds) {
-      const committed = commitDeliveryExecutionCustomer(
-        {
-          plan,
-          cursor,
-          customerId,
-          expectedBasis: runState.deliveryExpectedBasis,
-        },
-        window.localStorage,
+    const committedSupplied = [
+      ...new Set([...beforeSupplied, ...pendingCustomerIds]),
+    ]
+    const beforeFingerprint =
+      deliveryExecutionCanonicalBasisFingerprint(
+        inventoryState,
+        beforeSupplied,
       )
-
-      if (committed.status === 'stale') {
-        setDeliveryUiState({
-          status: 'stale',
-          mismatches: committed.mismatches,
-        })
-        setInventoryState(readInventoryState(window.localStorage))
-        onSuppliedCustomerIdsCommitted(
-          readSuppliedCustomerIds(window.localStorage),
-        )
-        setRunState({ status: 'idle' })
-        return
-      }
-
-      if (committed.status === 'error') {
-        setDeliveryUiState({
-          status: 'error',
-          message: committed.message,
-        })
-        return
-      }
-
-      committedInventory = committed.inventory
-      committedSupplied = [...committed.suppliedCustomerIds]
-      cursor = committed.cursor
-      appliedCustomerIds.push(customerId)
-    }
-
     const targetFingerprint =
       deliveryExecutionCanonicalBasisFingerprint(
-        committedInventory,
+        inventoryState,
         committedSupplied,
       )
     deliveryCanonicalSyncGuardRef.current = {
       targetFingerprint,
-      allowedFingerprints: [
-        deliveryExecutionCanonicalBasisFingerprint(
-          beforeInventory,
-          beforeSupplied,
-        ),
-        deliveryExecutionCanonicalBasisFingerprint(
-          committedInventory,
-          beforeSupplied,
-        ),
-        deliveryExecutionCanonicalBasisFingerprint(
-          beforeInventory,
-          committedSupplied,
-        ),
-        targetFingerprint,
-      ],
+      allowedFingerprints: [beforeFingerprint, targetFingerprint],
     }
 
-    setInventoryState(committedInventory)
+    writeSuppliedCustomerIds(window.localStorage, committedSupplied)
     onSuppliedCustomerIdsCommitted(committedSupplied)
     setRunState((current) =>
       current.status === 'success'
         ? {
             ...current,
-            deliveryCursor: cursor,
             transactionDraft: null,
             transactionDraftInvalidatedByPartialDelivery: true,
           }
@@ -978,7 +1018,7 @@ function OptimizerTools({
     setApplicationState({ status: 'idle' })
     setDeliveryUiState({
       status: 'applied',
-      customerIds: appliedCustomerIds,
+      customerIds: pendingCustomerIds,
     })
   }
 
@@ -1466,6 +1506,43 @@ function OptimizerTools({
                 </label>
               ))}
             </div>
+          </div>
+
+          <div className="optimizer-inventory-subsection">
+            <div className="optimizer-inventory-subheading">
+              <strong>中間果汁庫存</strong>
+              <span>以果汁單位計；只記錄尚未加水成為販售成品的階段</span>
+            </div>
+            <IntermediateJuiceCombobox
+              entries={intermediateInventoryEntries.filter(
+                (entry) => !(entry.identity in (inventoryState.intermediateJuiceUnits ?? {})),
+              )}
+              onChoose={(entry) => setIntermediateJuiceInventory(entry.identity, 1)}
+            />
+            {Object.keys(inventoryState.intermediateJuiceUnits ?? {}).length === 0 ? (
+              <p className="optimizer-inventory-empty">目前沒有中間果汁庫存。</p>
+            ) : (
+              <div className="optimizer-ingredient-inventory">
+                {Object.entries(inventoryState.intermediateJuiceUnits ?? {})
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .map(([identity, units]) => {
+                    const entry = intermediateInventoryEntries.find((item) => item.identity === identity)
+                    return (
+                      <label key={identity}>
+                        <span>{entry?.label ?? identity}</span>
+                        <input
+                          aria-label={`${entry?.label ?? identity} 中間果汁單位`}
+                          type="number"
+                          inputMode="numeric"
+                          min={0}
+                          value={units}
+                          onChange={(event) => setIntermediateJuiceInventory(identity, Number(event.target.value) || 0)}
+                        />
+                      </label>
+                    )
+                  })}
+              </div>
+            )}
           </div>
 
           <div className="optimizer-inventory-subsection">
@@ -2098,6 +2175,26 @@ export function PlanApplicationPreview({
 
         <article className="optimizer-transaction-card">
           <div className="optimizer-transaction-card-heading">
+            <strong>中間果汁</strong>
+            <span>{changes.intermediateJuice.length} 種</span>
+          </div>
+          {changes.intermediateJuice.length === 0 ? (
+            <p>沒有中間果汁庫存變更。</p>
+          ) : (
+            <div className="optimizer-transaction-list">
+              {changes.intermediateJuice.map((change) => (
+                <div className="optimizer-transaction-row" key={change.identity}>
+                  <strong>{sequenceLabel([...change.ingredientIds])}</strong>
+                  <span>{change.beforeUnits} → {change.afterUnits} 果汁單位</span>
+                  <small>本次使用 {change.consumedUnits} 果汁單位</small>
+                </div>
+              ))}
+            </div>
+          )}
+        </article>
+
+        <article className="optimizer-transaction-card">
+          <div className="optimizer-transaction-card-heading">
             <strong>水</strong>
             <span>
               {changes.water.beforeUnits} → {changes.water.afterUnits}
@@ -2265,7 +2362,7 @@ export function PlanApplicationPreview({
 }
 
 export interface DeliveryCustomerControlState {
-  status: 'committed' | 'active' | 'later' | 'unavailable'
+  status: 'committed' | 'active' | 'unavailable'
   tripNumber: number | null
   activeTripNumber: number | null
   physicalJarId: string | null
@@ -2277,11 +2374,13 @@ export function deliveryCustomerControlState(
   suppliedCustomerIds: readonly string[],
   customerId: string,
 ): DeliveryCustomerControlState {
+  const committed = suppliedCustomerIds.includes(customerId)
+
   if (!plan || !cursor) {
     return {
-      status: 'unavailable',
+      status: committed ? 'committed' : 'active',
       tripNumber: null,
-      activeTripNumber: null,
+      activeTripNumber: cursor?.nextTripNumber ?? null,
       physicalJarId: null,
     }
   }
@@ -2304,20 +2403,8 @@ export function deliveryCustomerControlState(
     }
   }
 
-  const committed =
-    suppliedCustomerIds.includes(customerId) ||
-    trip.tripNumber < cursor.nextTripNumber ||
-    (
-      trip.tripNumber === cursor.nextTripNumber &&
-      cursor.completedCustomerIdsInTrip.includes(customerId)
-    )
-
   return {
-    status: committed
-      ? 'committed'
-      : trip.tripNumber === cursor.nextTripNumber
-        ? 'active'
-        : 'later',
+    status: committed ? 'committed' : 'active',
     tripNumber: trip.tripNumber,
     activeTripNumber: cursor.nextTripNumber,
     physicalJarId: delivery.physicalJarId,
@@ -2350,12 +2437,12 @@ export function DeliveryCustomerCheckbox({
 
   const detail =
     control.status === 'committed'
-      ? '已正式交付'
+      ? '已記錄今日供應'
       : control.status === 'active'
-        ? `第 ${control.tripNumber} 趟 · 果汁罐 ${control.physicalJarId} · 勾選即正式寫入`
-        : control.status === 'later'
-          ? `第 ${control.tripNumber} 趟 · 請先完成第 ${control.activeTripNumber} 趟`
-          : '目前沒有可提交的實體交付事件'
+        ? control.tripNumber !== null && control.physicalJarId !== null
+          ? `規劃第 ${control.tripNumber} 趟 · 果汁罐 ${control.physicalJarId} · 可依實際送達順序勾選`
+          : '可記錄今日已供應；目前沒有對應的物理交付事件'
+        : '目前沒有對應的規劃顧客'
 
   return (
     <label
@@ -2477,11 +2564,7 @@ export function DeliveryRecipeGroupCheckbox({
               ? 'optimizer-delivery-recipe-group active'
               : 'optimizer-delivery-recipe-group'
       }
-      title={
-        !control.checked && !control.canCommit
-          ? '目前仍有顧客受現行趟次限制，請先使用個別顧客勾選。'
-          : undefined
-      }
+      title={undefined}
     >
       <input
         ref={inputRef}
@@ -3024,8 +3107,8 @@ function OptimizerResultPanel({
 
         <div className="optimizer-delivery-toolbar">
           <span>
-            勾選個別顧客或配方標題，代表對應顧客已實際收到果汁，會立即同步果汁罐、杯具、庫存與「今日已供應」。
-            已提交的交付不能靠取消 checkbox 復原。
+            勾選個別顧客或配方標題，代表對應顧客已實際收到果汁；可依實際送達順序勾選，不受規劃趟次限制。勾選會更新「今日已供應」，但不會假裝尚未發生的前置趟次、裝瓶或杯具操作已完成；之後若要套用庫存變更，請依目前狀態重新規劃。
+            已記錄的供應不能靠取消 checkbox 復原。
           </span>
           {transactionDraftInvalidatedByPartialDelivery && (
             <button type="button" onClick={onReplan}>
