@@ -129,7 +129,7 @@ type PlanApplicationUiState =
 
 type DeliveryUiState =
   | { status: 'idle' }
-  | { status: 'applied'; customerId: string }
+  | { status: 'applied'; customerIds: readonly string[] }
   | {
       status: 'stale'
       mismatches: readonly DeliveryExecutionCommitStaleField[]
@@ -837,7 +837,9 @@ function OptimizerTools({
     setDeliveryUiState({ status: 'idle' })
   }
 
-  function commitDeliveryCustomer(customerId: string) {
+  function commitDeliveryCustomers(
+    customerIds: readonly string[],
+  ) {
     if (
       runState.status !== 'success' ||
       !runState.deliveryExecutionPlan ||
@@ -846,44 +848,86 @@ function OptimizerTools({
       return
     }
 
-    const committed = commitDeliveryExecutionCustomer(
-      {
-        plan: runState.deliveryExecutionPlan,
-        cursor: runState.deliveryCursor,
-        customerId,
-        expectedBasis: runState.deliveryExpectedBasis,
-      },
-      window.localStorage,
+    const plan = runState.deliveryExecutionPlan
+    let cursor = runState.deliveryCursor
+    let committedInventory = inventoryState
+    let committedSupplied = [...suppliedCustomerIds]
+    const pendingCustomerIds = customerIds.filter(
+      (customerId) =>
+        deliveryCustomerControlState(
+          plan,
+          cursor,
+          committedSupplied,
+          customerId,
+        ).status !== 'committed',
     )
 
-    if (committed.status === 'stale') {
-      setDeliveryUiState({
-        status: 'stale',
-        mismatches: committed.mismatches,
-      })
-      setInventoryState(readInventoryState(window.localStorage))
-      onSuppliedCustomerIdsCommitted(
-        readSuppliedCustomerIds(window.localStorage),
-      )
-      setRunState({ status: 'idle' })
-      return
-    }
+    if (pendingCustomerIds.length === 0) return
 
-    if (committed.status === 'error') {
+    const allCurrentlyActive = pendingCustomerIds.every(
+      (customerId) =>
+        deliveryCustomerControlState(
+          plan,
+          cursor,
+          committedSupplied,
+          customerId,
+        ).status === 'active',
+    )
+    if (!allCurrentlyActive) {
       setDeliveryUiState({
         status: 'error',
-        message: committed.message,
+        message:
+          '此配方仍有顧客受現行趟次限制，請先使用個別顧客勾選。',
       })
       return
     }
 
     const beforeInventory = inventoryState
     const beforeSupplied = [...suppliedCustomerIds]
-    const afterSupplied = [...committed.suppliedCustomerIds]
+    const appliedCustomerIds: string[] = []
+
+    for (const customerId of pendingCustomerIds) {
+      const committed = commitDeliveryExecutionCustomer(
+        {
+          plan,
+          cursor,
+          customerId,
+          expectedBasis: runState.deliveryExpectedBasis,
+        },
+        window.localStorage,
+      )
+
+      if (committed.status === 'stale') {
+        setDeliveryUiState({
+          status: 'stale',
+          mismatches: committed.mismatches,
+        })
+        setInventoryState(readInventoryState(window.localStorage))
+        onSuppliedCustomerIdsCommitted(
+          readSuppliedCustomerIds(window.localStorage),
+        )
+        setRunState({ status: 'idle' })
+        return
+      }
+
+      if (committed.status === 'error') {
+        setDeliveryUiState({
+          status: 'error',
+          message: committed.message,
+        })
+        return
+      }
+
+      committedInventory = committed.inventory
+      committedSupplied = [...committed.suppliedCustomerIds]
+      cursor = committed.cursor
+      appliedCustomerIds.push(customerId)
+    }
+
     const targetFingerprint =
       deliveryExecutionCanonicalBasisFingerprint(
-        committed.inventory,
-        afterSupplied,
+        committedInventory,
+        committedSupplied,
       )
     deliveryCanonicalSyncGuardRef.current = {
       targetFingerprint,
@@ -893,24 +937,24 @@ function OptimizerTools({
           beforeSupplied,
         ),
         deliveryExecutionCanonicalBasisFingerprint(
-          committed.inventory,
+          committedInventory,
           beforeSupplied,
         ),
         deliveryExecutionCanonicalBasisFingerprint(
           beforeInventory,
-          afterSupplied,
+          committedSupplied,
         ),
         targetFingerprint,
       ],
     }
 
-    setInventoryState(committed.inventory)
-    onSuppliedCustomerIdsCommitted(afterSupplied)
+    setInventoryState(committedInventory)
+    onSuppliedCustomerIdsCommitted(committedSupplied)
     setRunState((current) =>
       current.status === 'success'
         ? {
             ...current,
-            deliveryCursor: committed.cursor,
+            deliveryCursor: cursor,
             transactionDraft: null,
             transactionDraftInvalidatedByPartialDelivery: true,
           }
@@ -919,9 +963,14 @@ function OptimizerTools({
     setApplicationState({ status: 'idle' })
     setDeliveryUiState({
       status: 'applied',
-      customerId,
+      customerIds: appliedCustomerIds,
     })
   }
+
+  function commitDeliveryCustomer(customerId: string) {
+    commitDeliveryCustomers([customerId])
+  }
+
 
   async function runOptimizer() {
     setApplicationState({ status: 'idle' })
@@ -1611,7 +1660,8 @@ function OptimizerTools({
       {deliveryUiState.status === 'applied' && (
         <div className="optimizer-result-note" role="status">
           <strong>
-            已正式交付：{customerLabel(deliveryUiState.customerId)}
+            已正式交付：
+            {deliveryUiState.customerIds.map(customerLabel).join('、')}
           </strong>
           <span>
             庫存、果汁罐、杯具與「今日已供應」已原子同步；可繼續完成目前販售趟，或在果汁分配區依目前狀態重新規劃。
@@ -1656,6 +1706,7 @@ function OptimizerTools({
           deliveryUiState={deliveryUiState}
           onApplyTransaction={applyTransactionDraft}
           onCommitDelivery={commitDeliveryCustomer}
+          onCommitDeliveryGroup={commitDeliveryCustomers}
           onReplan={runOptimizer}
         />
       )}
@@ -2288,6 +2339,121 @@ export function DeliveryCustomerCheckbox({
   )
 }
 
+export interface DeliveryRecipeGroupControlState {
+  checked: boolean
+  partial: boolean
+  canCommit: boolean
+  pendingCustomerIds: readonly string[]
+}
+
+export function deliveryRecipeGroupControlState(
+  plan: DeliveryExecutionPlan | null,
+  cursor: DeliveryExecutionCursor | null,
+  suppliedCustomerIds: readonly string[],
+  customerIds: readonly string[],
+  disabled = false,
+): DeliveryRecipeGroupControlState {
+  const controls = customerIds.map((customerId) => ({
+    customerId,
+    control: deliveryCustomerControlState(
+      plan,
+      cursor,
+      suppliedCustomerIds,
+      customerId,
+    ),
+  }))
+  const committedCount = controls.filter(
+    ({ control }) => control.status === 'committed',
+  ).length
+  const pendingCustomerIds = controls
+    .filter(({ control }) => control.status !== 'committed')
+    .map(({ customerId }) => customerId)
+  const checked =
+    customerIds.length > 0 &&
+    committedCount === customerIds.length
+  const partial = committedCount > 0 && !checked
+  const canCommit =
+    !disabled &&
+    pendingCustomerIds.length > 0 &&
+    controls
+      .filter(({ control }) => control.status !== 'committed')
+      .every(({ control }) => control.status === 'active')
+
+  return {
+    checked,
+    partial,
+    canCommit,
+    pendingCustomerIds,
+  }
+}
+
+export function DeliveryRecipeGroupCheckbox({
+  recipeName,
+  customerIds,
+  plan,
+  cursor,
+  suppliedCustomerIds,
+  disabled = false,
+  onCommit,
+}: {
+  recipeName: string
+  customerIds: readonly string[]
+  plan: DeliveryExecutionPlan | null
+  cursor: DeliveryExecutionCursor | null
+  suppliedCustomerIds: readonly string[]
+  disabled?: boolean
+  onCommit: (customerIds: readonly string[]) => void
+}) {
+  const control = deliveryRecipeGroupControlState(
+    plan,
+    cursor,
+    suppliedCustomerIds,
+    customerIds,
+    disabled,
+  )
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.indeterminate = control.partial
+    }
+  }, [control.partial])
+
+  return (
+    <label
+      className={
+        control.checked
+          ? 'optimizer-delivery-recipe-group committed'
+          : control.partial
+            ? 'optimizer-delivery-recipe-group partial'
+            : control.canCommit
+              ? 'optimizer-delivery-recipe-group active'
+              : 'optimizer-delivery-recipe-group'
+      }
+      title={
+        !control.checked && !control.canCommit
+          ? '目前仍有顧客受現行趟次限制，請先使用個別顧客勾選。'
+          : undefined
+      }
+    >
+      <input
+        ref={inputRef}
+        type="checkbox"
+        checked={control.checked}
+        aria-checked={control.partial ? 'mixed' : control.checked}
+        disabled={control.checked || !control.canCommit}
+        onChange={(event) => {
+          if (event.target.checked && control.canCommit) {
+            onCommit(control.pendingCustomerIds)
+          }
+        }}
+        aria-label={`${formatRecipeDisplayName(recipeName)}整組交付完成`}
+      />
+      <strong>{formatRecipeDisplayName(recipeName)}</strong>
+    </label>
+  )
+}
+
 function OptimizerResultPanel({
   result,
   preparationShortfall,
@@ -2302,6 +2468,7 @@ function OptimizerResultPanel({
   deliveryUiState,
   onApplyTransaction,
   onCommitDelivery,
+  onCommitDeliveryGroup,
   onReplan,
 }: {
   result: OptimizationResult
@@ -2317,6 +2484,7 @@ function OptimizerResultPanel({
   deliveryUiState: DeliveryUiState
   onApplyTransaction: (draft: PlanApplicationTransactionDraft) => void
   onCommitDelivery: (customerId: string) => void
+  onCommitDeliveryGroup: (customerIds: readonly string[]) => void
   onReplan: () => void
 }) {
   const selectedSalesTripPlan = salesTripPlans.selected
@@ -2831,8 +2999,16 @@ function OptimizerResultPanel({
           <div className="optimizer-batch-list">
             {result.recipePlans.map((plan) => (
               <article className="optimizer-batch-card" key={plan.recipeId}>
-                <div>
-                  <strong>{formatRecipeDisplayName(plan.recipeName)}</strong>
+                <div className="optimizer-delivery-recipe-heading">
+                  <DeliveryRecipeGroupCheckbox
+                    recipeName={plan.recipeName}
+                    customerIds={plan.customerIds}
+                    plan={deliveryExecutionPlan}
+                    cursor={deliveryCursor}
+                    suppliedCustomerIds={suppliedCustomerIds}
+                    disabled={deliveryUiState.status === 'stale'}
+                    onCommit={onCommitDeliveryGroup}
+                  />
                   <span>
                     原料成本：{optimizerMoney(plan.totalIngredientCost)}
                   </span>
