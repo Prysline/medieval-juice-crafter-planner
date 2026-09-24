@@ -242,6 +242,8 @@ export function buildOptimizationModel(
     source.customers.map((customer) => [customer.id, customer]),
   )
   const revenueSensitive = requestUsesRevenueCriterion(request)
+  const maximumIngredientCostSensitive =
+    normalizedOptimizationPriorities(request).includes('maximum-ingredient-cost')
   const eligibleEntryCache = new Map<
     string,
     EligibleOptimizationRecipeCore | null
@@ -290,6 +292,13 @@ export function buildOptimizationModel(
             mode: 'bounded-exhaustive',
             additionalCandidateEligibility: (candidate) => {
               if (!cachedEligibleEntry(candidate)) return false
+              if (
+                maximumIngredientCostSensitive &&
+                new Set(candidate.ingredients).size !==
+                  candidate.ingredients.length
+              ) {
+                return false
+              }
               if (
                 revenueSensitive &&
                 formalIds.has(customerId) &&
