@@ -57,4 +57,12 @@ export const equipment: Equipment[] = [
     seller: '木匠',
     note: '靜謐噴泉解鎖後寄信給爺爺；隔天收到回信後解鎖，可把兩種果汁調和在一起。',
   },
+  {
+    id: 'advanced-tragic-washing-station',
+    name: '高級悲劇清洗台',
+    unlockedAt: 'advanced-tragic-washing-station-unlocked',
+    buyPrice: 1000,
+    seller: '木匠',
+    note: '階段六：東港村滿意度 525、靜謐噴泉滿意度 25 後寄信給爺爺；收到回信後解鎖購買。一次可清洗 5 個杯子；回信等待時間與實際清洗水量尚未確認。',
+  },
 ]
