@@ -450,6 +450,19 @@ describe('recipe sequence evaluator', () => {
       ],
     },
     {
+      ingredientIds: ['orange', 'sugar', 'mint', 'cinnamon', 'pear'],
+      id: 'orange-sugar-mint-cinnamon-pear-blend',
+      observedDisplayName: '護心 暗影',
+      salePrice: 92,
+      effects: [
+        { name: '保護心臟', value: 5 },
+        { name: '甜味', value: 5 },
+        { name: '促進消化', value: 4 },
+        { name: '調節血糖', value: 4 },
+        { name: '芳香', value: 4 },
+      ],
+    },
+    {
       ingredientIds: ['lemon', 'sugar', 'mint', 'orange', 'mint', 'sugar'],
       id: 'lemon-sugar-mint-orange-mint-sugar-blend',
       observedDisplayName: '甜味 非凡',

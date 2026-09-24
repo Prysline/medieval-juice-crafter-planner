@@ -622,6 +622,28 @@ export const recipes: Recipe[] = [
     ],
   },
   {
+    id: 'orange-sugar-mint-cinnamon-pear-blend',
+    name: '護心（橙子 → 糖 → 薄荷 → 肉桂 → 梨）',
+    observedDisplayName: '護心 暗影',
+    unlockedAt: 'juice-blender-unlocked',
+    salePrice: 92,
+    ingredients: ['橙子', '糖', '薄荷', '肉桂', '梨'],
+    effects: [
+      { name: '保護心臟', value: 5 },
+      { name: '甜味', value: 5 },
+      { name: '促進消化', value: 4 },
+      { name: '調節血糖', value: 4 },
+      { name: '芳香', value: 4 },
+    ],
+    equipment: [
+      '柑橘榨汁機',
+      '調味器',
+      '榨汁機',
+      '果汁調和器',
+      '果汁成品台',
+    ],
+  },
+  {
     id: 'lemon-sugar-mint-orange-mint-sugar-blend',
     name: '甜味（檸檬 → 糖 → 薄荷 → 橙子 → 薄荷 → 糖）',
     observedDisplayName: '甜味 非凡',
