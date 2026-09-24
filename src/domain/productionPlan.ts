@@ -3,8 +3,9 @@ import {
   recipeIngredientCapabilities,
   type RecipeIngredientCapability,
 } from '../data/recipeIngredientCapabilities'
-import type { RecipeCandidate } from '../types'
+import type { IntermediateJuiceInventory, RecipeCandidate } from '../types'
 import { PROCESSING_STACK_CAPACITY } from './inventoryRules'
+import { ingredientIdsFromJuiceStateIdentity } from './juiceStateIdentity'
 
 export type ProductionStepKind =
   | 'juicing'
@@ -58,6 +59,18 @@ export interface MachineOperationSummary {
 export interface ProductionPlan {
   steps: ProductionStep[]
   machineOperations: MachineOperationSummary
+}
+
+export interface IntermediateJuiceStockUsage {
+  identity: string
+  ingredientIds: string[]
+  availableUnits: number
+  usedUnits: number
+  remainingUnits: number
+}
+
+export interface StockOffsetProductionPlan extends ProductionPlan {
+  intermediateStockUsage: IntermediateJuiceStockUsage[]
 }
 
 const ingredientIdByName = new Map(
@@ -255,5 +268,180 @@ export function buildProductionPlan(
   return {
     steps,
     machineOperations: summary,
+  }
+}
+
+
+/**
+ * Builds the executable production graph after applying already-held
+ * intermediate juice stock.
+ *
+ * Finalizing is never skipped by intermediate stock. Instead, each finalizer
+ * creates demand for its input juice node. That demand is expanded backwards:
+ * exact intermediate stock satisfies the deepest currently-needed node first;
+ * only the unsatisfied remainder expands into its producer edge and upstream
+ * inputs. Shared-prefix demand therefore consumes one global stock pool rather
+ * than reusing the same unit once per recipe.
+ */
+export function buildStockOffsetProductionPlan(
+  recipes: ProductionRecipeInput[],
+  intermediateJuiceUnits: IntermediateJuiceInventory = {},
+): StockOffsetProductionPlan {
+  const fullPlan = buildProductionPlan(recipes)
+  const producerByNode = new Map<string, ProductionStep>()
+
+  for (const step of fullPlan.steps) {
+    if (step.kind === 'finalizing') continue
+    const nodeKey = sequenceKey(step.toIngredientIds)
+    const existing = producerByNode.get(nodeKey)
+    if (existing && existing.key !== step.key) {
+      throw new Error(
+        `Multiple production edges produce intermediate node ${nodeKey}`,
+      )
+    }
+    producerByNode.set(nodeKey, step)
+  }
+
+  const stockByNode = new Map<
+    string,
+    IntermediateJuiceStockUsage & { remainingToAllocate: number }
+  >()
+
+  for (const [identity, rawQuantity] of Object.entries(
+    intermediateJuiceUnits,
+  )) {
+    const ingredientIds =
+      ingredientIdsFromJuiceStateIdentity(identity)
+    const availableUnits = Math.max(0, Math.floor(rawQuantity))
+    if (!ingredientIds || availableUnits <= 0) continue
+
+    stockByNode.set(sequenceKey(ingredientIds), {
+      identity,
+      ingredientIds,
+      availableUnits,
+      usedUnits: 0,
+      remainingUnits: availableUnits,
+      remainingToAllocate: availableUnits,
+    })
+  }
+
+  const quantityByStepKey = new Map<string, number>()
+
+  function addStepQuantity(step: ProductionStep, quantity: number) {
+    if (quantity <= 0) return
+    quantityByStepKey.set(
+      step.key,
+      (quantityByStepKey.get(step.key) ?? 0) + quantity,
+    )
+  }
+
+  function requireIntermediate(
+    ingredientIds: string[],
+    quantity: number,
+  ) {
+    if (quantity <= 0) return
+
+    const nodeKey = sequenceKey(ingredientIds)
+    const stock = stockByNode.get(nodeKey)
+    let remaining = quantity
+
+    if (stock) {
+      const used = Math.min(stock.remainingToAllocate, remaining)
+      stock.remainingToAllocate -= used
+      stock.usedUnits += used
+      stock.remainingUnits = stock.availableUnits - stock.usedUnits
+      remaining -= used
+    }
+
+    if (remaining <= 0) return
+
+    const producer = producerByNode.get(nodeKey)
+    if (!producer) {
+      throw new Error(
+        `No production edge can satisfy intermediate node ${nodeKey}`,
+      )
+    }
+
+    addStepQuantity(producer, remaining)
+
+    if (producer.kind === 'seasoning') {
+      requireIntermediate(producer.fromIngredientIds, remaining)
+      return
+    }
+
+    if (producer.kind === 'blending') {
+      requireIntermediate(producer.fromIngredientIds, remaining)
+      requireIntermediate(
+        producer.secondaryFromIngredientIds ?? [],
+        remaining,
+      )
+    }
+  }
+
+  for (const step of fullPlan.steps) {
+    if (step.kind !== 'finalizing') continue
+    addStepQuantity(step, step.quantity)
+    requireIntermediate(step.fromIngredientIds, step.quantity)
+  }
+
+  const kindOrder: Record<ProductionStepKind, number> = {
+    juicing: 0,
+    seasoning: 1,
+    blending: 2,
+    finalizing: 3,
+  }
+
+  const steps = fullPlan.steps
+    .flatMap((step): ProductionStep[] => {
+      const quantity = quantityByStepKey.get(step.key) ?? 0
+      if (quantity <= 0) return []
+      return [
+        {
+          ...step,
+          quantity,
+          operationCount: Math.ceil(
+            quantity / PROCESSING_STACK_CAPACITY,
+          ),
+        },
+      ]
+    })
+    .sort(
+      (a, b) =>
+        kindOrder[a.kind] - kindOrder[b.kind] ||
+        a.toIngredientIds.length - b.toIngredientIds.length ||
+        a.key.localeCompare(b.key),
+    )
+
+  const machineOperations: MachineOperationSummary = {
+    total: 0,
+    juicing: 0,
+    seasoning: 0,
+    finalizing: 0,
+    blending: 0,
+  }
+
+  for (const step of steps) {
+    machineOperations.total += step.operationCount
+    machineOperations[step.kind] += step.operationCount
+  }
+
+  const intermediateStockUsage = [...stockByNode.values()]
+    .filter((stock) => stock.usedUnits > 0)
+    .map(
+      ({
+        remainingToAllocate: _remainingToAllocate,
+        ...stock
+      }) => stock,
+    )
+    .sort(
+      (a, b) =>
+        b.ingredientIds.length - a.ingredientIds.length ||
+        a.identity.localeCompare(b.identity),
+    )
+
+  return {
+    steps,
+    machineOperations,
+    intermediateStockUsage,
   }
 }
