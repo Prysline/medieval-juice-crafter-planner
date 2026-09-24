@@ -251,21 +251,24 @@ export function intermediateJuiceInventoryEntries(
 ): IntermediateJuiceInventoryEntry[] {
   const byIdentity = new Map<string, IntermediateJuiceInventoryEntry>()
 
-  // Raw juice from every juice-base ingredient is valid intermediate stock even
-  // when no candidate recipe currently exposes that one-step production path.
-  for (const ingredient of ingredients) {
-    const path = productionPathForIngredientIds([ingredient.id])
-    const juicingEdge = path?.edges.find((edge) => edge.kind === 'juicing')
-    if (!juicingEdge) continue
-    const identity = juiceStateIdentity(juicingEdge.toIngredientIds)
+  // Every declared juice-base ingredient is valid one-step intermediate stock.
+  // Do not derive this catalog by asking the full recipe production path to
+  // finalize a one-ingredient recipe: raw juice exists before finalization.
+  for (const capability of recipeIngredientCapabilities) {
+    if (
+      !capability.roles.includes('juice-base') ||
+      !capability.baseEquipment
+    ) {
+      continue
+    }
+    const ingredientIds = [capability.ingredientId]
+    const identity = juiceStateIdentity(ingredientIds)
     byIdentity.set(identity, {
       identity,
-      ingredientIds: [...juicingEdge.toIngredientIds],
+      ingredientIds,
       label:
-        juicingEdge.toIngredientIds.length === 1
-          ? rawJuiceNameByIngredientId.get(juicingEdge.toIngredientIds[0]) ??
-            sequenceLabel([...juicingEdge.toIngredientIds])
-          : sequenceLabel([...juicingEdge.toIngredientIds]),
+        rawJuiceNameByIngredientId.get(capability.ingredientId) ??
+        sequenceLabel(ingredientIds),
     })
   }
 
