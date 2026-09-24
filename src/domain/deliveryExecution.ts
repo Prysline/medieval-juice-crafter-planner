@@ -223,7 +223,7 @@ function normalizedPlanPayload(
         recipeId: usage.recipeId,
         ingredientUnits: { ...usage.ingredientUnits },
         intermediateStockUnits: { ...usage.intermediateStockUnits },
-        units: usage.units.map((unit) => ({
+        units: (usage.units ?? []).map((unit) => ({
           ingredientUnits: { ...unit.ingredientUnits },
           intermediateStockUnits: { ...unit.intermediateStockUnits },
         })),
