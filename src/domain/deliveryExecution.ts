@@ -29,9 +29,21 @@ export interface DeliveryExecutionCustomer {
   recipeName: string
 }
 
+export interface DeliveryExecutionPreparationLoad {
+  physicalJarId: string
+  recipeId: string
+  recipeName: string
+  plannedTripNumber: number
+  fill: MultiTripProductionJarFill
+  ingredientRequirements: readonly DeliveryExecutionIngredientRequirement[]
+  intermediateRequirements: readonly DeliveryExecutionIntermediateRequirement[]
+  productionWaterUnits: number
+}
+
 export interface DeliveryExecutionTrip {
   tripNumber: number
   productionFills: readonly MultiTripProductionJarFill[]
+  preparationLoads?: readonly DeliveryExecutionPreparationLoad[]
   initialJuiceDiscards: readonly MultiTripDiscardedInitialJuice[]
   ingredientRequirements: readonly DeliveryExecutionIngredientRequirement[]
   intermediateRequirements: readonly DeliveryExecutionIntermediateRequirement[]
@@ -369,9 +381,12 @@ export function buildDeliveryExecutionPlan(
         )
       const ingredientUnits = new Map<string, number>()
       const intermediateUnits = new Map<string, number>()
+      const preparationLoads: DeliveryExecutionPreparationLoad[] = []
       let productionWaterUnits = 0
 
       for (const fill of productionFills) {
+        const fillIngredientUnits = new Map<string, number>()
+        const fillIntermediateUnits = new Map<string, number>()
         const recipe = recipeById.get(fill.recipeId)
         if (!recipe) {
           throw new Error(
@@ -407,6 +422,10 @@ export function buildDeliveryExecutionPlan(
                 ingredientId,
                 (ingredientUnits.get(ingredientId) ?? 0) + quantity,
               )
+              fillIngredientUnits.set(
+                ingredientId,
+                (fillIngredientUnits.get(ingredientId) ?? 0) + quantity,
+              )
             }
             for (const [identity, quantity] of Object.entries(
               unit.intermediateStockUnits,
@@ -415,17 +434,43 @@ export function buildDeliveryExecutionPlan(
                 identity,
                 (intermediateUnits.get(identity) ?? 0) + quantity,
               )
+              fillIntermediateUnits.set(
+                identity,
+                (fillIntermediateUnits.get(identity) ?? 0) + quantity,
+              )
             }
           }
         } else {
           for (const ingredient of recipe.ingredientUnitsPerJuiceUnit) {
+            const quantity =
+              ingredient.quantityPerJuiceUnit * juiceUnits
             ingredientUnits.set(
               ingredient.ingredientId,
               (ingredientUnits.get(ingredient.ingredientId) ?? 0) +
-                ingredient.quantityPerJuiceUnit * juiceUnits,
+                quantity,
+            )
+            fillIngredientUnits.set(
+              ingredient.ingredientId,
+              (fillIngredientUnits.get(ingredient.ingredientId) ?? 0) +
+                quantity,
             )
           }
         }
+
+        preparationLoads.push({
+          physicalJarId: fill.physicalJarId,
+          recipeId: fill.recipeId,
+          recipeName: fill.recipeName,
+          plannedTripNumber: trip.tripNumber,
+          fill,
+          ingredientRequirements: [...fillIngredientUnits.entries()]
+            .map(([ingredientId, units]) => ({ ingredientId, units }))
+            .sort((a, b) => a.ingredientId.localeCompare(b.ingredientId)),
+          intermediateRequirements: [...fillIntermediateUnits.entries()]
+            .map(([identity, units]) => ({ identity, units }))
+            .sort((a, b) => a.identity.localeCompare(b.identity)),
+          productionWaterUnits: juiceUnits,
+        })
       }
 
       const initialJuiceDiscards =
@@ -443,6 +488,7 @@ export function buildDeliveryExecutionPlan(
       const executionTrip: DeliveryExecutionTrip = {
         tripNumber: trip.tripNumber,
         productionFills,
+        preparationLoads,
         initialJuiceDiscards,
         ingredientRequirements: [...ingredientUnits.entries()]
           .map(([ingredientId, units]) => ({
@@ -719,6 +765,7 @@ export type CanonicalDeliveryTransactionDraft =
       readonly plannedTripNumber: number
       readonly physicalJarId: string
       readonly recipeId: string
+      readonly preparation: DeliveryExecutionPreparationLoad | null
     }
 
 /**
@@ -771,6 +818,12 @@ export function buildCanonicalDeliveryTransaction(
       plannedTripNumber: plannedTrip.tripNumber,
       physicalJarId: delivery.physicalJarId,
       recipeId: delivery.recipeId,
+      preparation:
+        plannedTrip.preparationLoads?.find(
+          (load) =>
+            load.physicalJarId === delivery.physicalJarId &&
+            load.recipeId === delivery.recipeId,
+        ) ?? null,
     }
   }
 
