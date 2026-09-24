@@ -50,6 +50,7 @@ describe('inventory storage', () => {
         lemon: 3,
         'future-ingredient': 2,
       },
+      intermediateJuiceUnits: {},
       waterUnits: 12,
       cleanCups: 4,
       usedCups: 0,
@@ -57,6 +58,45 @@ describe('inventory storage', () => {
       shelfCount: 2,
       jarRackCount: 0,
     })
+  })
+
+  it('normalizes legacy inventory without intermediate juice stock and preserves only canonical juice-state keys', () => {
+    expect(
+      normalizeInventoryState({
+        ingredientUnits: {},
+        intermediateJuiceUnits: {
+          'juice-state:v1:lemon': 2.9,
+          'juice-state:v1:lemon/sugar': 1,
+          'computed:lemon+sugar': 4,
+          'juice-state:v1:': 3,
+          'juice-state:v1:%E0%A4%A': 5,
+          'juice-state:v1:future%2Fbase': 2,
+          negative: -1,
+        },
+        waterUnits: 0,
+        cleanCups: 0,
+        usedCups: 0,
+        juiceJars: [],
+        shelfCount: 0,
+        jarRackCount: 0,
+      }).intermediateJuiceUnits,
+    ).toEqual({
+      'juice-state:v1:lemon': 2,
+      'juice-state:v1:lemon/sugar': 1,
+      'juice-state:v1:future%2Fbase': 2,
+    })
+
+    expect(
+      normalizeInventoryState({
+        ingredientUnits: {},
+        waterUnits: 0,
+        cleanCups: 0,
+        usedCups: 0,
+        juiceJars: [],
+        shelfCount: 0,
+        jarRackCount: 0,
+      }).intermediateJuiceUnits,
+    ).toEqual({})
   })
 
   it('preserves currently locked ingredient quantities in storage', () => {
@@ -147,6 +187,7 @@ describe('inventory storage', () => {
 
     expect(readInventoryState(storage)).toEqual({
       ingredientUnits: { lemon: 2 },
+      intermediateJuiceUnits: {},
       waterUnits: 5,
       cleanCups: 3,
       usedCups: 1,
