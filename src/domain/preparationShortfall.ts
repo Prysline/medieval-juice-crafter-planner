@@ -8,6 +8,7 @@ import {
   buildStockOffsetProductionPlan,
   type IntermediateJuiceStockUsage,
   type ProductionPlan,
+  type StockOffsetRecipeUsage,
 } from './productionPlan'
 
 export interface FinishedJarStockUsage {
@@ -55,8 +56,10 @@ export interface PreparationShortfall {
   recipes: RecipeStockAdjustment[]
   /** Canonical stock-offset graph used by production logistics. */
   netProductionPlan?: ProductionPlan
-  /** Planned read-only consumption; transaction mutation remains I3. */
+  /** Planned intermediate-stock consumption authority. */
   intermediateStockUsage?: IntermediateJuiceStockUsage[]
+  /** Per-final-recipe provenance for partial execution; sums to the plan authority. */
+  stockOffsetRecipeUsage?: StockOffsetRecipeUsage[]
   ingredients: IngredientShortfall[]
   productionWaterUnitsRequired: number
   waterUnitsAvailable: number
@@ -268,6 +271,7 @@ export function buildPreparationShortfall(
           },
           intermediateStockUsage:
             stockOffsetPlan.intermediateStockUsage,
+          stockOffsetRecipeUsage: stockOffsetPlan.recipeUsage,
         }
       : {}),
     ingredients: ingredientShortfalls,
