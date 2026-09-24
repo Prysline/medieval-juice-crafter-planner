@@ -2247,6 +2247,26 @@ export function PlanApplicationPreview({
 
         <article className="optimizer-transaction-card">
           <div className="optimizer-transaction-card-heading">
+            <strong>中間果汁</strong>
+            <span>{changes.intermediateJuice.length} 種</span>
+          </div>
+          {changes.intermediateJuice.length === 0 ? (
+            <p>沒有中間果汁庫存變更。</p>
+          ) : (
+            <div className="optimizer-transaction-list">
+              {changes.intermediateJuice.map((change) => (
+                <div className="optimizer-transaction-row" key={change.identity}>
+                  <strong>{sequenceLabel([...change.ingredientIds])}</strong>
+                  <span>{change.beforeUnits} → {change.afterUnits} 果汁單位</span>
+                  <small>本次使用 {change.consumedUnits} 果汁單位</small>
+                </div>
+              ))}
+            </div>
+          )}
+        </article>
+
+        <article className="optimizer-transaction-card">
+          <div className="optimizer-transaction-card-heading">
             <strong>水</strong>
             <span>
               {changes.water.beforeUnits} → {changes.water.afterUnits}
