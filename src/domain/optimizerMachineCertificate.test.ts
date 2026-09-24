@@ -15,7 +15,7 @@ import {
 } from './optimizerHighsSolver'
 
 describe('production-scale optimizer certificates', () => {
-  it('reports the current Stage 2 machine and Stage 3 jar bounds', async () => {
+  it('closes the exact Stage 2 machine and Stage 3 jar bounds for 49 serviceable customers', async () => {
     const customerIds = canonicalCustomers.map((customer) => customer.id)
     const request: OptimizationRequest = {
       customerIds,
@@ -52,21 +52,19 @@ describe('production-scale optimizer certificates', () => {
       )
 
     expect(certificate).not.toBeNull()
-    console.info(
-      '[Octavius diagnostic] machine certificate',
-      JSON.stringify({
-        lowerBounds: certificate?.lowerBounds,
-        optimum: certificate?.optimum,
-        verifiedAssignmentCount: certificate?.verifiedAssignmentCount,
-        witnessRecipeCount: certificate?.witnessRecipeUnits.length,
-        witnessBreakdown: certificate
-          ? machineOperationBreakdownForSelection(
-              stage1!.continuationDomain,
-              certificate.witnessRecipeUnits,
-            )
-          : null,
-      }),
-    )
+    expect(certificate?.lowerBounds).toEqual({
+      throughSeasoning: 23,
+      blending: 10,
+      finalizing: 22,
+    })
+    expect(certificate?.optimum).toBe(55)
+    expect(certificate?.verifiedAssignmentCount).toBe(49)
+    expect(
+      machineOperationBreakdownForSelection(
+        stage1!.continuationDomain,
+        certificate!.witnessRecipeUnits,
+      ).total,
+    ).toBe(55)
 
     const jarCertificate =
       await solveJarSwitchCertificateForCostAndMachineFix(
@@ -76,26 +74,16 @@ describe('production-scale optimizer certificates', () => {
       )
 
     expect(jarCertificate).not.toBeNull()
-    console.info(
-      '[Octavius diagnostic] jar certificate',
-      JSON.stringify(
-        jarCertificate
-          ? {
-              productionUnits: jarCertificate.productionUnits,
-              extraProductionUnitCostLowerBound:
-                jarCertificate.extraProductionUnitCostLowerBound,
-              finalizingOperations: jarCertificate.finalizingOperations,
-              distinctRecipeKindLowerBound:
-                jarCertificate.distinctRecipeKindLowerBound,
-              jarLowerBound: jarCertificate.jarLowerBound,
-              jarUpperBound: jarCertificate.jarUpperBound,
-              optimum: jarCertificate.optimum,
-              witnessRecipeCount: jarCertificate.witnessRecipeUnits.length,
-              verifiedAssignmentCount:
-                jarCertificate.verifiedAssignmentCount,
-            }
-          : null,
-      ),
-    )
+    expect(jarCertificate?.productionUnits).toBe(25)
+    expect(
+      jarCertificate?.extraProductionUnitCostLowerBound,
+    ).toBe(624)
+    expect(jarCertificate?.finalizingOperations).toBe(22)
+    expect(jarCertificate?.distinctRecipeKindLowerBound).toBe(22)
+    expect(jarCertificate?.jarLowerBound).toBe(20)
+    expect(jarCertificate?.jarUpperBound).toBe(20)
+    expect(jarCertificate?.optimum).toBe(20)
+    expect(jarCertificate?.witnessRecipeUnits).toHaveLength(22)
+    expect(jarCertificate?.verifiedAssignmentCount).toBe(49)
   }, 120000)
 })
