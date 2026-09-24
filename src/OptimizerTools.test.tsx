@@ -264,7 +264,7 @@ describe('juice jar recipe search UX', () => {
     expect(
       intermediate.some(
         (entry) =>
-          entry.identity === 'juice-state:v1:lemon/sugar>orange>mint',
+          entry.identity === 'juice-state:v1:lemon/sugar/orange/mint',
       ),
     ).toBe(true)
   })
