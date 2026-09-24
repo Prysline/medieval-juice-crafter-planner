@@ -499,7 +499,7 @@ describe('optimizer model', () => {
     ).toContain('blending')
   })
   it('excludes repeated-ingredient candidates when maximum ingredient cost is a priority', () => {
-    const repeated = {
+    const repeated: RecipeCandidate = {
       id: 'repeat-expensive',
       name: '重複高成本',
       ingredients: ['檸檬', '糖', '糖'],
@@ -507,8 +507,9 @@ describe('optimizer model', () => {
       source: 'computed' as const,
       salePrice: null,
       unlockedAt: 'seasoner-unlocked' as const,
+      equipment: [],
     }
-    const unique = {
+    const unique: RecipeCandidate = {
       id: 'unique-expensive',
       name: '不重複高成本',
       ingredients: ['檸檬', '糖'],
@@ -516,6 +517,7 @@ describe('optimizer model', () => {
       source: 'computed' as const,
       salePrice: null,
       unlockedAt: 'seasoner-unlocked' as const,
+      equipment: [],
     }
     const source = {
       customers: [{
