@@ -1027,7 +1027,7 @@ describe('multi-trip replenishment', () => {
       totalServings: 40,
       departureSlots: 9,
       effectiveDepartureSlotLimit: 10,
-      reservedTransientUsedCupSlot: 0,
+      reservedTransientUsedCupSlot: 1,
       usedCupDropMayOccur: false,
       droppedUsedCups: 0,
       peakOccupiedSlots: 10,
