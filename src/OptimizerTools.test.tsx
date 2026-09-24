@@ -257,14 +257,14 @@ describe('juice jar recipe search UX', () => {
     )
     expect(intermediate).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ identity: 'juice-state:v1:lemon>sugar' }),
-        expect.objectContaining({ identity: 'juice-state:v1:orange>mint' }),
+        expect.objectContaining({ identity: 'juice-state:v1:lemon/sugar' }),
+        expect.objectContaining({ identity: 'juice-state:v1:orange/mint' }),
       ]),
     )
     expect(
       intermediate.some(
         (entry) =>
-          entry.identity === 'juice-state:v1:lemon>sugar>orange>mint',
+          entry.identity === 'juice-state:v1:lemon/sugar>orange>mint',
       ),
     ).toBe(true)
   })
