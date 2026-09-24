@@ -219,6 +219,14 @@ describe('juice jar recipe search UX', () => {
       intermediate.some((entry) => entry.identity === 'juice-state:v1:lemon'),
     ).toBe(true)
     expect(
+      intermediate.some((entry) => entry.identity === 'juice-state:v1:orange'),
+    ).toBe(true)
+    expect(
+      searchIntermediateJuiceEntries(intermediate, '橙子').some(
+        (entry) => entry.identity === 'juice-state:v1:orange',
+      ),
+    ).toBe(true)
+    expect(
       searchIntermediateJuiceEntries(intermediate, '檸檬').some(
         (entry) => entry.ingredientIds.includes('lemon'),
       ),
