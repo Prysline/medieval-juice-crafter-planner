@@ -31,6 +31,11 @@ export const progressMilestones: ProgressMilestoneDefinition[] = [
     label: '階段五｜果汁調和器已解鎖',
     summary: '靜謐噴泉解鎖後寄信並隔天收信，解鎖果汁調和器。',
   },
+  {
+    id: 'advanced-tragic-washing-station-unlocked',
+    label: '階段六｜高級悲劇清洗台已解鎖',
+    summary: '東港村滿意度 525、靜謐噴泉滿意度 25 後寄信給爺爺；收到回信後解鎖高級悲劇清洗台。回信等待時間尚未確認。',
+  },
 ]
 
 export const progressMilestoneIds = progressMilestones.map(
