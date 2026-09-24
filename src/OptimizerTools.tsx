@@ -214,7 +214,7 @@ function ingredientLabel(ingredientId: string): string {
   return ingredientNameById.get(ingredientId) ?? ingredientId
 }
 
-function sequenceLabel(ingredientIds: string[]): string {
+function sequenceLabel(ingredientIds: readonly string[]): string {
   return formatRecipeSequence(ingredientIds.map(ingredientLabel))
 }
 
