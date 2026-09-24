@@ -6,6 +6,7 @@ import {
   WATER_STACK_CAPACITY,
 } from './inventoryRules'
 import type { PreparationShortfall } from './preparationShortfall'
+import { ingredientIdsFromJuiceStateIdentity } from './juiceStateIdentity'
 import type { MultiTripProductionJarFill } from './multiTripReplenishment'
 import {
   buildProductionPlan,
@@ -422,6 +423,10 @@ function primaryInputRequirements(
 export function buildNetProductionPlan(
   shortfall: PreparationShortfall,
 ): ProductionPlan {
+  if (shortfall.netProductionPlan) {
+    return shortfall.netProductionPlan
+  }
+
   return buildProductionPlan(
     shortfall.recipes
       .filter((recipe) => recipe.juiceUnitsToPrepare > 0)
@@ -497,6 +502,21 @@ export function buildProductionLogisticsPlan(
     inventory.waterUnits,
     WATER_STACK_CAPACITY,
   )
+
+  for (const [identity, quantity] of Object.entries(
+    inventory.intermediateJuiceUnits ?? {},
+  )) {
+    const ingredientIds =
+      ingredientIdsFromJuiceStateIdentity(identity)
+    if (!ingredientIds) continue
+
+    placeInitialMaterial(
+      intermediateKey(ingredientIds),
+      'intermediate',
+      quantity,
+      PROCESSING_STACK_CAPACITY,
+    )
+  }
 
   const initialSnapshot = storageSnapshot(
     shelfMaterials,
