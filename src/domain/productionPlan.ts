@@ -69,8 +69,15 @@ export interface IntermediateJuiceStockUsage {
   remainingUnits: number
 }
 
+export interface StockOffsetRecipeUsage {
+  recipeId: string
+  ingredientUnits: Record<string, number>
+  intermediateStockUnits: Record<string, number>
+}
+
 export interface StockOffsetProductionPlan extends ProductionPlan {
   intermediateStockUsage: IntermediateJuiceStockUsage[]
+  recipeUsage: StockOffsetRecipeUsage[]
 }
 
 const ingredientIdByName = new Map(
@@ -326,6 +333,19 @@ export function buildStockOffsetProductionPlan(
   }
 
   const quantityByStepKey = new Map<string, number>()
+  const recipeUsageById = new Map<string, StockOffsetRecipeUsage>()
+
+  function recipeUsage(recipeId: string): StockOffsetRecipeUsage {
+    const existing = recipeUsageById.get(recipeId)
+    if (existing) return existing
+    const created: StockOffsetRecipeUsage = {
+      recipeId,
+      ingredientUnits: {},
+      intermediateStockUnits: {},
+    }
+    recipeUsageById.set(recipeId, created)
+    return created
+  }
 
   function addStepQuantity(step: ProductionStep, quantity: number) {
     if (quantity <= 0) return
@@ -338,6 +358,7 @@ export function buildStockOffsetProductionPlan(
   function requireIntermediate(
     ingredientIds: string[],
     quantity: number,
+    recipeId: string,
   ) {
     if (quantity <= 0) return
 
@@ -350,6 +371,9 @@ export function buildStockOffsetProductionPlan(
       stock.remainingToAllocate -= used
       stock.usedUnits += used
       stock.remainingUnits = stock.availableUnits - stock.usedUnits
+      const usage = recipeUsage(recipeId)
+      usage.intermediateStockUnits[stock.identity] =
+        (usage.intermediateStockUnits[stock.identity] ?? 0) + used
       remaining -= used
     }
 
@@ -364,24 +388,54 @@ export function buildStockOffsetProductionPlan(
 
     addStepQuantity(producer, remaining)
 
+    if (
+      (producer.kind === 'juicing' || producer.kind === 'seasoning') &&
+      producer.addedIngredientId
+    ) {
+      const usage = recipeUsage(recipeId)
+      usage.ingredientUnits[producer.addedIngredientId] =
+        (usage.ingredientUnits[producer.addedIngredientId] ?? 0) +
+        remaining
+    }
+
     if (producer.kind === 'seasoning') {
-      requireIntermediate(producer.fromIngredientIds, remaining)
+      requireIntermediate(producer.fromIngredientIds, remaining, recipeId)
       return
     }
 
     if (producer.kind === 'blending') {
-      requireIntermediate(producer.fromIngredientIds, remaining)
+      requireIntermediate(producer.fromIngredientIds, remaining, recipeId)
       requireIntermediate(
         producer.secondaryFromIngredientIds ?? [],
         remaining,
+        recipeId,
       )
     }
   }
 
-  for (const step of fullPlan.steps) {
-    if (step.kind !== 'finalizing') continue
-    addStepQuantity(step, step.quantity)
-    requireIntermediate(step.fromIngredientIds, step.quantity)
+  for (const recipe of recipes) {
+    if (recipe.juiceUnits <= 0) continue
+    const path = productionPathForIngredientIds(recipe.ingredientIds)
+    const finalizer = path?.edges.find((edge) => edge.kind === 'finalizing')
+    if (!finalizer) {
+      throw new Error(
+        `Unsupported production path for recipe ${recipe.recipeId}`,
+      )
+    }
+    const fullFinalizer = fullPlan.steps.find(
+      (step) => step.key === finalizer.key,
+    )
+    if (!fullFinalizer) {
+      throw new Error(
+        `Missing finalizer for recipe ${recipe.recipeId}`,
+      )
+    }
+    addStepQuantity(fullFinalizer, recipe.juiceUnits)
+    requireIntermediate(
+      finalizer.fromIngredientIds,
+      recipe.juiceUnits,
+      recipe.recipeId,
+    )
   }
 
   const kindOrder: Record<ProductionStepKind, number> = {
@@ -440,9 +494,18 @@ export function buildStockOffsetProductionPlan(
         a.identity.localeCompare(b.identity),
     )
 
+  const recipeUsage = [...recipeUsageById.values()]
+    .map((usage): StockOffsetRecipeUsage => ({
+      recipeId: usage.recipeId,
+      ingredientUnits: { ...usage.ingredientUnits },
+      intermediateStockUnits: { ...usage.intermediateStockUnits },
+    }))
+    .sort((a, b) => a.recipeId.localeCompare(b.recipeId))
+
   return {
     steps,
     machineOperations,
     intermediateStockUsage,
+    recipeUsage,
   }
 }
