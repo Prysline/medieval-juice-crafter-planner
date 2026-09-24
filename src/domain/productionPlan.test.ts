@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { buildProductionPlan } from './productionPlan'
+import { juiceStateIdentity } from './juiceStateIdentity'
+import {
+  buildProductionPlan,
+  buildStockOffsetProductionPlan,
+} from './productionPlan'
 
 describe('production plan', () => {
   it('shares common prefixes before splitting final recipes', () => {
@@ -215,5 +219,173 @@ describe('production plan', () => {
       ]),
     )
     expect(result.machineOperations.blending).toBe(2)
+  })
+})
+
+
+describe('production plan stock offset', () => {
+  it('uses a deeper seasoned stock node before expanding its upstream edges', () => {
+    const identity = juiceStateIdentity(['lemon', 'sugar'])
+    const result = buildStockOffsetProductionPlan(
+      [
+        {
+          recipeId: 'lemon-sugar-mint',
+          recipeName: 'Lemon Sugar Mint',
+          ingredientIds: ['lemon', 'sugar', 'mint'],
+          juiceUnits: 2,
+          assignedServings: 4,
+        },
+      ],
+      { [identity]: 1 },
+    )
+
+    expect(
+      result.steps.map((step) => ({
+        key: step.key,
+        quantity: step.quantity,
+      })),
+    ).toEqual([
+      { key: 'juice:lemon', quantity: 1 },
+      { key: 'season:lemon>sugar', quantity: 1 },
+      { key: 'season:lemon>sugar>mint', quantity: 2 },
+      { key: 'finish:lemon>sugar>mint', quantity: 2 },
+    ])
+    expect(result.intermediateStockUsage).toEqual([
+      {
+        identity,
+        ingredientIds: ['lemon', 'sugar'],
+        availableUnits: 1,
+        usedUnits: 1,
+        remainingUnits: 0,
+      },
+    ])
+  })
+
+  it('uses already blended stock while keeping finalizing work', () => {
+    const identity = juiceStateIdentity([
+      'lemon',
+      'sugar',
+      'orange',
+      'mint',
+    ])
+    const result = buildStockOffsetProductionPlan(
+      [
+        {
+          recipeId: 'blend',
+          recipeName: 'Blend',
+          ingredientIds: ['lemon', 'sugar', 'orange', 'mint'],
+          juiceUnits: 2,
+          assignedServings: 4,
+        },
+      ],
+      { [identity]: 1 },
+    )
+
+    expect(
+      result.steps.map((step) => ({
+        key: step.key,
+        quantity: step.quantity,
+      })),
+    ).toEqual(
+      expect.arrayContaining([
+        { key: 'juice:lemon', quantity: 1 },
+        { key: 'season:lemon>sugar', quantity: 1 },
+        { key: 'juice:orange', quantity: 1 },
+        { key: 'season:orange>mint', quantity: 1 },
+        {
+          key: 'blend:lemon>sugar+orange>mint',
+          quantity: 1,
+        },
+        {
+          key: 'finish:lemon>sugar>orange>mint',
+          quantity: 2,
+        },
+      ]),
+    )
+    expect(result.machineOperations.finalizing).toBe(1)
+    expect(result.intermediateStockUsage[0]).toMatchObject({
+      identity,
+      usedUnits: 1,
+    })
+  })
+
+  it('does not spend one shared-prefix stock unit twice', () => {
+    const identity = juiceStateIdentity(['lemon', 'sugar'])
+    const result = buildStockOffsetProductionPlan(
+      [
+        {
+          recipeId: 'ab',
+          recipeName: 'AB',
+          ingredientIds: ['lemon', 'sugar'],
+          juiceUnits: 1,
+          assignedServings: 2,
+        },
+        {
+          recipeId: 'abc',
+          recipeName: 'ABC',
+          ingredientIds: ['lemon', 'sugar', 'mint'],
+          juiceUnits: 1,
+          assignedServings: 2,
+        },
+      ],
+      { [identity]: 1 },
+    )
+
+    expect(
+      result.steps.find((step) => step.key === 'juice:lemon'),
+    ).toMatchObject({ quantity: 1 })
+    expect(
+      result.steps.find(
+        (step) => step.key === 'season:lemon>sugar',
+      ),
+    ).toMatchObject({ quantity: 1 })
+    expect(
+      result.steps.find(
+        (step) => step.key === 'season:lemon>sugar>mint',
+      ),
+    ).toMatchObject({ quantity: 1 })
+    expect(result.intermediateStockUsage).toEqual([
+      expect.objectContaining({
+        identity,
+        availableUnits: 1,
+        usedUnits: 1,
+        remainingUnits: 0,
+      }),
+    ])
+  })
+
+  it('consumes one stock unit only once when a blender needs the same node twice', () => {
+    const identity = juiceStateIdentity(['lemon', 'sugar'])
+    const result = buildStockOffsetProductionPlan(
+      [
+        {
+          recipeId: 'double-lemon',
+          recipeName: 'Double Lemon',
+          ingredientIds: ['lemon', 'sugar', 'lemon', 'sugar'],
+          juiceUnits: 1,
+          assignedServings: 2,
+        },
+      ],
+      { [identity]: 1 },
+    )
+
+    expect(
+      result.steps.find((step) => step.key === 'juice:lemon'),
+    ).toMatchObject({ quantity: 1 })
+    expect(
+      result.steps.find(
+        (step) => step.key === 'season:lemon>sugar',
+      ),
+    ).toMatchObject({ quantity: 1 })
+    expect(
+      result.steps.find(
+        (step) => step.key === 'blend:lemon>sugar+lemon>sugar',
+      ),
+    ).toMatchObject({ quantity: 1 })
+    expect(result.intermediateStockUsage[0]).toMatchObject({
+      identity,
+      usedUnits: 1,
+      remainingUnits: 0,
+    })
   })
 })
