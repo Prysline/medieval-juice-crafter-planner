@@ -1425,6 +1425,7 @@ describe('delivery execution trace', () => {
       plannedTripNumber: 1,
       physicalJarId: 'jar-a',
       recipeId: 'recipe-a',
+      preparation: null,
     })
     expect(inventory).toEqual({
       ingredientUnits: { lemon: 1 },
