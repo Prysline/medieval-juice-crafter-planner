@@ -2296,6 +2296,37 @@ footer {
   font-weight: 900;
 }
 
+.optimizer-delivery-recipe-heading {
+  align-items: center !important;
+}
+
+.optimizer-delivery-recipe-group {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  min-width: 0;
+}
+
+.optimizer-delivery-recipe-group.active {
+  cursor: pointer;
+}
+
+.optimizer-delivery-recipe-group.committed,
+.optimizer-delivery-recipe-group.partial {
+  color: #4f6744;
+}
+
+.optimizer-delivery-recipe-group > input {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.optimizer-delivery-recipe-group > input:disabled {
+  cursor: default;
+}
+
 .optimizer-delivery-customer-list {
   display: grid !important;
   gap: 5px !important;
