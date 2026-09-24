@@ -238,11 +238,24 @@ describe('juice jar recipe search UX', () => {
         (entry) => entry.identity === 'juice-state:v1:orange',
       ),
     ).toBe(true)
-    expect(
-      searchIntermediateJuiceEntries(intermediate, '檸檬').some(
-        (entry) => entry.ingredientIds.includes('lemon'),
-      ),
-    ).toBe(true)
+    for (const [ingredientId, ingredientName] of [
+      ['lemon', '檸檬'],
+      ['orange', '橙子'],
+      ['carrot', '紅蘿蔔'],
+      ['pear', '梨'],
+      ['banana', '香蕉'],
+    ] as const) {
+      expect(
+        searchIntermediateJuiceEntries(intermediate, ingredientName).some(
+          (entry) => entry.identity === `juice-state:v1:${ingredientId}`,
+        ),
+      ).toBe(true)
+      expect(
+        searchIntermediateJuiceEntries(intermediate, ingredientId).some(
+          (entry) => entry.identity === `juice-state:v1:${ingredientId}`,
+        ),
+      ).toBe(true)
+    }
   })
 
   it('wraps keyboard navigation across the bounded result list', () => {
