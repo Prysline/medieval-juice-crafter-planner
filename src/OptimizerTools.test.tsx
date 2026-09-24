@@ -445,7 +445,7 @@ describe('delivery checklist UI', () => {
     expect(html).toContain('optimizer-delivery-recipe-group partial')
   })
 
-  it('renders a fully delivered recipe checked and non-reversible', () => {
+  it('does not infer recipe completion from an advanced physical cursor', () => {
     const plan = deliveryPlan()
     const cursor = deliveryCursor({
       nextTripNumber: 2,
@@ -461,10 +461,10 @@ describe('delivery checklist UI', () => {
         ['jack', 'leticia'],
       ),
     ).toEqual({
-      checked: true,
+      checked: false,
       partial: false,
-      canCommit: false,
-      pendingCustomerIds: [],
+      canCommit: true,
+      pendingCustomerIds: ['jack', 'leticia'],
     })
 
     const html = renderToStaticMarkup(
@@ -478,8 +478,8 @@ describe('delivery checklist UI', () => {
       />,
     )
 
-    expect(html).toContain('checked=""')
-    expect(html).toContain('disabled=""')
+    expect(html).not.toContain('checked=""')
+    expect(html).not.toContain('disabled=""')
   })
 
   it('lets a recipe group record customers spanning multiple planned trips', () => {
@@ -514,7 +514,7 @@ describe('delivery checklist UI', () => {
     expect(html).not.toContain('disabled=""')
   })
 
-  it('renders committed deliveries checked and non-reversible', () => {
+  it('does not infer canonical delivery from the physical cursor', () => {
     const plan = deliveryPlan()
     const cursor = deliveryCursor({
       tripPrepared: true,
@@ -523,7 +523,7 @@ describe('delivery checklist UI', () => {
 
     expect(
       deliveryCustomerControlState(plan, cursor, [], 'jack').status,
-    ).toBe('committed')
+    ).toBe('active')
 
     const html = renderToStaticMarkup(
       <DeliveryCustomerCheckbox
@@ -535,9 +535,9 @@ describe('delivery checklist UI', () => {
       />,
     )
 
-    expect(html).toContain('checked=""')
-    expect(html).toContain('disabled=""')
-    expect(html).toContain('已記錄今日供應')
+    expect(html).not.toContain('checked=""')
+    expect(html).not.toContain('disabled=""')
+    expect(html).toContain('可依實際送達順序勾選')
   })
 
   it('treats canonical supplied-customer state as the same committed delivery authority', () => {
@@ -568,7 +568,7 @@ describe('delivery checklist UI', () => {
     expect(html).toContain('已記錄今日供應')
   })
 
-  it('treats customers from completed trips as committed even after the cursor advances', () => {
+  it('keeps earlier planned-trip customers active until canonical supplied state records them', () => {
     const plan = deliveryPlan()
     const cursor = deliveryCursor({
       nextTripNumber: 2,
@@ -578,7 +578,7 @@ describe('delivery checklist UI', () => {
 
     expect(
       deliveryCustomerControlState(plan, cursor, [], 'leticia').status,
-    ).toBe('committed')
+    ).toBe('active')
     expect(
       deliveryCustomerControlState(plan, cursor, [], 'florida').status,
     ).toBe('active')
