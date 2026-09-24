@@ -2100,16 +2100,31 @@ footer {
   font-weight: 800;
 }
 
-.optimizer-run-button {
+.optimizer-run-actions {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.optimizer-run-button,
+.optimizer-cancel-button {
   width: 100%;
   min-height: 44px;
-  margin-top: 10px;
-  border: 1px solid #4f6744;
   border-radius: 10px;
-  background: #4f6744;
-  color: white;
   padding: 9px 14px;
   font-weight: 900;
+}
+
+.optimizer-run-button {
+  border: 1px solid #4f6744;
+  background: #4f6744;
+  color: white;
+}
+
+.optimizer-cancel-button {
+  border: 1px solid #9a6a2f;
+  background: #fff4dd;
+  color: #6d5432;
 }
 
 .optimizer-run-button:disabled {

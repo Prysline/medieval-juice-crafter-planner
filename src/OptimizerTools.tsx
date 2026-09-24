@@ -17,6 +17,10 @@ import type {
   OptimizationResult,
 } from './domain/optimizer'
 import {
+  isOptimizerWorkerCancelledError,
+  runOptimizerInWorker,
+} from './domain/optimizerWorkerClient'
+import {
   formatRecipeDisplayName,
   formatRecipeSequence,
 } from './domain/displayFormat'
@@ -626,6 +630,8 @@ function OptimizerTools({
     useState<DeliveryUiState>({ status: 'idle' })
   const deliveryCanonicalSyncGuardRef =
     useRef<DeliveryCanonicalSyncGuard | null>(null)
+  const optimizerAbortControllerRef =
+    useRef<AbortController | null>(null)
 
   const priorities = useMemo(
     () => uniquePriorities(primaryCriterion, secondaryOne, secondaryTwo),
@@ -767,6 +773,8 @@ function OptimizerTools({
   )
 
   useEffect(() => {
+    optimizerAbortControllerRef.current?.abort()
+    optimizerAbortControllerRef.current = null
     setRunState({ status: 'idle' })
     setDeliveryUiState({ status: 'idle' })
   }, [
@@ -780,6 +788,13 @@ function OptimizerTools({
     maxJarTypeSwitches,
     recipeCandidatePool,
   ])
+
+  useEffect(
+    () => () => {
+      optimizerAbortControllerRef.current?.abort()
+    },
+    [],
+  )
 
   useEffect(() => {
     const guard = deliveryCanonicalSyncGuardRef.current
@@ -973,20 +988,22 @@ function OptimizerTools({
 
 
   async function runOptimizer() {
+    optimizerAbortControllerRef.current?.abort()
+    const optimizerAbortController = new AbortController()
+    optimizerAbortControllerRef.current = optimizerAbortController
+
     setApplicationState({ status: 'idle' })
     setDeliveryUiState({ status: 'idle' })
     setRunState({ status: 'loading' })
 
     try {
       const [
-        { optimizeBatchPlan },
         { buildPreparationDemand },
         { buildPreparationShortfall },
         { buildProductionLogisticsPlan },
         { buildMultiTripReplenishmentPlan },
         { buildPlanApplicationTransactionDraft },
       ] = await Promise.all([
-        import('./domain/optimizer'),
         import('./domain/preparationDemand'),
         import('./domain/preparationShortfall'),
         import('./domain/productionLogistics'),
@@ -1008,7 +1025,7 @@ function OptimizerTools({
         throw new PlanningUserError('missing-jar-slot')
       }
 
-      const result = await optimizeBatchPlan(
+      const result = await runOptimizerInWorker(
         {
           customerIds,
           currentProgress,
@@ -1035,11 +1052,10 @@ function OptimizerTools({
               : { maxJarTypeSwitches: parsedMaxSwitches },
         },
         {
-          source: {
-            customers,
-            candidatePool: recipeCandidatePool,
-          },
+          customers,
+          candidatePool: recipeCandidatePool,
         },
+        optimizerAbortController.signal,
       )
 
       const preparationDemand = buildPreparationDemand(result)
@@ -1154,11 +1170,31 @@ function OptimizerTools({
         },
       })
     } catch (error) {
+      if (isOptimizerWorkerCancelledError(error)) {
+        if (
+          optimizerAbortControllerRef.current === optimizerAbortController
+        ) {
+          setRunState({ status: 'idle' })
+        }
+        return
+      }
       setRunState({
         status: 'error',
         error: presentPlanningError(error),
       })
+    } finally {
+      if (
+        optimizerAbortControllerRef.current === optimizerAbortController
+      ) {
+        optimizerAbortControllerRef.current = null
+      }
     }
+  }
+
+  function cancelOptimizer() {
+    optimizerAbortControllerRef.current?.abort()
+    optimizerAbortControllerRef.current = null
+    setRunState({ status: 'idle' })
   }
 
   return (
@@ -1605,25 +1641,36 @@ function OptimizerTools({
             </p>
           )}
 
-        <button
-          type="button"
-          className="optimizer-run-button"
-          disabled={
-            customerIds.length === 0 ||
-            runState.status === 'loading' ||
-            capacitySummary.physicalJuiceJarCount < 1 ||
-            capacitySummary.jarStorageCapacityExceeded ||
-            capacitySummary.maxJuiceJarSlotsPerTrip < 1
-          }
-          onClick={runOptimizer}
-        >
-          {runState.status === 'loading'
-            ? '正在載入求解器並規劃…'
-            : '產生最佳化規劃'}
-        </button>
+        <div className="optimizer-run-actions">
+          <button
+            type="button"
+            className="optimizer-run-button"
+            disabled={
+              customerIds.length === 0 ||
+              runState.status === 'loading' ||
+              capacitySummary.physicalJuiceJarCount < 1 ||
+              capacitySummary.jarStorageCapacityExceeded ||
+              capacitySummary.maxJuiceJarSlotsPerTrip < 1
+            }
+            onClick={runOptimizer}
+          >
+            {runState.status === 'loading'
+              ? '正在背景求解並規劃…'
+              : '產生最佳化規劃'}
+          </button>
+          {runState.status === 'loading' && (
+            <button
+              type="button"
+              className="optimizer-cancel-button"
+              onClick={cancelOptimizer}
+            >
+              取消規劃
+            </button>
+          )}
+        </div>
 
         <p className="optimizer-lazy-note">
-          求解器只會在按下規劃後 lazy-load；第一次執行需要載入 HiGHS WASM。
+          求解器只會在按下規劃後載入，並在背景 Worker 執行 HiGHS；第一次執行仍需要載入 WASM。大型候選或一般 fallback 可能需要較久，可隨時取消且不會寫入半成品結果。
         </p>
       </div>
 
