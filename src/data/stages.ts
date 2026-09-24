@@ -45,4 +45,22 @@ export const stages: StageDefinition[] = [
     label: '階段五',
     summary: '靜謐噴泉解鎖後寄下一封信；隔天回信解鎖果汁調和器。',
   },
+  {
+    id: 6,
+    label: '階段六',
+    summary: '東港村滿意度 525、靜謐噴泉滿意度 25 後寄信給爺爺；收到回信後解鎖高級悲劇清洗台。',
+    unlockRequirement: {
+      satisfactionByVillageRequired: {
+        'east-harbor': 525,
+        'tranquil-fountain': 25,
+      },
+      action: '寄信給爺爺',
+      timing: '收到回信後解鎖；等待時間未確認',
+    },
+    progressionNotes: [
+      '本次實測曾在一大早寄信後，約當日下午 15:00 收到回信。',
+      '由於該任務曾延遲一天才完成，尚不能判定「當日下午回信」是否為固定規則。',
+      '因此只確認「寄信後收到爺爺回信」是解鎖條件，不把同日或隔日寫成固定 timing。',
+    ],
+  },
 ]
