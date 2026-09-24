@@ -98,6 +98,7 @@ function transactionDraft(): PlanApplicationTransactionDraft {
       },
     },
     changes: {
+      intermediateJuice: [],
       ingredients: [
         {
           ingredientId: 'lemon',
@@ -240,6 +241,7 @@ function deliveryPlan(): DeliveryExecutionPlan {
         productionFills: [],
         initialJuiceDiscards: [],
         ingredientRequirements: [],
+        intermediateRequirements: [],
         productionWaterUnits: 0,
         cupsWashedBeforeTrip: 0,
         cupWashWaterUnits: 0,
@@ -269,6 +271,7 @@ function deliveryPlan(): DeliveryExecutionPlan {
         productionFills: [],
         initialJuiceDiscards: [],
         ingredientRequirements: [],
+        intermediateRequirements: [],
         productionWaterUnits: 0,
         cupsWashedBeforeTrip: 2,
         cupWashWaterUnits: 2,
