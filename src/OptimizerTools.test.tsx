@@ -409,7 +409,7 @@ describe('delivery checklist UI', () => {
     expect(html).toContain('A整組交付完成')
   })
 
-  it('shows recipe completion as mixed when only some assigned customers are committed', () => {
+  it('shows recipe completion as mixed when canonical supplied state contains only some assigned customers', () => {
     const plan = deliveryPlan()
     const cursor = deliveryCursor({
       tripPrepared: true,
@@ -420,7 +420,7 @@ describe('delivery checklist UI', () => {
       deliveryRecipeGroupControlState(
         plan,
         cursor,
-        [],
+        ['jack'],
         ['jack', 'leticia'],
       ),
     ).toEqual({
@@ -436,7 +436,7 @@ describe('delivery checklist UI', () => {
         customerIds={['jack', 'leticia']}
         plan={plan}
         cursor={cursor}
-        suppliedCustomerIds={[]}
+        suppliedCustomerIds={['jack']}
         onCommit={() => {}}
       />,
     )
