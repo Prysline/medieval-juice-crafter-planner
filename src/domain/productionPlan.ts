@@ -69,10 +69,16 @@ export interface IntermediateJuiceStockUsage {
   remainingUnits: number
 }
 
+export interface StockOffsetRecipeUnitUsage {
+  ingredientUnits: Record<string, number>
+  intermediateStockUnits: Record<string, number>
+}
+
 export interface StockOffsetRecipeUsage {
   recipeId: string
   ingredientUnits: Record<string, number>
   intermediateStockUnits: Record<string, number>
+  units: StockOffsetRecipeUnitUsage[]
 }
 
 export interface StockOffsetProductionPlan extends ProductionPlan {
@@ -342,6 +348,7 @@ export function buildStockOffsetProductionPlan(
       recipeId,
       ingredientUnits: {},
       intermediateStockUnits: {},
+      units: [],
     }
     recipeUsageById.set(recipeId, created)
     return created
@@ -359,6 +366,7 @@ export function buildStockOffsetProductionPlan(
     ingredientIds: string[],
     quantity: number,
     recipeId: string,
+    unitUsage: StockOffsetRecipeUnitUsage,
   ) {
     if (quantity <= 0) return
 
@@ -374,6 +382,8 @@ export function buildStockOffsetProductionPlan(
       const usage = recipeUsage(recipeId)
       usage.intermediateStockUnits[stock.identity] =
         (usage.intermediateStockUnits[stock.identity] ?? 0) + used
+      unitUsage.intermediateStockUnits[stock.identity] =
+        (unitUsage.intermediateStockUnits[stock.identity] ?? 0) + used
       remaining -= used
     }
 
@@ -396,10 +406,18 @@ export function buildStockOffsetProductionPlan(
       usage.ingredientUnits[producer.addedIngredientId] =
         (usage.ingredientUnits[producer.addedIngredientId] ?? 0) +
         remaining
+      unitUsage.ingredientUnits[producer.addedIngredientId] =
+        (unitUsage.ingredientUnits[producer.addedIngredientId] ?? 0) +
+        remaining
     }
 
     if (producer.kind === 'seasoning') {
-      requireIntermediate(producer.fromIngredientIds, remaining, recipeId)
+      requireIntermediate(
+        producer.fromIngredientIds,
+        remaining,
+        recipeId,
+        unitUsage,
+      )
       return
     }
 
@@ -409,6 +427,7 @@ export function buildStockOffsetProductionPlan(
         producer.secondaryFromIngredientIds ?? [],
         remaining,
         recipeId,
+        unitUsage,
       )
     }
   }
@@ -431,11 +450,20 @@ export function buildStockOffsetProductionPlan(
       )
     }
     addStepQuantity(fullFinalizer, recipe.juiceUnits)
-    requireIntermediate(
-      finalizer.fromIngredientIds,
-      recipe.juiceUnits,
-      recipe.recipeId,
-    )
+    const usage = recipeUsage(recipe.recipeId)
+    for (let unit = 0; unit < recipe.juiceUnits; unit += 1) {
+      const unitUsage: StockOffsetRecipeUnitUsage = {
+        ingredientUnits: {},
+        intermediateStockUnits: {},
+      }
+      requireIntermediate(
+        finalizer.fromIngredientIds,
+        1,
+        recipe.recipeId,
+        unitUsage,
+      )
+      usage.units.push(unitUsage)
+    }
   }
 
   const kindOrder: Record<ProductionStepKind, number> = {
@@ -499,6 +527,10 @@ export function buildStockOffsetProductionPlan(
       recipeId: usage.recipeId,
       ingredientUnits: { ...usage.ingredientUnits },
       intermediateStockUnits: { ...usage.intermediateStockUnits },
+      units: usage.units.map((unit) => ({
+        ingredientUnits: { ...unit.ingredientUnits },
+        intermediateStockUnits: { ...unit.intermediateStockUnits },
+      })),
     }))
     .sort((a, b) => a.recipeId.localeCompare(b.recipeId))
 
