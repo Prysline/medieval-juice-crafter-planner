@@ -699,6 +699,124 @@ function applyTripEndDiscards(
   }
 }
 
+export interface CanonicalDeliveryTransactionResult {
+  readonly inventory: InventoryState
+  readonly customerId: string
+  readonly plannedTripNumber: number
+  readonly physicalJarId: string
+  readonly recipeId: string
+  readonly droppedUsedCups: number
+}
+
+export type CanonicalDeliveryTransactionDraft =
+  | {
+      readonly status: 'ready'
+      readonly result: CanonicalDeliveryTransactionResult
+    }
+  | {
+      readonly status: 'needs-preparation'
+      readonly customerId: string
+      readonly plannedTripNumber: number
+      readonly physicalJarId: string
+      readonly recipeId: string
+    }
+
+/**
+ * Builds the first canonical-state-driven delivery transaction.
+ *
+ * Planning trip numbers are lookup/provenance only: they do not gate which
+ * customer may be served. This first D1 primitive deliberately commits only
+ * already-prepared jar contents. Missing jar contents return
+ * `needs-preparation` so a later D1 slice can derive the exact preparation
+ * events instead of replaying every event attached to the planning trip.
+ */
+export function buildCanonicalDeliveryTransaction(
+  plan: DeliveryExecutionPlan,
+  sourceInventory: InventoryState,
+  suppliedCustomerIds: readonly string[],
+  customerId: string,
+): CanonicalDeliveryTransactionDraft {
+  if (suppliedCustomerIds.includes(customerId)) {
+    throw new Error(`Customer ${customerId} is already supplied`)
+  }
+
+  let plannedTrip: DeliveryExecutionTrip | null = null
+  let delivery: DeliveryExecutionCustomer | null = null
+  for (const trip of plan.trips) {
+    const candidate = trip.deliveries.find(
+      (item) => item.customerId === customerId,
+    )
+    if (candidate) {
+      plannedTrip = trip
+      delivery = candidate
+      break
+    }
+  }
+
+  if (!plannedTrip || !delivery) {
+    throw new Error(
+      `Customer ${customerId} is not pending in the delivery plan`,
+    )
+  }
+
+  const inventory = cloneInventory(sourceInventory)
+  const jar = jarById(inventory, delivery.physicalJarId)
+  if (
+    jar.recipeId !== delivery.recipeId ||
+    jar.servings < 1
+  ) {
+    return {
+      status: 'needs-preparation',
+      customerId,
+      plannedTripNumber: plannedTrip.tripNumber,
+      physicalJarId: delivery.physicalJarId,
+      recipeId: delivery.recipeId,
+    }
+  }
+
+  if (inventory.cleanCups < 1) {
+    throw new Error(
+      `Customer ${customerId} cannot be served without a clean cup`,
+    )
+  }
+
+  const cleanAfter = inventory.cleanCups - 1
+  const returnedUsedCups = inventory.usedCups + 1
+  const occupiedSlotsIfReturned =
+    plannedTrip.juiceJarSlotsCarried +
+    cleanCupStacksFor(cleanAfter) +
+    cleanCupStacksFor(returnedUsedCups)
+
+  let droppedUsedCups = 0
+  inventory.cleanCups = cleanAfter
+  if (occupiedSlotsIfReturned <= BACKPACK_SLOT_CAPACITY) {
+    inventory.usedCups = returnedUsedCups
+  } else if (plan.policy === 'allow-drop-if-full') {
+    droppedUsedCups = 1
+  } else {
+    throw new Error(
+      `Customer ${customerId} cannot return a used cup within backpack capacity`,
+    )
+  }
+
+  jar.servings -= 1
+  if (jar.servings === 0) {
+    jar.recipeId = null
+  }
+
+  return {
+    status: 'ready',
+    result: {
+      inventory,
+      customerId,
+      plannedTripNumber: plannedTrip.tripNumber,
+      physicalJarId: delivery.physicalJarId,
+      recipeId: delivery.recipeId,
+      droppedUsedCups,
+    },
+  }
+}
+
 export function applyDeliveryExecutionCustomer(
   plan: DeliveryExecutionPlan,
   sourceInventory: InventoryState,
