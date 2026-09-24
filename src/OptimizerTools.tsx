@@ -191,6 +191,15 @@ const ingredientNameById = new Map(
 const recipeNameById = new Map(
   recipes.map((recipe) => [recipe.id, recipe.name]),
 )
+const rawJuiceNameByIngredientId = new Map(
+  recipes.flatMap((recipe) =>
+    recipe.ingredients.length === 1
+      ? ingredients
+          .filter((ingredient) => ingredient.name === recipe.ingredients[0])
+          .map((ingredient) => [ingredient.id, recipe.name] as const)
+      : [],
+  ),
+)
 
 export const optimizerCriterionOptions: Array<{
   value: OptimizationCriterion
@@ -252,7 +261,11 @@ export function intermediateJuiceInventoryEntries(
     byIdentity.set(identity, {
       identity,
       ingredientIds: [...juicingEdge.toIngredientIds],
-      label: sequenceLabel([...juicingEdge.toIngredientIds]),
+      label:
+        juicingEdge.toIngredientIds.length === 1
+          ? rawJuiceNameByIngredientId.get(juicingEdge.toIngredientIds[0]) ??
+            sequenceLabel([...juicingEdge.toIngredientIds])
+          : sequenceLabel([...juicingEdge.toIngredientIds]),
     })
   }
 
@@ -286,7 +299,8 @@ export function searchIntermediateJuiceEntries(
     .filter((entry) =>
       !normalized ||
       normalizeRecipeSearchText(entry.label).includes(normalized) ||
-      normalizeRecipeSearchText(entry.ingredientIds.join(' ')).includes(normalized),
+      normalizeRecipeSearchText(entry.ingredientIds.join(' ')).includes(normalized) ||
+      normalizeRecipeSearchText(entry.ingredientIds.map(ingredientLabel).join(' ')).includes(normalized),
     )
     .slice(0, Math.max(0, Math.floor(limit)))
 }
