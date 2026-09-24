@@ -380,10 +380,12 @@ export function buildStockOffsetProductionPlan(
       stock.usedUnits += used
       stock.remainingUnits = stock.availableUnits - stock.usedUnits
       const usage = usageForRecipe(recipeId)
-      usage.intermediateStockUnits[stock.identity] =
-        (usage.intermediateStockUnits[stock.identity] ?? 0) + used
-      unitUsage.intermediateStockUnits[stock.identity] =
-        (unitUsage.intermediateStockUnits[stock.identity] ?? 0) + used
+      if (used > 0) {
+        usage.intermediateStockUnits[stock.identity] =
+          (usage.intermediateStockUnits[stock.identity] ?? 0) + used
+        unitUsage.intermediateStockUnits[stock.identity] =
+          (unitUsage.intermediateStockUnits[stock.identity] ?? 0) + used
+      }
       remaining -= used
     }
 
