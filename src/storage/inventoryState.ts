@@ -1,4 +1,5 @@
 import { JUICE_JAR_CAPACITY } from '../domain/inventoryRules'
+import { ingredientIdsFromJuiceStateIdentity } from '../domain/juiceStateIdentity'
 import type {
   InventoryState,
   JuiceJarInventoryItem,
@@ -14,6 +15,7 @@ export const INVENTORY_STORAGE_KEY = 'mjc-inventory'
 function createEmptyInventoryState(): InventoryState {
   return {
     ingredientUnits: {},
+    intermediateJuiceUnits: {},
     waterUnits: 0,
     cleanCups: 0,
     usedCups: 0,
@@ -45,6 +47,27 @@ function normalizeIngredientUnits(
       .map(
         ([id, quantity]) =>
           [id, normalizeCount(quantity)] as const,
+      )
+      .filter(([, quantity]) => quantity > 0),
+  )
+}
+
+function normalizeIntermediateJuiceUnits(
+  value: unknown,
+): Record<string, number> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {}
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(
+        ([identity]) =>
+          ingredientIdsFromJuiceStateIdentity(identity) !== null,
+      )
+      .map(
+        ([identity, quantity]) =>
+          [identity, normalizeCount(quantity)] as const,
       )
       .filter(([, quantity]) => quantity > 0),
   )
@@ -106,6 +129,9 @@ export function normalizeInventoryState(value: unknown): InventoryState {
   const state = value as Partial<InventoryState>
   return {
     ingredientUnits: normalizeIngredientUnits(state.ingredientUnits),
+    intermediateJuiceUnits: normalizeIntermediateJuiceUnits(
+      state.intermediateJuiceUnits,
+    ),
     waterUnits: normalizeCount(state.waterUnits),
     cleanCups: normalizeCount(state.cleanCups),
     usedCups: normalizeCount(state.usedCups),
