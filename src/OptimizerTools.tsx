@@ -2,6 +2,7 @@ import { memo, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { customers } from './data/customers'
 import { ingredients } from './data/ingredients'
 import { recipes } from './data/recipes'
+import { recipeIngredientCapabilities } from './data/recipeIngredientCapabilities'
 import { ingredientIsAvailable } from './domain/availability'
 import {
   optimizerCustomerIds,
