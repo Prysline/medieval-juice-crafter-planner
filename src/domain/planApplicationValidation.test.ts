@@ -117,7 +117,8 @@ function draftFromBasis(
       },
     },
     changes: {
-      ingredients: [],
+      intermediateJuice: [],
+    ingredients: [],
       water: {
         beforeUnits: source.inventory.waterUnits,
         afterUnits: source.inventory.waterUnits,
