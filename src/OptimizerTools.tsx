@@ -2977,7 +2977,7 @@ function OptimizerResultPanel({
 
         <div className="optimizer-delivery-toolbar">
           <span>
-            勾選即代表該顧客已實際收到果汁，會立即同步果汁罐、杯具、庫存與「今日已供應」。
+            勾選個別顧客或配方標題，代表對應顧客已實際收到果汁，會立即同步果汁罐、杯具、庫存與「今日已供應」。
             已提交的交付不能靠取消 checkbox 復原。
           </span>
           {transactionDraftInvalidatedByPartialDelivery && (
