@@ -754,6 +754,14 @@ export interface CanonicalDeliveryTransactionResult {
   readonly droppedUsedCups: number
 }
 
+export interface CanonicalDeliveryPreparationEvents {
+  readonly initialJuiceDiscards: readonly MultiTripDiscardedInitialJuice[]
+  readonly ingredientRequirements: readonly DeliveryExecutionIngredientRequirement[]
+  readonly intermediateRequirements: readonly DeliveryExecutionIntermediateRequirement[]
+  readonly productionWaterUnits: number
+  readonly productionFill: MultiTripProductionJarFill
+}
+
 export type CanonicalDeliveryTransactionDraft =
   | {
       readonly status: 'ready'
@@ -766,6 +774,7 @@ export type CanonicalDeliveryTransactionDraft =
       readonly physicalJarId: string
       readonly recipeId: string
       readonly preparation: DeliveryExecutionPreparationLoad | null
+      readonly events: CanonicalDeliveryPreparationEvents | null
     }
 
 /**
@@ -824,6 +833,45 @@ export function buildCanonicalDeliveryTransaction(
             load.physicalJarId === delivery.physicalJarId &&
             load.recipeId === delivery.recipeId,
         ) ?? null,
+      events: (() => {
+        const preparation =
+          plannedTrip.preparationLoads?.find(
+            (load) =>
+              load.physicalJarId === delivery.physicalJarId &&
+              load.recipeId === delivery.recipeId,
+          ) ?? null
+        if (!preparation) return null
+
+        const initialJuiceDiscards =
+          plannedTrip.initialJuiceDiscards.filter(
+            (discarded) =>
+              discarded.physicalJarId === delivery.physicalJarId,
+          )
+        const currentJar = jarById(inventory, delivery.physicalJarId)
+        if (currentJar.servings > 0) {
+          const plannedDiscardServings = initialJuiceDiscards.reduce(
+            (sum, discarded) => sum + discarded.servings,
+            0,
+          )
+          if (
+            currentJar.recipeId !==
+              initialJuiceDiscards[0]?.recipeId ||
+            plannedDiscardServings !== currentJar.servings
+          ) {
+            throw new Error(
+              `Canonical preparation cannot overwrite current contents of physical jar ${delivery.physicalJarId}`,
+            )
+          }
+        }
+
+        return {
+          initialJuiceDiscards,
+          ingredientRequirements: preparation.ingredientRequirements,
+          intermediateRequirements: preparation.intermediateRequirements,
+          productionWaterUnits: preparation.productionWaterUnits,
+          productionFill: preparation.fill,
+        }
+      })(),
     }
   }
 
