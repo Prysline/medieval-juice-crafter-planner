@@ -38,13 +38,26 @@ function eligibleForPolicy(
   return true
 }
 
+function usesUniqueIngredients(candidate: RecipeCandidate): boolean {
+  return new Set(candidate.ingredients).size === candidate.ingredients.length
+}
+
+function eligibleForCostMode(
+  candidate: RecipeCandidate,
+  costMode: RecommendationCostMode,
+): boolean {
+  return costMode !== 'maximum' || usesUniqueIngredients(candidate)
+}
+
 function costedFullMatches(
   candidates: readonly RecipeCandidate[],
   customer: Customer,
   policy: RecommendationPolicy,
+  costMode: RecommendationCostMode,
 ): CostedRecipeCandidate[] {
   return candidates.flatMap((candidate) => {
     if (!eligibleForPolicy(candidate, policy)) return []
+    if (!eligibleForCostMode(candidate, costMode)) return []
     if (!recipeCandidateMatchesCustomer(candidate, customer)) return []
 
     const cost = calculateRecipeIngredientCost(candidate)
@@ -69,7 +82,12 @@ export function bestFullMatchRecommendation(
   policy: RecommendationPolicy,
   costMode: RecommendationCostMode,
 ): BestRecipeRecommendation | null {
-  const costed = costedFullMatches(candidates, customer, policy)
+  const costed = costedFullMatches(
+    candidates,
+    customer,
+    policy,
+    costMode,
+  )
   if (costed.length === 0) return null
 
   const targetBatchCost =
@@ -107,6 +125,7 @@ export function sortFullMatchCandidatesByIngredientCost(
   costMode: RecommendationCostMode,
 ): RecipeCandidate[] {
   return candidates
+    .filter((candidate) => eligibleForCostMode(candidate, costMode))
     .map((candidate, index) => ({
       candidate,
       index,
