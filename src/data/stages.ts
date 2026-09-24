@@ -63,4 +63,22 @@ export const stages: StageDefinition[] = [
       '因此只確認「寄信後收到爺爺回信」是解鎖條件，不把同日或隔日寫成固定 timing。',
     ],
   },
+  {
+    id: 7,
+    label: '階段七',
+    summary: '東港村顧客 29、靜謐噴泉顧客 15 後寄信給爺爺；收到回信後解鎖高級柑橘榨汁機。',
+    unlockRequirement: {
+      formalCustomersByVillageRequired: {
+        'east-harbor': 29,
+        'tranquil-fountain': 15,
+      },
+      action: '寄信給爺爺',
+      timing: '收到回信後解鎖；約 6 小時規則待驗證',
+    },
+    progressionNotes: [
+      '目前兩次主線信件觀察約為 08:4X 寄信 → 14:00 回信、09:XX 寄信 → 15:00 回信。',
+      '兩次都接近寄信後 6 小時，因此「約 6 小時後回信」目前是強烈推測，但尚未升格為固定規則。',
+      '玩家推測若寄信時間太晚，可能要等隔天才能取信；目前尚缺直接跨日邊界實測。',
+    ],
+  },
 ]

@@ -1,4 +1,4 @@
-export type StageId = 1 | 2 | 3 | 4 | 5 | 6
+export type StageId = 1 | 2 | 3 | 4 | 5 | 6 | 7
 
 export type ProgressMilestoneId =
   | 'opening'
@@ -8,6 +8,7 @@ export type ProgressMilestoneId =
   | 'tranquil-fountain-unlocked'
   | 'juice-blender-unlocked'
   | 'advanced-tragic-washing-station-unlocked'
+  | 'advanced-citrus-juicer-unlocked'
 
 export type VillageId = 'east-harbor' | 'tranquil-fountain'
 
@@ -108,6 +109,7 @@ export interface StageUnlockRequirement {
   satisfactionRequired?: number
   satisfactionByVillageRequired?: Partial<Record<VillageId, number>>
   formalCustomersRequired?: number
+  formalCustomersByVillageRequired?: Partial<Record<VillageId, number>>
   action?: string
   timing?: string
 }

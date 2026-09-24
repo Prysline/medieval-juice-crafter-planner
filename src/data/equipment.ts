@@ -65,4 +65,12 @@ export const equipment: Equipment[] = [
     seller: '木匠',
     note: '階段六：東港村滿意度 525、靜謐噴泉滿意度 25 後寄信給爺爺；收到回信後解鎖購買。一次可清洗 5 個杯子；回信等待時間與實際清洗水量尚未確認。',
   },
+  {
+    id: 'advanced-citrus-juicer',
+    name: '高級柑橘榨汁機',
+    unlockedAt: 'advanced-citrus-juicer-unlocked',
+    buyPrice: 1200,
+    seller: '木匠',
+    note: '階段七：東港村顧客 29、靜謐噴泉顧客 15 後寄信給爺爺；收到回信後解鎖購買。信件只確認可節省柑橘榨汁時間，實際每批容量、處理時間與效率倍率尚未確認。',
+  },
 ]
