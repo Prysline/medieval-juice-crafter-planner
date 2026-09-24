@@ -427,12 +427,13 @@ export function buildStockOffsetProductionPlan(
 
   const intermediateStockUsage = [...stockByNode.values()]
     .filter((stock) => stock.usedUnits > 0)
-    .map(
-      ({
-        remainingToAllocate: _remainingToAllocate,
-        ...stock
-      }) => stock,
-    )
+    .map((stock): IntermediateJuiceStockUsage => ({
+      identity: stock.identity,
+      ingredientIds: [...stock.ingredientIds],
+      availableUnits: stock.availableUnits,
+      usedUnits: stock.usedUnits,
+      remainingUnits: stock.remainingUnits,
+    }))
     .sort(
       (a, b) =>
         b.ingredientIds.length - a.ingredientIds.length ||
