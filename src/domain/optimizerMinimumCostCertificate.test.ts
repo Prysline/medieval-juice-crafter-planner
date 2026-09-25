@@ -18,6 +18,7 @@ describe('production-scale minimum-cost certificate', () => {
       satisfactionByVillage: {
         'east-harbor': 999,
         'tranquil-fountain': 999,
+        'ibex-statue': 0,
       },
       formalCustomerIds: customerIds,
       candidatePolicy: 'allow-unambiguous-computed',
