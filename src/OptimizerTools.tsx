@@ -69,6 +69,11 @@ import {
 } from './storage/productionChecklist'
 import { commitPlanApplicationTransaction } from './storage/planApplicationCommit'
 import {
+  ingredientChecklistFingerprint,
+  readIngredientChecklist,
+  writeIngredientChecklist,
+} from './storage/ingredientChecklist'
+import {
   deliveryExecutionCanonicalBasisFingerprint,
   type DeliveryExecutionCommitStaleField,
 } from './storage/deliveryExecutionCommit'
@@ -2777,6 +2782,56 @@ function OptimizerResultPanel({
   const purchaseItemByIngredientId = new Map(
     result.shoppingList.map((item) => [item.ingredientId, item]),
   )
+  const ingredientChecklistItems = preparationShortfall.ingredients.map(
+    (item) => ({
+      ingredientId: item.ingredientId,
+      requiredUnits: item.requiredUnits,
+      inventoryUnitsUsed: item.inventoryUnitsUsed,
+      purchaseUnits: item.purchaseUnits,
+    }),
+  )
+  const ingredientChecklistPlanFingerprint =
+    ingredientChecklistFingerprint(ingredientChecklistItems)
+  const [checkedIngredientIds, setCheckedIngredientIds] = useState<Set<string>>(
+    () =>
+      new Set(
+        readIngredientChecklist(
+          window.localStorage,
+          ingredientChecklistItems,
+        ),
+      ),
+  )
+
+  useEffect(() => {
+    setCheckedIngredientIds(
+      new Set(
+        readIngredientChecklist(
+          window.localStorage,
+          ingredientChecklistItems,
+        ),
+      ),
+    )
+  }, [ingredientChecklistPlanFingerprint])
+
+  function setIngredientChecked(
+    ingredientId: string,
+    checked: boolean,
+  ) {
+    setCheckedIngredientIds((current) => {
+      const next = new Set(current)
+      if (checked) {
+        next.add(ingredientId)
+      } else {
+        next.delete(ingredientId)
+      }
+      writeIngredientChecklist(
+        window.localStorage,
+        ingredientChecklistItems,
+        next,
+      )
+      return next
+    })
+  }
   const productionStepsByEquipment =
     productionLogistics.productionPlan.steps.reduce<
       Record<string, ProductionLogisticsPlan['productionPlan']['steps']>
@@ -2916,10 +2971,21 @@ function OptimizerResultPanel({
                     item.ingredientId,
                   )
                   return (
-                    <div
+                    <label
                       className="optimizer-shopping-row"
                       key={item.ingredientId}
                     >
+                      <input
+                        type="checkbox"
+                        checked={checkedIngredientIds.has(item.ingredientId)}
+                        onChange={(event) =>
+                          setIngredientChecked(
+                            item.ingredientId,
+                            event.currentTarget.checked,
+                          )
+                        }
+                        aria-label={item.name + ' 已備齊'}
+                      />
                       <strong>{item.name}</strong>
                       <div className="optimizer-shopping-values">
                         <span>需求：{item.requiredUnits} 單位</span>
@@ -2941,7 +3007,7 @@ function OptimizerResultPanel({
                           </span>
                         )}
                       </div>
-                    </div>
+                    </label>
                   )
                 })}
               </div>
