@@ -70,6 +70,7 @@ function transactionDraft(): PlanApplicationTransactionDraft {
       satisfactionByVillage: {
         'east-harbor': 0,
         'tranquil-fountain': 0,
+        'ibex-statue': 0,
       },
       formalCustomerIds: ['jack'],
       suppliedCustomerIds: [],
@@ -101,6 +102,7 @@ function transactionDraft(): PlanApplicationTransactionDraft {
       satisfactionByVillage: {
         'east-harbor': 0,
         'tranquil-fountain': 0,
+        'ibex-statue': 0,
       },
       formalCustomerIds: ['jack'],
       suppliedCustomerIds: ['jack'],
