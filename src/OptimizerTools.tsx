@@ -2564,6 +2564,41 @@ export function customerIdsInPlannedTripOrder(
     .map(({ customerId }) => customerId)
 }
 
+
+export function recipePlansInPlannedTripOrder<
+  T extends { customerIds: readonly string[] },
+>(
+  recipePlans: readonly T[],
+  plan: DeliveryExecutionPlan | null,
+): T[] {
+  const tripByCustomerId = new Map(
+    (plan?.trips ?? []).flatMap((trip) =>
+      trip.deliveries.map(
+        (delivery) => [delivery.customerId, trip.tripNumber] as const,
+      ),
+    ),
+  )
+
+  return recipePlans
+    .map((recipePlan, originalIndex) => ({
+      recipePlan,
+      originalIndex,
+      firstTripNumber: recipePlan.customerIds.reduce(
+        (firstTripNumber, customerId) =>
+          Math.min(
+            firstTripNumber,
+            tripByCustomerId.get(customerId) ?? Number.MAX_SAFE_INTEGER,
+          ),
+        Number.MAX_SAFE_INTEGER,
+      ),
+    }))
+    .sort(
+      (left, right) =>
+        left.firstTripNumber - right.firstTripNumber ||
+        left.originalIndex - right.originalIndex,
+    )
+    .map(({ recipePlan }) => recipePlan)
+}
 export function DeliveryCustomerCheckbox({
   customerId,
   plan,
@@ -3291,7 +3326,10 @@ function OptimizerResultPanel({
           <p className="empty-tool-state">本次沒有可製作的果汁。</p>
         ) : (
           <div className="optimizer-batch-list">
-            {result.recipePlans.map((plan) => (
+            {recipePlansInPlannedTripOrder(
+              result.recipePlans,
+              deliveryExecutionPlan,
+            ).map((plan) => (
               <article className="optimizer-batch-card" key={plan.recipeId}>
                 <div className="optimizer-delivery-recipe-heading">
                   <DeliveryRecipeGroupCheckbox
