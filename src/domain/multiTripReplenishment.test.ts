@@ -836,6 +836,7 @@ describe('multi-trip replenishment', () => {
           })),
       ),
     ).toEqual([
+      { recipeId: 'a', fillAction: 'use-existing' },
       { recipeId: 'a', fillAction: 'refill-same-type' },
     ])
     expectScheduleConsistency(result)
