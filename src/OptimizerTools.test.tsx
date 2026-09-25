@@ -245,6 +245,8 @@ describe('juice jar recipe search UX', () => {
         effects: [],
         equipment: ['柑橘榨汁機', '調味器', '果汁調和器', '果汁成品台'],
         source: 'observed',
+        unlockedAt: 'juice-blender-unlocked',
+        salePrice: null,
       },
       sources: ['observed'],
       savedRecipeIds: [],
