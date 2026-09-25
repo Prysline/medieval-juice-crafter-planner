@@ -442,7 +442,7 @@ describe('delivery checklist UI', () => {
     expect(html).toContain('可記錄今日已供應')
   })
 
-  it('keeps planned trip metadata without blocking out-of-order delivery checkboxes', () => {
+  it('keeps planned trip metadata while blocking a later trip until the active trip is complete', () => {
     const plan = deliveryPlan()
     const cursor = deliveryCursor()
 
@@ -483,8 +483,27 @@ describe('delivery checklist UI', () => {
     expect(activeHtml).toContain('type="checkbox"')
     expect(activeHtml).not.toContain('disabled=""')
     expect(activeHtml).toContain('可依實際送達順序勾選')
-    expect(laterHtml).not.toContain('disabled=""')
-    expect(laterHtml).toContain('規劃第 2 趟')
+    expect(laterHtml).toContain('disabled=""')
+    expect(laterHtml).toContain('請先完成第 1 趟')
+  })
+
+  it('limits a recipe-group commit to customers in the active trip', () => {
+    const plan = deliveryPlan()
+    const cursor = deliveryCursor()
+
+    expect(
+      deliveryRecipeGroupControlState(
+        plan,
+        cursor,
+        [],
+        ['jack', 'florida'],
+      ),
+    ).toEqual({
+      checked: false,
+      partial: false,
+      canCommit: true,
+      pendingCustomerIds: ['jack'],
+    })
   })
 
   it('lets a recipe heading complete all currently active customers in that recipe', () => {
