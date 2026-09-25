@@ -847,6 +847,71 @@ describe('planner error UX', () => {
 })
 
 describe('plan application preview', () => {
+  it('shows terminal jar contents even when the jar has no net before/after change', () => {
+    const base = transactionDraft()
+    const draft: PlanApplicationTransactionDraft = {
+      ...base,
+      before: {
+        ...base.before,
+        inventory: {
+          ...base.before.inventory,
+          juiceJars: [
+            {
+              id: 'jar-1',
+              recipeId: 'lemon-juice',
+              servings: 1,
+            },
+          ],
+        },
+      },
+      after: {
+        ...base.after,
+        inventory: {
+          ...base.after.inventory,
+          juiceJars: [
+            {
+              id: 'jar-1',
+              recipeId: 'lemon-juice',
+              servings: 1,
+            },
+          ],
+        },
+      },
+      changes: {
+        ...base.changes,
+        juiceJars: [],
+        discardedJuice: [],
+      },
+    }
+    const terminalFills: MultiTripProductionJarFill[] = [
+      {
+        physicalJarId: 'jar-1',
+        recipeId: 'lemon-juice',
+        recipeName: '檸檬汁',
+        beforeTripNumber: 2,
+        servings: 2,
+        servingsAfterFill: 2,
+        fillAction: 'refill-same-type',
+        previousRecipeId: 'lemon-juice',
+        previousRecipeName: '檸檬汁',
+        receiver: 'carried-jar',
+      },
+    ]
+
+    const html = renderToStaticMarkup(
+      <PlanApplicationPreview
+        draft={draft}
+        productionJarFills={terminalFills}
+        onApply={() => {}}
+      />,
+    )
+
+    expect(html).toContain('期末沒有果汁罐內容淨變更')
+    expect(html).toContain('期末果汁罐內容')
+    expect(html).toContain('果汁罐 jar-1')
+    expect(html).toContain('檸檬汁 · 1 杯')
+  })
+
   it('renders before/after state and the Phase 5C-4 apply control', () => {
     const html = renderToStaticMarkup(
       <PlanApplicationPreview
