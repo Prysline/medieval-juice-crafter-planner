@@ -4,11 +4,12 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --force",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "smoke:highs:pages-like": "node scripts/highs-runtime-smoke.mjs --dir dist --base /medieval-juice-crafter-planner/"
+    "smoke:highs:pages-like": "node scripts/highs-runtime-smoke.mjs --dir dist --base /medieval-juice-crafter-planner/",
+    "smoke:highs:dev": "node scripts/highs-dev-runtime-smoke.mjs"
   },
   "dependencies": {
     "react": "^19.1.1",

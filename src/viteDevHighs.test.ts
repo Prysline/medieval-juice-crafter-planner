@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { createServer } from 'vite'
 import viteConfig from '../vite.config'
 
-describe('Vite HiGHS development loading', () => {
+describe('Vite HiGHS low-level development module loading', () => {
   it(
     'serves the package-relative HiGHS WASM as WebAssembly instead of HTML',
     async () => {
       const config = viteConfig
+      // This unit test isolates package-relative module serving at root.
+      // The full configured base + real optimizer Worker path is covered by
+      // scripts/highs-dev-runtime-smoke.mjs in CI.
       const server = await createServer({
         ...config,
         configFile: false,
