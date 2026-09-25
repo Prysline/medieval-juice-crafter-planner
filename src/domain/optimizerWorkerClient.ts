@@ -22,11 +22,12 @@ export function isOptimizerWorkerCancelledError(
   return error instanceof OptimizerWorkerCancelledError
 }
 
-export function runOptimizerInWorker(
+function runOptimizerWorkerRaw(
   request: OptimizationRequest,
   source: OptimizationSource,
-  signal?: AbortSignal,
-): Promise<OptimizationResult> {
+  signal: AbortSignal | undefined,
+  collectRuntimeDiagnostics: boolean,
+): Promise<OptimizerWorkerResponse> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
       reject(new OptimizerWorkerCancelledError())
@@ -54,13 +55,7 @@ export function runOptimizerInWorker(
     worker.onmessage = (
       event: MessageEvent<OptimizerWorkerResponse>,
     ) => {
-      finish(() => {
-        if (event.data.ok) {
-          resolve(event.data.result)
-          return
-        }
-        reject(deserializeOptimizerWorkerError(event.data.error))
-      })
+      finish(() => resolve(event.data))
     }
 
     worker.onerror = (event) => {
@@ -75,7 +70,35 @@ export function runOptimizerInWorker(
 
     signal?.addEventListener('abort', handleAbort, { once: true })
 
-    const payload: OptimizerWorkerRequest = { request, source }
+    const payload: OptimizerWorkerRequest = {
+      request,
+      source,
+      collectRuntimeDiagnostics,
+    }
     worker.postMessage(payload)
   })
+}
+
+export async function runOptimizerInWorker(
+  request: OptimizationRequest,
+  source: OptimizationSource,
+  signal?: AbortSignal,
+): Promise<OptimizationResult> {
+  const response = await runOptimizerWorkerRaw(
+    request,
+    source,
+    signal,
+    false,
+  )
+
+  if (response.ok) return response.result
+  throw deserializeOptimizerWorkerError(response.error)
+}
+
+export function runOptimizerRuntimeSmokeInWorker(
+  request: OptimizationRequest,
+  source: OptimizationSource,
+  signal?: AbortSignal,
+): Promise<OptimizerWorkerResponse> {
+  return runOptimizerWorkerRaw(request, source, signal, true)
 }
