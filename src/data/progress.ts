@@ -41,6 +41,11 @@ export const progressMilestones: ProgressMilestoneDefinition[] = [
     label: '階段七｜高級柑橘榨汁機已解鎖',
     summary: '東港村顧客 29、靜謐噴泉顧客 15 後寄信給爺爺；收到回信後解鎖高級柑橘榨汁機。回信約 6 小時的規則仍待更多實測。',
   },
+  {
+    id: 'ibex-statue-unlocked',
+    label: '階段七｜羱羊雕像已解鎖',
+    summary: '完成階段七後半主線後解鎖羱羊雕像、該區顧客、商店與一般原料。',
+  },
 ]
 
 export const progressMilestoneIds = progressMilestones.map(
