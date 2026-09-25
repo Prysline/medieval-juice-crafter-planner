@@ -3458,7 +3458,7 @@ function OptimizerResultPanel({
   )
 }
 
-function SalesTripPlanBlock({
+export function SalesTripPlanBlock({
   plan,
 }: {
   plan: MultiTripReplenishmentPlan
@@ -3504,6 +3504,28 @@ function SalesTripPlanBlock({
             ? ' · 分布於 ' + plan.leftoverJarContents.length + ' 個 physical jar 記錄'
             : ''}
         </p>
+        {plan.leftoverJarContents.map((leftover) => {
+          const carriedOnLaterTrip = plan.trips.some(
+            (trip) =>
+              trip.tripNumber > leftover.tripNumber &&
+              trip.carriedPhysicalJarIds.includes(leftover.physicalJarId),
+          )
+          return (
+            <p
+              key={
+                'terminal-leftover-' +
+                leftover.physicalJarId +
+                '-' +
+                leftover.recipeId
+              }
+            >
+              期末果汁罐：{leftover.physicalJarId} ·{' '}
+              {formatRecipeDisplayName(leftover.recipeName)} · {leftover.servings}{' '}
+              杯 · 第 {leftover.tripNumber} 趟後
+              {carriedOnLaterTrip ? '仍隨身保留' : '留在家中'}
+            </p>
+          )
+        })}
         <small>
           {tripPolicyNote(plan)}
           {plan.totalLeftoverServings > 0
