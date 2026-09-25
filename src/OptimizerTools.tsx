@@ -1,5 +1,6 @@
 import { memo, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { customers } from './data/customers'
+import { villageNames } from './data/villages'
 import { ingredients } from './data/ingredients'
 import { recipes } from './data/recipes'
 import { recipeIngredientCapabilities } from './data/recipeIngredientCapabilities'
@@ -11,6 +12,7 @@ import {
   optimizerOperationQuantities,
   optimizerWaterFetchSlots,
   type OptimizerCustomerScope,
+  type OptimizerCustomerTarget,
 } from './domain/optimizerUi'
 import type {
   OptimizationCandidatePolicy,
@@ -89,6 +91,7 @@ import type {
   ProgressMilestoneId,
   RecipeCandidate,
   SatisfactionByVillage,
+  VillageId,
 } from './types'
 
 interface OptimizerToolsProps {
@@ -794,6 +797,13 @@ function OptimizerTools({
   onSuppliedCustomerIdsCommitted,
 }: OptimizerToolsProps) {
   const [scope, setScope] = useState<OptimizerCustomerScope>('all')
+  const [targetMode, setTargetMode] =
+    useState<OptimizerCustomerTarget['mode']>('all')
+  const [selectedVillageIds, setSelectedVillageIds] =
+    useState<VillageId[]>([])
+  const [selectedCustomerIds, setSelectedCustomerIds] =
+    useState<string[]>([])
+  const [customerTargetQuery, setCustomerTargetQuery] = useState('')
   const [candidatePolicy, setCandidatePolicy] =
     useState<OptimizationCandidatePolicy>('trusted-only')
   const [primaryCriterion, setPrimaryCriterion] =
@@ -954,7 +964,7 @@ function OptimizerTools({
   }
 
 
-  const customerIds = useMemo(
+  const baseCustomerIds = useMemo(
     () =>
       optimizerCustomerIds(
         customers,
@@ -973,6 +983,63 @@ function OptimizerTools({
     ],
   )
 
+  const customerTarget = useMemo<OptimizerCustomerTarget>(() => {
+    if (targetMode === 'villages') {
+      return { mode: 'villages', villageIds: selectedVillageIds }
+    }
+    if (targetMode === 'customers') {
+      return { mode: 'customers', customerIds: selectedCustomerIds }
+    }
+    return { mode: 'all' }
+  }, [targetMode, selectedVillageIds, selectedCustomerIds])
+
+  const customerIds = useMemo(
+    () =>
+      optimizerCustomerIds(
+        customers,
+        currentProgress,
+        satisfactionByVillage,
+        suppliedCustomerIds,
+        formalCustomerIds,
+        scope,
+        customerTarget,
+      ),
+    [
+      currentProgress,
+      satisfactionByVillage,
+      suppliedCustomerIds,
+      formalCustomerIds,
+      scope,
+      customerTarget,
+    ],
+  )
+
+  const targetableCustomers = useMemo(() => {
+    const eligible = new Set(baseCustomerIds)
+    return customers.filter((customer) => eligible.has(customer.id))
+  }, [baseCustomerIds])
+
+  const targetableVillageIds = useMemo(
+    () =>
+      [...new Set(targetableCustomers.map((customer) => customer.villageId))],
+    [targetableCustomers],
+  )
+
+  const filteredTargetCustomers = useMemo(() => {
+    const query = customerTargetQuery.trim().toLocaleLowerCase('zh-Hant')
+    if (!query) return targetableCustomers
+    return targetableCustomers.filter((customer) =>
+      [
+        customer.name,
+        customer.occupation,
+        villageNames[customer.villageId],
+      ]
+        .join(' ')
+        .toLocaleLowerCase('zh-Hant')
+        .includes(query),
+    )
+  }, [customerTargetQuery, targetableCustomers])
+
   useEffect(() => {
     optimizerAbortControllerRef.current?.abort()
     optimizerAbortControllerRef.current = null
@@ -983,6 +1050,9 @@ function OptimizerTools({
     satisfactionByVillage,
     formalCustomerIds,
     scope,
+    targetMode,
+    selectedVillageIds,
+    selectedCustomerIds,
     candidatePolicy,
     priorities,
     plannerSettings,
@@ -1363,7 +1433,7 @@ function OptimizerTools({
 
         <div className="optimizer-controls">
           <fieldset>
-            <legend>顧客範圍</legend>
+            <legend>顧客身分</legend>
             <div className="segmented-control">
               <button
                 type="button"
@@ -1385,6 +1455,33 @@ function OptimizerTools({
                 onClick={() => setScope('formal')}
               >
                 正式顧客
+              </button>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend>規劃對象</legend>
+            <div className="segmented-control">
+              <button
+                type="button"
+                className={targetMode === 'all' ? 'active' : ''}
+                onClick={() => setTargetMode('all')}
+              >
+                全部符合條件
+              </button>
+              <button
+                type="button"
+                className={targetMode === 'villages' ? 'active' : ''}
+                onClick={() => setTargetMode('villages')}
+              >
+                指定村莊
+              </button>
+              <button
+                type="button"
+                className={targetMode === 'customers' ? 'active' : ''}
+                onClick={() => setTargetMode('customers')}
+              >
+                自選顧客
               </button>
             </div>
           </fieldset>
@@ -1477,6 +1574,116 @@ function OptimizerTools({
             />
           </label>
         </div>
+
+        {targetMode === 'villages' && (
+          <section
+            className="optimizer-customer-target-panel"
+            aria-label="規劃村莊"
+          >
+            <div className="optimizer-target-toolbar">
+              <strong>規劃村莊</strong>
+              <span>
+                已選 {selectedVillageIds.filter((villageId) =>
+                  targetableVillageIds.includes(villageId),
+                ).length}{' '}
+                / {targetableVillageIds.length} 個村莊 · 本次 {customerIds.length} 人
+              </span>
+            </div>
+            <div className="optimizer-target-options">
+              {targetableVillageIds.map((villageId) => (
+                <label className="optimizer-target-option" key={villageId}>
+                  <input
+                    type="checkbox"
+                    checked={selectedVillageIds.includes(villageId)}
+                    onChange={(event) =>
+                      setSelectedVillageIds((current) =>
+                        event.target.checked
+                          ? [...current, villageId]
+                          : current.filter((item) => item !== villageId),
+                      )
+                    }
+                  />
+                  <span>{villageNames[villageId]}</span>
+                </label>
+              ))}
+            </div>
+            {targetableVillageIds.length === 0 && (
+              <p className="optimizer-target-empty">
+                目前顧客身分條件下沒有可規劃的村莊。
+              </p>
+            )}
+          </section>
+        )}
+
+        {targetMode === 'customers' && (
+          <section
+            className="optimizer-customer-target-panel"
+            aria-label="自選規劃顧客"
+          >
+            <div className="optimizer-target-toolbar">
+              <strong>個別顧客</strong>
+              <span>
+                已選 {customerIds.length} / {baseCustomerIds.length} 人
+              </span>
+            </div>
+            <div className="optimizer-target-actions">
+              <input
+                type="search"
+                value={customerTargetQuery}
+                placeholder="搜尋姓名、職業或村莊"
+                aria-label="搜尋規劃顧客"
+                onChange={(event) => setCustomerTargetQuery(event.target.value)}
+              />
+              <button
+                type="button"
+                onClick={() =>
+                  setSelectedCustomerIds((current) => [
+                    ...new Set([
+                      ...current,
+                      ...filteredTargetCustomers.map((customer) => customer.id),
+                    ]),
+                  ])
+                }
+                disabled={filteredTargetCustomers.length === 0}
+              >
+                全選搜尋結果
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedCustomerIds([])}
+                disabled={selectedCustomerIds.length === 0}
+              >
+                清空
+              </button>
+            </div>
+            <div className="optimizer-customer-target-list">
+              {filteredTargetCustomers.map((customer) => (
+                <label className="optimizer-target-option" key={customer.id}>
+                  <input
+                    type="checkbox"
+                    checked={selectedCustomerIds.includes(customer.id)}
+                    onChange={(event) =>
+                      setSelectedCustomerIds((current) =>
+                        event.target.checked
+                          ? [...current, customer.id]
+                          : current.filter((item) => item !== customer.id),
+                      )
+                    }
+                  />
+                  <span>
+                    <strong>{optimizerCustomerLabel(customer)}</strong>
+                    <small>{villageNames[customer.villageId]}</small>
+                  </span>
+                </label>
+              ))}
+              {filteredTargetCustomers.length === 0 && (
+                <p className="optimizer-target-empty">
+                  找不到符合搜尋條件的可規劃顧客。
+                </p>
+              )}
+            </div>
+          </section>
+        )}
 
         <section className="optimizer-inventory-editor">
           <div className="section-title">
