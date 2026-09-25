@@ -1384,21 +1384,14 @@ function shouldAcceptSameRecipePrefillCandidate(
   baseline: TerminalLeftoverScheduleMetrics,
   candidate: TerminalLeftoverScheduleMetrics,
 ): boolean {
-  const preservesProtectedLogistics =
+  return (
     candidate.feasible &&
-    candidate.tripCount <= baseline.tripCount &&
+    candidate.tripCount < baseline.tripCount &&
     candidate.droppedUsedCups <= baseline.droppedUsedCups &&
     candidate.discardedJuiceServings ===
       baseline.discardedJuiceServings &&
     candidate.cupWashWaterUnits <= baseline.cupWashWaterUnits &&
     candidate.jarTypeSwitches === baseline.jarTypeSwitches
-
-  if (!preservesProtectedLogistics) return false
-
-  return (
-    candidate.tripCount < baseline.tripCount ||
-    candidate.terminalLeftoverTripScore >=
-      baseline.terminalLeftoverTripScore
   )
 }
 
