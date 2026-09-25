@@ -70,6 +70,7 @@ function transactionDraft(): PlanApplicationTransactionDraft {
       satisfactionByVillage: {
         'east-harbor': 0,
         'tranquil-fountain': 0,
+        'ibex-statue': 0,
       },
       formalCustomerIds: ['jack'],
       suppliedCustomerIds: [],
@@ -101,6 +102,7 @@ function transactionDraft(): PlanApplicationTransactionDraft {
       satisfactionByVillage: {
         'east-harbor': 0,
         'tranquil-fountain': 0,
+        'ibex-statue': 0,
       },
       formalCustomerIds: ['jack'],
       suppliedCustomerIds: ['jack'],
@@ -821,6 +823,22 @@ describe('optimizer inventory availability', () => {
         (ingredient) => ingredient.id,
       ),
     ).toEqual(expect.arrayContaining(['cinnamon', 'banana']))
+  })
+
+  it('exposes the confirmed ibex-statue ingredient catalog only after the region milestone', () => {
+    const before = optimizerInventoryIngredients(
+      'advanced-citrus-juicer-unlocked',
+    ).map((ingredient) => ingredient.id)
+    const after = optimizerInventoryIngredients(
+      'ibex-statue-unlocked',
+    ).map((ingredient) => ingredient.id)
+
+    expect(before).not.toEqual(
+      expect.arrayContaining(['peach', 'cucumber', 'tomato', 'clove']),
+    )
+    expect(after).toEqual(
+      expect.arrayContaining(['peach', 'cucumber', 'tomato', 'clove']),
+    )
   })
 })
 

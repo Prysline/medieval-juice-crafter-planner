@@ -5,7 +5,7 @@
 目前先解決遊玩途中最常用的查詢：
 
 - 依 **主線進度節點** 與地區解鎖顯示目前可用資料。
-- 各已解鎖地區的顧客滿意度由 canonical 地區資料產生輸入欄位並分開保存；目前正式地區為東港村與靜謐噴泉。
+- 各已解鎖地區的顧客滿意度由 canonical 地區資料產生輸入欄位並分開保存；目前正式地區為東港村、靜謐噴泉與羱羊雕像。
 - 搜尋顧客、職業、喜好、配方、原料與特性。
 - 顧客只把「全部喜好都滿足」視為完全匹配。
 - 顧客列表可依姓名、最佳完全匹配、最高售價排序。
@@ -31,7 +31,7 @@
 
 ## 進度模型
 
-攻略文件仍保留「階段一～五」作閱讀章節；runtime availability 使用：
+攻略文件仍保留「階段一～七」作閱讀章節；runtime availability 使用：
 
 ```text
 opening
@@ -40,9 +40,12 @@ opening
 → juicer-unlocked
 → tranquil-fountain-unlocked
 → juice-blender-unlocked
+→ advanced-tragic-washing-station-unlocked
+→ advanced-citrus-juicer-unlocked
+→ ibex-statue-unlocked
 ```
 
-其中靜謐噴泉是階段四主線的必要中間節點，不會因選到「榨汁機已解鎖」而提前開放。
+其中靜謐噴泉是階段四主線的必要後半 Region milestone；羱羊雕像同樣是階段七後半的 Region milestone，不會因只解鎖高級柑橘榨汁機就提前開放。
 
 ## 資料邊界
 
@@ -302,13 +305,13 @@ Phase 4 已完成：
 41. PR #124 完成 **2026-09-24 實測配方資料同步**：依 9 張直接遊戲截圖還原 ordered ingredient sequence；單一直排由下往上，多直排則從最底層橫列起、每列由右往左後再逐列往上。新增 8 筆 canonical observed recipes：梨→肉桂（35）、橙子→香蕉（31）、梨→香蕉（34）、梨→紅蘿蔔（28）、橙子→香蕉→檸檬（46）、梨→紅蘿蔔→檸檬（42）、梨→肉桂→檸檬（49）、梨→香蕉→紅蘿蔔→薄荷（73）；售價、成品特性與畫面實測名稱均保存。第 9 張為既有 `檸檬→紅蘿蔔→薄荷→糖→梨`，再次確認售價 80 與相同特性，但隨機詞從既有「衝擊」變成「慶典」，因此不新增第二個 recipe identity，也不覆蓋既有 `observedDisplayName`。新實測同時顯示：已入選且同值的特性在畫面中的次級排列仍可能與目前 prediction 排列不同；只把實測 overlay 當 exact authority，不據此發明未知的次級排序公式。
 42. PR #123 完成 **Inventory-Intermediate I3｜UI + transaction**：批次規劃新增可搜尋的中間果汁庫存編輯；whole-plan transaction 依 `PreparationShortfall.intermediateStockUsage` 扣除既有 intermediate stock，partial-delivery 使用 I2 已固定的 per-recipe / per-unit provenance，在實際 preparation 時只扣一次同一 planned allocation。regression 鎖定只消耗規劃使用量、保留未使用 remainder，以及完整 partial execution／whole-plan 終局庫存一致。交付 checkbox 改以 canonical `suppliedCustomerIds` 作完成 authority；manual supplied edit 會使舊 physical execution cursor / transaction draft 失效而非重播趟次。prepared physical jar load 不得跨 sales trips 拆分；`maximum-ingredient-cost` eligibility 也排除 repeated-ingredient candidate，避免以重複同一原料灌高研究成本。PR-head CI #614 成功後 squash merge 為 `615c98bacef2594a85b993fbd5df41f3a7f9e2bd`。
 43. Stage 6 實測資料同步：丹尼爾喜好確認為奶香／保護心臟／促進消化；階段六門檻確認為東港村滿意度 525 + 靜謐噴泉滿意度 25，達標後寄信給爺爺並在收到回信後解鎖「高級悲劇清洗台」。木匠售價 1000，信中直接說明一次可清洗 5 個杯子。這次曾在一大早寄信後約 15:00 收到回信，但因任務曾延遲一天才完成，回信等待時間仍標記未確認，不寫成固定同日／隔日規則；高級清洗台實際清洗水量也尚未確認。本次只同步 progression / customer / equipment data，不改既有杯具物流與清洗計算。
-44. Stage 7 實測資料同步：階段七門檻確認為東港村顧客 29 + 靜謐噴泉顧客 15，達標後寄信給爺爺並在收到回信後解鎖「高級柑橘榨汁機」。木匠售價 1200；信件只明確說明新設備可節省柑橘榨汁時間，實際每批容量、處理時間與效率倍率尚未確認，因此不修改現有柑橘榨汁 production rule。回信時間目前有兩次接近 6 小時的觀察：08:4X→14:00、09:XX→15:00；「約 6 小時後回信」先記為強烈推測，太晚寄信是否會順延到隔天仍待直接跨日實測。
+44. Stage 7 實測資料同步：階段七門檻確認為東港村顧客 29 + 靜謐噴泉顧客 15，達標後寄信給爺爺並在收到回信後解鎖「高級柑橘榨汁機」。木匠售價 1200；信件只明確說明新設備可節省柑橘榨汁時間，實際每批容量、處理時間與效率倍率尚未確認，因此不修改現有柑橘榨汁 production rule。階段七後半另解鎖新 Region「羱羊雕像」，語意與階段四後半的靜謐噴泉相同；羱羊雕像後一般原料包含桃子、黃瓜、番茄、丁香。桃子／黃瓜／番茄已直接確認可由榨汁機處理，丁香製作角色仍未知；牛奶另有液料調和器購買門檻，因此尚未直接加入 runtime。
 45. 新增直接實測配方 **護心 暗影**：依既有杯中圖示讀序規則（多直排從最底層橫列開始、每列由右往左，再逐列往上）還原為 `橙子 → 糖 → 薄荷 → 肉桂 → 梨`。售價 92；成品特性為保護心臟 5、甜味 5、促進消化 4、調節血糖 4、芳香 4。因序列同時含橙子與梨，作為果汁調和器 canonical observed recipe；同步 exact overlay regression，不外推 Blender 通用售價公式。
 46. 補上靜謐噴泉顧客 **奧克塔維烏斯（領主）**的直接實測喜好：肉桂、改善視力、煥亮肌膚。`肉桂` 以 ingredient preference 保存，另外兩項以 effect preference 保存；原本 `preferences: null` 改為 canonical observed data，並新增 regression。
 47. **2026-09-25 實測配方批次**：依既有杯中讀序「單一直排由下往上；多直排從最底層橫列起、每列由右往左，再逐列往上」整理 9 張截圖。新增 8 筆 canonical observed recipes：紅蘿蔔→肉桂（31）、檸檬→肉桂（30）、紅蘿蔔→肉桂→香蕉（53）、香蕉→肉桂→橙子→薄荷（78）、檸檬→肉桂→橙子→薄荷（70）、橙子→香蕉→檸檬→糖（59）、香蕉→肉桂→橙子→薄荷→檸檬（98）、紅蘿蔔→肉桂→香蕉→梨→薄荷（102）；第 3 張再次確認既有檸檬→橙子（24），不建立重複 identity。售價、完整成品特性與實測顯示名均由 regression 保護；不由本批資料外推果汁調和器通用售價公式。
 48. **2026-09-25 追加實測配方**：新增 `橙子 → 橙子`（12，橙子 - 橙子（調製飲品））、`橙子 → 橙子 → 紅蘿蔔 → 肉桂`（48，免疫 摯友）、`紅蘿蔔 → 肉桂 → 橙子`（48，血糖平衡 衝擊）、`紅蘿蔔 → 肉桂 → 橙子 → 橙子`（48，免疫 純真）。兩個四原料序列雖原料 multiset 相同、售價與最終特性相同，但杯中圖示還原出的 ordered sequence 不同，因此分開保留 recipe identity；不由此直接推定所有配方都與順序無關。
 
-**Inventory-Intermediate I1～I3 已完成。**目前下一步是 **Delivery-Order Correctness**；其後依序 Candidate-3 → Candidate-4 → Phase 6 → Candidate-5。PR #88 維持 Draft prototype-only，不直接 merge。路線最佳化仍等待跨村移動時間、位置資訊、完整顧客服務時段與商店營業時間資料。
+**Inventory-Intermediate I1～I3 已完成。**目前最高優先是 **P0｜新地區 progression + 原料 runtime 同步**；本次先把階段七後半的羱羊雕像 Region milestone 與已確認一般原料接進 production authority。Delivery-Order Correctness、Candidate-3 等後續工作不在本次範圍。PR #88 維持 Draft prototype-only；PR #137 只保留 Region planner prototype／regression evidence，不直接復活。
 
 
 ## Schedule / route readiness boundary

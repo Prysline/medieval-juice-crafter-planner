@@ -11,6 +11,11 @@ export const villages: VillageDefinition[] = [
     name: '靜謐噴泉',
     unlockedAt: 'tranquil-fountain-unlocked',
   },
+  {
+    id: 'ibex-statue',
+    name: '羱羊雕像',
+    unlockedAt: 'ibex-statue-unlocked',
+  },
 ]
 
 export const villageNames = Object.fromEntries(

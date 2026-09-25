@@ -175,6 +175,7 @@ describe('shared recipe candidate pool', () => {
       satisfactionByVillage: {
         'east-harbor': 0,
         'tranquil-fountain': 0,
+        'ibex-statue': 0,
       },
       formalCustomerIds: [],
       currentProgress: 'seasoner-unlocked',
@@ -424,6 +425,7 @@ describe('shared recipe candidate pool', () => {
       satisfactionByVillage: {
         'east-harbor': 0,
         'tranquil-fountain': 0,
+        'ibex-statue': 0,
       },
       formalCustomerIds: [],
       currentProgress: 'seasoner-unlocked',

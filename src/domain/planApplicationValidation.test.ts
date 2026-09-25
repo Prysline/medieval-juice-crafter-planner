@@ -37,6 +37,7 @@ function basis(): PlanApplicationBasisState {
     satisfactionByVillage: {
       'east-harbor': 10,
       'tranquil-fountain': 20,
+      'ibex-statue': 0,
     },
     formalCustomerIds: ['jack', 'nanette'],
     suppliedCustomerIds: ['ulrich', 'alia'],

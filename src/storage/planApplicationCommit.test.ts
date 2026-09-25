@@ -83,6 +83,7 @@ function basis(): PlanApplicationBasisState {
     satisfactionByVillage: {
       'east-harbor': 12,
       'tranquil-fountain': 0,
+      'ibex-statue': 0,
     },
     formalCustomerIds: ['jack'],
     suppliedCustomerIds: ['ulrich'],
@@ -246,6 +247,7 @@ describe('plan application commit', () => {
       JSON.stringify({
         'east-harbor': 13,
         'tranquil-fountain': 0,
+        'ibex-statue': 0,
       }),
     )
 

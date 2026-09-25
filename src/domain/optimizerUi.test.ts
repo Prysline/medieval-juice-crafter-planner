@@ -48,6 +48,7 @@ const customers: Customer[] = [
 const satisfaction: SatisfactionByVillage = {
   'east-harbor': 0,
   'tranquil-fountain': 0,
+  'ibex-statue': 0,
 }
 
 function ids(

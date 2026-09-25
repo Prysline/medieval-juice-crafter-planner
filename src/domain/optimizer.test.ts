@@ -51,6 +51,7 @@ function request(
     satisfactionByVillage: {
       'east-harbor': 999,
       'tranquil-fountain': 999,
+      'ibex-statue': 0,
     },
     formalCustomerIds,
     candidatePolicy: 'observed-only',
@@ -674,6 +675,7 @@ describe('production optimizer', () => {
       satisfactionByVillage: {
         'east-harbor': 999,
         'tranquil-fountain': 999,
+        'ibex-statue': 0,
       },
       formalCustomerIds: canonicalCustomers.map((item) => item.id),
       candidatePolicy: 'allow-unambiguous-computed',

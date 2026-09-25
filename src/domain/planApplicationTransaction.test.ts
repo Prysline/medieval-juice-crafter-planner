@@ -57,6 +57,7 @@ function basis(): PlanApplicationBasisState {
     satisfactionByVillage: {
       'east-harbor': 120,
       'tranquil-fountain': 80,
+      'ibex-statue': 0,
     },
     formalCustomerIds: ['customer-1', 'customer-2'],
     suppliedCustomerIds: ['already-supplied'],
@@ -847,6 +848,7 @@ describe('plan application transaction', () => {
         satisfactionByVillage: {
           'east-harbor': 0,
           'tranquil-fountain': 0,
+          'ibex-statue': 0,
         },
         formalCustomerIds: [
           'a-customer-1',

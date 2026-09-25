@@ -91,6 +91,7 @@ describe('planner state migration', () => {
     expect(readSatisfactionByVillage(storage)).toEqual({
       'east-harbor': 250,
       'tranquil-fountain': 0,
+      'ibex-statue': 0,
     })
   })
 
@@ -110,6 +111,7 @@ describe('planner state migration', () => {
     expect(satisfaction).toEqual({
       'east-harbor': 0,
       'tranquil-fountain': 34,
+      'ibex-statue': 0,
     })
   })
 
@@ -129,6 +131,7 @@ describe('planner state migration', () => {
     ).toEqual({
       'east-harbor': 12,
       'tranquil-fountain': 0,
+      'ibex-statue': 0,
       'future-village': 78,
     })
   })
@@ -138,6 +141,7 @@ describe('planner state migration', () => {
 
     writeSatisfactionByVillage(storage, {
       'tranquil-fountain': 34,
+      'ibex-statue': 0,
       'east-harbor': 12,
     })
 
@@ -145,6 +149,7 @@ describe('planner state migration', () => {
       JSON.stringify({
         'east-harbor': 12,
         'tranquil-fountain': 34,
+        'ibex-statue': 0,
       }),
     )
   })
@@ -158,6 +163,7 @@ describe('planner state migration', () => {
     expect(readSatisfactionByVillage(storage)).toEqual({
       'east-harbor': 250,
       'tranquil-fountain': 0,
+      'ibex-statue': 0,
     })
   })
 
@@ -173,6 +179,7 @@ describe('planner state migration', () => {
     expect(readSatisfactionByVillage(storage)).toEqual({
       'east-harbor': 12,
       'tranquil-fountain': 345,
+      'ibex-statue': 0,
     })
   })
 
