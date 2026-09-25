@@ -2537,6 +2537,68 @@ export function deliveryCustomerControlState(
   }
 }
 
+export function customerIdsInPlannedTripOrder(
+  customerIds: readonly string[],
+  plan: DeliveryExecutionPlan | null,
+): string[] {
+  const tripByCustomerId = new Map(
+    (plan?.trips ?? []).flatMap((trip) =>
+      trip.deliveries.map(
+        (delivery) => [delivery.customerId, trip.tripNumber] as const,
+      ),
+    ),
+  )
+
+  return customerIds
+    .map((customerId, originalIndex) => ({
+      customerId,
+      originalIndex,
+      tripNumber:
+        tripByCustomerId.get(customerId) ?? Number.MAX_SAFE_INTEGER,
+    }))
+    .sort(
+      (left, right) =>
+        left.tripNumber - right.tripNumber ||
+        left.originalIndex - right.originalIndex,
+    )
+    .map(({ customerId }) => customerId)
+}
+
+
+export function recipePlansInPlannedTripOrder<
+  T extends { customerIds: readonly string[] },
+>(
+  recipePlans: readonly T[],
+  plan: DeliveryExecutionPlan | null,
+): T[] {
+  const tripByCustomerId = new Map(
+    (plan?.trips ?? []).flatMap((trip) =>
+      trip.deliveries.map(
+        (delivery) => [delivery.customerId, trip.tripNumber] as const,
+      ),
+    ),
+  )
+
+  return recipePlans
+    .map((recipePlan, originalIndex) => ({
+      recipePlan,
+      originalIndex,
+      firstTripNumber: recipePlan.customerIds.reduce(
+        (firstTripNumber, customerId) =>
+          Math.min(
+            firstTripNumber,
+            tripByCustomerId.get(customerId) ?? Number.MAX_SAFE_INTEGER,
+          ),
+        Number.MAX_SAFE_INTEGER,
+      ),
+    }))
+    .sort(
+      (left, right) =>
+        left.firstTripNumber - right.firstTripNumber ||
+        left.originalIndex - right.originalIndex,
+    )
+    .map(({ recipePlan }) => recipePlan)
+}
 export function DeliveryCustomerCheckbox({
   customerId,
   plan,
@@ -3262,65 +3324,12 @@ function OptimizerResultPanel({
 
         {result.recipePlans.length === 0 ? (
           <p className="empty-tool-state">本次沒有可製作的果汁。</p>
-        ) : deliveryExecutionPlan && deliveryExecutionPlan.trips.length > 0 ? (
-          <div className="optimizer-batch-list">
-            {deliveryExecutionPlan.trips.map((trip) => (
-              <section
-                className="optimizer-machine-group"
-                key={'delivery-trip-' + trip.tripNumber}
-                aria-label={'第 ' + trip.tripNumber + ' 趟果汁分配'}
-              >
-                <header className="optimizer-machine-header">
-                  <div>
-                    <span>販售趟次</span>
-                    <strong>第 {trip.tripNumber} 趟</strong>
-                  </div>
-                  <span>{trip.deliveries.length} 人</span>
-                </header>
-                <div className="optimizer-batch-list">
-                  {trip.deliveries.map((delivery) => {
-                    const recipePlan = result.recipePlans.find(
-                      (plan) => plan.recipeId === delivery.recipeId,
-                    )
-                    return (
-                      <article
-                        className="optimizer-batch-card"
-                        key={
-                          trip.tripNumber +
-                          '-' +
-                          delivery.customerId +
-                          '-' +
-                          delivery.recipeId
-                        }
-                      >
-                        <div className="optimizer-delivery-recipe-heading">
-                          <strong>
-                            {recipePlan
-                              ? formatRecipeDisplayName(recipePlan.recipeName)
-                              : delivery.recipeId}
-                          </strong>
-                          <span>果汁罐 {delivery.physicalJarId}</span>
-                        </div>
-                        <div className="optimizer-delivery-customer-list">
-                          <DeliveryCustomerCheckbox
-                            customerId={delivery.customerId}
-                            plan={deliveryExecutionPlan}
-                            cursor={deliveryCursor}
-                            suppliedCustomerIds={suppliedCustomerIds}
-                            disabled={deliveryUiState.status === 'stale'}
-                            onChange={onCommitDelivery}
-                          />
-                        </div>
-                      </article>
-                    )
-                  })}
-                </div>
-              </section>
-            ))}
-          </div>
         ) : (
           <div className="optimizer-batch-list">
-            {result.recipePlans.map((plan) => (
+            {recipePlansInPlannedTripOrder(
+              result.recipePlans,
+              deliveryExecutionPlan,
+            ).map((plan) => (
               <article className="optimizer-batch-card" key={plan.recipeId}>
                 <div className="optimizer-delivery-recipe-heading">
                   <DeliveryRecipeGroupCheckbox
@@ -3337,18 +3346,30 @@ function OptimizerResultPanel({
                   </span>
                 </div>
                 <div className="optimizer-delivery-customer-list">
-                  {plan.customerIds.map((customerId) => (
-                    <DeliveryCustomerCheckbox
-                      key={customerId}
-                      customerId={customerId}
-                      plan={deliveryExecutionPlan}
-                      cursor={deliveryCursor}
-                      suppliedCustomerIds={suppliedCustomerIds}
-                      disabled={deliveryUiState.status === 'stale'}
-                      onChange={onCommitDelivery}
-                    />
-                  ))}
+                  {customerIdsInPlannedTripOrder(
+                    plan.customerIds,
+                    deliveryExecutionPlan,
+                  ).map(
+                    (customerId) => (
+                      <DeliveryCustomerCheckbox
+                        key={customerId}
+                        customerId={customerId}
+                        plan={deliveryExecutionPlan}
+                        cursor={deliveryCursor}
+                        suppliedCustomerIds={suppliedCustomerIds}
+                        disabled={deliveryUiState.status === 'stale'}
+                        onChange={onCommitDelivery}
+                      />
+                    ),
+                  )}
                 </div>
+                <p>
+                  需求 {plan.assignedServings} 杯 · 製作果汁 {plan.juiceUnits}{' '}
+                  份 → {plan.producedServings} 杯
+                  {plan.leftoverServings > 0
+                    ? ' · 剩餘 ' + plan.leftoverServings + ' 杯'
+                    : ''}
+                </p>
               </article>
             ))}
           </div>

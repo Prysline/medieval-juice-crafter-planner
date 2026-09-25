@@ -16,6 +16,8 @@ import {
   PlanApplicationPreview,
   PlanningErrorBlock,
   criterionLabel,
+  customerIdsInPlannedTripOrder,
+  recipePlansInPlannedTripOrder,
   deliveryCanonicalSyncStatus,
   deliveryCustomerControlState,
   deliveryRecipeGroupControlState,
@@ -378,6 +380,45 @@ function deliveryCursor(
 }
 
 describe('delivery checklist UI', () => {
+  it('keeps recipe grouping while ordering customers by planned trip', () => {
+    const plan = deliveryPlan()
+
+    expect(
+      customerIdsInPlannedTripOrder(
+        ['florida', 'leticia', 'jack'],
+        plan,
+      ),
+    ).toEqual(['leticia', 'jack', 'florida'])
+
+    expect(
+      customerIdsInPlannedTripOrder(
+        ['unplanned', 'florida', 'jack'],
+        plan,
+      ),
+    ).toEqual(['jack', 'florida', 'unplanned'])
+  })
+
+  it('orders recipe groups by their earliest planned trip while preserving stable ties and unplanned groups last', () => {
+    const plan = deliveryPlan()
+    const recipePlans = [
+      { id: 'recipe-b', customerIds: ['florida'] },
+      { id: 'unplanned', customerIds: ['unplanned'] },
+      { id: 'recipe-a-second', customerIds: ['jack'] },
+      { id: 'recipe-a-first', customerIds: ['leticia'] },
+    ]
+
+    expect(
+      recipePlansInPlannedTripOrder(recipePlans, plan).map(
+        (recipePlan) => recipePlan.id,
+      ),
+    ).toEqual([
+      'recipe-a-second',
+      'recipe-a-first',
+      'recipe-b',
+      'unplanned',
+    ])
+  })
+
   it('keeps the canonical supplied checklist usable without a physical execution plan', () => {
     expect(
       deliveryCustomerControlState(null, null, [], 'florida'),
