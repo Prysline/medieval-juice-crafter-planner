@@ -311,6 +311,7 @@ Phase 4 已完成：
 46. 補上靜謐噴泉顧客 **奧克塔維烏斯（領主）**的直接實測喜好：肉桂、改善視力、煥亮肌膚。`肉桂` 以 ingredient preference 保存，另外兩項以 effect preference 保存；原本 `preferences: null` 改為 canonical observed data，並新增 regression。
 47. **2026-09-25 實測配方批次**：依既有杯中讀序「單一直排由下往上；多直排從最底層橫列起、每列由右往左，再逐列往上」整理 9 張截圖。新增 8 筆 canonical observed recipes：紅蘿蔔→肉桂（31）、檸檬→肉桂（30）、紅蘿蔔→肉桂→香蕉（53）、香蕉→肉桂→橙子→薄荷（78）、檸檬→肉桂→橙子→薄荷（70）、橙子→香蕉→檸檬→糖（59）、香蕉→肉桂→橙子→薄荷→檸檬（98）、紅蘿蔔→肉桂→香蕉→梨→薄荷（102）；第 3 張再次確認既有檸檬→橙子（24），不建立重複 identity。售價、完整成品特性與實測顯示名均由 regression 保護；不由本批資料外推果汁調和器通用售價公式。
 48. **2026-09-25 追加實測配方**：新增 `橙子 → 橙子`（12，橙子 - 橙子（調製飲品））、`橙子 → 橙子 → 紅蘿蔔 → 肉桂`（48，免疫 摯友）、`紅蘿蔔 → 肉桂 → 橙子`（48，血糖平衡 衝擊）、`紅蘿蔔 → 肉桂 → 橙子 → 橙子`（48，免疫 純真）。兩個四原料序列雖原料 multiset 相同、售價與最終特性相同，但杯中圖示還原出的 ordered sequence 不同，因此分開保留 recipe identity；不由此直接推定所有配方都與順序無關。
+49. **羱羊雕像顧客資料修正**：把既有直接實測的 21 名羱羊雕像潛在顧客同步進 `customers.ts`，統一使用 `villageId = 'ibex-statue'`。托爾斯滕／薩維烏斯的顧客滿意度門檻分別為 350／250，喜好仍顯示「？」因此保存為 `preferences: null`；其餘 19 名目前記錄門檻為 0。顧客 availability 繼續由 Region milestone + 各區 satisfaction 驅動，不另增 customer-level progression gate。
 
 **Inventory-Intermediate I1～I3 與 P0｜新地區／主線 progression runtime 同步皆已完成。**PR #149 已同步階段七後半羱羊雕像 Region 與桃子／黃瓜／番茄／丁香；後續小切片再補 `sales-assistant-adam-arrived`，讓「目前主線進度」可保存階段八，但不實作 Adam 功能。**目前最高優先是 P1｜Region-level 趟數／裝載 implementation planning audit**；P2 Data Authority Cleanup 為次要短護欄。Delivery-Order Correctness、Candidate-3 等維持後續。PR #88 維持 Draft prototype-only；PR #137 只保留 Region planner prototype／regression evidence，不直接復活。
 

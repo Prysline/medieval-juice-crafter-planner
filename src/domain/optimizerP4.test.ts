@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { customers as canonicalCustomers } from '../data/customers'
 import type { Customer, RecipeCandidate } from '../types'
 import { optimizeBatchPlan } from './optimizer'
+import { customerVillageIsAvailable } from './availability'
 import { highsSolverAdapter } from './optimizerHighsSolver'
 import type {
   BatchOptimizationModel,
@@ -180,7 +181,11 @@ describe('Debug-D Production P4 ordering and fallback', () => {
 
 describe('Debug-D Production P4 production-scale benchmark', () => {
   it('solves the Blender workload through the production solver with the current certified optimum', async () => {
-    const customerIds = canonicalCustomers.map((item) => item.id)
+    const customerIds = canonicalCustomers
+      .filter((item) =>
+        customerVillageIsAvailable(item, 'juice-blender-unlocked'),
+      )
+      .map((item) => item.id)
     const request: OptimizationRequest = {
       customerIds,
       currentProgress: 'juice-blender-unlocked',
