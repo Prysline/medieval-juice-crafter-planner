@@ -19,6 +19,7 @@ const baseRequest: OptimizationRequest = {
   satisfactionByVillage: {
     'east-harbor': 999,
     'tranquil-fountain': 999,
+    'ibex-statue': 0,
   },
   formalCustomerIds: ['a', 'b'],
   candidatePolicy: 'observed-only',
