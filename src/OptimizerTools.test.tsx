@@ -823,6 +823,16 @@ describe('optimizer criteria UI', () => {
     })
     expect(criterionLabel('maximum-ingredient-cost')).toBe('最高原料成本')
   })
+
+  it('offers regional concentration as a shared priority criterion', () => {
+    expect(optimizerCriterionOptions).toContainEqual({
+      value: 'minimum-regional-fragmentation',
+      label: '同區域集中',
+    })
+    expect(criterionLabel('minimum-regional-fragmentation')).toBe(
+      '同區域集中',
+    )
+  })
 })
 
 describe('planner error UX', () => {
