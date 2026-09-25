@@ -1,4 +1,5 @@
 import { progressMilestoneIds } from '../data/progress'
+import { villages } from '../data/villages'
 import type {
   ProgressMilestoneId,
   SatisfactionByVillage,
@@ -26,6 +27,7 @@ export interface StorageLike {
 }
 
 const progressIds = new Set<ProgressMilestoneId>(progressMilestoneIds)
+const canonicalVillageIds = villages.map((village) => village.id)
 
 export function isProgressMilestoneId(value: string): value is ProgressMilestoneId {
   return progressIds.has(value as ProgressMilestoneId)
@@ -59,6 +61,23 @@ function normalizeSatisfaction(value: unknown): number {
     : 0
 }
 
+export function normalizeSatisfactionByVillageIds<TVillageId extends string>(
+  villageIds: readonly TVillageId[],
+  value: unknown,
+): Record<TVillageId, number> {
+  const source =
+    value !== null && typeof value === 'object'
+      ? value as Record<string, unknown>
+      : {}
+
+  return Object.fromEntries(
+    villageIds.map((villageId) => [
+      villageId,
+      normalizeSatisfaction(source[villageId]),
+    ]),
+  ) as Record<TVillageId, number>
+}
+
 export function readCurrentProgress(storage: StorageLike): ProgressMilestoneId {
   const storedProgress = storage.getItem(STORAGE_KEYS.progress)
   if (storedProgress && isProgressMilestoneId(storedProgress)) {
@@ -88,11 +107,11 @@ export function readSatisfactionByVillage(
 
   if (stored !== null) {
     try {
-      const parsed = JSON.parse(stored) as Partial<SatisfactionByVillage>
-      return {
-        'east-harbor': normalizeSatisfaction(parsed['east-harbor']),
-        'tranquil-fountain': normalizeSatisfaction(parsed['tranquil-fountain']),
+      const parsed = JSON.parse(stored) as unknown
+      if (parsed === null) {
+        throw new Error('Stored satisfaction cannot be null')
       }
+      return normalizeSatisfactionByVillageIds(canonicalVillageIds, parsed)
     } catch {
       // Fall through to the legacy value.
     }
@@ -100,10 +119,8 @@ export function readSatisfactionByVillage(
 
   const legacyRaw = storage.getItem(STORAGE_KEYS.legacySatisfaction)
   const legacyValue = legacyRaw === null ? 0 : Number(legacyRaw)
-  const migrated: SatisfactionByVillage = {
-    'east-harbor': normalizeSatisfaction(legacyValue),
-    'tranquil-fountain': 0,
-  }
+  const migrated = normalizeSatisfactionByVillageIds(canonicalVillageIds, {})
+  migrated['east-harbor'] = normalizeSatisfaction(legacyValue)
 
   storage.setItem(STORAGE_KEYS.satisfactionByVillage, JSON.stringify(migrated))
   return migrated
@@ -115,7 +132,12 @@ export function writeSatisfactionByVillage(
 ): void {
   storage.setItem(
     STORAGE_KEYS.satisfactionByVillage,
-    JSON.stringify(satisfactionByVillage),
+    JSON.stringify(
+      normalizeSatisfactionByVillageIds(
+        canonicalVillageIds,
+        satisfactionByVillage,
+      ),
+    ),
   )
 }
 
