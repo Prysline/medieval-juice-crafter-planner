@@ -192,24 +192,24 @@ describe('production optimizer', () => {
 
   it('can keep zero-waste assignments concentrated within villages before maximizing ingredient cost', async () => {
     const customers = [
-      customer('east-a', 'EA', 'east-harbor'),
-      customer('east-b', 'EB', 'east-harbor'),
-      customer('fountain-a', 'FA', 'tranquil-fountain'),
-      customer('fountain-b', 'FB', 'tranquil-fountain'),
+      customer('east-a', '甜味', 'east-harbor'),
+      customer('east-b', '清新口氣', 'east-harbor'),
+      customer('fountain-a', '改善視力', 'tranquil-fountain'),
+      customer('fountain-b', '煥亮肌膚', 'tranquil-fountain'),
     ]
     const candidates = [
       recipe(
         'cross-a',
         ['檸檬', '糖', '薄荷'],
-        ['EA', 'FA'],
+        ['甜味', '改善視力'],
       ),
       recipe(
         'cross-b',
         ['橙子', '糖', '薄荷'],
-        ['EB', 'FB'],
+        ['清新口氣', '煥亮肌膚'],
       ),
-      recipe('east-local', ['檸檬'], ['EA', 'EB']),
-      recipe('fountain-local', ['橙子'], ['FA', 'FB']),
+      recipe('east-local', ['檸檬'], ['甜味', '清新口氣']),
+      recipe('fountain-local', ['橙子'], ['改善視力', '煥亮肌膚']),
     ]
     const customerIds = customers.map((item) => item.id)
 
