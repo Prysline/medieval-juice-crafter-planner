@@ -230,6 +230,64 @@ function expectScheduleConsistency(
 }
 
 describe('multi-trip replenishment', () => {
+  it('groups same-village loads when doing so does not add a sales trip', () => {
+    const salesDemand = namedRecipes(['A', 'B', 'C', 'D'], 2)
+    const jars = carriedJars(4)
+    const build = (
+      customerVillageById: Record<
+        string,
+        'east-harbor' | 'tranquil-fountain'
+      > = {},
+    ) =>
+      buildMultiTripReplenishmentPlanWithCups(
+        salesDemand,
+        'retain-and-wash',
+        jars,
+        { cleanCups: 8, usedCups: 0 },
+        shortfallFor(salesDemand, jars),
+        {
+          mode: 'fixed-slots',
+          reservedSlots: 2,
+          minimumCarriedSlots: 2,
+        },
+        false,
+        customerVillageById,
+      )
+
+    const baseline = build()
+    const regional = build({
+      'a-customer-1': 'east-harbor',
+      'a-customer-2': 'east-harbor',
+      'b-customer-1': 'tranquil-fountain',
+      'b-customer-2': 'tranquil-fountain',
+      'c-customer-1': 'east-harbor',
+      'c-customer-2': 'east-harbor',
+      'd-customer-1': 'tranquil-fountain',
+      'd-customer-2': 'tranquil-fountain',
+    })
+
+    expect(baseline.tripCount).toBe(2)
+    expect(
+      baseline.trips.map((trip) =>
+        trip.juiceJars.map((load) => load.recipeId),
+      ),
+    ).toEqual([
+      ['a', 'b'],
+      ['c', 'd'],
+    ])
+
+    expect(regional.tripCount).toBe(2)
+    expect(
+      regional.trips.map((trip) =>
+        trip.juiceJars.map((load) => load.recipeId),
+      ),
+    ).toEqual([
+      ['a', 'c'],
+      ['b', 'd'],
+    ])
+    expectScheduleConsistency(regional)
+  })
+
   it('serves matching initial contents from their exact persistent jar without a fill', () => {
     const salesDemand = namedRecipes(['A'], 1)
     const result = buildPlanWithJars(
