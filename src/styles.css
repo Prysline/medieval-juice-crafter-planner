@@ -1823,6 +1823,120 @@ footer {
   margin: 0;
 }
 
+.optimizer-customer-target-panel {
+  display: grid;
+  gap: 9px;
+  border: 1px solid #e2d7c5;
+  border-radius: 11px;
+  background: #fffaf1;
+  padding: 10px 11px;
+}
+
+.optimizer-target-toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.optimizer-target-toolbar strong {
+  color: #38502f;
+  font-size: 0.82rem;
+}
+
+.optimizer-target-toolbar span,
+.optimizer-target-empty {
+  color: #7a6d5d;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.optimizer-target-options,
+.optimizer-customer-target-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.optimizer-customer-target-list {
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 3px;
+}
+
+.optimizer-target-option {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  border: 1px solid #e2d7c5;
+  border-radius: 9px;
+  background: #fffdf8;
+  padding: 8px 9px;
+  color: #4f463b;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.optimizer-target-option > input {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  margin: 1px 0 0;
+}
+
+.optimizer-target-option > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.optimizer-target-option strong {
+  color: #4f463b;
+  font-size: 0.76rem;
+}
+
+.optimizer-target-option small {
+  color: #7a6d5d;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.optimizer-target-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 7px;
+}
+
+.optimizer-target-actions input {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid #d6c8b3;
+  border-radius: 9px;
+  background: #fffdf8;
+  color: #2f2a22;
+  padding: 7px 9px;
+}
+
+.optimizer-target-actions button {
+  border: 1px solid #c8b89f;
+  border-radius: 9px;
+  background: #f3eadc;
+  color: #655640;
+  padding: 7px 10px;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.optimizer-target-actions button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.optimizer-target-empty {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
 .optimizer-inventory-editor {
   display: grid;
   gap: 12px;
@@ -2885,6 +2999,22 @@ footer {
 
   .optimizer-controls .optimizer-checkbox-control {
     grid-column: auto;
+  }
+
+  .optimizer-target-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .optimizer-target-actions,
+  .optimizer-target-options,
+  .optimizer-customer-target-list {
+    grid-template-columns: 1fr;
+  }
+
+  .optimizer-target-actions button {
+    width: 100%;
   }
 
   .optimizer-inventory-grid,
