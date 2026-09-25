@@ -3308,7 +3308,10 @@ function OptimizerResultPanel({
                   </span>
                 </div>
                 <div className="optimizer-delivery-customer-list">
-                  {customerIdsInPlannedTripOrder(\n                    plan.customerIds,\n                    deliveryExecutionPlan,\n                  ).map(
+                  {customerIdsInPlannedTripOrder(
+                    plan.customerIds,
+                    deliveryExecutionPlan,
+                  ).map(
                     (customerId) => (
                       <DeliveryCustomerCheckbox
                         key={customerId}
