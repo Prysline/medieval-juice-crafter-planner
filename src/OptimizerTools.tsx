@@ -2207,10 +2207,14 @@ function transactionFillActionLabel(
 export function PlanApplicationPreview({
   draft,
   productionJarFills,
+  checkedIngredientIds = new Set<string>(),
+  onIngredientCheckedChange,
   onApply,
 }: {
   draft: PlanApplicationTransactionDraft
   productionJarFills: readonly MultiTripProductionJarFill[]
+  checkedIngredientIds?: ReadonlySet<string>
+  onIngredientCheckedChange?: (ingredientId: string, checked: boolean) => void
   onApply: (draft: PlanApplicationTransactionDraft) => void
 }) {
   const changes = draft.changes
@@ -2259,7 +2263,7 @@ export function PlanApplicationPreview({
                       type="checkbox"
                       checked={checkedIngredientIds.has(change.ingredientId)}
                       onChange={(event) =>
-                        setIngredientChecked(
+                        onIngredientCheckedChange?.(
                           change.ingredientId,
                           event.currentTarget.checked,
                         )
@@ -2941,6 +2945,8 @@ function OptimizerResultPanel({
         <PlanApplicationPreview
           draft={transactionDraft}
           productionJarFills={selectedSalesTripPlan.productionJarFills}
+          checkedIngredientIds={checkedIngredientIds}
+          onIngredientCheckedChange={setIngredientChecked}
           onApply={onApplyTransaction}
         />
       ) : (
