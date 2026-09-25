@@ -1086,9 +1086,21 @@ function simulateCupTrip(
   }
 }
 
+function cloneJarQueues(queues: JarQueue[]): JarQueue[] {
+  return queues.map((queue) => ({
+    ...queue,
+    loads: queue.loads.map((load) => ({
+      ...load,
+      customerIds: [...load.customerIds],
+    })),
+  }))
+}
+
 function coalesceInitialSameRecipeRefills(
   queues: JarQueue[],
-): void {
+): number {
+  let coalescedLoadCount = 0
+
   for (const queue of queues) {
     const existing = queue.loads[0]
     const refill = queue.loads[1]
@@ -1119,7 +1131,10 @@ function coalesceInitialSameRecipeRefills(
       previousRecipeId: existing.recipeId,
       previousRecipeName: existing.recipeName,
     })
+    coalescedLoadCount += 1
   }
+
+  return coalescedLoadCount
 }
 
 type TripCandidateOrderMode =
@@ -1361,6 +1376,28 @@ export function shouldAcceptTerminalLeftoverTimingCandidate(
     candidate.physicalJarSequenceSignature ===
       baseline.physicalJarSequenceSignature &&
     candidate.terminalLeftoverTripScore >
+      baseline.terminalLeftoverTripScore
+  )
+}
+
+function shouldAcceptSameRecipePrefillCandidate(
+  baseline: TerminalLeftoverScheduleMetrics,
+  candidate: TerminalLeftoverScheduleMetrics,
+): boolean {
+  const preservesProtectedLogistics =
+    candidate.feasible &&
+    candidate.tripCount <= baseline.tripCount &&
+    candidate.droppedUsedCups <= baseline.droppedUsedCups &&
+    candidate.discardedJuiceServings ===
+      baseline.discardedJuiceServings &&
+    candidate.cupWashWaterUnits <= baseline.cupWashWaterUnits &&
+    candidate.jarTypeSwitches === baseline.jarTypeSwitches
+
+  if (!preservesProtectedLogistics) return false
+
+  return (
+    candidate.tripCount < baseline.tripCount ||
+    candidate.terminalLeftoverTripScore >=
       baseline.terminalLeftoverTripScore
   )
 }
@@ -1830,13 +1867,6 @@ export function buildMultiTripReplenishmentPlan(
       queues,
       queueBuild.plannedNewProductionDiscards,
     )
-  coalesceInitialSameRecipeRefills(queues)
-  const baselineTripBuild = buildTrips(
-    queues,
-    policy,
-    normalizedCarryPolicy,
-    initialCupState,
-  )
   const discardedJuiceServings =
     discardedInitialJuice.reduce(
       (sum, item) => sum + item.servings,
@@ -1846,18 +1876,58 @@ export function buildMultiTripReplenishmentPlan(
       (sum, item) => sum + item.servings,
       0,
     )
+  const baselineTripBuild = buildTrips(
+    queues,
+    policy,
+    normalizedCarryPolicy,
+    initialCupState,
+  )
+  let selectedQueues = queues
   let selectedTripBuild = baselineTripBuild
+
+  const prefillQueues = cloneJarQueues(queues)
+  const coalescedLoadCount =
+    coalesceInitialSameRecipeRefills(prefillQueues)
+  if (coalescedLoadCount > 0) {
+    try {
+      const prefillCandidate = buildTrips(
+        prefillQueues,
+        policy,
+        normalizedCarryPolicy,
+        initialCupState,
+      )
+      if (
+        shouldAcceptSameRecipePrefillCandidate(
+          terminalLeftoverScheduleMetrics(
+            baselineTripBuild.trips,
+            discardedJuiceServings,
+          ),
+          terminalLeftoverScheduleMetrics(
+            prefillCandidate.trips,
+            discardedJuiceServings,
+          ),
+        )
+      ) {
+        selectedQueues = prefillQueues
+        selectedTripBuild = prefillCandidate
+      }
+    } catch (error) {
+      if (!(error instanceof PlanningUserError)) {
+        throw error
+      }
+    }
+  }
 
   try {
     const timingCandidate = buildTrips(
-      queues,
+      selectedQueues,
       policy,
       normalizedCarryPolicy,
       initialCupState,
       'terminal-leftovers-last',
     )
     const baselineMetrics = terminalLeftoverScheduleMetrics(
-      baselineTripBuild.trips,
+      selectedTripBuild.trips,
       discardedJuiceServings,
     )
     const candidateMetrics = terminalLeftoverScheduleMetrics(
