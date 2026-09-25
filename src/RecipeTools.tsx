@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { customers } from './data/customers'
 import { ingredients } from './data/ingredients'
 import { recipeIngredientCapabilities } from './data/recipeIngredientCapabilities'
@@ -816,6 +816,34 @@ function SavedRecipeRow({
     >,
   ) => void
 }) {
+  const [draftName, setDraftName] = useState(recipe.name)
+  const [draftNote, setDraftNote] = useState(recipe.note ?? '')
+
+  useEffect(() => {
+    setDraftName(recipe.name)
+  }, [recipe.id, recipe.name])
+
+  useEffect(() => {
+    setDraftNote(recipe.note ?? '')
+  }, [recipe.id, recipe.note])
+
+  function commitName() {
+    if (!draftName.trim()) {
+      setDraftName(recipe.name)
+      return
+    }
+    if (draftName !== recipe.name) {
+      onUpdate({ name: draftName })
+    }
+  }
+
+  function commitNote() {
+    const currentNote = recipe.note ?? ''
+    if (draftNote !== currentNote) {
+      onUpdate({ note: draftNote })
+    }
+  }
+
   const evaluation = useMemo(
     () => evaluateRecipeSequence(recipe.ingredientIds, currentProgress),
     [recipe.ingredientIds, currentProgress],
@@ -878,20 +906,28 @@ function SavedRecipeRow({
         <label>
           <span>名稱</span>
           <input
-            value={recipe.name}
-            onChange={(event) =>
-              onUpdate({ name: event.target.value })
-            }
+            value={draftName}
+            onChange={(event) => setDraftName(event.target.value)}
+            onBlur={commitName}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.currentTarget.blur()
+              }
+            }}
           />
         </label>
         <label>
           <span>備註</span>
           <input
-            value={recipe.note ?? ''}
+            value={draftNote}
             placeholder="無"
-            onChange={(event) =>
-              onUpdate({ note: event.target.value })
-            }
+            onChange={(event) => setDraftNote(event.target.value)}
+            onBlur={commitNote}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.currentTarget.blur()
+              }
+            }}
           />
         </label>
       </div>
