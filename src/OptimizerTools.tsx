@@ -1123,9 +1123,24 @@ function OptimizerTools({
           nextInventory,
           nextSupplied,
         )
+      const inventoryOnlyFingerprint =
+        deliveryExecutionCanonicalBasisFingerprint(
+          nextInventory,
+          beforeSupplied,
+        )
+      const suppliedOnlyFingerprint =
+        deliveryExecutionCanonicalBasisFingerprint(
+          inventoryState,
+          nextSupplied,
+        )
       deliveryCanonicalSyncGuardRef.current = {
         targetFingerprint,
-        allowedFingerprints: [beforeFingerprint, targetFingerprint],
+        allowedFingerprints: [
+          beforeFingerprint,
+          inventoryOnlyFingerprint,
+          suppliedOnlyFingerprint,
+          targetFingerprint,
+        ],
       }
 
       setInventoryState(nextInventory)
