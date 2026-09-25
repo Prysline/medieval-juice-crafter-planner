@@ -9,8 +9,12 @@ export type ProgressMilestoneId =
   | 'juice-blender-unlocked'
   | 'advanced-tragic-washing-station-unlocked'
   | 'advanced-citrus-juicer-unlocked'
+  | 'ibex-statue-unlocked'
 
-export type VillageId = 'east-harbor' | 'tranquil-fountain'
+export type VillageId =
+  | 'east-harbor'
+  | 'tranquil-fountain'
+  | 'ibex-statue'
 
 export type SatisfactionByVillage = Record<VillageId, number>
 
