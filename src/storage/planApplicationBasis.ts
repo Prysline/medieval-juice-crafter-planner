@@ -6,6 +6,7 @@ import {
   validatePlanApplicationTransactionBasis,
   type PlanApplicationBasisValidation,
 } from '../domain/planApplicationValidation'
+import { villages } from '../data/villages'
 import type {
   ProgressMilestoneId,
   SatisfactionByVillage,
@@ -20,6 +21,7 @@ import {
 import {
   isProgressMilestoneId,
   legacyStageToProgress,
+  normalizeSatisfactionByVillageIds,
   readSuppliedCustomerIds,
   STORAGE_KEYS,
   type StorageLike,
@@ -48,15 +50,10 @@ function readCurrentProgressReadonly(
   return 'seasoner-unlocked'
 }
 
-function normalizeSatisfaction(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value)
-    ? Math.max(0, Math.floor(value))
-    : 0
-}
-
 function readSatisfactionByVillageReadonly(
   storage: StorageLike,
 ): SatisfactionByVillage {
+  const villageIds = villages.map((village) => village.id)
   const stored = storage.getItem(
     STORAGE_KEYS.satisfactionByVillage,
   )
@@ -69,15 +66,10 @@ function readSatisfactionByVillageReadonly(
         typeof parsed === 'object' &&
         !Array.isArray(parsed)
       ) {
-        const value = parsed as Partial<SatisfactionByVillage>
-        return {
-          'east-harbor': normalizeSatisfaction(
-            value['east-harbor'],
-          ),
-          'tranquil-fountain': normalizeSatisfaction(
-            value['tranquil-fountain'],
-          ),
-        }
+        return normalizeSatisfactionByVillageIds(
+          villageIds,
+          parsed,
+        )
       }
     } catch {
       // Fall through to the legacy value without migrating storage.
@@ -87,11 +79,17 @@ function readSatisfactionByVillageReadonly(
   const legacyRaw = storage.getItem(STORAGE_KEYS.legacySatisfaction)
   const legacyValue =
     legacyRaw === null ? 0 : Number(legacyRaw)
+  const migrated = normalizeSatisfactionByVillageIds(
+    villageIds,
+    {},
+  )
+  migrated['east-harbor'] =
+    normalizeSatisfactionByVillageIds(
+      ['east-harbor'] as const,
+      { 'east-harbor': legacyValue },
+    )['east-harbor']
 
-  return {
-    'east-harbor': normalizeSatisfaction(legacyValue),
-    'tranquil-fountain': 0,
-  }
+  return migrated
 }
 
 function readStoredStringSet(
