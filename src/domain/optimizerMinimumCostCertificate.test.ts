@@ -9,7 +9,7 @@ import {
 import { prepareMinimumCostStageCertificate } from './optimizerCertificates'
 
 describe('production-scale minimum-cost certificate', () => {
-  it('preserves the exact 615 optimum and reconstructs all 49 serviceable customers', async () => {
+  it('preserves the exact 604 optimum and reconstructs all 49 serviceable customers', async () => {
     const customerIds = canonicalCustomers.map((customer) => customer.id)
     const request: OptimizationRequest = {
       customerIds,
@@ -36,10 +36,10 @@ describe('production-scale minimum-cost certificate', () => {
     const certificate = prepareMinimumCostStageCertificate(domain)
 
     expect(domain.serviceableCustomerIds).toHaveLength(49)
-    expect(domain.recipes).toHaveLength(9253)
+    expect(domain.recipes).toHaveLength(9254)
     expect(certificate).not.toBeNull()
-    expect(certificate?.frontierRecipeCount).toBe(4996)
-    expect(certificate?.representativeRecipeCount).toBe(539)
+    expect(certificate?.frontierRecipeCount).toBe(4986)
+    expect(certificate?.representativeRecipeCount).toBe(538)
 
     const stageDomain = certificate!.stageDomain
     const model = new Model()
@@ -121,7 +121,7 @@ describe('production-scale minimum-cost certificate', () => {
     const solution = await model.solve()
 
     expect(solution.status).toBe('optimal')
-    expect(Math.round(solution.objective ?? Number.NaN)).toBe(615)
+    expect(Math.round(solution.objective ?? Number.NaN)).toBe(604)
 
     const reconstructedCustomerIds =
       stageDomain.serviceableCustomerIds.filter((customerId) =>
