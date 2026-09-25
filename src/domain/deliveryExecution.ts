@@ -29,9 +29,21 @@ export interface DeliveryExecutionCustomer {
   recipeName: string
 }
 
+export interface DeliveryExecutionPreparationLoad {
+  physicalJarId: string
+  recipeId: string
+  recipeName: string
+  plannedTripNumber: number
+  fill: MultiTripProductionJarFill
+  ingredientRequirements: readonly DeliveryExecutionIngredientRequirement[]
+  intermediateRequirements: readonly DeliveryExecutionIntermediateRequirement[]
+  productionWaterUnits: number
+}
+
 export interface DeliveryExecutionTrip {
   tripNumber: number
   productionFills: readonly MultiTripProductionJarFill[]
+  preparationLoads?: readonly DeliveryExecutionPreparationLoad[]
   initialJuiceDiscards: readonly MultiTripDiscardedInitialJuice[]
   ingredientRequirements: readonly DeliveryExecutionIngredientRequirement[]
   intermediateRequirements: readonly DeliveryExecutionIntermediateRequirement[]
@@ -369,9 +381,12 @@ export function buildDeliveryExecutionPlan(
         )
       const ingredientUnits = new Map<string, number>()
       const intermediateUnits = new Map<string, number>()
+      const preparationLoads: DeliveryExecutionPreparationLoad[] = []
       let productionWaterUnits = 0
 
       for (const fill of productionFills) {
+        const fillIngredientUnits = new Map<string, number>()
+        const fillIntermediateUnits = new Map<string, number>()
         const recipe = recipeById.get(fill.recipeId)
         if (!recipe) {
           throw new Error(
@@ -407,6 +422,10 @@ export function buildDeliveryExecutionPlan(
                 ingredientId,
                 (ingredientUnits.get(ingredientId) ?? 0) + quantity,
               )
+              fillIngredientUnits.set(
+                ingredientId,
+                (fillIngredientUnits.get(ingredientId) ?? 0) + quantity,
+              )
             }
             for (const [identity, quantity] of Object.entries(
               unit.intermediateStockUnits,
@@ -415,17 +434,43 @@ export function buildDeliveryExecutionPlan(
                 identity,
                 (intermediateUnits.get(identity) ?? 0) + quantity,
               )
+              fillIntermediateUnits.set(
+                identity,
+                (fillIntermediateUnits.get(identity) ?? 0) + quantity,
+              )
             }
           }
         } else {
           for (const ingredient of recipe.ingredientUnitsPerJuiceUnit) {
+            const quantity =
+              ingredient.quantityPerJuiceUnit * juiceUnits
             ingredientUnits.set(
               ingredient.ingredientId,
               (ingredientUnits.get(ingredient.ingredientId) ?? 0) +
-                ingredient.quantityPerJuiceUnit * juiceUnits,
+                quantity,
+            )
+            fillIngredientUnits.set(
+              ingredient.ingredientId,
+              (fillIngredientUnits.get(ingredient.ingredientId) ?? 0) +
+                quantity,
             )
           }
         }
+
+        preparationLoads.push({
+          physicalJarId: fill.physicalJarId,
+          recipeId: fill.recipeId,
+          recipeName: fill.recipeName,
+          plannedTripNumber: trip.tripNumber,
+          fill,
+          ingredientRequirements: [...fillIngredientUnits.entries()]
+            .map(([ingredientId, units]) => ({ ingredientId, units }))
+            .sort((a, b) => a.ingredientId.localeCompare(b.ingredientId)),
+          intermediateRequirements: [...fillIntermediateUnits.entries()]
+            .map(([identity, units]) => ({ identity, units }))
+            .sort((a, b) => a.identity.localeCompare(b.identity)),
+          productionWaterUnits: juiceUnits,
+        })
       }
 
       const initialJuiceDiscards =
@@ -443,6 +488,7 @@ export function buildDeliveryExecutionPlan(
       const executionTrip: DeliveryExecutionTrip = {
         tripNumber: trip.tripNumber,
         productionFills,
+        preparationLoads,
         initialJuiceDiscards,
         ingredientRequirements: [...ingredientUnits.entries()]
           .map(([ingredientId, units]) => ({
@@ -696,6 +742,179 @@ function applyTripEndDiscards(
     if (jar.servings === 0) {
       jar.recipeId = null
     }
+  }
+}
+
+export interface CanonicalDeliveryTransactionResult {
+  readonly inventory: InventoryState
+  readonly customerId: string
+  readonly plannedTripNumber: number
+  readonly physicalJarId: string
+  readonly recipeId: string
+  readonly droppedUsedCups: number
+}
+
+export interface CanonicalDeliveryPreparationEvents {
+  readonly initialJuiceDiscards: readonly MultiTripDiscardedInitialJuice[]
+  readonly ingredientRequirements: readonly DeliveryExecutionIngredientRequirement[]
+  readonly intermediateRequirements: readonly DeliveryExecutionIntermediateRequirement[]
+  readonly productionWaterUnits: number
+  readonly productionFill: MultiTripProductionJarFill
+}
+
+export type CanonicalDeliveryTransactionDraft =
+  | {
+      readonly status: 'ready'
+      readonly result: CanonicalDeliveryTransactionResult
+    }
+  | {
+      readonly status: 'needs-preparation'
+      readonly customerId: string
+      readonly plannedTripNumber: number
+      readonly physicalJarId: string
+      readonly recipeId: string
+      readonly preparation: DeliveryExecutionPreparationLoad | null
+      readonly events: CanonicalDeliveryPreparationEvents | null
+    }
+
+/**
+ * Builds the first canonical-state-driven delivery transaction.
+ *
+ * Planning trip numbers are lookup/provenance only: they do not gate which
+ * customer may be served. This first D1 primitive deliberately commits only
+ * already-prepared jar contents. Missing jar contents return
+ * `needs-preparation` so a later D1 slice can derive the exact preparation
+ * events instead of replaying every event attached to the planning trip.
+ */
+export function buildCanonicalDeliveryTransaction(
+  plan: DeliveryExecutionPlan,
+  sourceInventory: InventoryState,
+  suppliedCustomerIds: readonly string[],
+  customerId: string,
+): CanonicalDeliveryTransactionDraft {
+  if (suppliedCustomerIds.includes(customerId)) {
+    throw new Error(`Customer ${customerId} is already supplied`)
+  }
+
+  let plannedTrip: DeliveryExecutionTrip | null = null
+  let delivery: DeliveryExecutionCustomer | null = null
+  for (const trip of plan.trips) {
+    const candidate = trip.deliveries.find(
+      (item) => item.customerId === customerId,
+    )
+    if (candidate) {
+      plannedTrip = trip
+      delivery = candidate
+      break
+    }
+  }
+
+  if (!plannedTrip || !delivery) {
+    throw new Error(
+      `Customer ${customerId} is not pending in the delivery plan`,
+    )
+  }
+
+  const inventory = cloneInventory(sourceInventory)
+  const jar = jarById(inventory, delivery.physicalJarId)
+  if (
+    jar.recipeId !== delivery.recipeId ||
+    jar.servings < 1
+  ) {
+    return {
+      status: 'needs-preparation',
+      customerId,
+      plannedTripNumber: plannedTrip.tripNumber,
+      physicalJarId: delivery.physicalJarId,
+      recipeId: delivery.recipeId,
+      preparation:
+        plannedTrip.preparationLoads?.find(
+          (load) =>
+            load.physicalJarId === delivery.physicalJarId &&
+            load.recipeId === delivery.recipeId,
+        ) ?? null,
+      events: (() => {
+        const preparation =
+          plannedTrip.preparationLoads?.find(
+            (load) =>
+              load.physicalJarId === delivery.physicalJarId &&
+              load.recipeId === delivery.recipeId,
+          ) ?? null
+        if (!preparation) return null
+
+        const initialJuiceDiscards =
+          plannedTrip.initialJuiceDiscards.filter(
+            (discarded) =>
+              discarded.physicalJarId === delivery.physicalJarId,
+          )
+        const currentJar = jarById(inventory, delivery.physicalJarId)
+        if (currentJar.servings > 0) {
+          const plannedDiscardServings = initialJuiceDiscards.reduce(
+            (sum, discarded) => sum + discarded.servings,
+            0,
+          )
+          if (
+            currentJar.recipeId !==
+              initialJuiceDiscards[0]?.recipeId ||
+            plannedDiscardServings !== currentJar.servings
+          ) {
+            throw new Error(
+              `Canonical preparation cannot overwrite current contents of physical jar ${delivery.physicalJarId}`,
+            )
+          }
+        }
+
+        return {
+          initialJuiceDiscards,
+          ingredientRequirements: preparation.ingredientRequirements,
+          intermediateRequirements: preparation.intermediateRequirements,
+          productionWaterUnits: preparation.productionWaterUnits,
+          productionFill: preparation.fill,
+        }
+      })(),
+    }
+  }
+
+  if (inventory.cleanCups < 1) {
+    throw new Error(
+      `Customer ${customerId} cannot be served without a clean cup`,
+    )
+  }
+
+  const cleanAfter = inventory.cleanCups - 1
+  const returnedUsedCups = inventory.usedCups + 1
+  const occupiedSlotsIfReturned =
+    plannedTrip.juiceJarSlotsCarried +
+    cleanCupStacksFor(cleanAfter) +
+    cleanCupStacksFor(returnedUsedCups)
+
+  let droppedUsedCups = 0
+  inventory.cleanCups = cleanAfter
+  if (occupiedSlotsIfReturned <= BACKPACK_SLOT_CAPACITY) {
+    inventory.usedCups = returnedUsedCups
+  } else if (plan.policy === 'allow-drop-if-full') {
+    droppedUsedCups = 1
+  } else {
+    throw new Error(
+      `Customer ${customerId} cannot return a used cup within backpack capacity`,
+    )
+  }
+
+  jar.servings -= 1
+  if (jar.servings === 0) {
+    jar.recipeId = null
+  }
+
+  return {
+    status: 'ready',
+    result: {
+      inventory,
+      customerId,
+      plannedTripNumber: plannedTrip.tripNumber,
+      physicalJarId: delivery.physicalJarId,
+      recipeId: delivery.recipeId,
+      droppedUsedCups,
+    },
   }
 }
 

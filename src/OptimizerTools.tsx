@@ -2,6 +2,7 @@ import { memo, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { customers } from './data/customers'
 import { ingredients } from './data/ingredients'
 import { recipes } from './data/recipes'
+import { recipeIngredientCapabilities } from './data/recipeIngredientCapabilities'
 import { ingredientIsAvailable } from './domain/availability'
 import {
   optimizerCustomerIds,
@@ -185,11 +186,23 @@ const deliveryMismatchLabels: Record<
 const customerById = new Map(
   customers.map((customer) => [customer.id, customer]),
 )
+const ingredientById = new Map(
+  ingredients.map((ingredient) => [ingredient.id, ingredient]),
+)
 const ingredientNameById = new Map(
   ingredients.map((ingredient) => [ingredient.id, ingredient.name]),
 )
 const recipeNameById = new Map(
   recipes.map((recipe) => [recipe.id, recipe.name]),
+)
+const rawJuiceNameByIngredientId = new Map(
+  recipes.flatMap((recipe) =>
+    recipe.ingredients.length === 1
+      ? ingredients
+          .filter((ingredient) => ingredient.name === recipe.ingredients[0])
+          .map((ingredient) => [ingredient.id, recipe.name] as const)
+      : [],
+  ),
 )
 
 export const optimizerCriterionOptions: Array<{
@@ -237,10 +250,43 @@ export interface IntermediateJuiceInventoryEntry {
   label: string
 }
 
+function ingredientIsAvailableAtProgress(
+  ingredientId: string,
+  currentProgress: ProgressMilestoneId,
+): boolean {
+  const ingredient = ingredientById.get(ingredientId)
+  return ingredient ? ingredientIsAvailable(ingredient, currentProgress) : false
+}
+
 export function intermediateJuiceInventoryEntries(
   entries: readonly RecipeCandidatePoolEntry[],
+  currentProgress?: ProgressMilestoneId,
 ): IntermediateJuiceInventoryEntry[] {
   const byIdentity = new Map<string, IntermediateJuiceInventoryEntry>()
+
+  // Every declared juice-base ingredient is valid one-step intermediate stock.
+  // Do not derive this catalog by asking the full recipe production path to
+  // finalize a one-ingredient recipe: raw juice exists before finalization.
+  for (const capability of recipeIngredientCapabilities) {
+    if (
+      !capability.roles.includes('juice-base') ||
+      !capability.baseEquipment ||
+      (currentProgress !== undefined &&
+        !ingredientIsAvailableAtProgress(capability.ingredientId, currentProgress))
+    ) {
+      continue
+    }
+    const ingredientIds = [capability.ingredientId]
+    const identity = juiceStateIdentity(ingredientIds)
+    byIdentity.set(identity, {
+      identity,
+      ingredientIds,
+      label:
+        rawJuiceNameByIngredientId.get(capability.ingredientId) ??
+        sequenceLabel(ingredientIds),
+    })
+  }
+
   for (const entry of entries) {
     const path = productionPathForIngredientIds(entry.ingredientIds)
     if (!path) continue
@@ -267,13 +313,52 @@ export function searchIntermediateJuiceEntries(
   limit = INTERMEDIATE_JUICE_SEARCH_RESULT_LIMIT,
 ): IntermediateJuiceInventoryEntry[] {
   const normalized = normalizeRecipeSearchText(query)
-  return entries
-    .filter((entry) =>
-      !normalized ||
-      normalizeRecipeSearchText(entry.label).includes(normalized) ||
-      normalizeRecipeSearchText(entry.ingredientIds.join(' ')).includes(normalized),
+  const boundedLimit = Math.max(0, Math.floor(limit))
+  const ranked = entries
+    .map((entry) => {
+      if (!normalized) return { entry, rank: 0 }
+      const label = normalizeRecipeSearchText(entry.label)
+      const ingredientIds = normalizeRecipeSearchText(entry.ingredientIds.join(' '))
+      const ingredientNameList = entry.ingredientIds.map((ingredientId) =>
+        normalizeRecipeSearchText(ingredientLabel(ingredientId)),
+      )
+      const ingredientIdList = entry.ingredientIds.map((ingredientId) =>
+        normalizeRecipeSearchText(ingredientId),
+      )
+      const ingredientNames = ingredientNameList.join(' ')
+      if (label === normalized) return { entry, rank: 0 }
+      if (
+        entry.ingredientIds.length === 1 &&
+        ingredientNameList[0] === normalized
+      ) {
+        return { entry, rank: 1 }
+      }
+      if (
+        entry.ingredientIds.length === 1 &&
+        ingredientIdList[0] === normalized
+      ) {
+        return { entry, rank: 2 }
+      }
+      if (label.includes(normalized)) return { entry, rank: 3 }
+      if (ingredientNames.includes(normalized)) return { entry, rank: 4 }
+      if (ingredientIds.includes(normalized)) return { entry, rank: 5 }
+      return null
+    })
+    .filter(
+      (match): match is { entry: IntermediateJuiceInventoryEntry; rank: number } =>
+        match !== null,
     )
-    .slice(0, Math.max(0, Math.floor(limit)))
+
+  if (normalized) {
+    ranked.sort(
+      (a, b) =>
+        a.rank - b.rank ||
+        a.entry.label.localeCompare(b.entry.label, 'zh-Hant') ||
+        a.entry.identity.localeCompare(b.entry.identity),
+    )
+  }
+
+  return ranked.slice(0, boundedLimit).map(({ entry }) => entry)
 }
 
 
@@ -752,8 +837,8 @@ function OptimizerTools({
   )
 
   const intermediateInventoryEntries = useMemo(
-    () => intermediateJuiceInventoryEntries(inventoryRecipeEntries),
-    [inventoryRecipeEntries],
+    () => intermediateJuiceInventoryEntries(inventoryRecipeEntries, currentProgress),
+    [inventoryRecipeEntries, currentProgress],
   )
 
   const accessibleJuiceJars = useMemo(
