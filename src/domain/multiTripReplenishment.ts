@@ -1086,6 +1086,42 @@ function simulateCupTrip(
   }
 }
 
+function coalesceInitialSameRecipeRefills(
+  queues: JarQueue[],
+): void {
+  for (const queue of queues) {
+    const existing = queue.loads[0]
+    const refill = queue.loads[1]
+
+    if (
+      !existing ||
+      !refill ||
+      existing.fillAction !== 'use-existing' ||
+      existing.plannedFillServings !== 0 ||
+      existing.retainedLeftoverServings !== 0 ||
+      refill.fillAction !== 'refill-same-type' ||
+      existing.recipeId !== refill.recipeId ||
+      existing.physicalJarId !== refill.physicalJarId ||
+      existing.servings + refill.plannedFillServings >
+        JUICE_JAR_CAPACITY
+    ) {
+      continue
+    }
+
+    queue.loads.splice(0, 2, {
+      ...refill,
+      customerIds: [
+        ...existing.customerIds,
+        ...refill.customerIds,
+      ],
+      servings: existing.servings + refill.servings,
+      fillAction: 'refill-same-type',
+      previousRecipeId: existing.recipeId,
+      previousRecipeName: existing.recipeName,
+    })
+  }
+}
+
 type TripCandidateOrderMode =
   | 'baseline'
   | 'terminal-leftovers-last'
@@ -1794,6 +1830,7 @@ export function buildMultiTripReplenishmentPlan(
       queues,
       queueBuild.plannedNewProductionDiscards,
     )
+  coalesceInitialSameRecipeRefills(queues)
   const baselineTripBuild = buildTrips(
     queues,
     policy,
