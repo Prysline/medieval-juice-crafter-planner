@@ -441,6 +441,33 @@ describe('multi-trip replenishment', () => {
     expectScheduleConsistency(result)
   })
 
+  it('keeps the baseline split when pre-filling would make the atomic load infeasible', () => {
+    const salesDemand = demand([
+      {
+        recipeId: 'a',
+        recipeName: 'A',
+        assignedServings: 2,
+      },
+    ])
+    const jars: JuiceJarInventoryItem[] = [
+      { id: 'jar-1', recipeId: 'a', servings: 1 },
+    ]
+
+    const result = buildPlanWithJars(
+      salesDemand,
+      'retain-and-wash',
+      jars,
+      { cleanCups: 1, usedCups: 0 },
+    )
+
+    expect(result.tripCount).toBe(2)
+    expect(
+      result.trips.map((trip) => trip.juiceJars[0]?.fillAction),
+    ).toEqual(['use-existing', 'refill-same-type'])
+    expect(result.totalLeftoverServings).toBe(1)
+    expectScheduleConsistency(result)
+  })
+
   it('keeps a terminal leftover from trip 2 when moving it later would increase trip count', () => {
     const salesDemand = demand([
       {
