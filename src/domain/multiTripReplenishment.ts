@@ -1086,11 +1086,16 @@ function simulateCupTrip(
   }
 }
 
+type TripCandidateOrderMode =
+  | 'baseline'
+  | 'terminal-leftovers-last'
+
 function buildTrips(
   queues: JarQueue[],
   policy: UsedCupTripPolicy,
   carryPolicy: MultiTripJarCarryPolicy,
   initialCupState: CupState,
+  orderMode: TripCandidateOrderMode = 'baseline',
 ): {
   trips: MutableTrip[]
   finalCupState: CupState
@@ -1164,16 +1169,24 @@ function buildTrips(
       .flatMap((queue) =>
         queue.loads[0] ? [queue.loads[0]] : [],
       )
-      .sort(
-        (a, b) =>
+      .sort((a, b) => {
+        const terminalTimingPreference =
+          orderMode === 'terminal-leftovers-last'
+            ? Number(a.retainedLeftoverServings > 0) -
+              Number(b.retainedLeftoverServings > 0)
+            : 0
+
+        return (
+          terminalTimingPreference ||
           b.servings - a.servings ||
           a.recipeName.localeCompare(
             b.recipeName,
             'zh-Hant',
           ) ||
           a.recipeId.localeCompare(b.recipeId) ||
-          a.physicalJarId.localeCompare(b.physicalJarId),
-      )
+          a.physicalJarId.localeCompare(b.physicalJarId)
+        )
+      })
 
     const trip = {
       juiceJars: [] as MultiTripJuiceJarLoad[],
@@ -1284,6 +1297,106 @@ function buildTrips(
   return {
     trips,
     finalCupState: cupState,
+  }
+}
+
+export interface TerminalLeftoverScheduleMetrics {
+  feasible: boolean
+  tripCount: number
+  droppedUsedCups: number
+  discardedJuiceServings: number
+  cupWashWaterUnits: number
+  jarTypeSwitches: number
+  physicalJarSequenceSignature: string
+  terminalLeftoverTripScore: number
+}
+
+export function shouldAcceptTerminalLeftoverTimingCandidate(
+  baseline: TerminalLeftoverScheduleMetrics,
+  candidate: TerminalLeftoverScheduleMetrics,
+): boolean {
+  return (
+    candidate.feasible &&
+    candidate.tripCount === baseline.tripCount &&
+    candidate.droppedUsedCups === baseline.droppedUsedCups &&
+    candidate.discardedJuiceServings === baseline.discardedJuiceServings &&
+    candidate.cupWashWaterUnits === baseline.cupWashWaterUnits &&
+    candidate.jarTypeSwitches === baseline.jarTypeSwitches &&
+    candidate.physicalJarSequenceSignature ===
+      baseline.physicalJarSequenceSignature &&
+    candidate.terminalLeftoverTripScore >
+      baseline.terminalLeftoverTripScore
+  )
+}
+
+function mutableTripSequenceSignature(
+  trips: readonly MutableTrip[],
+): string {
+  const byJarId = new Map<string, string[]>()
+
+  for (const trip of trips) {
+    for (const load of trip.juiceJars) {
+      const sequence = byJarId.get(load.physicalJarId) ?? []
+      sequence.push(
+        [
+          load.recipeId,
+          load.fillAction,
+          load.servings,
+          load.plannedFillServings,
+          load.retainedLeftoverServings,
+        ].join(':'),
+      )
+      byJarId.set(load.physicalJarId, sequence)
+    }
+  }
+
+  return [...byJarId.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([physicalJarId, sequence]) =>
+      physicalJarId + '=' + sequence.join('>'),
+    )
+    .join('|')
+}
+
+function terminalLeftoverScheduleMetrics(
+  trips: readonly MutableTrip[],
+  discardedJuiceServings: number,
+): TerminalLeftoverScheduleMetrics {
+  return {
+    feasible: true,
+    tripCount: trips.length,
+    droppedUsedCups: trips.reduce(
+      (sum, trip) => sum + trip.cupTransition.droppedUsedCups,
+      0,
+    ),
+    discardedJuiceServings,
+    cupWashWaterUnits: trips.reduce(
+      (sum, trip) => sum + trip.cupTransition.cupsWashedBeforeTrip,
+      0,
+    ),
+    jarTypeSwitches: trips.reduce(
+      (sum, trip) =>
+        sum +
+        trip.juiceJars.filter(
+          (load) => load.fillAction === 'type-switch',
+        ).length,
+      0,
+    ),
+    physicalJarSequenceSignature:
+      mutableTripSequenceSignature(trips),
+    terminalLeftoverTripScore: trips.reduce(
+      (score, trip, index) =>
+        score +
+        trip.juiceJars.reduce(
+          (tripScore, load) =>
+            tripScore +
+            (load.retainedLeftoverServings > 0
+              ? index + 1
+              : 0),
+          0,
+        ),
+      0,
+    ),
   }
 }
 
@@ -1681,12 +1794,58 @@ export function buildMultiTripReplenishmentPlan(
       queues,
       queueBuild.plannedNewProductionDiscards,
     )
-  const { trips: mutableTrips, finalCupState } = buildTrips(
+  const baselineTripBuild = buildTrips(
     queues,
     policy,
     normalizedCarryPolicy,
     initialCupState,
   )
+  const discardedJuiceServings =
+    discardedInitialJuice.reduce(
+      (sum, item) => sum + item.servings,
+      0,
+    ) +
+    pendingNewProductionDiscards.reduce(
+      (sum, item) => sum + item.servings,
+      0,
+    )
+  let selectedTripBuild = baselineTripBuild
+
+  try {
+    const timingCandidate = buildTrips(
+      queues,
+      policy,
+      normalizedCarryPolicy,
+      initialCupState,
+      'terminal-leftovers-last',
+    )
+    const baselineMetrics = terminalLeftoverScheduleMetrics(
+      baselineTripBuild.trips,
+      discardedJuiceServings,
+    )
+    const candidateMetrics = terminalLeftoverScheduleMetrics(
+      timingCandidate.trips,
+      discardedJuiceServings,
+    )
+
+    if (
+      shouldAcceptTerminalLeftoverTimingCandidate(
+        baselineMetrics,
+        candidateMetrics,
+      )
+    ) {
+      selectedTripBuild = timingCandidate
+    }
+  } catch (error) {
+    if (!(error instanceof PlanningUserError)) {
+      throw error
+    }
+  }
+
+  const {
+    trips: mutableTrips,
+    finalCupState,
+  } = selectedTripBuild
   const trips: MultiTripSalesTrip[] = mutableTrips.map(
     (trip, index) => {
       const transition = trip.cupTransition

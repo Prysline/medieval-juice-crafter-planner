@@ -7,6 +7,7 @@ import {
   buildMultiTripReplenishmentPlan as buildMultiTripReplenishmentPlanWithCups,
   buildProductionJarFillsFromSchedule,
   countJarTypeSwitchesFromSchedule,
+  shouldAcceptTerminalLeftoverTimingCandidate,
   type MultiTripReplenishmentPlan,
   type MultiTripSalesTrip,
   type UsedCupTripPolicy,
@@ -390,6 +391,309 @@ describe('multi-trip replenishment', () => {
     ])
     expect(result.totalLeftoverServings).toBe(1)
     expectScheduleConsistency(result)
+  })
+
+  it('keeps a terminal leftover from trip 2 when moving it later would increase trip count', () => {
+    const salesDemand = demand([
+      {
+        recipeId: 'a',
+        recipeName: 'A',
+        assignedServings: 10,
+      },
+      {
+        recipeId: 'b',
+        recipeName: 'B',
+        assignedServings: 3,
+      },
+      {
+        recipeId: 'c',
+        recipeName: 'C',
+        assignedServings: 7,
+      },
+    ])
+    const jars: JuiceJarInventoryItem[] = [
+      {
+        id: 'jar-1',
+        recipeId: 'a',
+        servings: 1,
+      },
+      {
+        id: 'jar-2',
+        recipeId: 'b',
+        servings: 1,
+      },
+      {
+        id: 'jar-3',
+        recipeId: 'c',
+        servings: 3,
+      },
+    ]
+    const shortfall = shortfallFor(salesDemand, jars)
+
+    const result = buildMultiTripReplenishmentPlanWithCups(
+      salesDemand,
+      'retain-and-wash',
+      jars,
+      { cleanCups: 5, usedCups: 5 },
+      shortfall,
+      {
+        mode: 'fixed-slots',
+        reservedSlots: 2,
+        minimumCarriedSlots: 0,
+      },
+      false,
+    )
+
+    expect(result.tripCount).toBe(3)
+    expect(result.trips[1]?.juiceJars).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          physicalJarId: 'jar-1',
+          recipeId: 'a',
+          retainedLeftoverServings: 1,
+        }),
+      ]),
+    )
+    expect(
+      result.trips[2]?.juiceJars.some(
+        (load) => load.physicalJarId === 'jar-1',
+      ),
+    ).toBe(false)
+    expect(
+      result.trips[2]?.carriedPhysicalJarIds.includes('jar-1'),
+    ).toBe(false)
+    expect(result.leftoverJarContents).toEqual([
+      {
+        physicalJarId: 'jar-1',
+        recipeId: 'a',
+        recipeName: 'A',
+        servings: 1,
+        tripNumber: 2,
+      },
+    ])
+    expect(result.totalLeftoverServings).toBe(1)
+    expect(
+      result.productionJarFills.filter(
+        (fill) => fill.physicalJarId === 'jar-1',
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        physicalJarId: 'jar-1',
+        recipeId: 'a',
+        beforeTripNumber: 2,
+        servings: 10,
+        servingsAfterFill: 10,
+        fillAction: 'refill-same-type',
+      }),
+    ])
+    expectScheduleConsistency(result)
+  })
+
+  it('moves a terminal-leftover load later when logistics quality is unchanged', () => {
+    const salesDemand = demand([
+      {
+        recipeId: 'a',
+        recipeName: 'A',
+        assignedServings: 1,
+      },
+      {
+        recipeId: 'b',
+        recipeName: 'B',
+        assignedServings: 1,
+      },
+    ])
+    const jars: JuiceJarInventoryItem[] = [
+      {
+        id: 'jar-1',
+        recipeId: null,
+        servings: 0,
+      },
+      {
+        id: 'jar-2',
+        recipeId: 'b',
+        servings: 1,
+      },
+    ]
+
+    const result = buildPlanWithJars(
+      salesDemand,
+      'retain-and-wash',
+      jars,
+      { cleanCups: 1, usedCups: 0 },
+    )
+
+    expect(result.tripCount).toBe(2)
+    expect(result.droppedUsedCups).toBe(0)
+    expect(result.totalCupWashWaterUnits).toBe(1)
+    expect(result.jarTypeSwitches).toBe(0)
+    expect(
+      result.trips.map((trip) =>
+        trip.juiceJars.map((load) => load.recipeId),
+      ),
+    ).toEqual([['b'], ['a']])
+    expect(result.leftoverJarContents).toEqual([
+      {
+        physicalJarId: 'jar-1',
+        recipeId: 'a',
+        recipeName: 'A',
+        servings: 1,
+        tripNumber: 2,
+      },
+    ])
+  })
+
+  it('rejects a terminal-leftover timing candidate that increases trip count', () => {
+    const baseline = {
+      feasible: true,
+      tripCount: 2,
+      droppedUsedCups: 0,
+      discardedJuiceServings: 0,
+      cupWashWaterUnits: 1,
+      jarTypeSwitches: 0,
+      physicalJarSequenceSignature: 'jar-1=a',
+      terminalLeftoverTripScore: 1,
+    }
+
+    expect(
+      shouldAcceptTerminalLeftoverTimingCandidate(
+        baseline,
+        {
+          ...baseline,
+          tripCount: 3,
+          terminalLeftoverTripScore: 3,
+        },
+      ),
+    ).toBe(false)
+  })
+
+  it('rejects later-leftover candidates that worsen wash, drop, discard, switch, feasibility, or physical jar order', () => {
+    const baseline = {
+      feasible: true,
+      tripCount: 2,
+      droppedUsedCups: 0,
+      discardedJuiceServings: 0,
+      cupWashWaterUnits: 1,
+      jarTypeSwitches: 0,
+      physicalJarSequenceSignature: 'jar-1=a>c|jar-2=b',
+      terminalLeftoverTripScore: 1,
+    }
+    const worsenedCandidates = [
+      {
+        ...baseline,
+        cupWashWaterUnits: 2,
+        terminalLeftoverTripScore: 2,
+      },
+      {
+        ...baseline,
+        droppedUsedCups: 1,
+        terminalLeftoverTripScore: 2,
+      },
+      {
+        ...baseline,
+        discardedJuiceServings: 1,
+        terminalLeftoverTripScore: 2,
+      },
+      {
+        ...baseline,
+        jarTypeSwitches: 1,
+        terminalLeftoverTripScore: 2,
+      },
+      {
+        ...baseline,
+        feasible: false,
+        terminalLeftoverTripScore: 2,
+      },
+      {
+        ...baseline,
+        physicalJarSequenceSignature: 'jar-1=c>a|jar-2=b',
+        terminalLeftoverTripScore: 2,
+      },
+    ]
+
+    for (const candidate of worsenedCandidates) {
+      expect(
+        shouldAcceptTerminalLeftoverTimingCandidate(
+          baseline,
+          candidate,
+        ),
+      ).toBe(false)
+    }
+  })
+
+  it('postpones multiple terminal-leftover recipes deterministically', () => {
+    const salesDemand = demand([
+      {
+        recipeId: 'a',
+        recipeName: 'A',
+        assignedServings: 1,
+      },
+      {
+        recipeId: 'b',
+        recipeName: 'B',
+        assignedServings: 1,
+      },
+      {
+        recipeId: 'c',
+        recipeName: 'C',
+        assignedServings: 1,
+      },
+    ])
+    const jars: JuiceJarInventoryItem[] = [
+      {
+        id: 'jar-1',
+        recipeId: null,
+        servings: 0,
+      },
+      {
+        id: 'jar-2',
+        recipeId: null,
+        servings: 0,
+      },
+      {
+        id: 'jar-3',
+        recipeId: 'c',
+        servings: 1,
+      },
+    ]
+
+    const first = buildPlanWithJars(
+      salesDemand,
+      'retain-and-wash',
+      jars,
+      { cleanCups: 1, usedCups: 0 },
+    )
+    const second = buildPlanWithJars(
+      salesDemand,
+      'retain-and-wash',
+      jars,
+      { cleanCups: 1, usedCups: 0 },
+    )
+
+    expect(first.trips).toEqual(second.trips)
+    expect(first.leftoverJarContents).toEqual(
+      second.leftoverJarContents,
+    )
+    expect(
+      first.trips.map((trip) =>
+        trip.juiceJars.map((load) => load.recipeId),
+      ),
+    ).toEqual([['c'], ['a'], ['b']])
+    expect(first.leftoverJarContents).toEqual([
+      {
+        physicalJarId: 'jar-1',
+        recipeId: 'a',
+        recipeName: 'A',
+        servings: 1,
+        tripNumber: 2,
+      },
+      {
+        physicalJarId: 'jar-2',
+        recipeId: 'b',
+        recipeName: 'B',
+        servings: 1,
+        tripNumber: 3,
+      },
+    ])
   })
 
   it('reserves a matching initial jar for a terminal leftover recipe', () => {

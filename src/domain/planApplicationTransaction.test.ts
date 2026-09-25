@@ -1,11 +1,20 @@
 import { describe, expect, it } from 'vitest'
+import type { InventoryState, PlannerSettings } from '../types'
 import type { OptimizationResult } from './optimizer'
-import type { PreparationShortfall } from './preparationShortfall'
-import type {
-  MultiTripReplenishmentPlan,
-  MultiTripSalesTrip,
+import { buildPreparationDemand } from './preparationDemand'
+import {
+  buildPreparationShortfall,
+  type PreparationShortfall,
+} from './preparationShortfall'
+import {
+  buildMultiTripReplenishmentPlan,
+  type MultiTripReplenishmentPlan,
+  type MultiTripSalesTrip,
 } from './multiTripReplenishment'
-import type { ProductionLogisticsPlan } from './productionLogistics'
+import {
+  buildProductionLogisticsPlan,
+  type ProductionLogisticsPlan,
+} from './productionLogistics'
 import {
   PLAN_APPLICATION_TRANSACTION_SCHEMA,
   buildPlanApplicationTransactionDraft,
@@ -687,6 +696,184 @@ describe('plan application transaction', () => {
       },
     ])
     expect(draft.changes.juiceJars).toEqual([])
+  })
+
+  it('keeps a postposed three-trip terminal leftover through shortfall, sales plan, and transaction state', () => {
+    const result: OptimizationResult = {
+      assignments: [
+        { customerId: 'a-customer-1', recipeId: 'a' },
+        { customerId: 'a-customer-2', recipeId: 'a' },
+        { customerId: 'b-customer-1', recipeId: 'b' },
+      ],
+      recipePlans: [
+        {
+          recipeId: 'a',
+          recipeName: 'A',
+          customerIds: ['a-customer-1', 'a-customer-2'],
+          juiceUnits: 1,
+          producedServings: 2,
+          assignedServings: 2,
+          leftoverServings: 0,
+          ingredientIds: ['lemon'],
+          juiceUnitIngredientCost: 1,
+          totalIngredientCost: 1,
+        },
+        {
+          recipeId: 'b',
+          recipeName: 'B',
+          customerIds: ['b-customer-1'],
+          juiceUnits: 1,
+          producedServings: 2,
+          assignedServings: 1,
+          leftoverServings: 1,
+          ingredientIds: ['orange'],
+          juiceUnitIngredientCost: 1,
+          totalIngredientCost: 1,
+        },
+      ],
+      productionSteps: [],
+      machineOperations: {
+        total: 0,
+        juicing: 0,
+        seasoning: 0,
+        blending: 0,
+        finalizing: 0,
+      },
+      jarTypeSwitches: 0,
+      availableJuiceJarCount: 2,
+      shoppingList: [],
+      unresolvedCustomers: [],
+      totalIngredientCost: 2,
+      knownSalesRevenue: 0,
+      knownGrossProfit: -2,
+      formalSalesCount: 3,
+      potentialTrialCount: 0,
+      unknownFormalSalePriceCount: 0,
+      producedServings: 4,
+      assignedServings: 3,
+      leftoverServings: 1,
+    }
+    const inventory: InventoryState = {
+      ingredientUnits: {
+        lemon: 2,
+        orange: 2,
+      },
+      intermediateJuiceUnits: {},
+      waterUnits: 10,
+      cleanCups: 1,
+      usedCups: 0,
+      juiceJars: [
+        {
+          id: 'jar-1',
+          recipeId: 'a',
+          servings: 1,
+        },
+        {
+          id: 'jar-2',
+          recipeId: 'b',
+          servings: 1,
+        },
+      ],
+      shelfCount: 1,
+      jarRackCount: 1,
+    }
+    const plannerSettings: PlannerSettings = {
+      juiceJarCarryMode: 'auto',
+      reservedJuiceJarSlots: 0,
+      allowUsedCupDropIfFull: false,
+      allowDiscardRetainedJuice: false,
+    }
+
+    const preparationDemand = buildPreparationDemand(result)
+    const preparationShortfall = buildPreparationShortfall(
+      preparationDemand,
+      inventory,
+    )
+    const salesPlan = buildMultiTripReplenishmentPlan(
+      preparationDemand,
+      'retain-and-wash',
+      inventory.juiceJars,
+      {
+        cleanCups: inventory.cleanCups,
+        usedCups: inventory.usedCups,
+      },
+      preparationShortfall,
+      {
+        mode: 'auto',
+        reservedSlots: 0,
+        minimumCarriedSlots: 0,
+      },
+      false,
+    )
+
+    expect(salesPlan.tripCount).toBe(3)
+    expect(salesPlan.trips[1]?.juiceJars).toEqual([
+      expect.objectContaining({
+        physicalJarId: 'jar-2',
+        recipeId: 'b',
+        retainedLeftoverServings: 0,
+      }),
+    ])
+    expect(salesPlan.trips[2]?.juiceJars).toEqual([
+      expect.objectContaining({
+        physicalJarId: 'jar-1',
+        recipeId: 'a',
+        retainedLeftoverServings: 1,
+      }),
+    ])
+    expect(salesPlan.leftoverJarContents).toEqual([
+      {
+        physicalJarId: 'jar-1',
+        recipeId: 'a',
+        recipeName: 'A',
+        servings: 1,
+        tripNumber: 3,
+      },
+    ])
+    expect(salesPlan.totalLeftoverServings).toBe(1)
+
+    const logistics = buildProductionLogisticsPlan(
+      preparationShortfall,
+      inventory,
+      plannerSettings,
+      salesPlan.productionJarFills,
+    )
+    expect(logistics.feasible).toBe(true)
+
+    const draft = buildPlanApplicationTransactionDraft({
+      basis: {
+        inventory,
+        currentProgress: 'opening',
+        satisfactionByVillage: {
+          'east-harbor': 0,
+          'tranquil-fountain': 0,
+        },
+        formalCustomerIds: [
+          'a-customer-1',
+          'a-customer-2',
+          'b-customer-1',
+        ],
+        suppliedCustomerIds: [],
+        plannerSettings,
+      },
+      result,
+      preparationShortfall,
+      productionLogistics: logistics,
+      salesPlan,
+    })
+
+    expect(draft.after.inventory.juiceJars).toEqual([
+      {
+        id: 'jar-1',
+        recipeId: 'a',
+        servings: 1,
+      },
+      {
+        id: 'jar-2',
+        recipeId: null,
+        servings: 0,
+      },
+    ])
   })
 
   it('consumes only planned intermediate stock and preserves the unused remainder', () => {
