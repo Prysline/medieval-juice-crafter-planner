@@ -15,6 +15,7 @@ import {
 const zeroSatisfaction: SatisfactionByVillage = {
   'east-harbor': 0,
   'tranquil-fountain': 0,
+  'ibex-statue': 0,
 }
 
 describe('progress and village availability', () => {
@@ -78,12 +79,14 @@ describe('progress and village availability', () => {
       customerIsUnlocked(daniel!, 'tranquil-fountain-unlocked', {
         'east-harbor': 999,
         'tranquil-fountain': 0,
+        'ibex-statue': 0,
       }),
     ).toBe(false)
     expect(
       customerIsUnlocked(daniel!, 'tranquil-fountain-unlocked', {
         'east-harbor': 0,
         'tranquil-fountain': 200,
+        'ibex-statue': 0,
       }),
     ).toBe(true)
   })
@@ -96,6 +99,7 @@ describe('progress and village availability', () => {
       customerIsUnlocked(betsy!, 'tranquil-fountain-unlocked', {
         'east-harbor': 0,
         'tranquil-fountain': 999,
+        'ibex-statue': 0,
       }),
     ).toBe(false)
   })
@@ -108,6 +112,7 @@ describe('progress and village availability', () => {
         {
           'east-harbor': 999,
           'tranquil-fountain': 999,
+          'ibex-statue': 0,
         },
         true,
       ).some((customer) => customer.id === 'daniel'),
