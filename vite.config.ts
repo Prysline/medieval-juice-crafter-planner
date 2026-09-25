@@ -14,4 +14,9 @@ export default defineConfig({
   worker: {
     format: 'es',
   },
+  build: {
+    rollupOptions: {
+      input: ['index.html', 'highs-runtime-smoke.html'],
+    },
+  },
 })

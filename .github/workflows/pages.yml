@@ -28,6 +28,7 @@ jobs:
       - run: npm install
       - run: npm test
       - run: npm run build
+      - run: npm run smoke:highs:pages-like
 
       - uses: actions/configure-pages@v5
 
@@ -41,7 +42,23 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     needs: build
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  runtime-smoke:
+    name: Deployed optimizer runtime smoke
+    runs-on: ubuntu-latest
+    needs: deploy
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Verify deployed optimizer worker and HiGHS WASM
+        run: node scripts/highs-runtime-smoke.mjs --url "${{ needs.deploy.outputs.page_url }}highs-runtime-smoke.html"
