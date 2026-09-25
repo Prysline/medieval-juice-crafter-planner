@@ -735,6 +735,160 @@ describe('delivery execution trace', () => {
     expect(second.cursor.nextTripNumber).toBe(3)
   })
 
+  it('preserves the terminal serving when an initial same-recipe serving is sold before a two-serving refill', () => {
+    const terminalShortfall: PreparationShortfall = {
+      ...twoTripShortfall(),
+      recipes: [
+        {
+          recipeId: 'recipe-a',
+          recipeName: 'A',
+          ingredientIds: ['lemon'],
+          assignedServings: 2,
+          finishedServingsAvailable: 1,
+          finishedServingsUsed: 1,
+          finishedServingsRemaining: 0,
+          finishedStockSources: [
+            {
+              physicalJarId: 'jar-1',
+              recipeId: 'recipe-a',
+              initialServings: 1,
+              servingsUsed: 1,
+              servingsRemaining: 0,
+            },
+          ],
+          servingsToProduce: 1,
+          juiceUnitsToPrepare: 1,
+          newlyProducedServings: 2,
+          newProductionLeftoverServings: 1,
+          ingredientUnitsPerJuiceUnit: [
+            { ingredientId: 'lemon', quantityPerJuiceUnit: 1 },
+          ],
+        },
+      ],
+      ingredients: [
+        {
+          ingredientId: 'lemon',
+          name: '檸檬',
+          requiredUnits: 1,
+          inventoryUnitsAvailable: 1,
+          inventoryUnitsUsed: 1,
+          purchaseUnits: 0,
+        },
+      ],
+      productionWaterUnitsRequired: 1,
+      waterUnitsAvailable: 2,
+      waterUnitsUsed: 1,
+      waterUnitsToFetch: 0,
+      cleanCupUses: 2,
+      cleanCupsAvailable: 1,
+      cleanCupShortfallBeforeWashing: 1,
+      usedCupsAvailable: 0,
+    }
+    const terminalPlan = twoTripPlan()
+    terminalPlan.distinctFinalJuiceTypes = 1
+    terminalPlan.jarTypeSwitches = 0
+    terminalPlan.carriedJuiceJars[0] = {
+      physicalJarId: 'jar-1',
+      initialRecipeId: 'recipe-a',
+      initialServings: 1,
+    }
+    terminalPlan.trips[0].juiceJars[0] = {
+      ...terminalPlan.trips[0].juiceJars[0],
+      recipeId: 'recipe-a',
+      recipeName: 'A',
+      plannedFillServings: 0,
+      retainedLeftoverServings: 0,
+      fillAction: 'use-existing',
+      previousRecipeId: 'recipe-a',
+      previousRecipeName: 'A',
+    }
+    terminalPlan.trips[1].juiceJars[0] = {
+      ...terminalPlan.trips[1].juiceJars[0],
+      recipeId: 'recipe-a',
+      recipeName: 'A',
+      plannedFillServings: 2,
+      retainedLeftoverServings: 1,
+      fillAction: 'refill-same-type',
+      previousRecipeId: 'recipe-a',
+      previousRecipeName: 'A',
+    }
+    terminalPlan.productionJarFills = [
+      {
+        physicalJarId: 'jar-1',
+        recipeId: 'recipe-a',
+        recipeName: 'A',
+        beforeTripNumber: 2,
+        servings: 2,
+        servingsAfterFill: 2,
+        fillAction: 'refill-same-type',
+        previousRecipeId: 'recipe-a',
+        previousRecipeName: 'A',
+        receiver: 'carried-jar',
+      },
+    ]
+    terminalPlan.totalLeftoverServings = 1
+    terminalPlan.leftoverJarContents = [
+      {
+        physicalJarId: 'jar-1',
+        recipeId: 'recipe-a',
+        recipeName: 'A',
+        servings: 1,
+        tripNumber: 2,
+      },
+    ]
+
+    const plan = buildDeliveryExecutionPlan(
+      terminalShortfall,
+      terminalPlan,
+    )
+    let current: InventoryState = {
+      ingredientUnits: { lemon: 1 },
+      waterUnits: 2,
+      cleanCups: 1,
+      usedCups: 0,
+      juiceJars: [
+        { id: 'jar-1', recipeId: 'recipe-a', servings: 1 },
+      ],
+      shelfCount: 0,
+      jarRackCount: 0,
+    }
+    let cursor = createDeliveryExecutionCursor(plan)
+
+    const first = applyDeliveryExecutionCustomer(
+      plan,
+      current,
+      cursor,
+      'customer-1',
+    )
+    current = first.inventory
+    cursor = first.cursor
+    expect(current.juiceJars[0]).toEqual({
+      id: 'jar-1',
+      recipeId: null,
+      servings: 0,
+    })
+
+    const second = applyDeliveryExecutionCustomer(
+      plan,
+      current,
+      cursor,
+      'customer-2',
+    )
+    expect(second.changes.productionFills[0]).toMatchObject({
+      physicalJarId: 'jar-1',
+      recipeId: 'recipe-a',
+      servings: 2,
+      servingsAfterFill: 2,
+      fillAction: 'refill-same-type',
+    })
+    expect(second.inventory.juiceJars[0]).toEqual({
+      id: 'jar-1',
+      recipeId: 'recipe-a',
+      servings: 1,
+    })
+    expect(second.cursor.nextTripNumber).toBe(3)
+  })
+
   it('allows a same-type refill after the previous trip emptied that jar', () => {
     const refillShortfall: PreparationShortfall = {
       ...twoTripShortfall(),
