@@ -2207,10 +2207,14 @@ function transactionFillActionLabel(
 export function PlanApplicationPreview({
   draft,
   productionJarFills,
+  checkedIngredientIds = new Set<string>(),
+  onIngredientCheckedChange,
   onApply,
 }: {
   draft: PlanApplicationTransactionDraft
   productionJarFills: readonly MultiTripProductionJarFill[]
+  checkedIngredientIds?: ReadonlySet<string>
+  onIngredientCheckedChange?: (ingredientId: string, checked: boolean) => void
   onApply: (draft: PlanApplicationTransactionDraft) => void
 }) {
   const changes = draft.changes
@@ -2254,7 +2258,20 @@ export function PlanApplicationPreview({
                   className="optimizer-transaction-row"
                   key={change.ingredientId}
                 >
-                  <strong>{ingredientLabel(change.ingredientId)}</strong>
+                  <label className="optimizer-transaction-checkable-name">
+                    <input
+                      type="checkbox"
+                      checked={checkedIngredientIds.has(change.ingredientId)}
+                      onChange={(event) =>
+                        onIngredientCheckedChange?.(
+                          change.ingredientId,
+                          event.currentTarget.checked,
+                        )
+                      }
+                      aria-label={ingredientLabel(change.ingredientId) + ' 已備齊'}
+                    />
+                    <strong>{ingredientLabel(change.ingredientId)}</strong>
+                  </label>
                   <span>
                     {change.beforeUnits} → {change.afterUnits} 單位
                   </span>
@@ -2782,14 +2799,15 @@ function OptimizerResultPanel({
   const purchaseItemByIngredientId = new Map(
     result.shoppingList.map((item) => [item.ingredientId, item]),
   )
-  const ingredientChecklistItems = preparationShortfall.ingredients.map(
-    (item) => ({
-      ingredientId: item.ingredientId,
-      requiredUnits: item.requiredUnits,
-      inventoryUnitsUsed: item.inventoryUnitsUsed,
-      purchaseUnits: item.purchaseUnits,
-    }),
-  )
+  const ingredientChecklistItems = transactionDraft
+    ? transactionDraft.changes.ingredients.map((change) => ({
+        ingredientId: change.ingredientId,
+        requiredUnits:
+          change.consumedFromInventory + change.acquiredAndConsumedUnits,
+        inventoryUnitsUsed: change.consumedFromInventory,
+        purchaseUnits: change.acquiredAndConsumedUnits,
+      }))
+    : []
   const ingredientChecklistPlanFingerprint =
     ingredientChecklistFingerprint(ingredientChecklistItems)
   const [checkedIngredientIds, setCheckedIngredientIds] = useState<Set<string>>(
@@ -2927,6 +2945,8 @@ function OptimizerResultPanel({
         <PlanApplicationPreview
           draft={transactionDraft}
           productionJarFills={selectedSalesTripPlan.productionJarFills}
+          checkedIngredientIds={checkedIngredientIds}
+          onIngredientCheckedChange={setIngredientChecked}
           onApply={onApplyTransaction}
         />
       ) : (
@@ -2952,68 +2972,11 @@ function OptimizerResultPanel({
 
       <section className="optimizer-result-section">
         <div className="section-title">
-          <strong>所需物資</strong>
-          <span>先看需求，再分購買／免費取得</span>
+          <strong>其他製作需求</strong>
+          <span>原料已列於上方交易預覽；此處只保留水與杯具</span>
         </div>
 
         <div className="optimizer-batch-list">
-          <article className="optimizer-batch-card">
-            <div>
-              <strong>原料</strong>
-              <span>{preparationShortfall.ingredients.length} 種實際製作需求</span>
-            </div>
-            {preparationShortfall.ingredients.length === 0 ? (
-              <p>目前成品庫存已足夠，不需再消耗新原料。</p>
-            ) : (
-              <div className="optimizer-shopping-list">
-                {preparationShortfall.ingredients.map((item) => {
-                  const purchaseItem = purchaseItemByIngredientId.get(
-                    item.ingredientId,
-                  )
-                  return (
-                    <label
-                      className="optimizer-shopping-row"
-                      key={item.ingredientId}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checkedIngredientIds.has(item.ingredientId)}
-                        onChange={(event) =>
-                          setIngredientChecked(
-                            item.ingredientId,
-                            event.currentTarget.checked,
-                          )
-                        }
-                        aria-label={item.name + ' 已備齊'}
-                      />
-                      <strong>{item.name}</strong>
-                      <div className="optimizer-shopping-values">
-                        <span>需求：{item.requiredUnits} 單位</span>
-                        <span>
-                          現有：{item.inventoryUnitsAvailable} 單位 · 使用{' '}
-                          {item.inventoryUnitsUsed} 單位
-                        </span>
-                        <span>
-                          {item.purchaseUnits > 0
-                            ? '需購買：' + item.purchaseUnits + ' 單位'
-                            : '需購買：0（庫存足夠）'}
-                        </span>
-                        {item.purchaseUnits > 0 && purchaseItem && (
-                          <span>
-                            購買小計：
-                            {optimizerMoney(
-                              item.purchaseUnits * purchaseItem.unitPrice,
-                            )}
-                          </span>
-                        )}
-                      </div>
-                    </label>
-                  )
-                })}
-              </div>
-            )}
-          </article>
-
           <article className="optimizer-batch-card">
             <div>
               <strong>水</strong>
@@ -3289,6 +3252,62 @@ function OptimizerResultPanel({
 
         {result.recipePlans.length === 0 ? (
           <p className="empty-tool-state">本次沒有可製作的果汁。</p>
+        ) : deliveryExecutionPlan && deliveryExecutionPlan.trips.length > 0 ? (
+          <div className="optimizer-batch-list">
+            {deliveryExecutionPlan.trips.map((trip) => (
+              <section
+                className="optimizer-machine-group"
+                key={'delivery-trip-' + trip.tripNumber}
+                aria-label={'第 ' + trip.tripNumber + ' 趟果汁分配'}
+              >
+                <header className="optimizer-machine-header">
+                  <div>
+                    <span>販售趟次</span>
+                    <strong>第 {trip.tripNumber} 趟</strong>
+                  </div>
+                  <span>{trip.deliveries.length} 人</span>
+                </header>
+                <div className="optimizer-batch-list">
+                  {trip.deliveries.map((delivery) => {
+                    const recipePlan = result.recipePlans.find(
+                      (plan) => plan.recipeId === delivery.recipeId,
+                    )
+                    return (
+                      <article
+                        className="optimizer-batch-card"
+                        key={
+                          trip.tripNumber +
+                          '-' +
+                          delivery.customerId +
+                          '-' +
+                          delivery.recipeId
+                        }
+                      >
+                        <div className="optimizer-delivery-recipe-heading">
+                          <strong>
+                            {recipePlan
+                              ? formatRecipeDisplayName(recipePlan.recipeName)
+                              : delivery.recipeId}
+                          </strong>
+                          <span>果汁罐 {delivery.physicalJarId}</span>
+                        </div>
+                        <div className="optimizer-delivery-customer-list">
+                          <DeliveryCustomerCheckbox
+                            customerId={delivery.customerId}
+                            plan={deliveryExecutionPlan}
+                            cursor={deliveryCursor}
+                            suppliedCustomerIds={suppliedCustomerIds}
+                            disabled={deliveryUiState.status === 'stale'}
+                            onChange={onCommitDelivery}
+                          />
+                        </div>
+                      </article>
+                    )
+                  })}
+                </div>
+              </section>
+            ))}
+          </div>
         ) : (
           <div className="optimizer-batch-list">
             {result.recipePlans.map((plan) => (
@@ -3320,13 +3339,6 @@ function OptimizerResultPanel({
                     />
                   ))}
                 </div>
-                <p>
-                  需求 {plan.assignedServings} 杯 · 製作果汁 {plan.juiceUnits}{' '}
-                  份 → {plan.producedServings} 杯
-                  {plan.leftoverServings > 0
-                    ? ' · 剩餘 ' + plan.leftoverServings + ' 杯'
-                    : ''}
-                </p>
               </article>
             ))}
           </div>
