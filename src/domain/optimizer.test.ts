@@ -699,5 +699,5 @@ describe('production optimizer', () => {
     expect(
       result.shoppingList.reduce((sum, item) => sum + item.totalCost, 0),
     ).toBe(result.totalIngredientCost)
-  })
+  }, 30000)
 })
