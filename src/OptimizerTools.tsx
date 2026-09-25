@@ -2537,6 +2537,33 @@ export function deliveryCustomerControlState(
   }
 }
 
+export function customerIdsInPlannedTripOrder(
+  customerIds: readonly string[],
+  plan: DeliveryExecutionPlan | null,
+): string[] {
+  const tripByCustomerId = new Map(
+    (plan?.trips ?? []).flatMap((trip) =>
+      trip.deliveries.map(
+        (delivery) => [delivery.customerId, trip.tripNumber] as const,
+      ),
+    ),
+  )
+
+  return customerIds
+    .map((customerId, originalIndex) => ({
+      customerId,
+      originalIndex,
+      tripNumber:
+        tripByCustomerId.get(customerId) ?? Number.MAX_SAFE_INTEGER,
+    }))
+    .sort(
+      (left, right) =>
+        left.tripNumber - right.tripNumber ||
+        left.originalIndex - right.originalIndex,
+    )
+    .map(({ customerId }) => customerId)
+}
+
 export function DeliveryCustomerCheckbox({
   customerId,
   plan,
@@ -2809,24 +2836,6 @@ function OptimizerResultPanel({
   const purchaseItemByIngredientId = new Map(
     result.shoppingList.map((item) => [item.ingredientId, item]),
   )
-  const plannedTripByCustomerId = new Map(
-    (deliveryExecutionPlan?.trips ?? []).flatMap((trip) =>
-      trip.deliveries.map((delivery) => [delivery.customerId, trip.tripNumber] as const),
-    ),
-  )
-  const customerIdsInPlannedTripOrder = (customerIds: readonly string[]) =>
-    customerIds
-      .map((customerId, originalIndex) => ({
-        customerId,
-        originalIndex,
-        tripNumber: plannedTripByCustomerId.get(customerId) ?? Number.MAX_SAFE_INTEGER,
-      }))
-      .sort(
-        (left, right) =>
-          left.tripNumber - right.tripNumber ||
-          left.originalIndex - right.originalIndex,
-      )
-      .map(({ customerId }) => customerId)
   const ingredientChecklistItems = transactionDraft
     ? transactionDraft.changes.ingredients.map((change) => ({
         ingredientId: change.ingredientId,
@@ -3299,7 +3308,7 @@ function OptimizerResultPanel({
                   </span>
                 </div>
                 <div className="optimizer-delivery-customer-list">
-                  {customerIdsInPlannedTripOrder(plan.customerIds).map(
+                  {customerIdsInPlannedTripOrder(\n                    plan.customerIds,\n                    deliveryExecutionPlan,\n                  ).map(
                     (customerId) => (
                       <DeliveryCustomerCheckbox
                         key={customerId}
