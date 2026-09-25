@@ -99,7 +99,6 @@ describe('planner state migration', () => {
     const storage = new MemoryStorage({
       [STORAGE_KEYS.satisfactionByVillage]: JSON.stringify({
         'tranquil-fountain': 34.8,
-        'ibex-statue': 0,
         'unknown-village': 999,
       }),
     })
@@ -126,7 +125,6 @@ describe('planner state migration', () => {
       normalizeSatisfactionByVillageIds(futureVillageIds, {
         'east-harbor': 12,
         'tranquil-fountain': -5,
-        'ibex-statue': 0,
         'future-village': 78.9,
         'unknown-village': 999,
       }),
@@ -174,7 +172,6 @@ describe('planner state migration', () => {
       [STORAGE_KEYS.satisfactionByVillage]: JSON.stringify({
         'east-harbor': 12,
         'tranquil-fountain': 345,
-        'ibex-statue': 0,
       }),
       [STORAGE_KEYS.legacySatisfaction]: '999',
     })
