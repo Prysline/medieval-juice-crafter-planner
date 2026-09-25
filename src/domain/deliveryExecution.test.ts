@@ -787,6 +787,8 @@ describe('delivery execution trace', () => {
     const terminalPlan = twoTripPlan()
     terminalPlan.distinctFinalJuiceTypes = 1
     terminalPlan.jarTypeSwitches = 0
+    terminalPlan.allowDiscardRetainedJuice = false
+    terminalPlan.discardedNewProductionJuice = []
     terminalPlan.carriedJuiceJars[0] = {
       physicalJarId: 'jar-1',
       initialRecipeId: 'recipe-a',
