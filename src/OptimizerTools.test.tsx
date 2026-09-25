@@ -869,34 +869,54 @@ describe('optimizer summary', () => {
 })
 
 describe('sales trip terminal leftover UI', () => {
-  it('renders the true three-trip terminal jar as staying home after its last sale', () => {
+  it('renders a constrained trip-2 terminal jar as staying home during trip 3', () => {
     const salesDemand: PreparationDemand = {
       ingredients: [],
-      productionWaterUnits: 2,
-      cleanCupUses: 3,
-      producedServings: 4,
-      assignedServings: 3,
-      leftoverServings: 1,
+      productionWaterUnits: 0,
+      cleanCupUses: 20,
+      producedServings: 22,
+      assignedServings: 20,
+      leftoverServings: 2,
       recipes: [
         {
           recipeId: 'a',
           recipeName: 'A',
-          customerIds: ['a-customer-1', 'a-customer-2'],
+          customerIds: Array.from(
+            { length: 10 },
+            (_, index) => 'a-customer-' + (index + 1),
+          ),
           ingredientIds: [],
-          productionUnits: 1,
-          producedServings: 2,
-          assignedServings: 2,
+          productionUnits: 5,
+          producedServings: 10,
+          assignedServings: 10,
           leftoverServings: 0,
           ingredientUnitsPerJuiceUnit: [],
         },
         {
           recipeId: 'b',
           recipeName: 'B',
-          customerIds: ['b-customer-1'],
+          customerIds: Array.from(
+            { length: 3 },
+            (_, index) => 'b-customer-' + (index + 1),
+          ),
           ingredientIds: [],
-          productionUnits: 1,
-          producedServings: 2,
-          assignedServings: 1,
+          productionUnits: 2,
+          producedServings: 4,
+          assignedServings: 3,
+          leftoverServings: 1,
+          ingredientUnitsPerJuiceUnit: [],
+        },
+        {
+          recipeId: 'c',
+          recipeName: 'C',
+          customerIds: Array.from(
+            { length: 7 },
+            (_, index) => 'c-customer-' + (index + 1),
+          ),
+          ingredientIds: [],
+          productionUnits: 4,
+          producedServings: 8,
+          assignedServings: 7,
           leftoverServings: 1,
           ingredientUnitsPerJuiceUnit: [],
         },
@@ -906,11 +926,12 @@ describe('sales trip terminal leftover UI', () => {
       ingredientUnits: {},
       intermediateJuiceUnits: {},
       waterUnits: 0,
-      cleanCups: 1,
-      usedCups: 0,
+      cleanCups: 5,
+      usedCups: 5,
       juiceJars: [
         { id: 'jar-1', recipeId: 'a', servings: 1 },
         { id: 'jar-2', recipeId: 'b', servings: 1 },
+        { id: 'jar-3', recipeId: 'c', servings: 3 },
       ],
       shelfCount: 0,
       jarRackCount: 1,
@@ -929,8 +950,8 @@ describe('sales trip terminal leftover UI', () => {
       },
       shortfall,
       {
-        mode: 'auto',
-        reservedSlots: 0,
+        mode: 'fixed-slots',
+        reservedSlots: 2,
         minimumCarriedSlots: 0,
       },
       false,
@@ -938,7 +959,16 @@ describe('sales trip terminal leftover UI', () => {
 
     expect(plan.tripCount).toBe(3)
     expect(plan.totalLeftoverServings).toBe(1)
-    expect(plan.trips[2]?.carriedPhysicalJarIds).toEqual(['jar-2'])
+    expect(plan.leftoverJarContents).toEqual([
+      {
+        physicalJarId: 'jar-1',
+        recipeId: 'a',
+        recipeName: 'A',
+        servings: 1,
+        tripNumber: 2,
+      },
+    ])
+    expect(plan.trips[2]?.carriedPhysicalJarIds).not.toContain('jar-1')
 
     const html = renderToStaticMarkup(
       <SalesTripPlanBlock plan={plan} />,
@@ -950,6 +980,7 @@ describe('sales trip terminal leftover UI', () => {
     )
     expect(html).toContain('第 3 趟')
     expect(html).toContain('果汁罐 jar-2：B')
+    expect(html).toContain('果汁罐 jar-3：C')
   })
 })
 
