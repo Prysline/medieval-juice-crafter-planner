@@ -1050,30 +1050,37 @@ function OptimizerTools({
 
   function commitDeliveryCustomers(
     customerIds: readonly string[],
+    supplied: boolean,
   ) {
     if (runState.status !== 'success') return
 
     const assignedCustomerIds = new Set(
       runState.result.recipePlans.flatMap((plan) => plan.customerIds),
     )
-    const pendingCustomerIds = customerIds.filter(
-      (customerId) =>
-        assignedCustomerIds.has(customerId) &&
-        !suppliedCustomerIds.includes(customerId),
+    const targetCustomerIds = customerIds.filter((customerId) =>
+      assignedCustomerIds.has(customerId),
     )
-    if (pendingCustomerIds.length === 0) return
+    if (targetCustomerIds.length === 0) return
 
-    // The trip schedule is planning guidance, not an authority over the
-    // player's real delivery order. Recording an out-of-order delivery must
-    // therefore update only the canonical supplied-customer state. Replaying
-    // a later planned trip here would falsely imply that earlier jar/cup and
-    // production events had happened. Any physical transaction draft is
-    // invalid after this manual delivery record and must be replanned from the
-    // current inventory before inventory-affecting execution continues.
     const beforeSupplied = [...suppliedCustomerIds]
-    const committedSupplied = [
-      ...new Set([...beforeSupplied, ...pendingCustomerIds]),
-    ]
+    const nextSupplied = new Set(beforeSupplied)
+    for (const customerId of targetCustomerIds) {
+      if (supplied) nextSupplied.add(customerId)
+      else nextSupplied.delete(customerId)
+    }
+    const committedSupplied = [...nextSupplied]
+    if (
+      committedSupplied.length === beforeSupplied.length &&
+      committedSupplied.every((customerId) =>
+        beforeSupplied.includes(customerId),
+      )
+    ) {
+      return
+    }
+
+    // Manual checklist edits are record corrections only. They intentionally
+    // do not replay or undo ingredients, intermediate juice, water, cups,
+    // physical jar contents, discards, preparation, or trip cursor state.
     const beforeFingerprint =
       deliveryExecutionCanonicalBasisFingerprint(
         inventoryState,
@@ -1103,14 +1110,16 @@ function OptimizerTools({
     setApplicationState({ status: 'idle' })
     setDeliveryUiState({
       status: 'applied',
-      customerIds: pendingCustomerIds,
+      customerIds: targetCustomerIds,
     })
   }
 
-  function commitDeliveryCustomer(customerId: string) {
-    commitDeliveryCustomers([customerId])
+  function commitDeliveryCustomer(
+    customerId: string,
+    supplied: boolean,
+  ) {
+    commitDeliveryCustomers([customerId], supplied)
   }
-
 
   async function runOptimizer() {
     optimizerAbortControllerRef.current?.abort()
@@ -2502,14 +2511,14 @@ export function DeliveryCustomerCheckbox({
   cursor,
   suppliedCustomerIds,
   disabled = false,
-  onCommit,
+  onChange,
 }: {
   customerId: string
   plan: DeliveryExecutionPlan | null
   cursor: DeliveryExecutionCursor | null
   suppliedCustomerIds: readonly string[]
   disabled?: boolean
-  onCommit: (customerId: string) => void
+  onChange: (customerId: string, supplied: boolean) => void
 }) {
   const control = deliveryCustomerControlState(
     plan,
@@ -2518,7 +2527,7 @@ export function DeliveryCustomerCheckbox({
     customerId,
   )
   const committed = control.status === 'committed'
-  const canCommit = control.status === 'active' && !disabled
+  const canChange = control.status !== 'unavailable' && !disabled
 
   const detail =
     control.status === 'committed'
@@ -2534,7 +2543,7 @@ export function DeliveryCustomerCheckbox({
       className={
         committed
           ? 'optimizer-delivery-customer committed'
-          : canCommit
+          : canChange
             ? 'optimizer-delivery-customer active'
             : 'optimizer-delivery-customer'
       }
@@ -2542,10 +2551,10 @@ export function DeliveryCustomerCheckbox({
       <input
         type="checkbox"
         checked={committed}
-        disabled={!canCommit}
+        disabled={!canChange}
         onChange={(event) => {
-          if (event.target.checked && canCommit) {
-            onCommit(customerId)
+          if (canChange) {
+            onChange(customerId, event.target.checked)
           }
         }}
         aria-label={`${customerLabel(customerId)}交付完成`}
@@ -2613,7 +2622,7 @@ export function DeliveryRecipeGroupCheckbox({
   cursor,
   suppliedCustomerIds,
   disabled = false,
-  onCommit,
+  onChange,
 }: {
   recipeName: string
   customerIds: readonly string[]
@@ -2621,7 +2630,7 @@ export function DeliveryRecipeGroupCheckbox({
   cursor: DeliveryExecutionCursor | null
   suppliedCustomerIds: readonly string[]
   disabled?: boolean
-  onCommit: (customerIds: readonly string[]) => void
+  onChange: (customerIds: readonly string[], supplied: boolean) => void
 }) {
   const control = deliveryRecipeGroupControlState(
     plan,
@@ -2656,10 +2665,14 @@ export function DeliveryRecipeGroupCheckbox({
         type="checkbox"
         checked={control.checked}
         aria-checked={control.partial ? 'mixed' : control.checked}
-        disabled={control.checked || !control.canCommit}
+        disabled={disabled || customerIds.length === 0}
         onChange={(event) => {
-          if (event.target.checked && control.canCommit) {
-            onCommit(control.pendingCustomerIds)
+          if (event.target.checked) {
+            if (control.canCommit) {
+              onChange(control.pendingCustomerIds, true)
+            }
+          } else {
+            onChange(customerIds, false)
           }
         }}
         aria-label={`${formatRecipeDisplayName(recipeName)}整組交付完成`}
@@ -2698,8 +2711,8 @@ function OptimizerResultPanel({
   suppliedCustomerIds: readonly string[]
   deliveryUiState: DeliveryUiState
   onApplyTransaction: (draft: PlanApplicationTransactionDraft) => void
-  onCommitDelivery: (customerId: string) => void
-  onCommitDeliveryGroup: (customerIds: readonly string[]) => void
+  onCommitDelivery: (customerId: string, supplied: boolean) => void
+  onCommitDeliveryGroup: (customerIds: readonly string[], supplied: boolean) => void
   onReplan: () => void
 }) {
   const selectedSalesTripPlan = salesTripPlans.selected
@@ -3193,7 +3206,7 @@ function OptimizerResultPanel({
         <div className="optimizer-delivery-toolbar">
           <span>
             勾選個別顧客或配方標題，代表對應顧客已實際收到果汁；可依實際送達順序勾選，不受規劃趟次限制。勾選會更新「今日已供應」，但不會假裝尚未發生的前置趟次、裝瓶或杯具操作已完成；之後若要套用庫存變更，請依目前狀態重新規劃。
-            已記錄的供應不能靠取消 checkbox 復原。
+            取消勾選只修正「今日已供應」紀錄，不會回復或修改任何庫存、杯具、果汁罐或製作狀態。
           </span>
           {transactionDraftInvalidatedByPartialDelivery && (
             <button type="button" onClick={onReplan}>
@@ -3222,7 +3235,7 @@ function OptimizerResultPanel({
                     cursor={deliveryCursor}
                     suppliedCustomerIds={suppliedCustomerIds}
                     disabled={deliveryUiState.status === 'stale'}
-                    onCommit={onCommitDeliveryGroup}
+                    onChange={onCommitDeliveryGroup}
                   />
                   <span>
                     原料成本：{optimizerMoney(plan.totalIngredientCost)}
@@ -3237,7 +3250,7 @@ function OptimizerResultPanel({
                       cursor={deliveryCursor}
                       suppliedCustomerIds={suppliedCustomerIds}
                       disabled={deliveryUiState.status === 'stale'}
-                      onCommit={onCommitDelivery}
+                      onChange={onCommitDelivery}
                     />
                   ))}
                 </div>
