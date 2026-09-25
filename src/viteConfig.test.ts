@@ -18,4 +18,4 @@ describe('Vite configuration', () => {
       ]),
     )
   })
-}
+})
