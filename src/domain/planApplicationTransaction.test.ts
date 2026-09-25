@@ -533,6 +533,162 @@ describe('plan application transaction', () => {
   })
 
 
+  it('preserves a same-recipe terminal leftover in the transaction after snapshot', () => {
+    const transactionBasis = basis()
+    transactionBasis.inventory.juiceJars = [
+      {
+        id: 'jar-a',
+        recipeId: 'recipe-a',
+        servings: 1,
+      },
+    ]
+
+    const result = optimizationResult()
+    result.assignments = [
+      { customerId: 'customer-1', recipeId: 'recipe-a' },
+      { customerId: 'customer-2', recipeId: 'recipe-a' },
+    ]
+    result.recipePlans = [result.recipePlans[0]]
+    result.assignedServings = 2
+    result.producedServings = 2
+    result.leftoverServings = 0
+    result.totalIngredientCost = 1
+    result.knownGrossProfit = -1
+
+    const preparation = shortfall()
+    preparation.recipes = [
+      {
+        ...preparation.recipes[0],
+        assignedServings: 2,
+        finishedServingsAvailable: 1,
+        finishedServingsUsed: 1,
+        finishedServingsRemaining: 0,
+        finishedStockSources: [
+          {
+            physicalJarId: 'jar-a',
+            recipeId: 'recipe-a',
+            initialServings: 1,
+            servingsUsed: 1,
+            servingsRemaining: 0,
+          },
+        ],
+        servingsToProduce: 1,
+        juiceUnitsToPrepare: 1,
+        newlyProducedServings: 2,
+        newProductionLeftoverServings: 1,
+      },
+    ]
+    preparation.ingredients = [
+      {
+        ingredientId: 'lemon',
+        name: '檸檬',
+        requiredUnits: 1,
+        inventoryUnitsAvailable: 3,
+        inventoryUnitsUsed: 1,
+        purchaseUnits: 0,
+      },
+    ]
+    preparation.productionWaterUnitsRequired = 1
+    preparation.waterUnitsUsed = 1
+    preparation.waterUnitsToFetch = 0
+    preparation.cleanCupUses = 2
+    preparation.cleanCupShortfallBeforeWashing = 0
+
+    const plan = salesPlan()
+    plan.carriedJuiceJars = [
+      {
+        physicalJarId: 'jar-a',
+        initialRecipeId: 'recipe-a',
+        initialServings: 1,
+      },
+    ]
+    plan.trips = [
+      salesTrip(1, {
+        juiceJars: [
+          {
+            physicalJarId: 'jar-a',
+            recipeId: 'recipe-a',
+            recipeName: 'A',
+            customerIds: ['customer-1'],
+            servings: 1,
+            retainedLeftoverServings: 0,
+            plannedFillServings: 0,
+            slotCost: 1,
+            fillAction: 'use-existing',
+            previousRecipeId: 'recipe-a',
+            previousRecipeName: 'A',
+          },
+        ],
+        carriedPhysicalJarIds: ['jar-a'],
+        totalServings: 1,
+      }),
+      salesTrip(2, {
+        juiceJars: [
+          {
+            physicalJarId: 'jar-a',
+            recipeId: 'recipe-a',
+            recipeName: 'A',
+            customerIds: ['customer-2'],
+            servings: 1,
+            retainedLeftoverServings: 1,
+            plannedFillServings: 2,
+            slotCost: 1,
+            fillAction: 'refill-same-type',
+            previousRecipeId: 'recipe-a',
+            previousRecipeName: 'A',
+          },
+        ],
+        carriedPhysicalJarIds: ['jar-a'],
+        totalServings: 1,
+      }),
+    ]
+    plan.tripCount = 2
+    plan.totalAssignedServings = 2
+    plan.totalLeftoverServings = 1
+    plan.leftoverJarContents = [
+      {
+        physicalJarId: 'jar-a',
+        recipeId: 'recipe-a',
+        recipeName: 'A',
+        servings: 1,
+        tripNumber: 2,
+      },
+    ]
+    plan.productionJarFills = [
+      {
+        physicalJarId: 'jar-a',
+        recipeId: 'recipe-a',
+        recipeName: 'A',
+        beforeTripNumber: 2,
+        servings: 2,
+        servingsAfterFill: 2,
+        fillAction: 'refill-same-type',
+        previousRecipeId: 'recipe-a',
+        previousRecipeName: 'A',
+        receiver: 'carried-jar',
+      },
+    ]
+    plan.jarTypeSwitches = 0
+    plan.distinctFinalJuiceTypes = 1
+
+    const draft = buildPlanApplicationTransactionDraft({
+      basis: transactionBasis,
+      result,
+      preparationShortfall: preparation,
+      productionLogistics: productionLogistics(),
+      salesPlan: plan,
+    })
+
+    expect(draft.after.inventory.juiceJars).toEqual([
+      {
+        id: 'jar-a',
+        recipeId: 'recipe-a',
+        servings: 1,
+      },
+    ])
+    expect(draft.changes.juiceJars).toEqual([])
+  })
+
   it('consumes only planned intermediate stock and preserves the unused remainder', () => {
     const preparation = shortfall()
     preparation.intermediateStockUsage = [
