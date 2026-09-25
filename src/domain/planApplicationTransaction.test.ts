@@ -698,7 +698,7 @@ describe('plan application transaction', () => {
     expect(draft.changes.juiceJars).toEqual([])
   })
 
-  it('keeps the true three-trip terminal leftover through shortfall, sales plan, and transaction state', () => {
+  it('keeps a postposed three-trip terminal leftover through shortfall, sales plan, and transaction state', () => {
     const result: OptimizationResult = {
       assignments: [
         { customerId: 'a-customer-1', recipeId: 'a' },
@@ -809,16 +809,16 @@ describe('plan application transaction', () => {
     expect(salesPlan.tripCount).toBe(3)
     expect(salesPlan.trips[1]?.juiceJars).toEqual([
       expect.objectContaining({
-        physicalJarId: 'jar-1',
-        recipeId: 'a',
-        retainedLeftoverServings: 1,
+        physicalJarId: 'jar-2',
+        recipeId: 'b',
+        retainedLeftoverServings: 0,
       }),
     ])
     expect(salesPlan.trips[2]?.juiceJars).toEqual([
       expect.objectContaining({
-        physicalJarId: 'jar-2',
-        recipeId: 'b',
-        retainedLeftoverServings: 0,
+        physicalJarId: 'jar-1',
+        recipeId: 'a',
+        retainedLeftoverServings: 1,
       }),
     ])
     expect(salesPlan.leftoverJarContents).toEqual([
@@ -827,7 +827,7 @@ describe('plan application transaction', () => {
         recipeId: 'a',
         recipeName: 'A',
         servings: 1,
-        tripNumber: 2,
+        tripNumber: 3,
       },
     ])
     expect(salesPlan.totalLeftoverServings).toBe(1)
