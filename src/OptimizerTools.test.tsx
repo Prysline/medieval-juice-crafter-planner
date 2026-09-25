@@ -636,7 +636,7 @@ describe('delivery checklist UI', () => {
     )
 
     expect(html).toContain('checked=""')
-    expect(html).toContain('disabled=""')
+    expect(html).not.toContain('disabled=""')
     expect(html).toContain('已記錄今日供應')
   })
 
