@@ -179,10 +179,9 @@ const fills: MultiTripProductionJarFill[] = [
 ]
 
 describe('juice jar recipe search UX', () => {
-  const pool = buildRecipeCandidatePool('juice-blender-unlocked')
-  const entries = recipeCandidateEntriesForInventoryEditor(pool)
-
   it('searches observed, saved-safe scope and safe computed recipes while bounding rendered results', () => {
+    const pool = buildRecipeCandidatePool('juice-blender-unlocked')
+    const entries = recipeCandidateEntriesForInventoryEditor(pool)
     expect(entries.length).toBeGreaterThan(
       INVENTORY_RECIPE_SEARCH_RESULT_LIMIT,
     )
@@ -209,18 +208,65 @@ describe('juice jar recipe search UX', () => {
     ).toEqual([])
   })
 
-  it('derives searchable intermediate states without treating the final recipe as a separate stock identity', () => {
-    const intermediate = intermediateJuiceInventoryEntries(entries)
-    expect(intermediate.length).toBeGreaterThan(0)
-    expect(searchIntermediateJuiceEntries(intermediate, '')).toHaveLength(
-      Math.min(INTERMEDIATE_JUICE_SEARCH_RESULT_LIMIT, intermediate.length),
+  it('builds raw juice stock directly and gates it by current progress', () => {
+    const opening = intermediateJuiceInventoryEntries([], 'opening')
+    expect(opening.map((entry) => entry.identity)).toEqual([
+      'juice-state:v1:orange',
+      'juice-state:v1:lemon',
+    ])
+    expect(searchIntermediateJuiceEntries(opening, '橙汁')).toEqual([
+      expect.objectContaining({ identity: 'juice-state:v1:orange' }),
+    ])
+    expect(searchIntermediateJuiceEntries(opening, '橙子')).toEqual([
+      expect.objectContaining({ identity: 'juice-state:v1:orange' }),
+    ])
+    expect(searchIntermediateJuiceEntries(opening, 'orange')).toEqual([
+      expect.objectContaining({ identity: 'juice-state:v1:orange' }),
+    ])
+    expect(opening.some((entry) => entry.identity === 'juice-state:v1:banana')).toBe(false)
+
+    const juicer = intermediateJuiceInventoryEntries([], 'juicer-unlocked')
+    expect(juicer.some((entry) => entry.identity === 'juice-state:v1:carrot')).toBe(true)
+    expect(juicer.some((entry) => entry.identity === 'juice-state:v1:pear')).toBe(true)
+    expect(juicer.some((entry) => entry.identity === 'juice-state:v1:banana')).toBe(false)
+
+    const fountain = intermediateJuiceInventoryEntries([], 'tranquil-fountain-unlocked')
+    expect(fountain.some((entry) => entry.identity === 'juice-state:v1:banana')).toBe(true)
+  })
+
+  it('derives compound intermediate states without treating the final recipe as a separate stock identity', () => {
+    const compoundEntry = {
+      id: 'compound-intermediate-fixture',
+      ingredientIds: ['lemon', 'sugar', 'orange', 'mint'],
+      candidate: {
+        id: 'compound-intermediate-fixture',
+        name: '複合中間果汁測試',
+        ingredients: ['檸檬', '糖', '橙子', '薄荷'],
+        effects: [],
+        equipment: ['柑橘榨汁機', '調味器', '果汁調和器', '果汁成品台'],
+        source: 'observed',
+        unlockedAt: 'juice-blender-unlocked',
+        salePrice: null,
+      },
+      sources: ['observed'],
+      savedRecipeIds: [],
+      availableAtCurrentProgress: true,
+      inGeneratedSearchScope: false,
+    } satisfies ReturnType<typeof recipeCandidateEntriesForInventoryEditor>[number]
+    const intermediate = intermediateJuiceInventoryEntries(
+      [compoundEntry],
+      'juice-blender-unlocked',
+    )
+    expect(intermediate).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ identity: 'juice-state:v1:lemon/sugar' }),
+        expect.objectContaining({ identity: 'juice-state:v1:orange/mint' }),
+      ]),
     )
     expect(
-      intermediate.some((entry) => entry.identity === 'juice-state:v1:lemon'),
-    ).toBe(true)
-    expect(
-      searchIntermediateJuiceEntries(intermediate, '檸檬').some(
-        (entry) => entry.ingredientIds.includes('lemon'),
+      intermediate.some(
+        (entry) =>
+          entry.identity === 'juice-state:v1:lemon/sugar/orange/mint',
       ),
     ).toBe(true)
   })
@@ -234,6 +280,9 @@ describe('juice jar recipe search UX', () => {
   })
 
   it('keeps unknown legacy jar content readable and exposes an explicit clear action', () => {
+    const entries = recipeCandidateEntriesForInventoryEditor(
+      buildRecipeCandidatePool('opening'),
+    )
     const html = renderToStaticMarkup(
       <JuiceJarRecipeCombobox
         jarId="jar-legacy"
@@ -344,7 +393,7 @@ describe('delivery checklist UI', () => {
         plan={null}
         cursor={null}
         suppliedCustomerIds={[]}
-        onCommit={() => {}}
+        onChange={() => {}}
       />,
     )
 
@@ -377,7 +426,7 @@ describe('delivery checklist UI', () => {
         plan={plan}
         cursor={cursor}
         suppliedCustomerIds={[]}
-        onCommit={() => {}}
+        onChange={() => {}}
       />,
     )
     const laterHtml = renderToStaticMarkup(
@@ -386,7 +435,7 @@ describe('delivery checklist UI', () => {
         plan={plan}
         cursor={cursor}
         suppliedCustomerIds={[]}
-        onCommit={() => {}}
+        onChange={() => {}}
       />,
     )
 
@@ -422,7 +471,7 @@ describe('delivery checklist UI', () => {
         plan={plan}
         cursor={cursor}
         suppliedCustomerIds={[]}
-        onCommit={() => {}}
+        onChange={() => {}}
       />,
     )
 
@@ -460,7 +509,7 @@ describe('delivery checklist UI', () => {
         plan={plan}
         cursor={cursor}
         suppliedCustomerIds={['jack']}
-        onCommit={() => {}}
+        onChange={() => {}}
       />,
     )
 
@@ -497,7 +546,7 @@ describe('delivery checklist UI', () => {
         plan={plan}
         cursor={cursor}
         suppliedCustomerIds={[]}
-        onCommit={() => {}}
+        onChange={() => {}}
       />,
     )
 
@@ -530,7 +579,7 @@ describe('delivery checklist UI', () => {
         plan={plan}
         cursor={cursor}
         suppliedCustomerIds={[]}
-        onCommit={() => {}}
+        onChange={() => {}}
       />,
     )
 
@@ -554,7 +603,7 @@ describe('delivery checklist UI', () => {
         plan={plan}
         cursor={cursor}
         suppliedCustomerIds={[]}
-        onCommit={() => {}}
+        onChange={() => {}}
       />,
     )
 
@@ -582,15 +631,55 @@ describe('delivery checklist UI', () => {
         plan={plan}
         cursor={cursor}
         suppliedCustomerIds={['jack']}
-        onCommit={() => {}}
+        onChange={() => {}}
       />,
     )
 
     expect(html).toContain('checked=""')
-    expect(html).toContain('disabled=""')
+    expect(html).not.toContain('disabled=""')
     expect(html).toContain('已記錄今日供應')
   })
 
+
+  it('keeps a supplied customer checkbox enabled so unchecking can correct only the supplied record', () => {
+    const plan = deliveryPlan()
+    const cursor = deliveryCursor({
+      nextTripNumber: 2,
+      tripPrepared: true,
+      completedCustomerIdsInTrip: ['jack'],
+    })
+    const html = renderToStaticMarkup(
+      <DeliveryCustomerCheckbox
+        customerId="jack"
+        plan={plan}
+        cursor={cursor}
+        suppliedCustomerIds={['jack']}
+        onChange={() => {}}
+      />,
+    )
+
+    expect(html).toContain('checked=""')
+    expect(html).not.toContain('disabled=""')
+    expect(html).toContain('已記錄今日供應')
+  })
+
+  it('keeps a fully supplied recipe group enabled so the whole record can be unchecked across planned trips', () => {
+    const plan = deliveryPlan()
+    const cursor = deliveryCursor({ nextTripNumber: 2 })
+    const html = renderToStaticMarkup(
+      <DeliveryRecipeGroupCheckbox
+        recipeName="跨趟配方"
+        customerIds={['jack', 'florida']}
+        plan={plan}
+        cursor={cursor}
+        suppliedCustomerIds={['jack', 'florida']}
+        onChange={() => {}}
+      />,
+    )
+
+    expect(html).toContain('checked=""')
+    expect(html).not.toContain('disabled=""')
+  })
   it('keeps earlier planned-trip customers active until canonical supplied state records them', () => {
     const plan = deliveryPlan()
     const cursor = deliveryCursor({
