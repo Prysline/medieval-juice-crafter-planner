@@ -67,9 +67,9 @@ async function createPagesLikeServer(directory, base) {
       response.writeHead(200, { 'content-type': contentType(filePath) })
       response.end(bytes)
     } catch {
-      // GitHub Pages returns HTML for a missing document. Keeping that failure
-      // mode here ensures a wrong WASM URL reproduces the original magic-byte
-      // error instead of silently passing a file-existence-only check.
+      // Match the production failure mode: a wrong asset URL returns HTML,
+      // which must fail the worker's WASM response checks instead of being
+      // hidden by a file-existence-only smoke.
       response.writeHead(404, { 'content-type': 'text/html; charset=utf-8' })
       response.end(indexBytes)
     }
@@ -123,19 +123,67 @@ async function webdriver(pathname, method = 'GET', body) {
   return payload.value
 }
 
-async function readLogs(sessionId, type) {
+async function readBrowserLogs(sessionId) {
   let lastError
   for (const pathname of [
     `/session/${sessionId}/se/log`,
     `/session/${sessionId}/log`,
   ]) {
     try {
-      return await webdriver(pathname, 'POST', { type })
+      return await webdriver(pathname, 'POST', { type: 'browser' })
     } catch (error) {
       lastError = error
     }
   }
   throw lastError
+}
+
+function assertActualWasmResponse(payload) {
+  const wasmResponses = payload?.wasmResponses
+  if (!Array.isArray(wasmResponses) || wasmResponses.length === 0) {
+    throw new Error(
+      `Optimizer solved but worker did not report its actual WASM response: ${JSON.stringify(payload)}`,
+    )
+  }
+
+  const wasmResponse = wasmResponses.at(-1)
+  if (
+    typeof wasmResponse?.url !== 'string' ||
+    !wasmResponse.url.includes('.wasm')
+  ) {
+    throw new Error(
+      `Worker reported an invalid WASM request URL: ${JSON.stringify(wasmResponse)}`,
+    )
+  }
+
+  if (wasmResponse.status !== 200) {
+    throw new Error(
+      `Actual worker WASM request returned HTTP ${String(wasmResponse.status)}: ${wasmResponse.url}`,
+    )
+  }
+
+  if (
+    typeof wasmResponse.contentType !== 'string' ||
+    !wasmResponse.contentType.toLowerCase().includes('application/wasm')
+  ) {
+    throw new Error(
+      `Actual worker WASM response has unexpected content-type ${String(wasmResponse.contentType)}: ${wasmResponse.url}`,
+    )
+  }
+
+  if (
+    !Array.isArray(wasmResponse.magicBytes) ||
+    wasmResponse.magicBytes.length !== WASM_MAGIC.length ||
+    wasmResponse.magicBytes.some(
+      (byte, index) => byte !== WASM_MAGIC[index],
+    )
+  ) {
+    throw new Error(
+      `Actual worker WASM response has invalid magic bytes ${JSON.stringify(wasmResponse.magicBytes)}: ${wasmResponse.url}`,
+    )
+  }
+
+  return wasmResponse
 }
 
 async function main() {
@@ -149,7 +197,9 @@ async function main() {
   )
 
   if (!directory && !providedUrl) {
-    throw new Error('Pass either --dir <production-dist> or --url <deployed-smoke-url>')
+    throw new Error(
+      'Pass either --dir <production-dist> or --url <deployed-smoke-url>',
+    )
   }
   if (directory && providedUrl) {
     throw new Error('Use only one of --dir or --url')
@@ -190,11 +240,6 @@ async function main() {
           },
           'goog:loggingPrefs': {
             browser: 'ALL',
-            performance: 'ALL',
-          },
-          'goog:perfLoggingPrefs': {
-            enableNetwork: true,
-            enablePage: true,
           },
         },
       },
@@ -224,77 +269,25 @@ async function main() {
       await new Promise((resolvePromise) => setTimeout(resolvePromise, 150))
     }
 
-    const performanceLogs = await readLogs(sessionId, 'performance')
-    const browserLogs = await readLogs(sessionId, 'browser')
-
-    const wasmResponses = performanceLogs
-      .flatMap((entry) => {
-        try {
-          const outer = JSON.parse(entry.message)
-          const message = outer.message
-          if (message?.method !== 'Network.responseReceived') return []
-          const response = message.params?.response
-          if (!response?.url || !response.url.includes('.wasm')) return []
-          return [{
-            url: response.url,
-            status: response.status,
-            mimeType: response.mimeType,
-            headers: response.headers ?? {},
-          }]
-        } catch {
-          return []
-        }
-      })
+    let payload
+    try {
+      payload = JSON.parse(smokeText)
+    } catch {
+      payload = { rawText: smokeText }
+    }
 
     if (smokeState !== 'passed') {
+      const browserLogs = await readBrowserLogs(sessionId)
       throw new Error(
         [
           `Optimizer worker runtime smoke ended in state ${smokeState}`,
-          smokeText,
-          `WASM responses: ${JSON.stringify(wasmResponses)}`,
+          `Worker payload: ${JSON.stringify(payload)}`,
           `Browser logs: ${JSON.stringify(browserLogs)}`,
         ].join('\n'),
       )
     }
 
-    if (wasmResponses.length === 0) {
-      throw new Error(
-        'Optimizer solved but Chrome performance logs did not record an actual worker WASM response',
-      )
-    }
-
-    const wasmResponse = wasmResponses.at(-1)
-    if (wasmResponse.status !== 200) {
-      throw new Error(
-        `Actual worker WASM request returned HTTP ${wasmResponse.status}: ${wasmResponse.url}`,
-      )
-    }
-
-    const capturedContentType =
-      wasmResponse.headers['content-type'] ??
-      wasmResponse.headers['Content-Type'] ??
-      wasmResponse.mimeType
-
-    if (
-      typeof capturedContentType !== 'string' ||
-      !capturedContentType.toLowerCase().includes('application/wasm')
-    ) {
-      throw new Error(
-        `Actual worker WASM response has unexpected content-type ${String(capturedContentType)}: ${wasmResponse.url}`,
-      )
-    }
-
-    const fetched = await fetch(wasmResponse.url)
-    const bytes = new Uint8Array(await fetched.arrayBuffer())
-    const magic = Array.from(bytes.slice(0, 4))
-    if (
-      fetched.status !== 200 ||
-      magic.some((byte, index) => byte !== WASM_MAGIC[index])
-    ) {
-      throw new Error(
-        `Actual worker WASM URL failed magic-byte verification: status=${fetched.status} magic=${magic.map((byte) => byte.toString(16).padStart(2, '0')).join(' ')} url=${wasmResponse.url}`,
-      )
-    }
+    const wasmResponse = assertActualWasmResponse(payload)
 
     console.log(
       JSON.stringify(
@@ -303,8 +296,8 @@ async function main() {
           optimizerWorker: 'solved',
           wasmRequestUrl: wasmResponse.url,
           httpStatus: wasmResponse.status,
-          contentType: capturedContentType,
-          magicBytes: magic.map((byte) =>
+          contentType: wasmResponse.contentType,
+          magicBytes: wasmResponse.magicBytes.map((byte) =>
             byte.toString(16).padStart(2, '0'),
           ),
         },
