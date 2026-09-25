@@ -50,6 +50,7 @@ const baseRequest: OptimizationRequest = {
   satisfactionByVillage: {
     'east-harbor': 0,
     'tranquil-fountain': 0,
+    'ibex-statue': 0,
   },
   formalCustomerIds: ['a', 'b'],
   currentProgress: 'seasoner-unlocked',
