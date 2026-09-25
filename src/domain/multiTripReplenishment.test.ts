@@ -393,17 +393,22 @@ describe('multi-trip replenishment', () => {
     expectScheduleConsistency(result)
   })
 
-  it('keeps a terminal leftover through a third trip that uses only another physical jar', () => {
+  it('keeps a terminal leftover from trip 2 when moving it later would increase trip count', () => {
     const salesDemand = demand([
       {
         recipeId: 'a',
         recipeName: 'A',
-        assignedServings: 2,
+        assignedServings: 10,
       },
       {
         recipeId: 'b',
         recipeName: 'B',
-        assignedServings: 1,
+        assignedServings: 3,
+      },
+      {
+        recipeId: 'c',
+        recipeName: 'C',
+        assignedServings: 7,
       },
     ])
     const jars: JuiceJarInventoryItem[] = [
@@ -417,48 +422,46 @@ describe('multi-trip replenishment', () => {
         recipeId: 'b',
         servings: 1,
       },
+      {
+        id: 'jar-3',
+        recipeId: 'c',
+        servings: 3,
+      },
     ]
+    const shortfall = shortfallFor(salesDemand, jars)
 
-    const result = buildPlanWithJars(
+    const result = buildMultiTripReplenishmentPlanWithCups(
       salesDemand,
       'retain-and-wash',
       jars,
-      { cleanCups: 1, usedCups: 0 },
+      { cleanCups: 5, usedCups: 5 },
+      shortfall,
+      {
+        mode: 'fixed-slots',
+        reservedSlots: 2,
+        minimumCarriedSlots: 0,
+      },
+      false,
     )
 
     expect(result.tripCount).toBe(3)
-    expect(
-      result.trips.map((trip) =>
-        trip.juiceJars.map((load) => ({
-          physicalJarId: load.physicalJarId,
-          recipeId: load.recipeId,
-          retainedLeftoverServings:
-            load.retainedLeftoverServings,
-        })),
-      ),
-    ).toEqual([
-      [
-        {
-          physicalJarId: 'jar-1',
-          recipeId: 'a',
-          retainedLeftoverServings: 0,
-        },
-      ],
-      [
-        {
+    expect(result.trips[1]?.juiceJars).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
           physicalJarId: 'jar-1',
           recipeId: 'a',
           retainedLeftoverServings: 1,
-        },
-      ],
-      [
-        {
-          physicalJarId: 'jar-2',
-          recipeId: 'b',
-          retainedLeftoverServings: 0,
-        },
-      ],
-    ])
+        }),
+      ]),
+    )
+    expect(
+      result.trips[2]?.juiceJars.some(
+        (load) => load.physicalJarId === 'jar-1',
+      ),
+    ).toBe(false)
+    expect(
+      result.trips[2]?.carriedPhysicalJarIds.includes('jar-1'),
+    ).toBe(false)
     expect(result.leftoverJarContents).toEqual([
       {
         physicalJarId: 'jar-1',
@@ -478,8 +481,8 @@ describe('multi-trip replenishment', () => {
         physicalJarId: 'jar-1',
         recipeId: 'a',
         beforeTripNumber: 2,
-        servings: 2,
-        servingsAfterFill: 2,
+        servings: 10,
+        servingsAfterFill: 10,
         fillAction: 'refill-same-type',
       }),
     ])
