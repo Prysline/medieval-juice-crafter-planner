@@ -392,6 +392,106 @@ describe('multi-trip replenishment', () => {
     expectScheduleConsistency(result)
   })
 
+  it('keeps a terminal leftover through a third trip that uses only another physical jar', () => {
+    const salesDemand = demand([
+      {
+        recipeId: 'a',
+        recipeName: 'A',
+        assignedServings: 2,
+      },
+      {
+        recipeId: 'b',
+        recipeName: 'B',
+        assignedServings: 1,
+      },
+    ])
+    const jars: JuiceJarInventoryItem[] = [
+      {
+        id: 'jar-1',
+        recipeId: 'a',
+        servings: 1,
+      },
+      {
+        id: 'jar-2',
+        recipeId: null,
+        servings: 0,
+      },
+    ]
+
+    const result = buildPlanWithJars(
+      salesDemand,
+      'retain-and-wash',
+      jars,
+      { cleanCups: 1, usedCups: 0 },
+    )
+
+    expect(result.tripCount).toBe(3)
+    expect(
+      result.trips.map((trip) =>
+        trip.juiceJars.map((load) => ({
+          physicalJarId: load.physicalJarId,
+          recipeId: load.recipeId,
+          retainedLeftoverServings:
+            load.retainedLeftoverServings,
+        })),
+      ),
+    ).toEqual([
+      [
+        {
+          physicalJarId: 'jar-1',
+          recipeId: 'a',
+          retainedLeftoverServings: 0,
+        },
+      ],
+      [
+        {
+          physicalJarId: 'jar-1',
+          recipeId: 'a',
+          retainedLeftoverServings: 1,
+        },
+      ],
+      [
+        {
+          physicalJarId: 'jar-2',
+          recipeId: 'b',
+          retainedLeftoverServings: 1,
+        },
+      ],
+    ])
+    expect(result.leftoverJarContents).toEqual([
+      {
+        physicalJarId: 'jar-1',
+        recipeId: 'a',
+        recipeName: 'A',
+        servings: 1,
+        tripNumber: 2,
+      },
+      {
+        physicalJarId: 'jar-2',
+        recipeId: 'b',
+        recipeName: 'B',
+        servings: 1,
+        tripNumber: 3,
+      },
+    ])
+    expect(result.totalLeftoverServings).toBe(2)
+    expect(
+      result.productionJarFills.filter(
+        (fill) => fill.physicalJarId === 'jar-1',
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        physicalJarId: 'jar-1',
+        recipeId: 'a',
+        beforeTripNumber: 2,
+        servings: 2,
+        servingsAfterFill: 2,
+        fillAction: 'refill-same-type',
+      }),
+    ])
+    expectScheduleConsistency(result)
+  })
+
   it('reserves a matching initial jar for a terminal leftover recipe', () => {
     const salesDemand = demand([
       {
