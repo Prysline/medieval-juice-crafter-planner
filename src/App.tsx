@@ -4,10 +4,11 @@ import RecipeTools from './RecipeTools'
 import { customers } from './data/customers'
 import { ingredients } from './data/ingredients'
 import { progressMilestoneLabels, progressMilestones } from './data/progress'
-import { villageNames } from './data/villages'
+import { villageNames, villages } from './data/villages'
 import {
   customerIsUnlocked,
   customerVillageIsAvailable,
+  isAvailableAtProgress,
   villageIsAvailable,
 } from './domain/availability'
 import {
@@ -106,6 +107,77 @@ function recipePoolSourceLabel(source: RecipeCandidatePoolSource): string {
 
 function recipeEntrySourceLabel(entry: RecipeCandidatePoolEntry): string {
   return entry.sources.map(recipePoolSourceLabel).join('・')
+}
+
+export type SatisfactionVillageDefinition<TVillageId extends string> = {
+  id: TVillageId
+  name: string
+  unlockedAt: ProgressMilestoneId
+}
+
+export function satisfactionFieldsAtProgress<TVillageId extends string>(
+  villageDefinitions: readonly SatisfactionVillageDefinition<TVillageId>[],
+  currentProgress: ProgressMilestoneId,
+  satisfactionByVillage: Readonly<Record<TVillageId, number>>,
+) {
+  return villageDefinitions
+    .filter((village) =>
+      isAvailableAtProgress(village.unlockedAt, currentProgress),
+    )
+    .map((village) => ({
+      id: village.id,
+      name: village.name,
+      value: satisfactionByVillage[village.id] ?? 0,
+    }))
+}
+
+export function withSatisfactionUpdate<TVillageId extends string>(
+  current: Readonly<Record<TVillageId, number>>,
+  villageId: TVillageId,
+  value: number,
+): Record<TVillageId, number> {
+  return {
+    ...current,
+    [villageId]: Math.max(0, Math.floor(value || 0)),
+  }
+}
+
+export function SatisfactionFields<TVillageId extends string>({
+  villageDefinitions,
+  currentProgress,
+  satisfactionByVillage,
+  onSatisfactionChange,
+}: {
+  villageDefinitions: readonly SatisfactionVillageDefinition<TVillageId>[]
+  currentProgress: ProgressMilestoneId
+  satisfactionByVillage: Readonly<Record<TVillageId, number>>
+  onSatisfactionChange: (villageId: TVillageId, value: number) => void
+}) {
+  return (
+    <>
+      {satisfactionFieldsAtProgress(
+        villageDefinitions,
+        currentProgress,
+        satisfactionByVillage,
+      ).map((village) => (
+        <label key={village.id}>
+          <span>{village.name}顧客滿意度</span>
+          <input
+            inputMode="numeric"
+            min={0}
+            type="number"
+            value={village.value}
+            onChange={(event) =>
+              onSatisfactionChange(
+                village.id,
+                Number(event.target.value),
+              )
+            }
+          />
+        </label>
+      ))}
+    </>
+  )
 }
 
 export type CustomerRecipeSearches = {
@@ -537,12 +609,8 @@ function App() {
   }
 
   function updateSatisfaction(villageId: VillageId, value: number) {
-    const normalized = Math.max(0, Math.floor(value || 0))
     setSatisfactionByVillage((current) => {
-      const next = {
-        ...current,
-        [villageId]: normalized,
-      }
+      const next = withSatisfactionUpdate(current, villageId, value)
       writeSatisfactionByVillage(window.localStorage, next)
       return next
     })
@@ -660,36 +728,12 @@ function App() {
           </select>
         </label>
 
-        <label>
-          <span>東港村顧客滿意度</span>
-          <input
-            inputMode="numeric"
-            min={0}
-            type="number"
-            value={satisfactionByVillage['east-harbor']}
-            onChange={(event) =>
-              updateSatisfaction('east-harbor', Number(event.target.value))
-            }
-          />
-        </label>
-
-        {tranquilFountainAvailable && (
-          <label>
-            <span>靜謐噴泉顧客滿意度</span>
-            <input
-              inputMode="numeric"
-              min={0}
-              type="number"
-              value={satisfactionByVillage['tranquil-fountain']}
-              onChange={(event) =>
-                updateSatisfaction(
-                  'tranquil-fountain',
-                  Number(event.target.value),
-                )
-              }
-            />
-          </label>
-        )}
+        <SatisfactionFields
+          villageDefinitions={villages}
+          currentProgress={currentProgress}
+          satisfactionByVillage={satisfactionByVillage}
+          onSatisfactionChange={updateSatisfaction}
+        />
 
         <div className="progress-stat">
           <span>東港村正式顧客</span>
