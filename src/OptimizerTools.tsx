@@ -1231,14 +1231,24 @@ function OptimizerTools({
           },
           plannerSettings.allowDiscardRetainedJuice,
         )
-        if (plan.jarTypeSwitches !== result.jarTypeSwitches) {
+        // result.jarTypeSwitches is the optimizer's structural lower bound.
+        // The physical planner is terminal-aware: prefilled recipes that must
+        // remain as final leftovers can require revisiting a jar, so its exact
+        // minimum may legitimately be higher (covered by domain regression).
+        // The physical schedule is authoritative for the realized count.
+        if (
+          parsedMaxSwitches !== undefined &&
+          Number.isFinite(parsedMaxSwitches) &&
+          plan.jarTypeSwitches > parsedMaxSwitches
+        ) {
           throw new PlanningUserError(
-            'jar-schedule-inconsistency',
+            'optimizer-no-solution',
             {
-              expectedJarTypeSwitches: result.jarTypeSwitches,
+              solverStatus: 'physical-jar-switch-limit',
+              expectedJarTypeSwitches: parsedMaxSwitches,
               actualJarTypeSwitches: plan.jarTypeSwitches,
             },
-            `Optimizer reported ${result.jarTypeSwitches} jar switch(es), but the physical schedule realized ${plan.jarTypeSwitches}`,
+            `Terminal-aware physical schedule requires ${plan.jarTypeSwitches} jar switch(es), exceeding the configured maximum of ${parsedMaxSwitches}`,
           )
         }
         return plan
@@ -2886,8 +2896,8 @@ function OptimizerResultPanel({
           value={result.machineOperations.total + ' 次'}
         />
         <MetricCard
-          label="果汁罐換裝"
-          value={result.jarTypeSwitches + ' 次'}
+          label="果汁罐換裝（實體排程）"
+          value={selectedSalesTripPlan.jarTypeSwitches + ' 次'}
         />
         <MetricCard
           label="販售趟數（目前策略）"
