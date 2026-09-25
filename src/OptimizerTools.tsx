@@ -2228,6 +2228,9 @@ export function PlanApplicationPreview({
   onApply: (draft: PlanApplicationTransactionDraft) => void
 }) {
   const changes = draft.changes
+  const terminalJuiceJars = draft.after.inventory.juiceJars.filter(
+    (jar) => jar.servings > 0,
+  )
 
   return (
     <section
@@ -2431,11 +2434,13 @@ export function PlanApplicationPreview({
       <article className="optimizer-transaction-card optimizer-transaction-jars">
         <div className="optimizer-transaction-card-heading">
           <strong>實體果汁罐</strong>
-          <span>{changes.juiceJars.length} 個期末內容變更</span>
+          <span>
+            {changes.juiceJars.length} 個內容變更 · 期末 {terminalJuiceJars.length} 個有內容
+          </span>
         </div>
 
         {changes.juiceJars.length === 0 ? (
-          <p>期末沒有果汁罐內容變更。</p>
+          <p>期末沒有果汁罐內容淨變更。</p>
         ) : (
           <div className="optimizer-transaction-list">
             {changes.juiceJars.map((change) => (
@@ -2460,6 +2465,20 @@ export function PlanApplicationPreview({
             ))}
           </div>
         )}
+
+        <div className="optimizer-transaction-fill-events">
+          <strong>期末果汁罐內容</strong>
+          {terminalJuiceJars.length === 0 ? (
+            <p>期末所有實體果汁罐皆為空罐。</p>
+          ) : (
+            terminalJuiceJars.map((jar) => (
+              <p key={'terminal-' + jar.id}>
+                果汁罐 {jar.id} ·{' '}
+                {transactionJarContentLabel(jar, productionJarFills)}
+              </p>
+            ))
+          )}
+        </div>
 
         {productionJarFills.length > 0 && (
           <div className="optimizer-transaction-fill-events">
