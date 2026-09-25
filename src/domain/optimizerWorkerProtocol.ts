@@ -9,9 +9,21 @@ import {
   type PlanningUserErrorContext,
 } from './planningErrors'
 
+export interface OptimizerWorkerWasmRuntimeResponse {
+  url: string
+  status: number
+  contentType: string | null
+  magicBytes: number[]
+}
+
+export interface OptimizerWorkerRuntimeDiagnostics {
+  wasmResponses: OptimizerWorkerWasmRuntimeResponse[]
+}
+
 export interface OptimizerWorkerRequest {
   request: OptimizationRequest
   source: OptimizationSource
+  collectRuntimeDiagnostics?: boolean
 }
 
 export type OptimizerWorkerSerializedError =
@@ -30,10 +42,12 @@ export type OptimizerWorkerResponse =
   | {
       ok: true
       result: OptimizationResult
+      runtimeDiagnostics?: OptimizerWorkerRuntimeDiagnostics
     }
   | {
       ok: false
       error: OptimizerWorkerSerializedError
+      runtimeDiagnostics?: OptimizerWorkerRuntimeDiagnostics
     }
 
 export function serializeOptimizerWorkerError(
