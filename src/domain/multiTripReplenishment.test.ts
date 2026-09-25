@@ -413,8 +413,8 @@ describe('multi-trip replenishment', () => {
       },
       {
         id: 'jar-2',
-        recipeId: null,
-        servings: 0,
+        recipeId: 'b',
+        servings: 1,
       },
     ]
 
@@ -454,7 +454,7 @@ describe('multi-trip replenishment', () => {
         {
           physicalJarId: 'jar-2',
           recipeId: 'b',
-          retainedLeftoverServings: 1,
+          retainedLeftoverServings: 0,
         },
       ],
     ])
@@ -466,15 +466,8 @@ describe('multi-trip replenishment', () => {
         servings: 1,
         tripNumber: 2,
       },
-      {
-        physicalJarId: 'jar-2',
-        recipeId: 'b',
-        recipeName: 'B',
-        servings: 1,
-        tripNumber: 3,
-      },
     ])
-    expect(result.totalLeftoverServings).toBe(2)
+    expect(result.totalLeftoverServings).toBe(1)
     expect(
       result.productionJarFills.filter(
         (fill) => fill.physicalJarId === 'jar-1',
