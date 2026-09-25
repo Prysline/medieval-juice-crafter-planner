@@ -30,6 +30,7 @@ type ObjectiveKey =
   | 'negativeKnownGrossProfit'
   | 'machineOperations'
   | 'jarSwitches'
+  | 'regionalFragmentation'
 
 type IntVariable = ReturnType<Model['intVar']>
 type BoolVariable = ReturnType<Model['boolVar']>
@@ -63,6 +64,9 @@ function criterionKey(
   }
   if (criterion === 'minimum-machine-operations') {
     return 'machineOperations'
+  }
+  if (criterion === 'minimum-regional-fragmentation') {
+    return 'regionalFragmentation'
   }
   return 'jarSwitches'
 }
@@ -113,6 +117,8 @@ function buildHighsStage(
   const zByRecipeId = new Map<string, BoolVariable>()
   const yByCustomerRecipe = new Map<string, BoolVariable>()
   const operationByEdgeKey = new Map<string, IntVariable>()
+  const regionRecipeGroupVars: BoolVariable[] = []
+  const regionAssignedRecipeVars: BoolVariable[] = []
   const neededObjectiveKeys = new Set<ObjectiveKey>([
     objective,
     ...fixes.map((fix) => fix.objective),
@@ -140,10 +146,13 @@ function buildHighsStage(
     needsAnyObjective('kinds') || needsJarStructure
   const needsProductionOperations =
     needsAnyObjective('machineOperations')
+  const needsRegionalFragmentation =
+    needsAnyObjective('regionalFragmentation')
   const needsRecipeSpecificAssignments = needsAnyObjective(
     'negativeAssignedIngredientCost',
     'negativeKnownRevenue',
     'negativeKnownGrossProfit',
+    'regionalFragmentation',
   )
 
   if (
@@ -341,6 +350,68 @@ function buildHighsStage(
     })
   }
 
+  if (needsRegionalFragmentation) {
+    const villageIds = [
+      ...new Set(
+        domain.serviceableCustomerIds.flatMap((customerId) => {
+          const villageId = domain.customerVillageById[customerId]
+          return villageId ? [villageId] : []
+        }),
+      ),
+    ]
+
+    domain.recipes.forEach((recipe, recipeIndex) => {
+      const recipeRegionVars: BoolVariable[] = []
+
+      villageIds.forEach((villageId, villageIndex) => {
+        const assignmentVars = recipe.eligibleCustomerIds.flatMap(
+          (customerId) => {
+            if (domain.customerVillageById[customerId] !== villageId) {
+              return []
+            }
+            const y = yByCustomerRecipe.get(
+              `${customerId}\u001f${recipe.candidate.id}`,
+            )
+            return y ? [y] : []
+          },
+        )
+        if (assignmentVars.length === 0) return
+
+        const used = model.boolVar(
+          `region_recipe_${recipeIndex}_${villageIndex}`,
+        )
+        assignmentVars.forEach((assignmentVar, assignmentIndex) => {
+          model.addConstraint(
+            assignmentVar.minus(used).leq(0),
+            `region_recipe_usage_${recipeIndex}_${villageIndex}_${assignmentIndex}`,
+          )
+        })
+        model.addConstraint(
+          used.minus(sum(...assignmentVars)).leq(0),
+          `region_recipe_presence_${recipeIndex}_${villageIndex}`,
+        )
+        recipeRegionVars.push(used)
+        regionRecipeGroupVars.push(used)
+      })
+
+      if (recipeRegionVars.length === 0) return
+      const assignedRecipe = model.boolVar(
+        `regional_assigned_recipe_${recipeIndex}`,
+      )
+      recipeRegionVars.forEach((regionVar, villageIndex) => {
+        model.addConstraint(
+          regionVar.minus(assignedRecipe).leq(0),
+          `regional_assigned_recipe_usage_${recipeIndex}_${villageIndex}`,
+        )
+      })
+      model.addConstraint(
+        assignedRecipe.minus(sum(...recipeRegionVars)).leq(0),
+        `regional_assigned_recipe_presence_${recipeIndex}`,
+      )
+      regionAssignedRecipeVars.push(assignedRecipe)
+    })
+  }
+
   if (needsProductionOperations) {
     const quantityTermsByEdgeKey = new Map<
       string,
@@ -463,6 +534,18 @@ function buildHighsStage(
 
   const machineOperationsExpression = needsAnyObjective('machineOperations')
     ? sum(...operationByEdgeKey.values())
+    : undefined
+
+  // Minimizes two kinds of village fragmentation at once:
+  // - one recipe being assigned across extra villages
+  // - one village being split across extra recipe groups
+  // The omitted village-count term is constant for this request.
+  const regionalFragmentationExpression = needsAnyObjective(
+    'regionalFragmentation',
+  )
+    ? sum(...regionRecipeGroupVars)
+        .times(2)
+        .minus(sum(...regionAssignedRecipeVars))
     : undefined
 
   const assignedIngredientCostExpression = needsAnyObjective(
@@ -607,6 +690,7 @@ function buildHighsStage(
         : undefined,
     machineOperations: machineOperationsExpression,
     jarSwitches,
+    regionalFragmentation: regionalFragmentationExpression,
   }
 
   const requiredObjectiveExpression = (key: ObjectiveKey) => {
