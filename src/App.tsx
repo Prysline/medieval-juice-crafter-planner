@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { memo, startTransition, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import OptimizerTools from './OptimizerTools'
 import RecipeTools from './RecipeTools'
 import { customers } from './data/customers'
@@ -11,7 +11,6 @@ import {
   villageIsAvailable,
 } from './domain/availability'
 import {
-  filterSuppliedCustomerRows,
   sortCustomerRows,
   type CustomerSortKey,
   type SortDirection,
@@ -33,6 +32,7 @@ import {
 import {
   buildRecipeCandidatePool,
   recipeCandidatesInCurrentSearchScope,
+  type RecipeCandidatePool,
   type RecipeCandidatePoolEntry,
   type RecipeCandidatePoolSource,
 } from './domain/recipeCandidatePool'
@@ -43,7 +43,10 @@ import {
   type RecipePriceFilter,
   type RecipeSourceFilter,
 } from './domain/listFilters'
-import { searchRecipeCandidatesForCustomer } from './domain/recipeSearch'
+import {
+  searchRecipeCandidatesForCustomer,
+  type ProgressiveRecipeSearchResult,
+} from './domain/recipeSearch'
 import {
   calculateRecipeIngredientCost,
   type RecipeIngredientCost,
@@ -80,6 +83,8 @@ type RecipeSortKey = 'name' | 'salePrice'
 type CustomerVisibility = 'available' | 'all'
 
 const RECIPE_PAGE_SIZE = 50
+const MemoizedOptimizerTools = memo(OptimizerTools)
+const MemoizedRecipeRow = memo(RecipeRow)
 
 const scheduleLabels = {
   leave_home: '出家門',
@@ -101,6 +106,42 @@ function recipePoolSourceLabel(source: RecipeCandidatePoolSource): string {
 
 function recipeEntrySourceLabel(entry: RecipeCandidatePoolEntry): string {
   return entry.sources.map(recipePoolSourceLabel).join('・')
+}
+
+export type CustomerRecipeSearches = {
+  observedOnly: ProgressiveRecipeSearchResult
+  allowComputed: ProgressiveRecipeSearchResult
+}
+
+export function buildCustomerRecipeSearches(
+  recipeCandidatePool: RecipeCandidatePool,
+  currentProgress: ProgressMilestoneId,
+): Map<string, CustomerRecipeSearches> {
+  return new Map(
+    customers.map((customer) => [
+      customer.id,
+      {
+        observedOnly: searchRecipeCandidatesForCustomer(
+          recipeCandidatePool,
+          currentProgress,
+          customer,
+          {
+            candidatePolicy: 'observed-only',
+            mode: 'bounded-exhaustive',
+          },
+        ),
+        allowComputed: searchRecipeCandidatesForCustomer(
+          recipeCandidatePool,
+          currentProgress,
+          customer,
+          {
+            candidatePolicy: 'allow-unambiguous-computed',
+            mode: 'bounded-exhaustive',
+          },
+        ),
+      },
+    ]),
+  )
 }
 
 function App() {
@@ -163,7 +204,13 @@ function App() {
   const [comparisonCustomerIds, setComparisonCustomerIds] = useState<string[]>([])
   const [showSuppliedToday, setShowSuppliedToday] = useState(true)
 
+  const deferredSatisfactionByVillage =
+    useDeferredValue(satisfactionByVillage)
   const normalizedQuery = query.trim().toLocaleLowerCase('zh-Hant')
+  const normalizedCustomerQuery =
+    tab === 'customers' ? normalizedQuery : ''
+  const normalizedRecipeQuery =
+    tab === 'recipes' ? normalizedQuery : ''
   const tranquilFountainAvailable = villageIsAvailable(
     'tranquil-fountain',
     currentProgress,
@@ -200,6 +247,29 @@ function App() {
     () =>
       new Map(
         recipeListEntries.map((entry, index) => [entry.id, index]),
+      ),
+    [recipeListEntries],
+  )
+  const recipeSearchTextById = useMemo(
+    () =>
+      new Map(
+        recipeListEntries.map((entry) => {
+          const recipe = entry.candidate
+          return [
+            entry.id,
+            [
+              recipe.name,
+              ...recipe.ingredients,
+              ...recipe.effects.map((effect) => effect.name),
+              ...(recipe.effectAmbiguity?.candidates.map(
+                (effect) => effect.name,
+              ) ?? []),
+              ...recipe.equipment,
+            ]
+              .join(' ')
+              .toLocaleLowerCase('zh-Hant'),
+          ] as const
+        }),
       ),
     [recipeListEntries],
   )
@@ -263,55 +333,59 @@ function App() {
     [recipeListEntries],
   )
 
-  const customerRows = useMemo(() => {
-    const searchesByCustomerId = new Map(
-      customers.map((customer) => [
-        customer.id,
-        {
-          observedOnly: searchRecipeCandidatesForCustomer(
-            recipeCandidatePool,
-            currentProgress,
-            customer,
-            {
-              candidatePolicy: 'observed-only',
-              mode: 'bounded-exhaustive',
-            },
-          ),
-          allowComputed: searchRecipeCandidatesForCustomer(
-            recipeCandidatePool,
-            currentProgress,
-            customer,
-            {
-              candidatePolicy: 'allow-unambiguous-computed',
-              mode: 'bounded-exhaustive',
-            },
-          ),
-        },
-      ]),
-    )
+  const customerSearchesByCustomerId = useMemo(
+    () =>
+      buildCustomerRecipeSearches(
+        recipeCandidatePool,
+        currentProgress,
+      ),
+    [recipeCandidatePool, currentProgress],
+  )
 
-    const rows = customers
-      .filter((customer) => customerVillageIsAvailable(customer, currentProgress))
-      .map((customer) => {
-        const searches = searchesByCustomerId.get(customer.id)
-        const candidates = searches?.allowComputed.candidates ?? []
+  const customerRecommendationRows = useMemo(
+    () =>
+      customers
+        .filter((customer) =>
+          customerVillageIsAvailable(customer, currentProgress),
+        )
+        .map((customer) => {
+          const searches = customerSearchesByCustomerId.get(customer.id)
+          const candidates = searches?.allowComputed.candidates ?? []
 
-        return {
-          customer,
-          unlocked: customerIsUnlocked(
+          return {
             customer,
-            currentProgress,
-            satisfactionByVillage,
-          ),
-          matches: sortFullMatchCandidatesByIngredientCost(
-            matchingRecipeCandidatesForCustomer(
-              [...candidates],
-              customer,
+            matches: sortFullMatchCandidatesByIngredientCost(
+              matchingRecipeCandidatesForCustomer(
+                [...candidates],
+                customer,
+              ),
+              customerRecommendationCostMode,
             ),
-            customerRecommendationCostMode,
-          ),
-        }
-      })
+            recommendations: customerRecipeRecommendationsFromSearch(
+              searches?.observedOnly.candidates ?? [],
+              searches?.allowComputed.candidates ?? [],
+              customer,
+              customerRecommendationCostMode,
+            ),
+          }
+        }),
+    [
+      currentProgress,
+      customerSearchesByCustomerId,
+      customerRecommendationCostMode,
+    ],
+  )
+
+  const customerRows = useMemo(() => {
+    const rows = customerRecommendationRows
+      .map((row) => ({
+        ...row,
+        unlocked: customerIsUnlocked(
+          row.customer,
+          currentProgress,
+          satisfactionByVillage,
+        ),
+      }))
       .filter(({ unlocked }) => customerVisibility === 'all' || unlocked)
       .filter(({ customer }) =>
         customerMatchesResearchFilters(customer, {
@@ -322,14 +396,13 @@ function App() {
         }),
       )
 
-    const suppliedFilteredRows = filterSuppliedCustomerRows(
-      rows,
-      suppliedCustomerIds,
-      showSuppliedToday,
-    )
+    const supplied = new Set(suppliedCustomerIds)
+    const suppliedFilteredRows = showSuppliedToday
+      ? rows
+      : rows.filter(({ customer }) => !supplied.has(customer.id))
 
     const searchedRows = suppliedFilteredRows.filter(({ customer, matches }) => {
-      if (!normalizedQuery) return true
+      if (!normalizedCustomerQuery) return true
       const haystack = [
         customer.name,
         customer.occupation,
@@ -338,38 +411,30 @@ function App() {
       ]
         .join(' ')
         .toLocaleLowerCase('zh-Hant')
-      return haystack.includes(normalizedQuery)
+      return haystack.includes(normalizedCustomerQuery)
     })
+
+    const rowByCustomerId = new Map(
+      searchedRows.map((row) => [row.customer.id, row]),
+    )
 
     return sortCustomerRows(
       searchedRows,
       customerSortKey,
       customerSortDirection,
       recipeOrder,
-    ).map((row) => {
-      const searches = searchesByCustomerId.get(row.customer.id)
-      return {
-        ...row,
-        recommendations: customerRecipeRecommendationsFromSearch(
-          searches?.observedOnly.candidates ?? [],
-          searches?.allowComputed.candidates ?? [],
-          row.customer,
-          customerRecommendationCostMode,
-        ),
-      }
-    })
+    ).map((row) => rowByCustomerId.get(row.customer.id)!)
   }, [
-    normalizedQuery,
+    normalizedCustomerQuery,
+    customerRecommendationRows,
     currentProgress,
     satisfactionByVillage,
-    recipeCandidatePool,
     recipeOrder,
     customerVisibility,
     customerVillageFilter,
     customerPreferenceIngredientFilter,
     customerPreferenceEffectFilter,
     customerPreferenceMode,
-    customerRecommendationCostMode,
     showSuppliedToday,
     suppliedCustomerIds,
     customerSortDirection,
@@ -389,18 +454,12 @@ function App() {
         }),
       )
       .filter((entry) => {
-        if (!normalizedQuery) return true
-        const recipe = entry.candidate
-        return [
-          recipe.name,
-          ...recipe.ingredients,
-          ...recipe.effects.map((effect) => effect.name),
-          ...(recipe.effectAmbiguity?.candidates.map((effect) => effect.name) ?? []),
-          ...recipe.equipment,
-        ]
-          .join(' ')
-          .toLocaleLowerCase('zh-Hant')
-          .includes(normalizedQuery)
+        if (!normalizedRecipeQuery) return true
+        return (
+          recipeSearchTextById
+            .get(entry.id)
+            ?.includes(normalizedRecipeQuery) ?? false
+        )
       })
 
     const direction = recipeSortDirection === 'asc' ? 1 : -1
@@ -429,9 +488,10 @@ function App() {
       return left.name.localeCompare(right.name, 'zh-Hant') * direction
     })
   }, [
-    normalizedQuery,
+    normalizedRecipeQuery,
     recipeListEntries,
     recipeListOrder,
+    recipeSearchTextById,
     recipeIngredientCountFilter,
     recipeIngredientFilter,
     recipeConfirmedEffectFilter,
@@ -456,7 +516,7 @@ function App() {
     setRecipePage(1)
   }, [
     currentProgress,
-    normalizedQuery,
+    normalizedRecipeQuery,
     recipeIngredientCountFilter,
     recipeIngredientFilter,
     recipeConfirmedEffectFilter,
@@ -650,23 +710,10 @@ function App() {
       </section>
 
       {(tab === 'customers' || tab === 'recipes') && (
-        <section className="search-panel">
-          <input
-            aria-label="搜尋"
-            placeholder="搜尋顧客、職業、配方、原料、特性……"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-          {query && (
-            <button
-              className="clear-button"
-              type="button"
-              onClick={() => setQuery('')}
-            >
-              清除
-            </button>
-          )}
-        </section>
+        <SearchPanel
+          initialQuery={query}
+          onQueryChange={setQuery}
+        />
       )}
 
       <nav className="tabs" aria-label="資料類型">
@@ -1038,11 +1085,11 @@ function App() {
             </div>
 
             {pagedRecipeRows.map((entry) => (
-              <RecipeRow
+              <MemoizedRecipeRow
                 key={entry.id}
                 entry={entry}
                 currentProgress={currentProgress}
-                satisfactionByVillage={satisfactionByVillage}
+                satisfactionByVillage={deferredSatisfactionByVillage}
               />
             ))}
           </section>
@@ -1095,7 +1142,7 @@ function App() {
       ) : tab === 'tools' ? (
         <RecipeTools
           currentProgress={currentProgress}
-          satisfactionByVillage={satisfactionByVillage}
+          satisfactionByVillage={deferredSatisfactionByVillage}
           savedRecipes={savedRecipes}
           comparisonCustomerIds={comparisonCustomerIds}
           onSavedRecipesChange={setSavedRecipes}
@@ -1106,9 +1153,9 @@ function App() {
       ) : null}
 
       <div hidden={tab !== 'optimizer'}>
-        <OptimizerTools
+        <MemoizedOptimizerTools
           currentProgress={currentProgress}
-          satisfactionByVillage={satisfactionByVillage}
+          satisfactionByVillage={deferredSatisfactionByVillage}
           suppliedCustomerIds={suppliedCustomerIds}
           formalCustomerIds={formalCustomerIds}
           recipeCandidatePool={recipeCandidatePool}
@@ -1132,6 +1179,43 @@ function App() {
         預測配方不自行推導售價；同分 cutoff 未確認時不宣稱完全匹配。
       </footer>
     </main>
+  )
+}
+
+function SearchPanel({
+  initialQuery,
+  onQueryChange,
+}: {
+  initialQuery: string
+  onQueryChange: (query: string) => void
+}) {
+  const [inputValue, setInputValue] = useState(initialQuery)
+
+  function updateQuery(value: string) {
+    setInputValue(value)
+    startTransition(() => {
+      onQueryChange(value)
+    })
+  }
+
+  return (
+    <section className="search-panel">
+      <input
+        aria-label="搜尋"
+        placeholder="搜尋顧客、職業、配方、原料、特性……"
+        value={inputValue}
+        onChange={(event) => updateQuery(event.target.value)}
+      />
+      {inputValue && (
+        <button
+          className="clear-button"
+          type="button"
+          onClick={() => updateQuery('')}
+        >
+          清除
+        </button>
+      )}
+    </section>
   )
 }
 
