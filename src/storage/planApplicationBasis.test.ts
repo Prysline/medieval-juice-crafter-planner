@@ -207,6 +207,7 @@ describe('stored plan application basis', () => {
       satisfactionByVillage: {
         'east-harbor': 12,
         'tranquil-fountain': 0,
+        'ibex-statue': 0,
       },
       formalCustomerIds: ['jack', 'nanette'],
       suppliedCustomerIds: ['ulrich', 'alia'],
@@ -268,6 +269,7 @@ describe('stored plan application basis', () => {
       [STORAGE_KEYS.satisfactionByVillage]: JSON.stringify({
         'east-harbor': 0,
         'tranquil-fountain': 0,
+        'ibex-statue': 0,
       }),
       [PLANNER_SETTINGS_STORAGE_KEY]: JSON.stringify({
         carriedJuiceJarIds: ['jar-a', 'ghost', 'jar-b'],
