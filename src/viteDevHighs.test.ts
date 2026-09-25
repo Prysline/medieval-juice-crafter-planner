@@ -1,25 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { createServer, type ConfigEnv, type UserConfig } from 'vite'
+import { createServer } from 'vite'
 import viteConfig from '../vite.config'
-
-const configEnv: ConfigEnv = {
-  command: 'serve',
-  mode: 'development',
-  isSsrBuild: false,
-  isPreview: false,
-}
-
-async function developmentConfig(): Promise<UserConfig> {
-  return typeof viteConfig === 'function'
-    ? await viteConfig(configEnv)
-    : await viteConfig
-}
 
 describe('Vite HiGHS development loading', () => {
   it(
     'serves the package-relative HiGHS WASM as WebAssembly instead of HTML',
     async () => {
-      const config = await developmentConfig()
+      const config = viteConfig
       const server = await createServer({
         ...config,
         configFile: false,
