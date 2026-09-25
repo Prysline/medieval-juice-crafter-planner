@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { MultiTripProductionJarFill } from './domain/multiTripReplenishment'
+import type { OptimizationResult } from './domain/optimizer'
 import type {
   DeliveryExecutionCursor,
   DeliveryExecutionPlan,
@@ -13,6 +14,7 @@ import {
   INTERMEDIATE_JUICE_SEARCH_RESULT_LIMIT,
   JuiceJarRecipeCombobox,
   MachineBatchFlow,
+  OptimizerSummaryMetrics,
   PlanApplicationPreview,
   PlanningErrorBlock,
   criterionLabel,
@@ -812,6 +814,50 @@ describe('optimizer inventory availability', () => {
         (ingredient) => ingredient.id,
       ),
     ).toEqual(expect.arrayContaining(['cinnamon', 'banana']))
+  })
+})
+
+describe('optimizer summary', () => {
+  it('shows physical terminal leftovers when the optimizer gross result reports zero', () => {
+    const result: OptimizationResult = {
+      assignments: [],
+      recipePlans: [],
+      productionSteps: [],
+      machineOperations: {
+        total: 0,
+        juicing: 0,
+        seasoning: 0,
+        blending: 0,
+        finalizing: 0,
+      },
+      jarTypeSwitches: 0,
+      availableJuiceJarCount: 2,
+      shoppingList: [],
+      unresolvedCustomers: [],
+      totalIngredientCost: 0,
+      knownSalesRevenue: 0,
+      knownGrossProfit: 0,
+      formalSalesCount: 0,
+      potentialTrialCount: 0,
+      unknownFormalSalePriceCount: 0,
+      producedServings: 2,
+      assignedServings: 2,
+      leftoverServings: 0,
+    }
+
+    const html = renderToStaticMarkup(
+      <OptimizerSummaryMetrics
+        result={result}
+        salesPlan={{
+          jarTypeSwitches: 0,
+          tripCount: 3,
+          totalLeftoverServings: 1,
+        }}
+      />,
+    )
+
+    expect(html).toContain('<span>剩餘杯</span><strong>1</strong>')
+    expect(html).not.toContain('<span>剩餘杯</span><strong>0</strong>')
   })
 })
 
