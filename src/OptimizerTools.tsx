@@ -218,6 +218,7 @@ export const optimizerCriterionOptions: Array<{
   { value: 'minimum-jar-switches', label: '最少果汁罐換裝' },
   { value: 'minimum-cost', label: '最低原料成本' },
   { value: 'minimum-waste', label: '最少剩餘杯' },
+  { value: 'minimum-regional-fragmentation', label: '同區域集中' },
   { value: 'maximum-ingredient-cost', label: '最高原料成本' },
   { value: 'maximum-known-revenue', label: '最高已知銷售總額' },
   { value: 'maximum-known-gross-profit', label: '最高已知毛利' },
@@ -243,6 +244,7 @@ export function criterionLabel(criterion: OptimizationCriterion): string {
   if (criterion === 'maximum-known-revenue') return '最高已知銷售總額'
   if (criterion === 'maximum-known-gross-profit') return '最高已知毛利'
   if (criterion === 'minimum-machine-operations') return '最少機器操作'
+  if (criterion === 'minimum-regional-fragmentation') return '同區域集中'
   return '最少果汁罐換裝'
 }
 
@@ -1174,7 +1176,8 @@ function OptimizerTools({
           candidatePolicy,
           objective:
             primaryCriterion === 'minimum-machine-operations' ||
-            primaryCriterion === 'minimum-jar-switches'
+            primaryCriterion === 'minimum-jar-switches' ||
+            primaryCriterion === 'minimum-regional-fragmentation'
               ? 'minimum-cost'
               : primaryCriterion,
           priorities,
@@ -1201,6 +1204,9 @@ function OptimizerTools({
       const preparationShortfall = buildPreparationShortfall(
         preparationDemand,
         inventoryState,
+      )
+      const customerVillageById = Object.fromEntries(
+        customers.map((customer) => [customer.id, customer.villageId]),
       )
       const selectedPolicy: UsedCupTripPolicy =
         plannerSettings.allowUsedCupDropIfFull
@@ -1230,6 +1236,7 @@ function OptimizerTools({
               capacitySummary.minimumCarriedJuiceJarSlots,
           },
           plannerSettings.allowDiscardRetainedJuice,
+          customerVillageById,
         )
         // result.jarTypeSwitches is the optimizer's structural lower bound.
         // The physical planner is terminal-aware: prefilled recipes that must
