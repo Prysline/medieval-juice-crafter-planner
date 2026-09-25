@@ -79,17 +79,10 @@ function readSatisfactionByVillageReadonly(
   const legacyRaw = storage.getItem(STORAGE_KEYS.legacySatisfaction)
   const legacyValue =
     legacyRaw === null ? 0 : Number(legacyRaw)
-  const migrated = normalizeSatisfactionByVillageIds(
+  return normalizeSatisfactionByVillageIds(
     villageIds,
-    {},
+    { 'east-harbor': legacyValue },
   )
-  migrated['east-harbor'] =
-    normalizeSatisfactionByVillageIds(
-      ['east-harbor'] as const,
-      { 'east-harbor': legacyValue },
-    )['east-harbor']
-
-  return migrated
 }
 
 function readStoredStringSet(
