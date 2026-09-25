@@ -5,9 +5,15 @@ import type {
   Customer,
   ProgressMilestoneId,
   SatisfactionByVillage,
+  VillageId,
 } from '../types'
 
 export type OptimizerCustomerScope = 'all' | 'potential' | 'formal'
+
+export type OptimizerCustomerTarget =
+  | { mode: 'all' }
+  | { mode: 'villages'; villageIds: readonly VillageId[] }
+  | { mode: 'customers'; customerIds: readonly string[] }
 
 export function optimizerCustomerIds(
   customers: Customer[],
@@ -16,9 +22,14 @@ export function optimizerCustomerIds(
   suppliedCustomerIds: string[],
   formalCustomerIds: string[],
   scope: OptimizerCustomerScope,
+  target: OptimizerCustomerTarget = { mode: 'all' },
 ): string[] {
   const supplied = new Set(suppliedCustomerIds)
   const formal = new Set(formalCustomerIds)
+  const targetVillages =
+    target.mode === 'villages' ? new Set(target.villageIds) : null
+  const targetCustomers =
+    target.mode === 'customers' ? new Set(target.customerIds) : null
 
   return customers
     .filter((customer) =>
@@ -32,6 +43,11 @@ export function optimizerCustomerIds(
     .filter((customer) => {
       if (scope === 'formal') return formal.has(customer.id)
       if (scope === 'potential') return !formal.has(customer.id)
+      return true
+    })
+    .filter((customer) => {
+      if (targetVillages) return targetVillages.has(customer.villageId)
+      if (targetCustomers) return targetCustomers.has(customer.id)
       return true
     })
     .map((customer) => customer.id)
