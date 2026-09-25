@@ -31,7 +31,7 @@
 
 ## 進度模型
 
-攻略文件仍保留「階段一～五」作閱讀章節；runtime availability 使用：
+攻略文件仍保留「階段一～七」作閱讀章節；runtime availability 使用：
 
 ```text
 opening
