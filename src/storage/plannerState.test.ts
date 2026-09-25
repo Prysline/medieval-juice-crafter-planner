@@ -83,6 +83,19 @@ describe('planner state migration', () => {
     expect(readCurrentProgress(storage)).toBe('juice-blender-unlocked')
   })
 
+  it('persists and reads the Stage 8 Adam arrival milestone', () => {
+    const storage = new MemoryStorage()
+
+    writeCurrentProgress(storage, 'sales-assistant-adam-arrived')
+
+    expect(storage.getItem(STORAGE_KEYS.progress)).toBe(
+      'sales-assistant-adam-arrived',
+    )
+    expect(readCurrentProgress(storage)).toBe(
+      'sales-assistant-adam-arrived',
+    )
+  })
+
   it('migrates legacy satisfaction to east harbor only', () => {
     const storage = new MemoryStorage({
       [STORAGE_KEYS.legacySatisfaction]: '250',

@@ -10,6 +10,7 @@ export type ProgressMilestoneId =
   | 'advanced-tragic-washing-station-unlocked'
   | 'advanced-citrus-juicer-unlocked'
   | 'ibex-statue-unlocked'
+  | 'sales-assistant-adam-arrived'
 
 export type VillageId =
   | 'east-harbor'

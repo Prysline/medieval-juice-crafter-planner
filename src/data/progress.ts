@@ -46,6 +46,11 @@ export const progressMilestones: ProgressMilestoneDefinition[] = [
     label: '階段七｜羱羊雕像已解鎖',
     summary: '完成階段七後半主線後解鎖羱羊雕像、該區顧客、商店與一般原料。',
   },
+  {
+    id: 'sales-assistant-adam-arrived',
+    label: '階段八｜售飲助手 Adam 已抵達',
+    summary: '爺爺回信告知已找到 Adam；Adam 於該回信後隔日抵達。目前只表示主線進度，不啟用售飲助手功能。',
+  },
 ]
 
 export const progressMilestoneIds = progressMilestones.map(
