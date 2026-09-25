@@ -824,6 +824,22 @@ describe('optimizer inventory availability', () => {
       ),
     ).toEqual(expect.arrayContaining(['cinnamon', 'banana']))
   })
+
+  it('exposes the confirmed ibex-statue ingredient catalog only after the region milestone', () => {
+    const before = optimizerInventoryIngredients(
+      'advanced-citrus-juicer-unlocked',
+    ).map((ingredient) => ingredient.id)
+    const after = optimizerInventoryIngredients(
+      'ibex-statue-unlocked',
+    ).map((ingredient) => ingredient.id)
+
+    expect(before).not.toEqual(
+      expect.arrayContaining(['peach', 'cucumber', 'tomato', 'clove']),
+    )
+    expect(after).toEqual(
+      expect.arrayContaining(['peach', 'cucumber', 'tomato', 'clove']),
+    )
+  })
 })
 
 describe('optimizer summary', () => {
