@@ -216,6 +216,7 @@ describe('production optimizer', () => {
     const costFirst = await optimizeBatchPlan(
       {
         ...request(customerIds, 'minimum-waste'),
+        currentProgress: 'tranquil-fountain-unlocked',
         priorities: ['minimum-waste', 'maximum-ingredient-cost'],
       },
       { source: { customers, candidates } },
@@ -223,6 +224,7 @@ describe('production optimizer', () => {
     const regional = await optimizeBatchPlan(
       {
         ...request(customerIds, 'minimum-waste'),
+        currentProgress: 'tranquil-fountain-unlocked',
         priorities: [
           'minimum-waste',
           'minimum-regional-fragmentation',
@@ -282,6 +284,7 @@ describe('production optimizer', () => {
     const regional = await optimizeBatchPlan(
       {
         ...request(customerIds, 'minimum-waste'),
+        currentProgress: 'tranquil-fountain-unlocked',
         priorities: [
           'minimum-waste',
           'minimum-regional-fragmentation',
