@@ -393,7 +393,7 @@ describe('delivery checklist UI', () => {
         plan={null}
         cursor={null}
         suppliedCustomerIds={[]}
-        onCommit={() => {}}
+        onChange={() => {}}
       />,
     )
 
@@ -426,7 +426,7 @@ describe('delivery checklist UI', () => {
         plan={plan}
         cursor={cursor}
         suppliedCustomerIds={[]}
-        onCommit={() => {}}
+        onChange={() => {}}
       />,
     )
     const laterHtml = renderToStaticMarkup(
@@ -435,7 +435,7 @@ describe('delivery checklist UI', () => {
         plan={plan}
         cursor={cursor}
         suppliedCustomerIds={[]}
-        onCommit={() => {}}
+        onChange={() => {}}
       />,
     )
 
@@ -471,7 +471,7 @@ describe('delivery checklist UI', () => {
         plan={plan}
         cursor={cursor}
         suppliedCustomerIds={[]}
-        onCommit={() => {}}
+        onChange={() => {}}
       />,
     )
 
@@ -509,7 +509,7 @@ describe('delivery checklist UI', () => {
         plan={plan}
         cursor={cursor}
         suppliedCustomerIds={['jack']}
-        onCommit={() => {}}
+        onChange={() => {}}
       />,
     )
 
@@ -546,7 +546,7 @@ describe('delivery checklist UI', () => {
         plan={plan}
         cursor={cursor}
         suppliedCustomerIds={[]}
-        onCommit={() => {}}
+        onChange={() => {}}
       />,
     )
 
@@ -579,7 +579,7 @@ describe('delivery checklist UI', () => {
         plan={plan}
         cursor={cursor}
         suppliedCustomerIds={[]}
-        onCommit={() => {}}
+        onChange={() => {}}
       />,
     )
 
@@ -603,7 +603,7 @@ describe('delivery checklist UI', () => {
         plan={plan}
         cursor={cursor}
         suppliedCustomerIds={[]}
-        onCommit={() => {}}
+        onChange={() => {}}
       />,
     )
 
@@ -631,7 +631,7 @@ describe('delivery checklist UI', () => {
         plan={plan}
         cursor={cursor}
         suppliedCustomerIds={['jack']}
-        onCommit={() => {}}
+        onChange={() => {}}
       />,
     )
 
@@ -640,6 +640,46 @@ describe('delivery checklist UI', () => {
     expect(html).toContain('已記錄今日供應')
   })
 
+
+  it('keeps a supplied customer checkbox enabled so unchecking can correct only the supplied record', () => {
+    const plan = deliveryPlan()
+    const cursor = deliveryCursor({
+      nextTripNumber: 2,
+      tripPrepared: true,
+      completedCustomerIdsInTrip: ['jack'],
+    })
+    const html = renderToStaticMarkup(
+      <DeliveryCustomerCheckbox
+        customerId="jack"
+        plan={plan}
+        cursor={cursor}
+        suppliedCustomerIds={['jack']}
+        onChange={() => {}}
+      />,
+    )
+
+    expect(html).toContain('checked=""')
+    expect(html).not.toContain('disabled=""')
+    expect(html).toContain('已記錄今日供應')
+  })
+
+  it('keeps a fully supplied recipe group enabled so the whole record can be unchecked across planned trips', () => {
+    const plan = deliveryPlan()
+    const cursor = deliveryCursor({ nextTripNumber: 2 })
+    const html = renderToStaticMarkup(
+      <DeliveryRecipeGroupCheckbox
+        recipeName="跨趟配方"
+        customerIds={['jack', 'florida']}
+        plan={plan}
+        cursor={cursor}
+        suppliedCustomerIds={['jack', 'florida']}
+        onChange={() => {}}
+      />,
+    )
+
+    expect(html).toContain('checked=""')
+    expect(html).not.toContain('disabled=""')
+  })
   it('keeps earlier planned-trip customers active until canonical supplied state records them', () => {
     const plan = deliveryPlan()
     const cursor = deliveryCursor({
