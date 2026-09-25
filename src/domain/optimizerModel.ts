@@ -16,6 +16,7 @@ import type {
   ProgressMilestoneId,
   RecipeCandidate,
   SatisfactionByVillage,
+  VillageId,
 } from '../types'
 
 export type OptimizationCandidatePolicy = ProgressiveRecipeSearchPolicy
@@ -31,6 +32,7 @@ export type OptimizationCriterion =
   | OptimizationObjective
   | 'minimum-machine-operations'
   | 'minimum-jar-switches'
+  | 'minimum-regional-fragmentation'
 
 export interface OptimizationConstraints {
   maxJarTypeSwitches?: number
@@ -91,6 +93,7 @@ type EligibleOptimizationRecipeCore = Omit<
 
 export interface BatchOptimizationModel {
   request: OptimizationRequest
+  customerVillageById: Record<string, VillageId>
   serviceableCustomerIds: string[]
   unresolvedCustomerIds: string[]
   excludedSuppliedCustomerIds: string[]
@@ -249,6 +252,9 @@ export function buildOptimizationModel(
   const customerById = new Map(
     source.customers.map((customer) => [customer.id, customer]),
   )
+  const customerVillageById = Object.fromEntries(
+    source.customers.map((customer) => [customer.id, customer.villageId]),
+  ) as Record<string, VillageId>
   const revenueSensitive = requestUsesRevenueCriterion(request)
   const eligibleEntryCache = new Map<
     string,
@@ -363,6 +369,7 @@ export function buildOptimizationModel(
 
   return {
     request,
+    customerVillageById,
     serviceableCustomerIds,
     unresolvedCustomerIds,
     excludedSuppliedCustomerIds,
