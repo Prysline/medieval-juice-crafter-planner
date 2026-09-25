@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import type { MultiTripProductionJarFill } from './domain/multiTripReplenishment'
+import type { InventoryState } from './types'
+import {
+  buildMultiTripReplenishmentPlan,
+  type MultiTripProductionJarFill,
+} from './domain/multiTripReplenishment'
 import type { OptimizationResult } from './domain/optimizer'
+import type { PreparationDemand } from './domain/preparationDemand'
+import { buildPreparationShortfall } from './domain/preparationShortfall'
 import type {
   DeliveryExecutionCursor,
   DeliveryExecutionPlan,
@@ -17,6 +23,7 @@ import {
   OptimizerSummaryMetrics,
   PlanApplicationPreview,
   PlanningErrorBlock,
+  SalesTripPlanBlock,
   criterionLabel,
   customerIdsInPlannedTripOrder,
   recipePlansInPlannedTripOrder,
@@ -858,6 +865,91 @@ describe('optimizer summary', () => {
 
     expect(html).toContain('<span>剩餘杯</span><strong>1</strong>')
     expect(html).not.toContain('<span>剩餘杯</span><strong>0</strong>')
+  })
+})
+
+describe('sales trip terminal leftover UI', () => {
+  it('renders the true three-trip terminal jar as staying home after its last sale', () => {
+    const salesDemand: PreparationDemand = {
+      ingredients: [],
+      productionWaterUnits: 2,
+      cleanCupUses: 3,
+      producedServings: 4,
+      assignedServings: 3,
+      leftoverServings: 1,
+      recipes: [
+        {
+          recipeId: 'a',
+          recipeName: 'A',
+          customerIds: ['a-customer-1', 'a-customer-2'],
+          ingredientIds: [],
+          productionUnits: 1,
+          producedServings: 2,
+          assignedServings: 2,
+          leftoverServings: 0,
+          ingredientUnitsPerJuiceUnit: [],
+        },
+        {
+          recipeId: 'b',
+          recipeName: 'B',
+          customerIds: ['b-customer-1'],
+          ingredientIds: [],
+          productionUnits: 1,
+          producedServings: 2,
+          assignedServings: 1,
+          leftoverServings: 1,
+          ingredientUnitsPerJuiceUnit: [],
+        },
+      ],
+    }
+    const inventory: InventoryState = {
+      ingredientUnits: {},
+      intermediateJuiceUnits: {},
+      waterUnits: 0,
+      cleanCups: 1,
+      usedCups: 0,
+      juiceJars: [
+        { id: 'jar-1', recipeId: 'a', servings: 1 },
+        { id: 'jar-2', recipeId: 'b', servings: 1 },
+      ],
+      shelfCount: 0,
+      jarRackCount: 1,
+    }
+    const shortfall = buildPreparationShortfall(
+      salesDemand,
+      inventory,
+    )
+    const plan = buildMultiTripReplenishmentPlan(
+      salesDemand,
+      'retain-and-wash',
+      inventory.juiceJars,
+      {
+        cleanCups: inventory.cleanCups,
+        usedCups: inventory.usedCups,
+      },
+      shortfall,
+      {
+        mode: 'auto',
+        reservedSlots: 0,
+        minimumCarriedSlots: 0,
+      },
+      false,
+    )
+
+    expect(plan.tripCount).toBe(3)
+    expect(plan.totalLeftoverServings).toBe(1)
+    expect(plan.trips[2]?.carriedPhysicalJarIds).toEqual(['jar-2'])
+
+    const html = renderToStaticMarkup(
+      <SalesTripPlanBlock plan={plan} />,
+    )
+
+    expect(html).toContain('販售後保留成品 1 杯')
+    expect(html).toContain(
+      '期末果汁罐：jar-1 · A · 1 杯 · 第 2 趟後留在家中',
+    )
+    expect(html).toContain('第 3 趟')
+    expect(html).toContain('果汁罐 jar-2：B')
   })
 })
 
