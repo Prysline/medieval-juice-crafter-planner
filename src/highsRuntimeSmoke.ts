@@ -1,4 +1,4 @@
-import { runOptimizerInWorker } from './domain/optimizerWorkerClient'
+import { runOptimizerRuntimeSmokeInWorker } from './domain/optimizerWorkerClient'
 import type {
   OptimizationRequest,
   OptimizationSource,
@@ -61,30 +61,47 @@ const source: OptimizationSource = {
 setStatus('running', { ok: false, stage: 'starting-worker' })
 
 try {
-  const result = await runOptimizerInWorker(request, source)
+  const response = await runOptimizerRuntimeSmokeInWorker(
+    request,
+    source,
+  )
+  const wasmResponses =
+    response.runtimeDiagnostics?.wasmResponses ?? []
 
-  if (
-    result.assignments.length !== 1 ||
-    result.assignments[0]?.customerId !== customer.id ||
-    result.assignments[0]?.recipeId !== recipe.id
+  if (!response.ok) {
+    setStatus('failed', {
+      ok: false,
+      stage: 'optimizer-error',
+      error: response.error,
+      wasmResponses,
+    })
+  } else if (
+    response.result.assignments.length !== 1 ||
+    response.result.assignments[0]?.customerId !== customer.id ||
+    response.result.assignments[0]?.recipeId !== recipe.id
   ) {
-    throw new Error(
-      `Unexpected runtime smoke solution: ${JSON.stringify(result.assignments)}`,
-    )
+    setStatus('failed', {
+      ok: false,
+      stage: 'unexpected-solution',
+      assignments: response.result.assignments,
+      wasmResponses,
+    })
+  } else {
+    setStatus('passed', {
+      ok: true,
+      stage: 'optimizer-solved',
+      assignments: response.result.assignments.length,
+      totalIngredientCost: response.result.totalIngredientCost,
+      wasmResponses,
+    })
   }
-
-  setStatus('passed', {
-    ok: true,
-    stage: 'optimizer-solved',
-    assignments: result.assignments.length,
-    totalIngredientCost: result.totalIngredientCost,
-  })
 } catch (error) {
   const message =
     error instanceof Error ? error.stack ?? error.message : String(error)
   setStatus('failed', {
     ok: false,
-    stage: 'optimizer-error',
+    stage: 'worker-error',
     error: message,
+    wasmResponses: [],
   })
 }
