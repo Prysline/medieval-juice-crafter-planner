@@ -1142,8 +1142,29 @@ function regionalTripsAreBetter(
   baseline: ReturnType<typeof buildTrips>,
   customerVillageById: Readonly<Record<string, VillageId>>,
 ): boolean {
-  if (candidate.trips.length !== baseline.trips.length) {
-    return candidate.trips.length < baseline.trips.length
+  if (candidate.trips.length > baseline.trips.length) return false
+
+  const lifecyclePenalty = (trips: readonly MutableTrip[]) => ({
+    droppedUsedCups: trips.reduce(
+      (total, trip) =>
+        total + trip.cupTransition.droppedUsedCups,
+      0,
+    ),
+    cupsWashedBeforeTrips: trips.reduce(
+      (total, trip) =>
+        total + trip.cupTransition.cupsWashedBeforeTrip,
+      0,
+    ),
+  })
+  const candidateLifecycle = lifecyclePenalty(candidate.trips)
+  const baselineLifecycle = lifecyclePenalty(baseline.trips)
+  if (
+    candidateLifecycle.droppedUsedCups >
+      baselineLifecycle.droppedUsedCups ||
+    candidateLifecycle.cupsWashedBeforeTrips >
+      baselineLifecycle.cupsWashedBeforeTrips
+  ) {
+    return false
   }
 
   const candidateScore = regionalTripScore(
