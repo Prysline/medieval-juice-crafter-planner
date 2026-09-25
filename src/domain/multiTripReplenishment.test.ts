@@ -317,7 +317,6 @@ describe('multi-trip replenishment', () => {
           })),
       ),
     ).toEqual([
-      { recipeId: 'a', fillAction: 'use-existing' },
       { recipeId: 'a', fillAction: 'refill-same-type' },
       { recipeId: 'c', fillAction: 'type-switch' },
       { recipeId: 'd', fillAction: 'type-switch' },
@@ -325,7 +324,7 @@ describe('multi-trip replenishment', () => {
     expectScheduleConsistency(result)
   })
 
-  it('keeps the terminal same-recipe serving after using one initial serving and topping up two new servings', () => {
+  it('tops up matching initial juice before the first sales trip when the prepared load fits', () => {
     const salesDemand = demand([
       {
         recipeId: 'a',
@@ -348,6 +347,7 @@ describe('multi-trip replenishment', () => {
       { cleanCups: 2, usedCups: 0 },
     )
 
+    expect(result.tripCount).toBe(1)
     expect(
       result.trips.flatMap((trip) =>
         trip.juiceJars.map((load) => ({
@@ -365,20 +365,21 @@ describe('multi-trip replenishment', () => {
         tripNumber: 1,
         physicalJarId: 'jar-1',
         recipeId: 'a',
-        servings: 1,
-        plannedFillServings: 0,
-        retainedLeftoverServings: 0,
-        fillAction: 'use-existing',
-      },
-      {
-        tripNumber: 2,
-        physicalJarId: 'jar-1',
-        recipeId: 'a',
-        servings: 1,
+        servings: 2,
         plannedFillServings: 2,
         retainedLeftoverServings: 1,
         fillAction: 'refill-same-type',
       },
+    ])
+    expect(result.productionJarFills).toEqual([
+      expect.objectContaining({
+        physicalJarId: 'jar-1',
+        recipeId: 'a',
+        beforeTripNumber: 1,
+        servings: 2,
+        servingsAfterFill: 3,
+        fillAction: 'refill-same-type',
+      }),
     ])
     expect(result.leftoverJarContents).toEqual([
       {
@@ -386,10 +387,57 @@ describe('multi-trip replenishment', () => {
         recipeId: 'a',
         recipeName: 'A',
         servings: 1,
-        tripNumber: 2,
+        tripNumber: 1,
       },
     ])
     expect(result.totalLeftoverServings).toBe(1)
+    expectScheduleConsistency(result)
+  })
+
+  it('does not create an extra trip when matching initial juice can be topped up before packing', () => {
+    const salesDemand = demand([
+      {
+        recipeId: 'a',
+        recipeName: 'A',
+        assignedServings: 2,
+      },
+      {
+        recipeId: 'b',
+        recipeName: 'B',
+        assignedServings: 8,
+      },
+    ])
+    const jars: JuiceJarInventoryItem[] = [
+      { id: 'jar-1', recipeId: 'a', servings: 1 },
+      { id: 'jar-2', recipeId: null, servings: 0 },
+    ]
+
+    const result = buildPlanWithJars(
+      salesDemand,
+      'retain-and-wash',
+      jars,
+      { cleanCups: 10, usedCups: 0 },
+    )
+
+    expect(result.tripCount).toBe(1)
+    expect(result.trips[0]?.totalServings).toBe(10)
+    expect(result.trips[0]?.juiceJars).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          physicalJarId: 'jar-1',
+          recipeId: 'a',
+          servings: 2,
+          plannedFillServings: 2,
+          retainedLeftoverServings: 1,
+          fillAction: 'refill-same-type',
+        }),
+        expect.objectContaining({
+          physicalJarId: 'jar-2',
+          recipeId: 'b',
+          servings: 8,
+        }),
+      ]),
+    )
     expectScheduleConsistency(result)
   })
 
@@ -761,7 +809,6 @@ describe('multi-trip replenishment', () => {
           })),
       ),
     ).toEqual([
-      { recipeId: 'a', fillAction: 'use-existing' },
       { recipeId: 'a', fillAction: 'refill-same-type' },
     ])
     expectScheduleConsistency(result)
