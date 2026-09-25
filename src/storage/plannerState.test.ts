@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest'
+import { villages } from '../data/villages'
 import {
   readCurrentProgress,
+  normalizeSatisfactionByVillageIds,
   readFormalCustomerIds,
   readSatisfactionByVillage,
   STORAGE_KEYS,
   writeCurrentProgress,
   writeFormalCustomerIds,
+  writeSatisfactionByVillage,
 } from './plannerState'
 
 class MemoryStorage {
@@ -82,6 +85,73 @@ describe('planner state migration', () => {
 
   it('migrates legacy satisfaction to east harbor only', () => {
     const storage = new MemoryStorage({
+      [STORAGE_KEYS.legacySatisfaction]: '250',
+    })
+
+    expect(readSatisfactionByVillage(storage)).toEqual({
+      'east-harbor': 250,
+      'tranquil-fountain': 0,
+    })
+  })
+
+  it('reconstructs stored satisfaction from canonical village definitions', () => {
+    const storage = new MemoryStorage({
+      [STORAGE_KEYS.satisfactionByVillage]: JSON.stringify({
+        'tranquil-fountain': 34.8,
+        'unknown-village': 999,
+      }),
+    })
+
+    const satisfaction = readSatisfactionByVillage(storage)
+
+    expect(Object.keys(satisfaction)).toEqual(
+      villages.map((village) => village.id),
+    )
+    expect(satisfaction).toEqual({
+      'east-harbor': 0,
+      'tranquil-fountain': 34,
+    })
+  })
+
+  it('normalizes an added canonical village id without new reconstruction code', () => {
+    const futureVillageIds = [
+      ...villages.map((village) => village.id),
+      'future-village',
+    ] as const
+
+    expect(
+      normalizeSatisfactionByVillageIds(futureVillageIds, {
+        'east-harbor': 12,
+        'tranquil-fountain': -5,
+        'future-village': 78.9,
+        'unknown-village': 999,
+      }),
+    ).toEqual({
+      'east-harbor': 12,
+      'tranquil-fountain': 0,
+      'future-village': 78,
+    })
+  })
+
+  it('writes satisfaction in canonical village order after normalization', () => {
+    const storage = new MemoryStorage()
+
+    writeSatisfactionByVillage(storage, {
+      'tranquil-fountain': 34,
+      'east-harbor': 12,
+    })
+
+    expect(storage.getItem(STORAGE_KEYS.satisfactionByVillage)).toBe(
+      JSON.stringify({
+        'east-harbor': 12,
+        'tranquil-fountain': 34,
+      }),
+    )
+  })
+
+  it('falls back to legacy satisfaction when the new stored value is null', () => {
+    const storage = new MemoryStorage({
+      [STORAGE_KEYS.satisfactionByVillage]: 'null',
       [STORAGE_KEYS.legacySatisfaction]: '250',
     })
 
