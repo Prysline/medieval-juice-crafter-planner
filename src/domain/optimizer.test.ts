@@ -7,12 +7,13 @@ import type { OptimizationRequest } from './optimizerModel'
 function customer(
   id: string,
   preference: string,
+  villageId: Customer['villageId'] = 'east-harbor',
 ): Customer {
   return {
     id,
     name: id.toUpperCase(),
     occupation: '測試',
-    villageId: 'east-harbor',
+    villageId,
     satisfactionRequired: 0,
     preferences: [{ kind: 'effect', value: preference }],
   }
@@ -187,6 +188,73 @@ describe('production optimizer', () => {
       leastWaste.recipePlans.reduce((sum, plan) => sum + plan.juiceUnits, 0),
     ).toBe(2)
     expect(leastWaste.leftoverServings).toBe(1)
+  })
+
+  it('can keep zero-waste assignments concentrated within villages before maximizing ingredient cost', async () => {
+    const customers = [
+      customer('east-a', 'EA', 'east-harbor'),
+      customer('east-b', 'EB', 'east-harbor'),
+      customer('fountain-a', 'FA', 'tranquil-fountain'),
+      customer('fountain-b', 'FB', 'tranquil-fountain'),
+    ]
+    const candidates = [
+      recipe(
+        'cross-a',
+        ['檸檬', '糖', '薄荷'],
+        ['EA', 'FA'],
+      ),
+      recipe(
+        'cross-b',
+        ['橙子', '糖', '薄荷'],
+        ['EB', 'FB'],
+      ),
+      recipe('east-local', ['檸檬'], ['EA', 'EB']),
+      recipe('fountain-local', ['橙子'], ['FA', 'FB']),
+    ]
+    const customerIds = customers.map((item) => item.id)
+
+    const costFirst = await optimizeBatchPlan(
+      {
+        ...request(customerIds, 'minimum-waste'),
+        priorities: ['minimum-waste', 'maximum-ingredient-cost'],
+      },
+      { source: { customers, candidates } },
+    )
+    const regional = await optimizeBatchPlan(
+      {
+        ...request(customerIds, 'minimum-waste'),
+        priorities: [
+          'minimum-waste',
+          'minimum-regional-fragmentation',
+          'maximum-ingredient-cost',
+        ],
+      },
+      { source: { customers, candidates } },
+    )
+
+    expect(costFirst.leftoverServings).toBe(0)
+    expect(costFirst.recipePlans.map((plan) => plan.recipeId).sort()).toEqual([
+      'cross-a',
+      'cross-b',
+    ])
+
+    expect(regional.leftoverServings).toBe(0)
+    expect(regional.recipePlans.map((plan) => plan.recipeId).sort()).toEqual([
+      'east-local',
+      'fountain-local',
+    ])
+    expect(
+      regional.assignments
+        .filter((assignment) => assignment.recipeId === 'east-local')
+        .map((assignment) => assignment.customerId)
+        .sort(),
+    ).toEqual(['east-a', 'east-b'])
+    expect(
+      regional.assignments
+        .filter((assignment) => assignment.recipeId === 'fountain-local')
+        .map((assignment) => assignment.customerId)
+        .sort(),
+    ).toEqual(['fountain-a', 'fountain-b'])
   })
 
   it('maximizes assigned recipe ingredient cost without inflating production units', async () => {
