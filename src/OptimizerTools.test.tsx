@@ -16,6 +16,7 @@ import {
   PlanApplicationPreview,
   PlanningErrorBlock,
   criterionLabel,
+  customerIdsInPlannedTripOrder,
   deliveryCanonicalSyncStatus,
   deliveryCustomerControlState,
   deliveryRecipeGroupControlState,
@@ -378,6 +379,24 @@ function deliveryCursor(
 }
 
 describe('delivery checklist UI', () => {
+  it('keeps recipe grouping while ordering customers by planned trip', () => {
+    const plan = deliveryPlan()
+
+    expect(
+      customerIdsInPlannedTripOrder(
+        ['florida', 'leticia', 'jack'],
+        plan,
+      ),
+    ).toEqual(['leticia', 'jack', 'florida'])
+
+    expect(
+      customerIdsInPlannedTripOrder(
+        ['unplanned', 'florida', 'jack'],
+        plan,
+      ),
+    ).toEqual(['jack', 'florida', 'unplanned'])
+  })
+
   it('keeps the canonical supplied checklist usable without a physical execution plan', () => {
     expect(
       deliveryCustomerControlState(null, null, [], 'florida'),
