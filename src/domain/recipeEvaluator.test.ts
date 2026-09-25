@@ -166,6 +166,53 @@ describe('recipe sequence evaluator', () => {
     }
   })
 
+  it('uses the 2026-09-25 observed overlays for carrot/lemon with cinnamon', () => {
+    const observations = [
+      {
+        ingredientIds: ['carrot', 'cinnamon'],
+        id: 'carrot-cinnamon',
+        observedDisplayName: '紅蘿蔔 - 肉桂（調製飲品）',
+        salePrice: 31,
+        effects: [
+          { name: '調節血糖', value: 7 },
+          { name: '改善視力', value: 4 },
+          { name: '輔助瘦身', value: 2 },
+        ],
+      },
+      {
+        ingredientIds: ['lemon', 'cinnamon'],
+        id: 'lemon-cinnamon',
+        observedDisplayName: '檸檬 - 肉桂（調製飲品）',
+        salePrice: 30,
+        effects: [
+          { name: '調節血糖', value: 4 },
+          { name: '酸味', value: 4 },
+          { name: '輔助瘦身', value: 3 },
+        ],
+      },
+    ] as const
+
+    for (const observation of observations) {
+      const result = evaluateRecipeSequence(
+        [...observation.ingredientIds],
+        'tranquil-fountain-unlocked',
+      )
+
+      expect(result.valid).toBe(true)
+      if (!result.valid) continue
+
+      expect(result.candidate).toMatchObject({
+        id: observation.id,
+        source: 'observed',
+        observedDisplayName: observation.observedDisplayName,
+        salePrice: observation.salePrice,
+        effects: observation.effects,
+      })
+      expect(result.availableAtCurrentProgress).toBe(true)
+      expect(result.usesBlender).toBe(false)
+    }
+  })
+
   it('returns computed data only when no observed overlay exists', () => {
     const result = evaluateRecipeSequence(
       ['banana', 'sugar'],
@@ -330,6 +377,129 @@ describe('recipe sequence evaluator', () => {
 
 
   const blenderObservations = [
+    {
+      ingredientIds: ['carrot', 'cinnamon', 'banana'],
+      id: 'carrot-cinnamon-banana-blend',
+      observedDisplayName: '血糖平衡 極樂',
+      salePrice: 53,
+      effects: [
+        { name: '調節血糖', value: 7 },
+        { name: '補充精力', value: 4 },
+        { name: '改善視力', value: 4 },
+        { name: '紓解壓力', value: 3 },
+      ],
+    },
+    {
+      ingredientIds: ['banana', 'cinnamon', 'orange', 'mint'],
+      id: 'banana-cinnamon-orange-mint-blend',
+      observedDisplayName: '清口 刺激',
+      salePrice: 78,
+      effects: [
+        { name: '清新口氣', value: 4 },
+        { name: '芳香', value: 4 },
+        { name: '紓解壓力', value: 4 },
+        { name: '增強免疫', value: 4 },
+        { name: '調節血糖', value: 4 },
+      ],
+    },
+    {
+      ingredientIds: ['lemon', 'cinnamon', 'orange', 'mint'],
+      id: 'lemon-cinnamon-orange-mint-blend',
+      observedDisplayName: '免疫 繁榮',
+      salePrice: 70,
+      effects: [
+        { name: '增強免疫', value: 7 },
+        { name: '清新口氣', value: 4 },
+        { name: '芳香', value: 4 },
+        { name: '調節血糖', value: 4 },
+        { name: '酸味', value: 4 },
+      ],
+    },
+    {
+      ingredientIds: ['orange', 'banana', 'lemon', 'sugar'],
+      id: 'orange-banana-lemon-sugar-blend',
+      observedDisplayName: '活力 水晶',
+      salePrice: 59,
+      effects: [
+        { name: '補充精力', value: 7 },
+        { name: '增強免疫', value: 7 },
+        { name: '甜味', value: 6 },
+        { name: '酸味', value: 4 },
+        { name: '紓解壓力', value: 3 },
+      ],
+    },
+    {
+      ingredientIds: ['banana', 'cinnamon', 'orange', 'mint', 'lemon'],
+      id: 'banana-cinnamon-orange-mint-lemon-blend',
+      observedDisplayName: '免疫 爆炎',
+      salePrice: 98,
+      effects: [
+        { name: '增強免疫', value: 7 },
+        { name: '酸味', value: 4 },
+        { name: '清新口氣', value: 4 },
+        { name: '芳香', value: 4 },
+        { name: '紓解壓力', value: 4 },
+      ],
+    },
+    {
+      ingredientIds: ['carrot', 'cinnamon', 'banana', 'pear', 'mint'],
+      id: 'carrot-cinnamon-banana-pear-mint-blend',
+      observedDisplayName: '血糖平衡 夜幕',
+      salePrice: 102,
+      effects: [
+        { name: '調節血糖', value: 7 },
+        { name: '促進消化', value: 5 },
+        { name: '清新口氣', value: 4 },
+        { name: '紓解壓力', value: 4 },
+        { name: '保護心臟', value: 4 },
+      ],
+    },
+    {
+      ingredientIds: ['orange', 'orange'],
+      id: 'orange-orange-blend',
+      observedDisplayName: '橙子 - 橙子（調製飲品）',
+      salePrice: 12,
+      effects: [
+        { name: '增強免疫', value: 8 },
+        { name: '煥亮肌膚', value: 4 },
+      ],
+    },
+    {
+      ingredientIds: ['orange', 'orange', 'carrot', 'cinnamon'],
+      id: 'orange-orange-carrot-cinnamon-blend',
+      observedDisplayName: '免疫 摯友',
+      salePrice: 48,
+      effects: [
+        { name: '增強免疫', value: 9 },
+        { name: '調節血糖', value: 7 },
+        { name: '改善視力', value: 4 },
+        { name: '煥亮肌膚', value: 4 },
+      ],
+    },
+    {
+      ingredientIds: ['carrot', 'cinnamon', 'orange'],
+      id: 'carrot-cinnamon-orange-blend',
+      observedDisplayName: '血糖平衡 衝擊',
+      salePrice: 48,
+      effects: [
+        { name: '調節血糖', value: 7 },
+        { name: '增強免疫', value: 5 },
+        { name: '改善視力', value: 4 },
+        { name: '煥亮肌膚', value: 2 },
+      ],
+    },
+    {
+      ingredientIds: ['carrot', 'cinnamon', 'orange', 'orange'],
+      id: 'carrot-cinnamon-orange-orange-blend',
+      observedDisplayName: '免疫 純真',
+      salePrice: 48,
+      effects: [
+        { name: '增強免疫', value: 9 },
+        { name: '調節血糖', value: 7 },
+        { name: '煥亮肌膚', value: 4 },
+        { name: '改善視力', value: 4 },
+      ],
+    },
     {
       ingredientIds: ['lemon', 'orange'],
       id: 'lemon-orange-blend',

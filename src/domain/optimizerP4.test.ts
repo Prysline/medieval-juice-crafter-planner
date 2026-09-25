@@ -207,8 +207,8 @@ describe('Debug-D Production P4 production-scale benchmark', () => {
       `[Debug-D P4 benchmark] Blender production solve: ${elapsedMs.toFixed(0)} ms`,
     )
 
-    expect(result.totalIngredientCost).toBe(615)
-    expect(result.machineOperations.total).toBe(55)
+    expect(result.totalIngredientCost).toBe(604)
+    expect(result.machineOperations.total).toBe(54)
     expect(result.jarTypeSwitches).toBe(20)
     expect(result.assignments).toHaveLength(49)
     expect(result.unresolvedCustomers).toHaveLength(3)

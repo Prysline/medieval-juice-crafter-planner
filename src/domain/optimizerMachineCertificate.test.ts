@@ -43,33 +43,33 @@ describe('production-scale optimizer certificates', () => {
     const stage1 = prepareMinimumCostStageCertificate(domain)
 
     expect(stage1).not.toBeNull()
-    expect(stage1?.continuationDomain.recipes).toHaveLength(4996)
+    expect(stage1?.continuationDomain.recipes).toHaveLength(4986)
 
     const certificate =
       await solveMachineOperationCertificateForCostFix(
         stage1!.continuationDomain,
-        615,
+        604,
       )
 
     expect(certificate).not.toBeNull()
     expect(certificate?.lowerBounds).toEqual({
       throughSeasoning: 23,
-      blending: 10,
+      blending: 9,
       finalizing: 22,
     })
-    expect(certificate?.optimum).toBe(55)
+    expect(certificate?.optimum).toBe(54)
     expect(certificate?.verifiedAssignmentCount).toBe(49)
     expect(
       machineOperationBreakdownForSelection(
         stage1!.continuationDomain,
         certificate!.witnessRecipeUnits,
       ).total,
-    ).toBe(55)
+    ).toBe(54)
 
     const jarCertificate =
       await solveJarSwitchCertificateForCostAndMachineFix(
         stage1!.continuationDomain,
-        615,
+        604,
         certificate!,
       )
 
@@ -77,7 +77,7 @@ describe('production-scale optimizer certificates', () => {
     expect(jarCertificate?.productionUnits).toBe(25)
     expect(
       jarCertificate?.extraProductionUnitCostLowerBound,
-    ).toBe(624)
+    ).toBe(613)
     expect(jarCertificate?.finalizingOperations).toBe(22)
     expect(jarCertificate?.distinctRecipeKindLowerBound).toBe(22)
     expect(jarCertificate?.jarLowerBound).toBe(20)
