@@ -1621,7 +1621,7 @@ function OptimizerTools({
             aria-label="自選規劃顧客"
           >
             <div className="optimizer-target-toolbar">
-              <strong>自選顧客</strong>
+              <strong>個別顧客</strong>
               <span>
                 已選 {customerIds.length} / {baseCustomerIds.length} 人
               </span>
