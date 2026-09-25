@@ -11,6 +11,7 @@ import {
 const satisfaction = {
   'east-harbor': 0,
   'tranquil-fountain': 0,
+  'ibex-statue': 0,
 } as const
 
 describe('recipe simulator UX', () => {
