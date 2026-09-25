@@ -74,6 +74,7 @@ import {
   writeIngredientChecklist,
 } from './storage/ingredientChecklist'
 import {
+  commitDeliveryExecutionCustomer,
   deliveryExecutionCanonicalBasisFingerprint,
   type DeliveryExecutionCommitStaleField,
 } from './storage/deliveryExecutionCommit'
@@ -1068,6 +1069,85 @@ function OptimizerTools({
     if (targetCustomerIds.length === 0) return
 
     const beforeSupplied = [...suppliedCustomerIds]
+
+    if (
+      supplied &&
+      runState.deliveryExecutionPlan &&
+      runState.deliveryCursor
+    ) {
+      const beforeFingerprint =
+        deliveryExecutionCanonicalBasisFingerprint(
+          inventoryState,
+          beforeSupplied,
+        )
+      let nextInventory = inventoryState
+      let nextSupplied = beforeSupplied
+      let nextCursor = runState.deliveryCursor
+      const committedCustomerIds: string[] = []
+
+      for (const customerId of targetCustomerIds) {
+        const result = commitDeliveryExecutionCustomer(
+          {
+            plan: runState.deliveryExecutionPlan,
+            cursor: nextCursor,
+            customerId,
+            expectedBasis: runState.deliveryExpectedBasis,
+          },
+          window.localStorage,
+        )
+
+        if (result.status === 'stale') {
+          setDeliveryUiState({
+            status: 'stale',
+            mismatches: result.mismatches,
+          })
+          return
+        }
+
+        if (result.status === 'error') {
+          setDeliveryUiState({
+            status: 'error',
+            message: result.message,
+          })
+          return
+        }
+
+        nextInventory = result.inventory
+        nextSupplied = [...result.suppliedCustomerIds]
+        nextCursor = result.cursor
+        committedCustomerIds.push(customerId)
+      }
+
+      const targetFingerprint =
+        deliveryExecutionCanonicalBasisFingerprint(
+          nextInventory,
+          nextSupplied,
+        )
+      deliveryCanonicalSyncGuardRef.current = {
+        targetFingerprint,
+        allowedFingerprints: [beforeFingerprint, targetFingerprint],
+      }
+
+      setInventoryState(nextInventory)
+      onSuppliedCustomerIdsCommitted(nextSupplied)
+      setRunState((current) =>
+        current.status === 'success'
+          ? {
+              ...current,
+              transactionDraft: null,
+              transactionDraftInvalidatedByPartialDelivery: true,
+              deliveryCursor: nextCursor,
+            }
+          : current,
+      )
+      setApplicationState({ status: 'idle' })
+      setDeliveryUiState({
+        status: 'applied',
+        customerIds: committedCustomerIds,
+      })
+      return
+    }
+
     const nextSupplied = new Set(beforeSupplied)
     for (const customerId of targetCustomerIds) {
       if (supplied) nextSupplied.add(customerId)
@@ -1083,9 +1163,9 @@ function OptimizerTools({
       return
     }
 
-    // Manual checklist edits are record corrections only. They intentionally
-    // do not replay or undo ingredients, intermediate juice, water, cups,
-    // physical jar contents, discards, preparation, or trip cursor state.
+    // Without a physical execution event, or when correcting an already
+    // recorded delivery, this remains a checklist-only authority update.
+    // It intentionally does not replay or undo inventory events.
     const beforeFingerprint =
       deliveryExecutionCanonicalBasisFingerprint(
         inventoryState,
@@ -2621,14 +2701,23 @@ export function DeliveryCustomerCheckbox({
     customerId,
   )
   const committed = control.status === 'committed'
-  const canChange = control.status !== 'unavailable' && !disabled
+  const isCurrentTrip =
+    control.tripNumber === null ||
+    control.activeTripNumber === null ||
+    control.tripNumber === control.activeTripNumber
+  const canChange =
+    control.status !== 'unavailable' &&
+    (committed || isCurrentTrip) &&
+    !disabled
 
   const detail =
     control.status === 'committed'
       ? '已記錄今日供應'
       : control.status === 'active'
         ? control.tripNumber !== null && control.physicalJarId !== null
-          ? `規劃第 ${control.tripNumber} 趟 · 果汁罐 ${control.physicalJarId} · 可依實際送達順序勾選`
+          ? isCurrentTrip
+            ? `規劃第 ${control.tripNumber} 趟 · 果汁罐 ${control.physicalJarId} · 可依實際送達順序勾選`
+            : `規劃第 ${control.tripNumber} 趟 · 果汁罐 ${control.physicalJarId} · 請先完成第 ${control.activeTripNumber} 趟`
           : '可記錄今日已供應；目前沒有對應的物理交付事件'
         : '目前沒有對應的規劃顧客'
 
@@ -2688,7 +2777,14 @@ export function deliveryRecipeGroupControlState(
     ({ control }) => control.status === 'committed',
   ).length
   const pendingCustomerIds = controls
-    .filter(({ control }) => control.status !== 'committed')
+    .filter(({ control }) => {
+      if (control.status !== 'active') return false
+      return (
+        control.tripNumber === null ||
+        control.activeTripNumber === null ||
+        control.tripNumber === control.activeTripNumber
+      )
+    })
     .map(({ customerId }) => customerId)
   const checked =
     customerIds.length > 0 &&
@@ -2696,10 +2792,7 @@ export function deliveryRecipeGroupControlState(
   const partial = committedCount > 0 && !checked
   const canCommit =
     !disabled &&
-    pendingCustomerIds.length > 0 &&
-    controls
-      .filter(({ control }) => control.status !== 'committed')
-      .every(({ control }) => control.status === 'active')
+    pendingCustomerIds.length > 0
 
   return {
     checked,
