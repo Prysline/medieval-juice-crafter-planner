@@ -7,6 +7,7 @@ import {
   optimizerOperationQuantities,
   optimizerWaterFetchSlots,
   type OptimizerCustomerScope,
+  type OptimizerCustomerTarget,
 } from './optimizerUi'
 
 const customers: Customer[] = [
@@ -52,6 +53,7 @@ const satisfaction: SatisfactionByVillage = {
 function ids(
   scope: OptimizerCustomerScope,
   suppliedCustomerIds: string[] = [],
+  target: OptimizerCustomerTarget = { mode: 'all' },
 ) {
   return optimizerCustomerIds(
     customers,
@@ -60,6 +62,7 @@ function ids(
     suppliedCustomerIds,
     ['open-formal'],
     scope,
+    target,
   )
 }
 
@@ -73,6 +76,41 @@ describe('optimizer UI demand selection', () => {
     expect(ids('potential')).toEqual(['open-potential'])
     expect(ids('formal')).toEqual(['open-formal'])
   })
+  it('filters the eligible demand by selected villages without changing optimizer eligibility', () => {
+    expect(
+      optimizerCustomerIds(
+        customers,
+        'tranquil-fountain-unlocked',
+        satisfaction,
+        [],
+        ['open-formal'],
+        'all',
+        { mode: 'villages', villageIds: ['tranquil-fountain'] },
+      ),
+    ).toEqual(['future-village'])
+
+    expect(
+      ids('all', [], {
+        mode: 'villages',
+        villageIds: ['east-harbor'],
+      }),
+    ).toEqual(['open-potential', 'open-formal'])
+  })
+
+  it('intersects explicit customer selection with the existing status scope', () => {
+    const target: OptimizerCustomerTarget = {
+      mode: 'customers',
+      customerIds: ['open-potential', 'open-formal', 'locked'],
+    }
+
+    expect(ids('all', [], target)).toEqual([
+      'open-potential',
+      'open-formal',
+    ])
+    expect(ids('formal', [], target)).toEqual(['open-formal'])
+    expect(ids('potential', ['open-potential'], target)).toEqual([])
+  })
+
   it('formats customer labels with occupations and money with an explicit unit', () => {
     expect(
       optimizerCustomerLabel({
