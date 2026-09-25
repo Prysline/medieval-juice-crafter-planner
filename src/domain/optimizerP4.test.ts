@@ -50,6 +50,7 @@ function baseRequest(
     satisfactionByVillage: {
       'east-harbor': 999,
       'tranquil-fountain': 999,
+      'ibex-statue': 0,
     },
     formalCustomerIds: customerIds,
     candidatePolicy: 'observed-only',
@@ -187,6 +188,7 @@ describe('Debug-D Production P4 production-scale benchmark', () => {
       satisfactionByVillage: {
         'east-harbor': 999,
         'tranquil-fountain': 999,
+        'ibex-statue': 0,
       },
       formalCustomerIds: customerIds,
       candidatePolicy: 'allow-unambiguous-computed',
