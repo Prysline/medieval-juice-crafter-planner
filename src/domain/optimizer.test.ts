@@ -257,6 +257,47 @@ describe('production optimizer', () => {
     ).toEqual(['fountain-a', 'fountain-b'])
   })
 
+  it('prefers village-local recipes over one cross-village recipe when waste is tied', async () => {
+    const customers = [
+      customer('east-a', '甜味', 'east-harbor'),
+      customer('east-b', '清新口氣', 'east-harbor'),
+      customer('fountain-a', '改善視力', 'tranquil-fountain'),
+      customer('fountain-b', '煥亮肌膚', 'tranquil-fountain'),
+    ]
+    const candidates = [
+      recipe(
+        'cross-all',
+        ['檸檬', '糖', '薄荷'],
+        ['甜味', '清新口氣', '改善視力', '煥亮肌膚'],
+      ),
+      recipe('east-local', ['檸檬'], ['甜味', '清新口氣']),
+      recipe(
+        'fountain-local',
+        ['橙子'],
+        ['改善視力', '煥亮肌膚'],
+      ),
+    ]
+    const customerIds = customers.map((item) => item.id)
+
+    const regional = await optimizeBatchPlan(
+      {
+        ...request(customerIds, 'minimum-waste'),
+        priorities: [
+          'minimum-waste',
+          'minimum-regional-fragmentation',
+          'maximum-ingredient-cost',
+        ],
+      },
+      { source: { customers, candidates } },
+    )
+
+    expect(regional.leftoverServings).toBe(0)
+    expect(regional.recipePlans.map((plan) => plan.recipeId).sort()).toEqual([
+      'east-local',
+      'fountain-local',
+    ])
+  })
+
   it('maximizes assigned recipe ingredient cost without inflating production units', async () => {
     const source = {
       customers: [
