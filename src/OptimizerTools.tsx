@@ -2795,6 +2795,62 @@ export function DeliveryRecipeGroupCheckbox({
   )
 }
 
+export function OptimizerSummaryMetrics({
+  result,
+  salesPlan,
+}: {
+  result: OptimizationResult
+  salesPlan: Pick<
+    MultiTripReplenishmentPlan,
+    'jarTypeSwitches' | 'tripCount' | 'totalLeftoverServings'
+  >
+}) {
+  return (
+    <div className="optimizer-metrics" aria-label="最佳化摘要">
+      <MetricCard
+        label="原料總成本"
+        value={optimizerMoney(result.totalIngredientCost)}
+      />
+      <MetricCard
+        label="已知銷售總額"
+        value={optimizerMoney(result.knownSalesRevenue)}
+      />
+      <MetricCard
+        label="已知毛利"
+        value={optimizerMoney(result.knownGrossProfit)}
+      />
+      <MetricCard
+        label="正式販售 / 潛在試喝"
+        value={result.formalSalesCount + ' / ' + result.potentialTrialCount}
+      />
+      <MetricCard
+        label="最終果汁種類"
+        value={String(result.recipePlans.length)}
+      />
+      <MetricCard
+        label="最佳化機器操作（gross）"
+        value={result.machineOperations.total + ' 次'}
+      />
+      <MetricCard
+        label="果汁罐換裝（實體排程）"
+        value={salesPlan.jarTypeSwitches + ' 次'}
+      />
+      <MetricCard
+        label="販售趟數（目前策略）"
+        value={salesPlan.tripCount + ' 趟'}
+      />
+      <MetricCard
+        label="已分配 / 產出"
+        value={result.assignedServings + ' / ' + result.producedServings}
+      />
+      <MetricCard
+        label="剩餘杯"
+        value={String(salesPlan.totalLeftoverServings)}
+      />
+    </div>
+  )
+}
+
 function OptimizerResultPanel({
   result,
   preparationShortfall,
@@ -2951,45 +3007,10 @@ function OptimizerResultPanel({
 
   return (
     <div className="optimizer-results">
-      <div className="optimizer-metrics" aria-label="最佳化摘要">
-        <MetricCard
-          label="原料總成本"
-          value={optimizerMoney(result.totalIngredientCost)}
-        />
-        <MetricCard
-          label="已知銷售總額"
-          value={optimizerMoney(result.knownSalesRevenue)}
-        />
-        <MetricCard
-          label="已知毛利"
-          value={optimizerMoney(result.knownGrossProfit)}
-        />
-        <MetricCard
-          label="正式販售 / 潛在試喝"
-          value={result.formalSalesCount + ' / ' + result.potentialTrialCount}
-        />
-        <MetricCard
-          label="最終果汁種類"
-          value={String(result.recipePlans.length)}
-        />
-        <MetricCard
-          label="最佳化機器操作（gross）"
-          value={result.machineOperations.total + ' 次'}
-        />
-        <MetricCard
-          label="果汁罐換裝（實體排程）"
-          value={selectedSalesTripPlan.jarTypeSwitches + ' 次'}
-        />
-        <MetricCard
-          label="販售趟數（目前策略）"
-          value={selectedSalesTripPlan.tripCount + ' 趟'}
-        />
-        <MetricCard
-          label="已分配 / 產出"
-          value={result.assignedServings + ' / ' + result.producedServings}
-        />
-        <MetricCard label="剩餘杯" value={String(result.leftoverServings)} />
-      </div>
+      <OptimizerSummaryMetrics
+        result={result}
+        salesPlan={selectedSalesTripPlan}
+      />
 
       <div className="optimizer-result-note">
         <strong>
