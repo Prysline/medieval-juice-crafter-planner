@@ -4,7 +4,7 @@ import {
   JUICE_JAR_CAPACITY,
   JUICE_JAR_SLOT_COST,
 } from './inventoryRules'
-import type { JuiceJarInventoryItem } from '../types'
+import type { JuiceJarInventoryItem, VillageId } from '../types'
 import type { PreparationDemand } from './preparationDemand'
 import type { PreparationShortfall } from './preparationShortfall'
 import {
@@ -1086,11 +1086,94 @@ function simulateCupTrip(
   }
 }
 
+function singleVillageForLoad(
+  load: MultiTripJuiceJarLoad | undefined,
+  customerVillageById: Readonly<Record<string, VillageId>>,
+): VillageId | null {
+  if (!load) return null
+  const villages = new Set(
+    load.customerIds.flatMap((customerId) => {
+      const villageId = customerVillageById[customerId]
+      return villageId ? [villageId] : []
+    }),
+  )
+  return villages.size === 1 ? [...villages][0] : null
+}
+
+function regionalTripScore(
+  trips: readonly MutableTrip[],
+  customerVillageById: Readonly<Record<string, VillageId>>,
+): {
+  mixedVillagePenalty: number
+  repeatedVillageTripPenalty: number
+} {
+  let mixedVillagePenalty = 0
+  const tripCountByVillage = new Map<VillageId, number>()
+
+  for (const trip of trips) {
+    const villages = new Set(
+      trip.juiceJars.flatMap((load) =>
+        load.customerIds.flatMap((customerId) => {
+          const villageId = customerVillageById[customerId]
+          return villageId ? [villageId] : []
+        }),
+      ),
+    )
+    mixedVillagePenalty += Math.max(0, villages.size - 1)
+    for (const villageId of villages) {
+      tripCountByVillage.set(
+        villageId,
+        (tripCountByVillage.get(villageId) ?? 0) + 1,
+      )
+    }
+  }
+
+  return {
+    mixedVillagePenalty,
+    repeatedVillageTripPenalty: [...tripCountByVillage.values()].reduce(
+      (total, count) => total + Math.max(0, count - 1),
+      0,
+    ),
+  }
+}
+
+function regionalTripsAreBetter(
+  candidate: ReturnType<typeof buildTrips>,
+  baseline: ReturnType<typeof buildTrips>,
+  customerVillageById: Readonly<Record<string, VillageId>>,
+): boolean {
+  if (candidate.trips.length !== baseline.trips.length) {
+    return candidate.trips.length < baseline.trips.length
+  }
+
+  const candidateScore = regionalTripScore(
+    candidate.trips,
+    customerVillageById,
+  )
+  const baselineScore = regionalTripScore(
+    baseline.trips,
+    customerVillageById,
+  )
+
+  return (
+    candidateScore.mixedVillagePenalty <
+      baselineScore.mixedVillagePenalty ||
+    (
+      candidateScore.mixedVillagePenalty ===
+        baselineScore.mixedVillagePenalty &&
+      candidateScore.repeatedVillageTripPenalty <
+        baselineScore.repeatedVillageTripPenalty
+    )
+  )
+}
+
 function buildTrips(
   queues: JarQueue[],
   policy: UsedCupTripPolicy,
   carryPolicy: MultiTripJarCarryPolicy,
   initialCupState: CupState,
+  customerVillageById: Readonly<Record<string, VillageId>> = {},
+  preferRegionalConcentration = false,
 ): {
   trips: MutableTrip[]
   finalCupState: CupState
@@ -1174,6 +1257,33 @@ function buildTrips(
           a.recipeId.localeCompare(b.recipeId) ||
           a.physicalJarId.localeCompare(b.physicalJarId),
       )
+    const seedVillage = preferRegionalConcentration
+      ? singleVillageForLoad(candidates[0], customerVillageById)
+      : null
+    const orderedCandidates =
+      seedVillage === null
+        ? candidates
+        : [
+            candidates[0],
+            ...candidates
+              .slice(1)
+              .filter(
+                (load) =>
+                  singleVillageForLoad(
+                    load,
+                    customerVillageById,
+                  ) === seedVillage,
+              ),
+            ...candidates
+              .slice(1)
+              .filter(
+                (load) =>
+                  singleVillageForLoad(
+                    load,
+                    customerVillageById,
+                  ) !== seedVillage,
+              ),
+          ]
 
     const trip = {
       juiceJars: [] as MultiTripJuiceJarLoad[],
@@ -1181,7 +1291,7 @@ function buildTrips(
     }
     const selectedServingsByJarId = new Map<string, number>()
 
-    for (const jar of candidates) {
+    for (const jar of orderedCandidates) {
       if (trip.juiceJars.length >= maxConcurrentJars) continue
 
       const proposedJarSlots = jarSlotsFor(
@@ -1625,6 +1735,7 @@ export function buildMultiTripReplenishmentPlan(
   shortfall: PreparationShortfall,
   carryPolicy?: MultiTripJarCarryPolicy,
   allowDiscardRetainedJuice = false,
+  customerVillageById: Readonly<Record<string, VillageId>> = {},
 ): MultiTripReplenishmentPlan {
   const carriedJuiceJars =
     normalizeCarriedJuiceJars(availableJuiceJarInventory)
@@ -1681,12 +1792,34 @@ export function buildMultiTripReplenishmentPlan(
       queues,
       queueBuild.plannedNewProductionDiscards,
     )
-  const { trips: mutableTrips, finalCupState } = buildTrips(
+  const baselineTrips = buildTrips(
     queues,
     policy,
     normalizedCarryPolicy,
     initialCupState,
   )
+  const regionalTrips =
+    Object.keys(customerVillageById).length > 0
+      ? buildTrips(
+          queues,
+          policy,
+          normalizedCarryPolicy,
+          initialCupState,
+          customerVillageById,
+          true,
+        )
+      : baselineTrips
+  const selectedTrips = regionalTripsAreBetter(
+    regionalTrips,
+    baselineTrips,
+    customerVillageById,
+  )
+    ? regionalTrips
+    : baselineTrips
+  const {
+    trips: mutableTrips,
+    finalCupState,
+  } = selectedTrips
   const trips: MultiTripSalesTrip[] = mutableTrips.map(
     (trip, index) => {
       const transition = trip.cupTransition
