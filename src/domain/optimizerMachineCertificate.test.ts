@@ -15,7 +15,7 @@ import {
 } from './optimizerHighsSolver'
 
 describe('production-scale optimizer certificates', () => {
-  it('closes the exact Stage 2 machine and Stage 3 jar bounds', async () => {
+  it('closes the exact Stage 2 machine and Stage 3 jar bounds for 49 serviceable customers', async () => {
     const customerIds = canonicalCustomers.map((customer) => customer.id)
     const request: OptimizationRequest = {
       customerIds,
@@ -48,42 +48,42 @@ describe('production-scale optimizer certificates', () => {
     const certificate =
       await solveMachineOperationCertificateForCostFix(
         stage1!.continuationDomain,
-        572,
+        615,
       )
 
     expect(certificate).not.toBeNull()
     expect(certificate?.lowerBounds).toEqual({
-      throughSeasoning: 20,
-      blending: 9,
-      finalizing: 21,
+      throughSeasoning: 23,
+      blending: 10,
+      finalizing: 22,
     })
-    expect(certificate?.optimum).toBe(50)
-    expect(certificate?.verifiedAssignmentCount).toBe(48)
+    expect(certificate?.optimum).toBe(55)
+    expect(certificate?.verifiedAssignmentCount).toBe(49)
     expect(
       machineOperationBreakdownForSelection(
         stage1!.continuationDomain,
         certificate!.witnessRecipeUnits,
       ).total,
-    ).toBe(50)
+    ).toBe(55)
 
     const jarCertificate =
       await solveJarSwitchCertificateForCostAndMachineFix(
         stage1!.continuationDomain,
-        572,
+        615,
         certificate!,
       )
 
     expect(jarCertificate).not.toBeNull()
-    expect(jarCertificate?.productionUnits).toBe(24)
+    expect(jarCertificate?.productionUnits).toBe(25)
     expect(
       jarCertificate?.extraProductionUnitCostLowerBound,
-    ).toBe(581)
-    expect(jarCertificate?.finalizingOperations).toBe(21)
-    expect(jarCertificate?.distinctRecipeKindLowerBound).toBe(21)
-    expect(jarCertificate?.jarLowerBound).toBe(19)
-    expect(jarCertificate?.jarUpperBound).toBe(19)
-    expect(jarCertificate?.optimum).toBe(19)
-    expect(jarCertificate?.witnessRecipeUnits).toHaveLength(21)
-    expect(jarCertificate?.verifiedAssignmentCount).toBe(48)
-  }, 45000)
+    ).toBe(624)
+    expect(jarCertificate?.finalizingOperations).toBe(22)
+    expect(jarCertificate?.distinctRecipeKindLowerBound).toBe(22)
+    expect(jarCertificate?.jarLowerBound).toBe(20)
+    expect(jarCertificate?.jarUpperBound).toBe(20)
+    expect(jarCertificate?.optimum).toBe(20)
+    expect(jarCertificate?.witnessRecipeUnits).toHaveLength(22)
+    expect(jarCertificate?.verifiedAssignmentCount).toBe(49)
+  }, 120000)
 })
