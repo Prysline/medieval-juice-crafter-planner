@@ -40,6 +40,28 @@ describe('responsiveness wiring regression', () => {
     )
   })
 
+  it('memoizes customer rows with stable id-based toggle handlers', () => {
+    expect(appSource).toContain('const MemoizedCustomerRow = memo(CustomerRow)')
+    expect(appSource).toContain('<MemoizedCustomerRow')
+    expect(appSource).toContain('onToggleFormal={toggleFormalCustomer}')
+    expect(appSource).toContain('onToggleSupplied={toggleSuppliedToday}')
+    expect(appSource).toContain(
+      'onToggleComparison={toggleComparisonCustomer}',
+    )
+    expect(appSource).toContain(
+      'const toggleSuppliedToday = useCallback((customerId: string) => {',
+    )
+    expect(appSource).toContain(
+      'const toggleFormalCustomer = useCallback((customerId: string) => {',
+    )
+    expect(appSource).toContain(
+      'const toggleComparisonCustomer = useCallback((customerId: string) => {',
+    )
+    expect(appSource).not.toContain(
+      'onToggleSupplied={() => toggleSuppliedToday(customer.id)}',
+    )
+  })
+
   it('narrows structured ingredient-sequence search before recipe filtering', () => {
     expect(appSource).toContain(
       'buildRecipeIngredientEntryIndex(recipeListEntries)',
