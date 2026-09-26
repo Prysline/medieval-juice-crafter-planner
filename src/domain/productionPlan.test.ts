@@ -52,6 +52,9 @@ describe('production plan', () => {
       finalizing: 2,
       blending: 0,
     })
+    expect(result.seasoningStageReuseUnitsByStepKey).toMatchObject({
+      'season:lemon>sugar': 2,
+    })
   })
 
   it('counts repeated seasoning as separate operation layers and packs each layer by five', () => {
