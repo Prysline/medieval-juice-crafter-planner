@@ -261,6 +261,45 @@ describe('plan application commit', () => {
     expect(storage.raw(PLAN_APPLICATION_STATE_STORAGE_KEY)).toBeNull()
   })
 
+  it('applies inventory after a planned customer was manually marked supplied', () => {
+    const storage = legacyStorage()
+    const draft = draftFromBasis(basis())
+
+    writeSuppliedCustomerIds(storage, ['ulrich', 'alia'])
+    storage.writes = []
+
+    const result = commitPlanApplicationTransaction(draft, storage)
+
+    expect(result).toEqual({
+      status: 'applied',
+      inventory: draft.after.inventory,
+      suppliedCustomerIds: ['ulrich', 'alia'],
+    })
+    expect(storage.writes).toHaveLength(1)
+    expect(storage.writes[0]?.key).toBe(
+      PLAN_APPLICATION_STATE_STORAGE_KEY,
+    )
+    expect(readInventoryState(storage)).toEqual(draft.after.inventory)
+    expect(readSuppliedCustomerIds(storage)).toEqual(['ulrich', 'alia'])
+  })
+
+  it('still rejects supplied changes outside the plan application range', () => {
+    const storage = legacyStorage()
+    const draft = draftFromBasis(basis())
+
+    writeSuppliedCustomerIds(storage, ['ulrich', 'outsider'])
+    storage.writes = []
+
+    const result = commitPlanApplicationTransaction(draft, storage)
+
+    expect(result).toEqual({
+      status: 'stale',
+      mismatches: ['supplied-customers'],
+    })
+    expect(storage.writes).toEqual([])
+    expect(storage.raw(PLAN_APPLICATION_STATE_STORAGE_KEY)).toBeNull()
+  })
+
   it('leaves legacy state untouched when the single canonical write throws', () => {
     const storage = legacyStorage()
     const draft = draftFromBasis(basis())
