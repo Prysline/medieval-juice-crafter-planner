@@ -109,21 +109,34 @@ describe('Stage 7 ibex statue runtime data', () => {
     }
 
     expect(
-      recipeIngredientCapabilities.some(
+      recipeIngredientCapabilities.find(
         (capability) => capability.ingredientId === 'clove',
       ),
-    ).toBe(false)
+    ).toEqual({
+      ingredientId: 'clove',
+      roles: ['seasoning'],
+    })
 
-    const clove = evaluateRecipeSequence(
+    const seasoned = evaluateRecipeSequence(
+      ['lemon', 'clove'],
+      'ibex-statue-unlocked',
+    )
+    expect(seasoned.valid).toBe(true)
+    if (!seasoned.valid) return
+    expect(seasoned.availableAtCurrentProgress).toBe(true)
+    expect(seasoned.candidate.ingredients).toEqual(['檸檬', '丁香'])
+    expect(seasoned.candidate.equipment).toContain('調味器')
+
+    const cloveOnly = evaluateRecipeSequence(
       ['clove'],
       'ibex-statue-unlocked',
     )
-    expect(clove.valid).toBe(false)
-    if (clove.valid) return
-    expect(clove.issues).toEqual(
+    expect(cloveOnly.valid).toBe(false)
+    if (cloveOnly.valid) return
+    expect(cloveOnly.issues).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          code: 'unsupported-ingredient',
+          code: 'invalid-base',
           ingredientId: 'clove',
         }),
       ]),
@@ -134,9 +147,18 @@ describe('Stage 7 ibex statue runtime data', () => {
     const before = generateUniqueRecipeCandidateLayers(
       'advanced-citrus-juicer-unlocked',
     )[0]?.candidates.map((candidate) => candidate.ingredients[0])
-    const after = generateUniqueRecipeCandidateLayers(
+    const afterLayers = generateUniqueRecipeCandidateLayers(
       'ibex-statue-unlocked',
-    )[0]?.candidates.map((candidate) => candidate.ingredients[0])
+    )
+    const after = afterLayers[0]?.candidates.map(
+      (candidate) => candidate.ingredients[0],
+    )
+    const beforeSeasonings = generateUniqueRecipeCandidateLayers(
+      'advanced-citrus-juicer-unlocked',
+    )[1]?.candidates.flatMap((candidate) => candidate.ingredients)
+    const afterSeasonings = afterLayers[1]?.candidates.flatMap(
+      (candidate) => candidate.ingredients,
+    )
 
     expect(before).not.toEqual(
       expect.arrayContaining(['桃子', '黃瓜', '番茄']),
@@ -145,6 +167,8 @@ describe('Stage 7 ibex statue runtime data', () => {
       expect.arrayContaining(['桃子', '黃瓜', '番茄']),
     )
     expect(after).not.toContain('丁香')
+    expect(beforeSeasonings).not.toContain('丁香')
+    expect(afterSeasonings).toContain('丁香')
   })
 
   it('normalizes existing two-region satisfaction storage with the new canonical region', () => {
