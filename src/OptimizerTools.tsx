@@ -4048,108 +4048,192 @@ function regionDisplayName(regionId: string): string {
   return villageNames[regionId as VillageId] ?? regionId
 }
 
+interface SalesTripDeliveryControls {
+  plan: DeliveryExecutionPlan | null
+  cursor: DeliveryExecutionCursor | null
+  suppliedCustomerIds: readonly string[]
+  disabled?: boolean
+  onChangeCustomer: (customerId: string, supplied: boolean) => void
+  onChangeGroup: (
+    customerIds: readonly string[],
+    supplied: boolean,
+  ) => void
+}
+
+function SalesTripCustomerRow({
+  customerId,
+}: {
+  customerId: string
+}) {
+  const regionLabel = customerRegionLabel(customerId)
+
+  return (
+    <div className="optimizer-sales-customer-readonly">
+      <strong>{customerLabel(customerId)}</strong>
+      {regionLabel && (
+        <span className="optimizer-customer-region-badge">
+          {regionLabel}
+        </span>
+      )}
+    </div>
+  )
+}
+
 export function SalesTripPlanBlock({
   plan,
   regionPlan,
+  deliveryControls,
 }: {
   plan: MultiTripReplenishmentPlan
   regionPlan?: RegionPhysicalSalesPlan
+  deliveryControls?: SalesTripDeliveryControls
 }) {
+  const totalServings = plan.trips.reduce(
+    (sum, trip) => sum + trip.totalServings,
+    0,
+  )
+
   return (
-    <div className="optimizer-batch-list">
-      <article className="optimizer-batch-card">
-        <div>
-          <strong>{tripPolicyLabel(plan)}</strong>
-          <span>
-            {plan.tripCount} 趟 · 果汁罐換裝 {plan.jarTypeSwitches} 次
-          </span>
-        </div>
-        <p>
-          販售排程使用 {plan.physicalJarsUsed} / {plan.carriedJuiceJarCount}{' '}
-          個實體果汁罐；單趟最多使用 {plan.maxJuiceJarSlotsCarried} 個果汁罐格。
-        </p>
-        {regionPlan && (
-          <>
-            <p>
-              出發／補給工作間：
-              {regionDisplayName(regionPlan.activeWorkshop.regionId)}
-              {' · '}區域路線成本 {regionPlan.routeCost}
-              {' · '}地區分散服務 {regionPlan.serviceFragmentation} 次
-            </p>
+    <div className="optimizer-batch-list optimizer-sales-plan">
+      <article className="optimizer-batch-card optimizer-sales-overview">
+        <header className="optimizer-sales-overview-header">
+          <div>
+            <strong>{tripPolicyLabel(plan)}</strong>
+            <span>
+              {plan.tripCount} 趟 · {totalServings} 杯 · 單趟最多隨身{' '}
+              {plan.maxJuiceJarSlotsCarried} 罐
+            </span>
+          </div>
+          <div className="optimizer-sales-overview-stats">
+            {regionPlan && (
+              <span>
+                <b>工作間</b>
+                {regionDisplayName(regionPlan.activeWorkshop.regionId)}
+              </span>
+            )}
+            <span>
+              <b>換裝</b>
+              {plan.jarTypeSwitches} 次
+            </span>
+            <span>
+              <b>清洗</b>
+              {plan.totalCupWashWaterUnits} 杯
+            </span>
+            <span>
+              <b>期末剩餘</b>
+              {plan.totalLeftoverServings} 杯
+            </span>
+          </div>
+        </header>
+
+        {regionPlan && regionPlan.requiredByRegion.length > 0 && (
+          <div
+            className="optimizer-sales-region-demand"
+            aria-label="各地區販售需求"
+          >
             {regionPlan.requiredByRegion.map((required) => (
-              <p key={'region-demand-' + required.regionId}>
-                {regionDisplayName(required.regionId)}：需求{' '}
-                {required.totalServings} 杯 ·{' '}
-                {required.recipes
-                  .map(
-                    (recipe) =>
-                      formatRecipeDisplayName(recipe.recipeName) +
-                      ' ' +
-                      recipe.servings +
-                      ' 杯',
-                  )
-                  .join('、')}
-              </p>
+              <span key={'region-demand-' + required.regionId}>
+                <strong>{regionDisplayName(required.regionId)}</strong>
+                {required.totalServings} 杯
+              </span>
             ))}
-          </>
+          </div>
         )}
-        <p>
-          本日可用實體罐：{' '}
-          {plan.carriedJuiceJars
-            .map((jar) => {
-              const initial =
-                jar.initialRecipeId && jar.initialServings > 0
-                  ? (recipeNameById.get(jar.initialRecipeId) ??
-                      jar.initialRecipeId) +
-                    ' ' +
-                    jar.initialServings +
-                    ' 杯'
-                  : '空罐'
-              return jar.physicalJarId + '（' + initial + '）'
-            })
-            .join('、')}
-        </p>
-        <p>
-          杯具：起始 clean {plan.initialCleanCups} / used {plan.initialUsedCups}
-          {' · '}清洗 {plan.totalCupWashWaterUnits} 次／用水 {plan.totalCupWashWaterUnits}
-          {' · '}結束實體杯 {plan.finalPhysicalCupCount}
-          {plan.droppedUsedCups > 0 ? ' · 掉落 ' + plan.droppedUsedCups : ''}
-        </p>
-        <p>
-          販售後保留成品 {plan.totalLeftoverServings} 杯
-          {plan.totalLeftoverServings > 0
-            ? ' · 分布於 ' + plan.leftoverJarContents.length + ' 個 physical jar 記錄'
-            : ''}
-        </p>
-        {plan.leftoverJarContents.map((leftover) => {
-          const carriedOnLaterTrip = plan.trips.some(
-            (trip) =>
-              trip.tripNumber > leftover.tripNumber &&
-              trip.carriedPhysicalJarIds.includes(leftover.physicalJarId),
-          )
-          return (
-            <p
-              key={
-                'terminal-leftover-' +
-                leftover.physicalJarId +
-                '-' +
-                leftover.recipeId
-              }
-            >
-              期末果汁罐：{leftover.physicalJarId} ·{' '}
-              {formatRecipeDisplayName(leftover.recipeName)} · {leftover.servings}{' '}
-              杯 · 第 {leftover.tripNumber} 趟後
-              {carriedOnLaterTrip ? '仍隨身保留' : '留在家中'}
+
+        <details className="optimizer-sales-detail">
+          <summary>展開今日規劃細節</summary>
+          <div className="optimizer-sales-detail-body">
+            <p>
+              販售排程使用 {plan.physicalJarsUsed} /{' '}
+              {plan.carriedJuiceJarCount} 個實體果汁罐；單趟最多使用{' '}
+              {plan.maxJuiceJarSlotsCarried} 個果汁罐格。
             </p>
-          )
-        })}
-        <small>
-          {tripPolicyNote(plan)}
-          {plan.totalLeftoverServings > 0
-            ? ' 剩餘成品只會留在該 recipe 最後販售的同一 persistent physical jar；目前仍不寫回 inventory，跨日 commit 留待 Apply Plan。'
-            : ''}
-          {' '}所有持有果汁罐的既有內容都會納入今日販售來源；有果汁罐架時可在趟次之間整罐上架／換罐，未被今日需求喝空的既有內容不會為了減少換裝而自動丟棄。
-        </small>
+            {regionPlan && (
+              <>
+                <p>
+                  區域路線成本 {regionPlan.routeCost} · 地區分散服務{' '}
+                  {regionPlan.serviceFragmentation} 次
+                </p>
+                {regionPlan.requiredByRegion.map((required) => (
+                  <p key={'region-demand-detail-' + required.regionId}>
+                    {regionDisplayName(required.regionId)}：需求{' '}
+                    {required.totalServings} 杯 ·{' '}
+                    {required.recipes
+                      .map(
+                        (recipe) =>
+                          formatRecipeDisplayName(recipe.recipeName) +
+                          ' ' +
+                          recipe.servings +
+                          ' 杯',
+                      )
+                      .join('、')}
+                  </p>
+                ))}
+              </>
+            )}
+            <p>
+              本日可用實體罐：{' '}
+              {plan.carriedJuiceJars
+                .map((jar) => {
+                  const initial =
+                    jar.initialRecipeId && jar.initialServings > 0
+                      ? (recipeNameById.get(jar.initialRecipeId) ??
+                          jar.initialRecipeId) +
+                        ' ' +
+                        jar.initialServings +
+                        ' 杯'
+                      : '空罐'
+                  return (
+                    jar.physicalJarId +
+                    '（' +
+                    initial +
+                    '）'
+                  )
+                })
+                .join('、')}
+            </p>
+            <p>
+              杯具：起始 clean {plan.initialCleanCups} / used{' '}
+              {plan.initialUsedCups} · 清洗 {plan.totalCupWashWaterUnits}{' '}
+              次／用水 {plan.totalCupWashWaterUnits} · 結束實體杯{' '}
+              {plan.finalPhysicalCupCount}
+              {plan.droppedUsedCups > 0
+                ? ' · 掉落 ' + plan.droppedUsedCups
+                : ''}
+            </p>
+            {plan.leftoverJarContents.map((leftover) => {
+              const carriedOnLaterTrip = plan.trips.some(
+                (trip) =>
+                  trip.tripNumber > leftover.tripNumber &&
+                  trip.carriedPhysicalJarIds.includes(
+                    leftover.physicalJarId,
+                  ),
+              )
+              return (
+                <p
+                  key={
+                    'terminal-leftover-' +
+                    leftover.physicalJarId +
+                    '-' +
+                    leftover.recipeId
+                  }
+                >
+                  期末果汁罐：{leftover.physicalJarId} ·{' '}
+                  {formatRecipeDisplayName(leftover.recipeName)} ·{' '}
+                  {leftover.servings} 杯 · 第 {leftover.tripNumber} 趟後
+                  {carriedOnLaterTrip ? '仍隨身保留' : '留在家中'}
+                </p>
+              )
+            })}
+            <small>
+              {tripPolicyNote(plan)}
+              {plan.totalLeftoverServings > 0
+                ? ' 剩餘成品只會留在該 recipe 最後販售的同一 persistent physical jar；目前仍不寫回 inventory，跨日 commit 留待 Apply Plan。'
+                : ''}
+              {' '}所有持有果汁罐的既有內容都會納入今日販售來源；有果汁罐架時可在趟次之間整罐上架／換罐，未被今日需求喝空的既有內容不會為了減少換裝而自動丟棄。
+            </small>
+          </div>
+        </details>
       </article>
 
       {plan.trips.map((trip) => {
@@ -4159,124 +4243,262 @@ export function SalesTripPlanBlock({
         const fillsBeforeTrip = plan.productionJarFills.filter(
           (fill) => fill.beforeTripNumber === trip.tripNumber,
         )
+        const tripCustomerIds = trip.juiceJars.flatMap(
+          (load) => load.customerIds,
+        )
 
         return (
-        <article
-          className="optimizer-batch-card"
-          key={plan.policy + '-' + trip.tripNumber}
-        >
-          <div>
-            <strong>第 {trip.tripNumber} 趟</strong>
-            <span>
-              {trip.totalServings} 杯 · 販售用 {trip.juiceJars.length} 罐 ·
-              實際隨身 {trip.carriedPhysicalJarIds.length} 罐
-            </span>
-          </div>
-          {regionTrip && (
-            <>
-              <p>
-                主要服務：
-                {regionTrip.primaryRegionIds.length > 0
-                  ? regionTrip.primaryRegionIds
-                      .map(regionDisplayName)
-                      .join('、')
-                  : '無'}
-                {' · '}順帶服務：
-                {regionTrip.sideRegionIds.length > 0
-                  ? regionTrip.sideRegionIds
-                      .map(regionDisplayName)
-                      .join('、')
-                  : '無'}
-                {' · '}本趟 route cost {regionTrip.routeCost}
-              </p>
-              {regionTrip.transitRegionIds.length > 0 && (
-                <p>
-                  只經過（不服務）：
-                  {regionTrip.transitRegionIds
-                    .map(regionDisplayName)
-                    .join('、')}
-                </p>
+          <article
+            className="optimizer-batch-card optimizer-sales-trip-card"
+            key={plan.policy + '-' + trip.tripNumber}
+          >
+            <header className="optimizer-sales-trip-header">
+              <div>
+                {deliveryControls ? (
+                  <DeliveryTripGroupCheckbox
+                    tripNumber={trip.tripNumber}
+                    customerIds={tripCustomerIds}
+                    plan={deliveryControls.plan}
+                    cursor={deliveryControls.cursor}
+                    suppliedCustomerIds={
+                      deliveryControls.suppliedCustomerIds
+                    }
+                    disabled={deliveryControls.disabled}
+                    onChange={deliveryControls.onChangeGroup}
+                  />
+                ) : (
+                  <strong>第 {trip.tripNumber} 趟</strong>
+                )}
+                <span>
+                  {trip.totalServings} 杯 · 販售用{' '}
+                  {trip.juiceJars.length} 罐 · 實際隨身{' '}
+                  {trip.carriedPhysicalJarIds.length} 罐
+                </span>
+              </div>
+
+              {regionTrip && (
+                <div
+                  className="optimizer-sales-region-chips"
+                  aria-label={'第 ' + trip.tripNumber + ' 趟地區'}
+                >
+                  {regionTrip.primaryRegionIds.map((regionId) => (
+                    <span
+                      className="optimizer-sales-region-chip primary"
+                      key={'primary-' + regionId}
+                    >
+                      主要 · {regionDisplayName(regionId)}
+                    </span>
+                  ))}
+                  {regionTrip.sideRegionIds.map((regionId) => (
+                    <span
+                      className="optimizer-sales-region-chip side"
+                      key={'side-' + regionId}
+                    >
+                      順帶 · {regionDisplayName(regionId)}
+                    </span>
+                  ))}
+                  {regionTrip.transitRegionIds.map((regionId) => (
+                    <span
+                      className="optimizer-sales-region-chip transit"
+                      key={'transit-' + regionId}
+                    >
+                      途經 · {regionDisplayName(regionId)}
+                    </span>
+                  ))}
+                </div>
               )}
-              {regionTrip.routeFootprint.length > 0 && (
+            </header>
+
+            <section className="optimizer-sales-trip-section">
+              <h4>出發前</h4>
+              <div className="optimizer-sales-action-list">
                 <p>
-                  跨區路線邊：
-                  {regionTrip.routeFootprint
-                    .map(
-                      (edge) =>
-                        regionDisplayName(edge.from) +
-                        ' ↔ ' +
-                        regionDisplayName(edge.to) +
-                        ' ×' +
-                        edge.traversalCount,
-                    )
-                    .join('、')}
+                  {trip.cupsWashedBeforeTrip > 0
+                    ? '先清洗 ' + trip.cupsWashedBeforeTrip + ' 個杯子'
+                    : '不需先清洗杯子'}
                 </p>
+                <p>
+                  帶 clean cup ×{trip.cleanCupsCarried}（
+                  {trip.cleanCupStacks} 疊）
+                </p>
+                <p>
+                  帶果汁罐：
+                  {trip.carriedPhysicalJarIds.join('、')}
+                </p>
+              </div>
+
+              {fillsBeforeTrip.length > 0 && (
+                <div className="optimizer-sales-fill-list">
+                  <strong>裝罐</strong>
+                  {fillsBeforeTrip.map((fill) => (
+                    <p
+                      key={
+                        'trip-fill-' +
+                        trip.tripNumber +
+                        '-' +
+                        fill.physicalJarId +
+                        '-' +
+                        fill.recipeId
+                      }
+                    >
+                      {fill.physicalJarId} ·{' '}
+                      {transactionFillActionLabel(fill)} ·{' '}
+                      {formatRecipeDisplayName(fill.recipeName)} +{fill.servings}{' '}
+                      杯 → 裝後 {fill.servingsAfterFill} 杯
+                    </p>
+                  ))}
+                </div>
               )}
-            </>
-          )}
-          <p>
-            本趟出發前裝罐：
-            {fillsBeforeTrip.length > 0
-              ? fillsBeforeTrip
-                  .map(
-                    (fill) =>
-                      fill.physicalJarId +
-                      ' ' +
-                      transactionFillActionLabel(fill) +
-                      ' ' +
-                      formatRecipeDisplayName(fill.recipeName) +
-                      ' +' +
-                      fill.servings +
-                      ' 杯（裝後 ' +
-                      fill.servingsAfterFill +
-                      ' 杯）',
+            </section>
+
+            <section className="optimizer-sales-trip-section">
+              <h4>販售</h4>
+              <div className="optimizer-sales-jar-list">
+                {trip.juiceJars.map((load) => (
+                  <article
+                    className="optimizer-sales-jar-manifest"
+                    key={
+                      plan.policy +
+                      '-' +
+                      trip.tripNumber +
+                      '-' +
+                      load.physicalJarId
+                    }
+                  >
+                    <header>
+                      <div>
+                        <strong>{load.physicalJarId}</strong>
+                        <span>
+                          {formatRecipeDisplayName(load.recipeName)}
+                        </span>
+                      </div>
+                      <span>{load.servings} 杯</span>
+                    </header>
+
+                    <div className="optimizer-sales-jar-status">
+                      <span>{jarFillActionLabel(load)}</span>
+                      {load.retainedLeftoverServings > 0 && (
+                        <span>
+                          販售後保留 {load.retainedLeftoverServings} 杯
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="optimizer-delivery-customer-list">
+                      {load.customerIds.map((customerId) =>
+                        deliveryControls ? (
+                          <DeliveryCustomerCheckbox
+                            key={customerId}
+                            customerId={customerId}
+                            plan={deliveryControls.plan}
+                            cursor={deliveryControls.cursor}
+                            suppliedCustomerIds={
+                              deliveryControls.suppliedCustomerIds
+                            }
+                            disabled={deliveryControls.disabled}
+                            showPlanningDetail={false}
+                            onChange={
+                              deliveryControls.onChangeCustomer
+                            }
+                          />
+                        ) : (
+                          <SalesTripCustomerRow
+                            key={customerId}
+                            customerId={customerId}
+                          />
+                        ),
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            <section className="optimizer-sales-trip-section">
+              <h4>回工作間</h4>
+              <div className="optimizer-sales-action-list">
+                <p>
+                  回家後 clean {trip.cleanCupsAfterTrip} / used{' '}
+                  {trip.usedCupsAfterTrip}
+                </p>
+                {trip.droppedUsedCups > 0 && (
+                  <p className="optimizer-sales-warning">
+                    本趟掉落 {trip.droppedUsedCups} 個 used cup
+                  </p>
+                )}
+                {trip.juiceJars
+                  .filter(
+                    (load) => load.retainedLeftoverServings > 0,
                   )
-                  .join('、')
-              : '不需新增 production fill'}
-          </p>
-          <p>
-            隨身果汁罐：{trip.carriedPhysicalJarIds.join('、')}
-            {' · '}果汁罐占用／預留 {trip.juiceJarSlotsCarried} 格
-          </p>
-          <p>
-            帶出 clean cup {trip.cleanCupsCarried} 個 / {trip.cleanCupStacks} 疊
-            {' · '}出發占用 {trip.departureSlots} / {trip.effectiveDepartureSlotLimit} slots
-            {' · '}趟中峰值 {trip.peakOccupiedSlots} / {trip.effectiveDepartureSlotLimit} slots
-          </p>
-          <p>
-            出發前 clean {trip.cleanCupsBeforeTrip} / used {trip.usedCupsBeforeTrip}
-            {trip.cupsWashedBeforeTrip > 0
-              ? ' · 先清洗 ' + trip.cupsWashedBeforeTrip + ' 個'
-              : ' · 不需先清洗'}
-            {' · '}回工作間後 clean {trip.cleanCupsAfterTrip} / used {trip.usedCupsAfterTrip}
-            {trip.droppedUsedCups > 0
-              ? ' · 本趟掉落 ' + trip.droppedUsedCups + ' 個 used cup'
-              : ''}
-          </p>
-          {trip.juiceJars.map((load) => (
-            <div
-              key={
-                plan.policy +
-                '-' +
-                trip.tripNumber +
-                '-' +
-                load.physicalJarId
-              }
-            >
-              <p>
-                果汁罐 {load.physicalJarId}：{formatRecipeDisplayName(load.recipeName)} · 販售 {load.servings}{' '}
-                杯
-                {load.retainedLeftoverServings > 0
-                  ? ' · 販售後保留 ' + load.retainedLeftoverServings + ' 杯'
-                  : ''}
-                {' · '}{jarFillActionLabel(load)}
-              </p>
-              <p>
-                完整符合顧客：{load.customerIds.map(customerLabel).join('、')}
-              </p>
-            </div>
-          ))}
-        </article>
+                  .map((load) => {
+                    const laterTrip = plan.trips.find(
+                      (candidate) =>
+                        candidate.tripNumber > trip.tripNumber &&
+                        candidate.carriedPhysicalJarIds.includes(
+                          load.physicalJarId,
+                        ),
+                    )
+                    return (
+                      <p
+                        key={
+                          'trip-leftover-' +
+                          trip.tripNumber +
+                          '-' +
+                          load.physicalJarId
+                        }
+                      >
+                        {load.physicalJarId}：
+                        {formatRecipeDisplayName(load.recipeName)} 剩{' '}
+                        {load.retainedLeftoverServings} 杯
+                        {laterTrip
+                          ? ' → 第 ' +
+                            laterTrip.tripNumber +
+                            ' 趟仍隨身'
+                          : ' → 留在家中'}
+                      </p>
+                    )
+                  })}
+              </div>
+            </section>
+
+            <details className="optimizer-sales-detail optimizer-sales-trip-detail">
+              <summary>容量／路線細節</summary>
+              <div className="optimizer-sales-detail-body">
+                <p>
+                  果汁罐占用／預留 {trip.juiceJarSlotsCarried} 格 ·
+                  出發占用 {trip.departureSlots} /{' '}
+                  {trip.effectiveDepartureSlotLimit} slots · 趟中峰值{' '}
+                  {trip.peakOccupiedSlots} /{' '}
+                  {trip.effectiveDepartureSlotLimit} slots
+                </p>
+                <p>
+                  出發前 clean {trip.cleanCupsBeforeTrip} / used{' '}
+                  {trip.usedCupsBeforeTrip} · 回工作間後 clean{' '}
+                  {trip.cleanCupsAfterTrip} / used {trip.usedCupsAfterTrip}
+                </p>
+                {regionTrip && (
+                  <>
+                    <p>本趟 route cost {regionTrip.routeCost}</p>
+                    {regionTrip.routeFootprint.length > 0 && (
+                      <p>
+                        跨區路線邊：
+                        {regionTrip.routeFootprint
+                          .map(
+                            (edge) =>
+                              regionDisplayName(edge.from) +
+                              ' ↔ ' +
+                              regionDisplayName(edge.to) +
+                              ' ×' +
+                              edge.traversalCount,
+                          )
+                          .join('、')}
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            </details>
+          </article>
         )
       })}
     </div>
