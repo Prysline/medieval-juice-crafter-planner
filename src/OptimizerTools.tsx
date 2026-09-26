@@ -2349,20 +2349,39 @@ export function ProductionStepFinalJuiceNote({
 
 export function SeasoningStageMaterialSummary({
   ingredientUnits,
+  baseJuiceUnits,
 }: {
   ingredientUnits: Readonly<Record<string, number>>
+  baseJuiceUnits: Readonly<Record<string, number>>
 }) {
-  const entries = Object.entries(ingredientUnits)
+  const ingredientEntries = Object.entries(ingredientUnits)
     .filter(([, quantity]) => quantity > 0)
     .map(([ingredientId, quantity]) =>
       `${ingredientLabel(ingredientId)} ×${quantity}`,
     )
+  const baseJuiceEntries = Object.entries(baseJuiceUnits)
+    .filter(([, quantity]) => quantity > 0)
+    .map(([ingredientId, quantity]) =>
+      `${ingredientLabel(ingredientId)}原汁 ×${quantity}`,
+    )
 
-  if (entries.length === 0) return null
+  if (
+    ingredientEntries.length === 0 &&
+    baseJuiceEntries.length === 0
+  ) {
+    return null
+  }
 
   return (
     <small className="optimizer-machine-material-summary">
-      本階段材料：{entries.join('、')}
+      {ingredientEntries.length > 0 && (
+        <span>本階段材料：{ingredientEntries.join('、')}</span>
+      )}
+      {baseJuiceEntries.length > 0 && (
+        <span>
+          本階段基礎果汁：{baseJuiceEntries.join('、')}
+        </span>
+      )}
     </small>
   )
 }
@@ -3524,6 +3543,10 @@ function OptimizerResultPanel({
                         ingredientUnits={
                           productionLogistics.productionPlan
                             .seasoningIngredientUnits ?? {}
+                        }
+                        baseJuiceUnits={
+                          productionLogistics.productionPlan
+                            .seasoningBaseJuiceUnits ?? {}
                         }
                       />
                     )}
