@@ -62,6 +62,16 @@ describe('responsiveness wiring regression', () => {
     )
   })
 
+  it('does not mount heavy customer details until the row is expanded', () => {
+    expect(appSource).toContain('const [expanded, setExpanded] = useState(false)')
+    expect(appSource).toContain(
+      'onToggle={(event) => setExpanded(event.currentTarget.open)}',
+    )
+    expect(appSource).toMatch(
+      /\{expanded && \(\s*<div className="row-details">/,
+    )
+  })
+
   it('narrows structured ingredient-sequence search before recipe filtering', () => {
     expect(appSource).toContain(
       'buildRecipeIngredientEntryIndex(recipeListEntries)',
