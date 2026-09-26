@@ -1,38 +1,22 @@
 import type { RecipeCandidatePoolEntry } from './recipeCandidatePool'
 
-function sequenceKey(ingredientIds: readonly string[]): string {
-  return JSON.stringify(ingredientIds)
-}
-
-export type ContiguousRecipeSequenceIndex = ReadonlyMap<
+export type RecipeIngredientEntryIndex = ReadonlyMap<
   string,
   readonly RecipeCandidatePoolEntry[]
 >
 
-export function buildContiguousRecipeSequenceIndex(
+export function buildRecipeIngredientEntryIndex(
   entries: readonly RecipeCandidatePoolEntry[],
-): ContiguousRecipeSequenceIndex {
+): RecipeIngredientEntryIndex {
   const index = new Map<string, RecipeCandidatePoolEntry[]>()
 
   for (const entry of entries) {
-    const entryKeys = new Set<string>()
-
-    for (let start = 0; start < entry.ingredientIds.length; start += 1) {
-      for (
-        let end = start + 1;
-        end <= entry.ingredientIds.length;
-        end += 1
-      ) {
-        entryKeys.add(sequenceKey(entry.ingredientIds.slice(start, end)))
-      }
-    }
-
-    for (const key of entryKeys) {
-      const matches = index.get(key)
+    for (const ingredientId of new Set(entry.ingredientIds)) {
+      const matches = index.get(ingredientId)
       if (matches) {
         matches.push(entry)
       } else {
-        index.set(key, [entry])
+        index.set(ingredientId, [entry])
       }
     }
   }
@@ -40,11 +24,60 @@ export function buildContiguousRecipeSequenceIndex(
   return index
 }
 
+function containsContiguousSequence(
+  recipeIngredientIds: readonly string[],
+  selectedIngredientIds: readonly string[],
+): boolean {
+  if (selectedIngredientIds.length === 0) return true
+  if (selectedIngredientIds.length > recipeIngredientIds.length) return false
+
+  const lastStart =
+    recipeIngredientIds.length - selectedIngredientIds.length
+
+  for (let start = 0; start <= lastStart; start += 1) {
+    let matches = true
+
+    for (
+      let offset = 0;
+      offset < selectedIngredientIds.length;
+      offset += 1
+    ) {
+      if (
+        recipeIngredientIds[start + offset] !==
+        selectedIngredientIds[offset]
+      ) {
+        matches = false
+        break
+      }
+    }
+
+    if (matches) return true
+  }
+
+  return false
+}
+
 export function recipeEntriesForContiguousSequence(
   entries: readonly RecipeCandidatePoolEntry[],
-  index: ContiguousRecipeSequenceIndex,
+  index: RecipeIngredientEntryIndex,
   ingredientIds: readonly string[],
 ): readonly RecipeCandidatePoolEntry[] {
   if (ingredientIds.length === 0) return entries
-  return index.get(sequenceKey(ingredientIds)) ?? []
+
+  let anchorEntries: readonly RecipeCandidatePoolEntry[] | null = null
+
+  for (const ingredientId of new Set(ingredientIds)) {
+    const candidates = index.get(ingredientId) ?? []
+    if (candidates.length === 0) return []
+    if (
+      anchorEntries === null ||
+      candidates.length < anchorEntries.length
+    ) {
+      anchorEntries = candidates
+    }
+  }
+
+  return (anchorEntries ?? []).filter((entry) =>
+    containsContiguousSequence(entry.ingredientIds, ingredientIds),
+  )
 }
