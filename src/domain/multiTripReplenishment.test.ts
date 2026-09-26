@@ -1413,6 +1413,10 @@ describe('multi-trip replenishment', () => {
       servings: 5,
       fillAction: 'refill-same-type',
     })
+    expect(result.trips[1].juiceJars[0].plannedFillServings).toBeGreaterThan(0)
+    expect(
+      result.productionJarFills.map((fill) => fill.fillAction),
+    ).toEqual(['initial-fill', 'refill-same-type'])
     expectScheduleConsistency(result)
   })
 
@@ -1569,18 +1573,49 @@ describe('multi-trip replenishment', () => {
     expect(droppable.trips[0].droppedUsedCups).toBe(0)
   })
 
-  it('never splits one prepared physical jar load across cup-limited trips', () => {
-    expect(() =>
-      buildPlan(
-        namedRecipes(['A'], 10),
-        'retain-and-wash',
-        1,
-        { cleanCups: 5, usedCups: 0 },
-      ),
-    ).toThrow(/No remaining sales load can fit/)
+  it('continues one prepared physical jar load across cup-limited sales trips', () => {
+    const result = buildPlan(
+      namedRecipes(['A'], 6),
+      'retain-and-wash',
+      1,
+      { cleanCups: 3, usedCups: 0 },
+    )
+
+    expect(result.tripCount).toBe(2)
+    expect(result.trips[0].juiceJars[0]).toMatchObject({
+      physicalJarId: 'jar-1',
+      recipeId: 'a',
+      servings: 3,
+      retainedLeftoverServings: 3,
+      plannedFillServings: 6,
+      fillAction: 'initial-fill',
+    })
+    expect(result.trips[1].juiceJars[0]).toMatchObject({
+      physicalJarId: 'jar-1',
+      recipeId: 'a',
+      servings: 3,
+      retainedLeftoverServings: 0,
+      plannedFillServings: 0,
+      fillAction: 'continue-loaded',
+    })
+    expect(result.productionJarFills).toEqual([
+      expect.objectContaining({
+        physicalJarId: 'jar-1',
+        recipeId: 'a',
+        beforeTripNumber: 1,
+        servings: 6,
+        servingsAfterFill: 6,
+        fillAction: 'initial-fill',
+      }),
+    ])
+    expect(result.jarTypeSwitches).toBe(0)
+    expect(result.discardedInitialJuice).toEqual([])
+    expect(result.discardedNewProductionJuice).toEqual([])
+    expect(result.leftoverJarContents).toEqual([])
+    expectScheduleConsistency(result)
   })
 
-  it('keeps each physical jar load wholly inside one trip when other complete loads can be scheduled later', () => {
+  it('keeps complete prepared loads intact when each can fit on its own trip', () => {
     const result = buildPlan(
       namedRecipes(['A'], 15),
       'retain-and-wash',
