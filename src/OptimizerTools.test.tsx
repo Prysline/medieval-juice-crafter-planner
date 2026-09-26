@@ -9,6 +9,7 @@ import type { OptimizationResult } from './domain/optimizer'
 import type { PreparationDemand } from './domain/preparationDemand'
 import { buildPreparationShortfall } from './domain/preparationShortfall'
 import { buildRegionPhysicalSalesPlan } from './domain/regionPhysicalSalesPlanner'
+import { buildRemainingSalesTripPlan } from './domain/remainingSalesTripPlanner'
 import type {
   DeliveryExecutionCursor,
   DeliveryExecutionPlan,
@@ -28,6 +29,7 @@ import {
   OptimizerSummaryMetrics,
   PlanApplicationPreview,
   PlanningErrorBlock,
+  RemainingSalesTripPlanBlock,
   SalesTripPlanBlock,
   criterionLabel,
   customerIdsInPlannedTripOrder,
@@ -1111,6 +1113,69 @@ describe('sales trip interactive checklist UI', () => {
     expect(interactiveHtml).toContain('容量／路線細節')
     expect(readOnlyHtml).not.toContain('第 1 趟全部交付完成')
     expect(readOnlyHtml).not.toContain('type="checkbox"')
+  })
+})
+
+describe('remaining sales trip replan UI', () => {
+  it('renders only unsupplied customers with their fixed original recipes', () => {
+    const remainingPlan = buildRemainingSalesTripPlan({
+      recipeAssignments: [
+        {
+          recipeId: 'recipe-a',
+          recipeName: 'A',
+          customerIds: ['jack', 'leticia'],
+        },
+        {
+          recipeId: 'recipe-b',
+          recipeName: 'B',
+          customerIds: ['florida'],
+        },
+      ],
+      suppliedCustomerIds: ['jack'],
+      originalTripServingCounts: [2, 1],
+      activeWorkshop: {
+        id: 'workshop:east-harbor',
+        regionId: 'east-harbor',
+      },
+      topology: {
+        edges: [
+          {
+            from: 'east-harbor',
+            to: 'tranquil-fountain',
+            cost: 1,
+          },
+        ],
+      },
+      customerRegionById: {
+        jack: 'east-harbor',
+        leticia: 'east-harbor',
+        florida: 'tranquil-fountain',
+      },
+    })
+
+    const html = renderToStaticMarkup(
+      <RemainingSalesTripPlanBlock
+        plan={remainingPlan}
+        deliveryControls={{
+          plan: deliveryPlan(),
+          cursor: deliveryCursor(),
+          suppliedCustomerIds: ['jack'],
+          onChangeCustomer: () => {},
+          onChangeGroup: () => {},
+        }}
+      />,
+    )
+
+    expect(html).not.toContain('傑克')
+    expect(html).toContain('萊蒂西亞')
+    expect(html).toContain('弗洛莉婭')
+    expect(html).toContain('A')
+    expect(html).toContain('B')
+    expect(html).toContain('東港村')
+    expect(html).toContain('靜謐噴泉')
+    expect(html).toContain('第 1 趟全部交付完成')
+    expect(html).not.toContain('果汁罐')
+    expect(html).not.toContain('clean cup')
   })
 })
 

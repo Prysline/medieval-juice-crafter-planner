@@ -12,6 +12,10 @@ import {
 } from './domain/regionProductionAdapter'
 import type { RegionPhysicalSalesPlan } from './domain/regionPhysicalSalesPlanner'
 import {
+  buildRemainingSalesTripPlan,
+  type RemainingSalesTripPlan,
+} from './domain/remainingSalesTripPlanner'
+import {
   optimizerCustomerIds,
   optimizerCustomerLabel,
   optimizerMoney,
@@ -2262,7 +2266,7 @@ function OptimizerTools({
             {deliveryUiState.customerIds.map(customerLabel).join('、')}
           </strong>
           <span>
-            這次手動勾選只更新「今日已供應」；不修改庫存、果汁罐、杯具或製作狀態。需要依目前供應紀錄重算時，再重新產生規劃。
+            這次手動勾選只更新「今日已供應」；不修改庫存、果汁罐、杯具或製作狀態。若只需要重排尚未送達顧客的行程，可使用下方「剩餘販售重排」；若要重算製作或庫存，請先回到上方確認目前狀態後重新產生完整規劃。
           </span>
         </div>
       )}
@@ -2290,6 +2294,8 @@ function OptimizerTools({
       {runState.status === 'success' && (
         <OptimizerResultPanel
           result={runState.result}
+          currentProgress={currentProgress}
+          activeWorkshopRegionId={activeWorkshopRegionId}
           preparationShortfall={runState.preparationShortfall}
           productionLogistics={runState.productionLogistics}
           priorities={priorities}
@@ -2305,7 +2311,6 @@ function OptimizerTools({
           onApplyTransaction={applyTransactionDraft}
           onCommitDelivery={commitDeliveryCustomer}
           onCommitDeliveryGroup={commitDeliveryCustomers}
-          onReplan={runOptimizer}
         />
       )}
     </section>
@@ -3391,6 +3396,8 @@ export function OptimizerSummaryMetrics({
 
 function OptimizerResultPanel({
   result,
+  currentProgress,
+  activeWorkshopRegionId,
   preparationShortfall,
   productionLogistics,
   priorities,
@@ -3404,9 +3411,10 @@ function OptimizerResultPanel({
   onApplyTransaction,
   onCommitDelivery,
   onCommitDeliveryGroup,
-  onReplan,
 }: {
   result: OptimizationResult
+  currentProgress: ProgressMilestoneId
+  activeWorkshopRegionId: VillageId
   preparationShortfall: PreparationShortfall
   productionLogistics: ProductionLogisticsPlan
   priorities: OptimizationCriterion[]
@@ -3420,10 +3428,40 @@ function OptimizerResultPanel({
   onApplyTransaction: (draft: PlanApplicationTransactionDraft) => void
   onCommitDelivery: (customerId: string, supplied: boolean) => void
   onCommitDeliveryGroup: (customerIds: readonly string[], supplied: boolean) => void
-  onReplan: () => void
 }) {
   const selectedSalesTripPlan = salesTripPlans.selected
   const alternateSalesTripPlan = salesTripPlans.alternate
+  const [showRemainingSalesPlan, setShowRemainingSalesPlan] = useState(false)
+  const remainingSalesTripPlan = useMemo(() => {
+    const routing = productionRegionRoutingInput(
+      currentProgress,
+      activeWorkshopRegionId,
+    )
+    const assignedCustomerIds = result.recipePlans.flatMap(
+      (plan) => plan.customerIds,
+    )
+    return buildRemainingSalesTripPlan({
+      recipeAssignments: result.recipePlans.map((plan) => ({
+        recipeId: plan.recipeId,
+        recipeName: plan.recipeName,
+        customerIds: plan.customerIds,
+      })),
+      suppliedCustomerIds,
+      originalTripServingCounts: selectedSalesTripPlan.trips.map(
+        (trip) => trip.totalServings,
+      ),
+      activeWorkshop: routing.activeWorkshop,
+      topology: routing.topology,
+      customerRegionById:
+        productionCustomerRegionById(assignedCustomerIds),
+    })
+  }, [
+    activeWorkshopRegionId,
+    currentProgress,
+    result.recipePlans,
+    selectedSalesTripPlan.trips,
+    suppliedCustomerIds,
+  ])
   const productionPlan = productionLogistics.productionPlan
   const productionChecklistFingerprint = useMemo(
     () => productionPlanFingerprint(productionPlan),
@@ -3614,7 +3652,7 @@ function OptimizerResultPanel({
           </div>
           <p className="optimizer-transaction-warning">
             {transactionDraftInvalidatedByPartialDelivery
-              ? '已有顧客透過果汁分配正式交付，原本的整份套用預覽已失效，避免再次扣除同一批物資。你可以繼續完成目前販售趟，或依現在庫存與今日已供應狀態重新規劃剩餘顧客。'
+              ? '已有顧客被記錄為今日已供應，原本的整份套用預覽已失效，避免再次扣除同一批物資。若只要重新安排尚未送達顧客的行程，使用下方「剩餘販售重排」；若要重算製作或庫存，請先回到上方確認目前狀態後重新產生完整規劃。'
               : '目前製作物流不可行，因此不建立交易草稿，也不會修改庫存。請先處理下方製作物流警告後重新產生規劃。'}
           </p>
         </section>
@@ -3919,14 +3957,9 @@ function OptimizerResultPanel({
 
         <div className="optimizer-delivery-toolbar">
           <span>
-            勾選個別顧客或配方標題，代表對應顧客已實際收到果汁；可依實際送達順序勾選，不受規劃趟次限制。勾選會更新「今日已供應」，但不會假裝尚未發生的前置趟次、裝瓶或杯具操作已完成；之後若要套用庫存變更，請依目前狀態重新規劃。
+            勾選個別顧客或配方標題，代表對應顧客已實際收到果汁；可依實際送達順序勾選，不受規劃趟次限制。勾選會更新「今日已供應」，但不會假裝尚未發生的前置趟次、裝瓶或杯具操作已完成。若只需要調整接下來的販售行程，可使用下方「剩餘販售重排」；若要重算製作或庫存，請先確認目前狀態後重新產生完整規劃。
             取消勾選只修正「今日已供應」紀錄，不會回復或修改任何庫存、杯具、果汁罐或製作狀態。
           </span>
-          {transactionDraftInvalidatedByPartialDelivery && (
-            <button type="button" onClick={onReplan}>
-              依目前狀態重新規劃剩餘顧客
-            </button>
-          )}
         </div>
 
         {deliveryUiState.status === 'error' && (
@@ -4030,6 +4063,79 @@ function OptimizerResultPanel({
         <small className="optimizer-boundary-note">
           兩種 policy 都使用實際持有杯數與逐杯 clean → used stack transition 驗證可行性；回工作間清洗會計入杯數與用水，掉落只代表 NPC 回傳時背包無空位。區域層只比較已確認的 Region edge footprint；不推導村內顧客順序、住處導航或到達時間。
         </small>
+      </section>
+
+      <section className="optimizer-result-section">
+        <div className="section-title">
+          <strong>剩餘販售重排</strong>
+          <span>
+            已送 {remainingSalesTripPlan.suppliedCustomerCount} /{' '}
+            {remainingSalesTripPlan.totalCustomerCount} 人 · 尚待{' '}
+            {remainingSalesTripPlan.remainingCustomerCount} 人
+          </span>
+        </div>
+
+        <p className="optimizer-boundary-note">
+          只沿用這份完整規劃已固定的顧客 → 配方分配，排除「今日已供應」後重新安排 Region／趟次；不重新選配方，也不重算製作、庫存、果汁罐或杯具。
+        </p>
+
+        {remainingSalesTripPlan.recipes.length > 0 && (
+          <div
+            className="optimizer-sales-region-demand"
+            aria-label="剩餘販售需求"
+          >
+            {remainingSalesTripPlan.recipes.map((recipe) => (
+              <span key={'remaining-recipe-' + recipe.recipeId}>
+                <strong>
+                  {formatRecipeDisplayName(recipe.recipeName)}
+                </strong>
+                {recipe.servings} 杯
+              </span>
+            ))}
+          </div>
+        )}
+
+        {remainingSalesTripPlan.remainingCustomerCount === 0 ? (
+          <p className="optimizer-result-note">
+            這份規劃中的顧客都已記錄為今日已供應。
+          </p>
+        ) : remainingSalesTripPlan.suppliedCustomerCount === 0 ? (
+          <p className="optimizer-boundary-note">
+            尚未有已送顧客；目前直接依上方完整販售排程執行即可。
+          </p>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={() =>
+                setShowRemainingSalesPlan((current) => !current)
+              }
+            >
+              {showRemainingSalesPlan
+                ? '收起剩餘販售行程'
+                : '依未送顧客重排行程'}
+            </button>
+            {showRemainingSalesPlan && (
+              <>
+                <small className="optimizer-boundary-note">
+                  沿用完整規劃的單趟服務規模：最多{' '}
+                  {remainingSalesTripPlan.maxCustomerServicesPerTrip} 人。這只是剩餘行程的抽象分組上限，不代表目前實體果汁罐或杯具仍能承載相同數量。
+                </small>
+                <RemainingSalesTripPlanBlock
+                  plan={remainingSalesTripPlan}
+                  deliveryControls={{
+                    plan: deliveryExecutionPlan,
+                    cursor: deliveryCursor,
+                    suppliedCustomerIds,
+                    disabled: deliveryUiState.status === 'stale',
+                    onChangeCustomer: onCommitDelivery,
+                    onChangeGroup: onCommitDeliveryGroup,
+                  }}
+                />
+              </>
+            )}
+          </>
+        )}
       </section>
 
       {result.unresolvedCustomers.length > 0 && (
@@ -4504,6 +4610,153 @@ export function SalesTripPlanBlock({
                 )}
               </div>
             </details>
+          </article>
+        )
+      })}
+    </div>
+  )
+}
+
+export function RemainingSalesTripPlanBlock({
+  plan,
+  deliveryControls,
+}: {
+  plan: RemainingSalesTripPlan
+  deliveryControls: SalesTripDeliveryControls
+}) {
+  const recipeNameById = new Map(
+    plan.recipes.map((recipe) => [
+      recipe.recipeId,
+      recipe.recipeName,
+    ]),
+  )
+
+  return (
+    <div className="optimizer-batch-list optimizer-sales-plan optimizer-remaining-sales-plan">
+      {plan.regionPlan.trips.map((trip) => {
+        const customerIds = trip.services.flatMap((service) =>
+          service.customerAssignments.map(
+            (assignment) => assignment.customerId,
+          ),
+        )
+
+        return (
+          <article
+            className="optimizer-batch-card optimizer-sales-trip-card"
+            key={'remaining-trip-' + trip.tripNumber}
+          >
+            <header className="optimizer-sales-trip-header">
+              <div>
+                <DeliveryTripGroupCheckbox
+                  tripNumber={trip.tripNumber}
+                  customerIds={customerIds}
+                  plan={deliveryControls.plan}
+                  cursor={deliveryControls.cursor}
+                  suppliedCustomerIds={
+                    deliveryControls.suppliedCustomerIds
+                  }
+                  disabled={deliveryControls.disabled}
+                  onChange={deliveryControls.onChangeGroup}
+                />
+                <span>{customerIds.length} 人</span>
+              </div>
+
+              <div
+                className="optimizer-sales-region-chips"
+                aria-label={'剩餘第 ' + trip.tripNumber + ' 趟地區'}
+              >
+                {trip.primaryRegionIds.map((regionId) => (
+                  <span
+                    className="optimizer-sales-region-chip primary"
+                    key={'remaining-primary-' + regionId}
+                  >
+                    主要 · {regionDisplayName(regionId)}
+                  </span>
+                ))}
+                {trip.sideRegionIds.map((regionId) => (
+                  <span
+                    className="optimizer-sales-region-chip side"
+                    key={'remaining-side-' + regionId}
+                  >
+                    順帶 · {regionDisplayName(regionId)}
+                  </span>
+                ))}
+                {trip.transitRegionIds.map((regionId) => (
+                  <span
+                    className="optimizer-sales-region-chip transit"
+                    key={'remaining-transit-' + regionId}
+                  >
+                    途經 · {regionDisplayName(regionId)}
+                  </span>
+                ))}
+              </div>
+            </header>
+
+            <section className="optimizer-sales-trip-section">
+              <h4>販售</h4>
+              <div className="optimizer-sales-jar-list">
+                {trip.services.map((service) => (
+                  <article
+                    className="optimizer-sales-jar-manifest"
+                    key={
+                      'remaining-service-' +
+                      trip.tripNumber +
+                      '-' +
+                      service.regionId
+                    }
+                  >
+                    <header>
+                      <div>
+                        <strong>
+                          {service.role === 'primary'
+                            ? '主要'
+                            : '順帶'}{' '}
+                          · {regionDisplayName(service.regionId)}
+                        </strong>
+                        <span>
+                          {service.customerAssignments.length} 人
+                        </span>
+                      </div>
+                    </header>
+
+                    <div className="optimizer-delivery-customer-list">
+                      {service.customerAssignments.map(
+                        (assignment) => (
+                          <div
+                            className="optimizer-remaining-sales-customer"
+                            key={
+                              'remaining-customer-' +
+                              assignment.customerId
+                            }
+                          >
+                            <DeliveryCustomerCheckbox
+                              customerId={assignment.customerId}
+                              plan={deliveryControls.plan}
+                              cursor={deliveryControls.cursor}
+                              suppliedCustomerIds={
+                                deliveryControls.suppliedCustomerIds
+                              }
+                              disabled={deliveryControls.disabled}
+                              showPlanningDetail={false}
+                              onChange={
+                                deliveryControls.onChangeCustomer
+                              }
+                            />
+                            <small>
+                              {formatRecipeDisplayName(
+                                recipeNameById.get(
+                                  assignment.recipeId,
+                                ) ?? assignment.recipeId,
+                              )}
+                            </small>
+                          </div>
+                        ),
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
           </article>
         )
       })}
