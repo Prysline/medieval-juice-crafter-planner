@@ -186,7 +186,58 @@ describe('progressive recipe search', () => {
   })
 
   it('drops repeated Blender full matches when an eligible unique full match exists', () => {
-    const pool = buildRecipeCandidatePool('ibex-statue-unlocked')
+    const repeated = fixtureCandidate(
+      'repeat-blend-55',
+      ['黃瓜', '薄荷', '黃瓜', '香蕉'],
+      'computed',
+      [
+        { name: '補充精力', value: 4 },
+        { name: '輔助瘦身', value: 4 },
+        { name: '紓解壓力', value: 4 },
+      ],
+    )
+    const unique = fixtureCandidate(
+      'unique-blend-58',
+      ['黃瓜', '薄荷', '香蕉', '肉桂'],
+      'computed',
+      [
+        { name: '補充精力', value: 4 },
+        { name: '輔助瘦身', value: 4 },
+        { name: '紓解壓力', value: 4 },
+      ],
+    )
+    const pool: RecipeCandidatePool = {
+      entries: [repeated, unique].map((candidate) => ({
+        id: candidate.id,
+        ingredientIds: candidate.ingredients,
+        candidate,
+        sources: ['computed'],
+        savedRecipeIds: [],
+        availableAtCurrentProgress: true,
+        inGeneratedSearchScope: true,
+      })),
+      generatedLayers: [
+        {
+          phase: 'blend',
+          seasoningDepth: 1,
+          segmentCount: 3,
+          ingredientCount: 4,
+          candidateIds: [repeated.id],
+          totalSequenceCount: 1,
+          truncated: false,
+        },
+        {
+          phase: 'blend',
+          seasoningDepth: 2,
+          segmentCount: 2,
+          ingredientCount: 4,
+          candidateIds: [unique.id],
+          totalSequenceCount: 1,
+          truncated: false,
+        },
+      ],
+      rejectedSavedRecipes: [],
+    }
     const targets = [
       customer([
         { kind: 'ingredient', value: '黃瓜' },
@@ -199,29 +250,31 @@ describe('progressive recipe search', () => {
     ]
 
     for (const target of targets) {
-      const result = searchRecipeCandidatesForCustomer(
-        pool,
-        'ibex-statue-unlocked',
-        target,
-        {
-          candidatePolicy: 'allow-unambiguous-computed',
-          mode: 'bounded-exhaustive',
-        },
-      )
-      const fullMatches = matchingRecipeCandidatesForCustomer(
-        [...result.candidates],
-        target,
-      )
-      const sequences = fullMatches.map((candidate) =>
-        candidate.ingredients.join(' → '),
-      )
+      for (const mode of [
+        'first-feasible',
+        'bounded-exhaustive',
+      ] as const) {
+        const result = searchRecipeCandidatesForCustomer(
+          pool,
+          'ibex-statue-unlocked',
+          target,
+          {
+            candidatePolicy: 'allow-unambiguous-computed',
+            mode,
+          },
+        )
+        const fullMatches = matchingRecipeCandidatesForCustomer(
+          [...result.candidates],
+          target,
+        )
+        const sequences = fullMatches.map((candidate) =>
+          candidate.ingredients.join(' → '),
+        )
 
-      expect(sequences).toContain(
-        '黃瓜 → 薄荷 → 香蕉 → 肉桂',
-      )
-      expect(sequences).not.toContain(
-        '黃瓜 → 薄荷 → 黃瓜 → 香蕉',
-      )
+        expect(sequences).toEqual([
+          '黃瓜 → 薄荷 → 香蕉 → 肉桂',
+        ])
+      }
     }
   })
 
