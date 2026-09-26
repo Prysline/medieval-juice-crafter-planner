@@ -2352,8 +2352,10 @@ export function SeasoningStepStageUsageNote({
   stillNeededUnits,
 }: {
   quantity: number
-  stillNeededUnits: number
+  stillNeededUnits?: number
 }) {
+  if (stillNeededUnits === undefined) return null
+
   const normalizedStillNeeded = Math.max(
     0,
     Math.min(quantity, stillNeededUnits),
@@ -3608,17 +3610,19 @@ function OptimizerResultPanel({
                           stepKind={step.kind}
                           readyForFinalizingUnits={readyForFinalizingUnits}
                         />
-                        {step.kind === 'seasoning' && (
-                          <SeasoningStepStageUsageNote
-                            quantity={step.quantity}
-                            stillNeededUnits={
-                              productionLogistics.productionPlan
-                                .seasoningStageReuseUnitsByStepKey?.[
-                                  step.key
-                                ] ?? 0
-                            }
-                          />
-                        )}
+                        {step.kind === 'seasoning' &&
+                          productionLogistics.productionPlan
+                            .seasoningStageReuseUnitsByStepKey && (
+                            <SeasoningStepStageUsageNote
+                              quantity={step.quantity}
+                              stillNeededUnits={
+                                productionLogistics.productionPlan
+                                  .seasoningStageReuseUnitsByStepKey[
+                                    step.key
+                                  ] ?? 0
+                              }
+                            />
+                          )}
                         <div className="optimizer-operation-batches">
                           {optimizerOperationQuantities(step.quantity).map(
                             (quantity, index) => {
