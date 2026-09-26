@@ -63,9 +63,9 @@ export interface ProductionPlan {
    * Newly produced juice units from each step that are already recipe-complete
    * and go directly to finalizing. Existing intermediate stock is excluded.
    */
-  readyForFinalizingUnitsByStepKey: Record<string, number>
+  readyForFinalizingUnitsByStepKey?: Record<string, number>
   /** Raw seasoning materials required by the executable production plan. */
-  seasoningIngredientUnits: Record<string, number>
+  seasoningIngredientUnits?: Record<string, number>
 }
 
 export interface IntermediateJuiceStockUsage {
