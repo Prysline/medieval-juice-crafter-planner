@@ -52,6 +52,9 @@ describe('production plan', () => {
       finalizing: 2,
       blending: 0,
     })
+    expect(result.seasoningStageReuseUnitsByStepKey).toMatchObject({
+      'season:lemon>sugar': 2,
+    })
   })
 
   it('counts repeated seasoning as separate operation layers and packs each layer by five', () => {
@@ -622,6 +625,65 @@ describe('production plan stock offset', () => {
     )
 
     expect(result.seasoningBaseJuiceUnits).toEqual({})
+  })
+
+
+  it('tracks seasoning output that is still consumed by the seasoning stage', () => {
+    const result = buildStockOffsetProductionPlan([
+      {
+        recipeId: 'ab',
+        recipeName: 'AB',
+        ingredientIds: ['lemon', 'sugar'],
+        juiceUnits: 1,
+        assignedServings: 2,
+      },
+      {
+        recipeId: 'abc',
+        recipeName: 'ABC',
+        ingredientIds: ['lemon', 'sugar', 'mint'],
+        juiceUnits: 1,
+        assignedServings: 2,
+      },
+    ])
+
+    expect(
+      result.steps.find((step) => step.key === 'season:lemon>sugar'),
+    ).toMatchObject({ quantity: 2 })
+    expect(result.seasoningStageReuseUnitsByStepKey).toMatchObject({
+      'season:lemon>sugar': 1,
+    })
+  })
+
+  it('does not mark newly produced seasoning output as reused when downstream seasoning is supplied by stock', () => {
+    const seasonedIdentity = juiceStateIdentity(['lemon', 'sugar'])
+    const result = buildStockOffsetProductionPlan(
+      [
+        {
+          recipeId: 'abc',
+          recipeName: 'ABC',
+          ingredientIds: ['lemon', 'sugar', 'mint'],
+          juiceUnits: 1,
+          assignedServings: 2,
+        },
+        {
+          recipeId: 'ab',
+          recipeName: 'AB',
+          ingredientIds: ['lemon', 'sugar'],
+          juiceUnits: 1,
+          assignedServings: 2,
+        },
+      ],
+      { [seasonedIdentity]: 1 },
+    )
+
+    expect(
+      result.steps.find((step) => step.key === 'season:lemon>sugar'),
+    ).toMatchObject({ quantity: 1 })
+    expect(
+      result.seasoningStageReuseUnitsByStepKey?.[
+        'season:lemon>sugar'
+      ] ?? 0,
+    ).toBe(0)
   })
 
 })

@@ -2347,6 +2347,35 @@ export function ProductionStepFinalJuiceNote({
   )
 }
 
+export function SeasoningStepStageUsageNote({
+  quantity,
+  stillNeededUnits,
+}: {
+  quantity: number
+  stillNeededUnits?: number
+}) {
+  if (stillNeededUnits === undefined) return null
+
+  const normalizedStillNeeded = Math.max(
+    0,
+    Math.min(quantity, stillNeededUnits),
+  )
+  const canRackUnits = Math.max(0, quantity - normalizedStillNeeded)
+
+  if (quantity <= 0) return null
+
+  return (
+    <p className="optimizer-seasoning-stage-usage">
+      {normalizedStillNeeded > 0 && (
+        <span>本階段還會用到 {normalizedStillNeeded} 份</span>
+      )}
+      {canRackUnits > 0 && (
+        <span>本階段不再使用 {canRackUnits} 份，可先放架上</span>
+      )}
+    </p>
+  )
+}
+
 export function SeasoningStageMaterialSummary({
   ingredientUnits,
   baseJuiceUnits,
@@ -3581,6 +3610,19 @@ function OptimizerResultPanel({
                           stepKind={step.kind}
                           readyForFinalizingUnits={readyForFinalizingUnits}
                         />
+                        {step.kind === 'seasoning' &&
+                          productionLogistics.productionPlan
+                            .seasoningStageReuseUnitsByStepKey && (
+                            <SeasoningStepStageUsageNote
+                              quantity={step.quantity}
+                              stillNeededUnits={
+                                productionLogistics.productionPlan
+                                  .seasoningStageReuseUnitsByStepKey[
+                                    step.key
+                                  ] ?? 0
+                              }
+                            />
+                          )}
                         <div className="optimizer-operation-batches">
                           {optimizerOperationQuantities(step.quantity).map(
                             (quantity, index) => {
@@ -3618,7 +3660,7 @@ function OptimizerResultPanel({
         )}
 
         <small className="optimizer-boundary-note">
-          ▸ 表示配方內部原料順序；→ 只表示實際加工或狀態轉換。此區顯示庫存抵扣後真正需要執行的製作量；每個膠囊代表一個機器 slot 內的原料、果汁、水或輸出。勾選狀態綁定目前 net production plan；重新產生相同規劃可恢復，規劃內容不同時不會套用舊進度。
+          ▸ 表示配方內部原料順序；→ 只表示實際加工或狀態轉換。此區顯示庫存抵扣後真正需要執行的製作量；每個膠囊代表一個機器 slot 內的原料、果汁、水或輸出。「可先放架上」只表示調味器階段不再使用，後續果汁調和器或果汁成品台仍可能需要。勾選狀態綁定目前 net production plan；重新產生相同規劃可恢復，規劃內容不同時不會套用舊進度。
         </small>
 
         <div className="optimizer-logistics-summary">
