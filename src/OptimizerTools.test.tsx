@@ -1103,7 +1103,7 @@ describe('sales trip terminal leftover UI', () => {
     expect(html).toContain('主要服務：東港村')
     expect(html).toContain('主要服務：羱羊雕像')
     expect(html).toContain('只經過（不服務）：靜謐噴泉')
-    expect(html).toContain('Region edge footprint')
+    expect(html).toContain('跨區路線邊')
     expect(html).toContain('本趟出發前裝罐')
     expect(html).toContain('沿用罐內成品')
   })
