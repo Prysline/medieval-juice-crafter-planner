@@ -185,6 +185,76 @@ describe('progressive recipe search', () => {
     ).toEqual([deeper.id])
   })
 
+  it('drops repeated Blender full matches when an eligible unique full match exists', () => {
+    const pool = buildRecipeCandidatePool('ibex-statue-unlocked')
+    const targets = [
+      customer([
+        { kind: 'ingredient', value: '黃瓜' },
+        { kind: 'effect', value: '補充精力' },
+      ]),
+      customer([
+        { kind: 'effect', value: '輔助瘦身' },
+        { kind: 'effect', value: '紓解壓力' },
+      ]),
+    ]
+
+    for (const target of targets) {
+      const result = searchRecipeCandidatesForCustomer(
+        pool,
+        'ibex-statue-unlocked',
+        target,
+        {
+          candidatePolicy: 'allow-unambiguous-computed',
+          mode: 'bounded-exhaustive',
+        },
+      )
+      const fullMatches = matchingRecipeCandidatesForCustomer(
+        [...result.candidates],
+        target,
+      )
+      const sequences = fullMatches.map((candidate) =>
+        candidate.ingredients.join(' → '),
+      )
+
+      expect(sequences).toContain(
+        '黃瓜 → 薄荷 → 香蕉 → 肉桂',
+      )
+      expect(sequences).not.toContain(
+        '黃瓜 → 薄荷 → 黃瓜 → 香蕉',
+      )
+    }
+  })
+
+  it('keeps repeated full matches as fallback when no unique full match exists', () => {
+    const repeated = fixtureCandidate(
+      'repeat-only',
+      ['檸檬', '薄荷', '薄荷'],
+      'computed',
+      [{ name: '甜味', value: 5 }],
+    )
+    const pool = syntheticPool([
+      { seasoningDepth: 2, candidate: repeated },
+    ])
+    const target = customer([{ kind: 'effect', value: '甜味' }])
+
+    const result = searchRecipeCandidatesForCustomer(
+      pool,
+      'seasoner-unlocked',
+      target,
+      {
+        candidatePolicy: 'allow-unambiguous-computed',
+        mode: 'bounded-exhaustive',
+      },
+    )
+
+    expect(
+      matchingRecipeCandidatesForCustomer(
+        [...result.candidates],
+        target,
+      ).map((candidate) => candidate.id),
+    ).toEqual(['repeat-only'])
+  })
+
   it('does not turn repeated seasoning into normal bounded enumeration after a unique match', () => {
     const pool = buildRecipeCandidatePool('seasoner-unlocked')
     const result = searchRecipeCandidatesForCustomer(
