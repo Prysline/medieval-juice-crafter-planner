@@ -110,6 +110,16 @@ export interface CupInventoryInput {
   usedCups: number
 }
 
+export interface MultiTripReplenishmentOptions {
+  /**
+   * Optional downstream grouping preference. Smaller numbers are served first
+   * when the currently available physical jar heads allow it. The physical
+   * scheduler may still split or reorder groups when jar / cup feasibility
+   * requires that; this never changes recipe assignment.
+   */
+  customerTripPreferenceById?: Readonly<Record<string, number>>
+}
+
 export interface MultiTripSalesTrip {
   tripNumber: number
   juiceJars: MultiTripJuiceJarLoad[]
@@ -1141,12 +1151,50 @@ type TripCandidateOrderMode =
   | 'baseline'
   | 'terminal-leftovers-last'
 
+function customerTripPreference(
+  load: MultiTripJuiceJarLoad,
+  preferenceByCustomerId?: Readonly<Record<string, number>>,
+): number {
+  const customerId = load.customerIds[0]
+  if (!customerId || !preferenceByCustomerId) return 0
+  const preferred = preferenceByCustomerId[customerId]
+  return Number.isFinite(preferred)
+    ? Math.max(0, Math.floor(preferred))
+    : Number.MAX_SAFE_INTEGER
+}
+
+function preferredCustomerPrefixServings(
+  load: MultiTripJuiceJarLoad,
+  preferenceByCustomerId?: Readonly<Record<string, number>>,
+): number {
+  if (!preferenceByCustomerId || load.customerIds.length === 0) {
+    return load.servings
+  }
+
+  const preferred = customerTripPreference(
+    load,
+    preferenceByCustomerId,
+  )
+  let count = 0
+  for (const customerId of load.customerIds) {
+    const value = preferenceByCustomerId[customerId]
+    const normalized = Number.isFinite(value)
+      ? Math.max(0, Math.floor(value))
+      : Number.MAX_SAFE_INTEGER
+    if (normalized !== preferred) break
+    count += 1
+  }
+
+  return Math.max(1, Math.min(load.servings, count))
+}
+
 function buildTrips(
   queues: JarQueue[],
   policy: UsedCupTripPolicy,
   carryPolicy: MultiTripJarCarryPolicy,
   initialCupState: CupState,
   orderMode: TripCandidateOrderMode = 'baseline',
+  customerTripPreferenceById?: Readonly<Record<string, number>>,
 ): {
   trips: MutableTrip[]
   finalCupState: CupState
@@ -1221,6 +1269,15 @@ function buildTrips(
         queue.loads[0] ? [queue.loads[0]] : [],
       )
       .sort((a, b) => {
+        const regionTripPreference =
+          customerTripPreference(
+            a,
+            customerTripPreferenceById,
+          ) -
+          customerTripPreference(
+            b,
+            customerTripPreferenceById,
+          )
         const terminalTimingPreference =
           orderMode === 'terminal-leftovers-last'
             ? Number(a.retainedLeftoverServings > 0) -
@@ -1228,6 +1285,7 @@ function buildTrips(
             : 0
 
         return (
+          regionTripPreference ||
           terminalTimingPreference ||
           b.servings - a.servings ||
           a.recipeName.localeCompare(
@@ -1244,9 +1302,21 @@ function buildTrips(
       totalServings: 0,
     }
     const selectedServingsByJarId = new Map<string, number>()
+    let selectedTripPreference: number | null = null
 
     for (const jar of candidates) {
       if (trip.juiceJars.length >= maxConcurrentJars) continue
+
+      const jarTripPreference = customerTripPreference(
+        jar,
+        customerTripPreferenceById,
+      )
+      if (
+        selectedTripPreference !== null &&
+        jarTripPreference !== selectedTripPreference
+      ) {
+        continue
+      }
 
       const proposedJarSlots = jarSlotsFor(
         trip.juiceJars.length + 1,
@@ -1254,29 +1324,34 @@ function buildTrips(
       if (proposedJarSlots > BACKPACK_SLOT_CAPACITY) continue
 
       // A production fill / prepared jar content identity stays atomic, but
-      // sales consumption may span trips. Preserve a complete load whenever
-      // it can fit on its own later trip; split only when the load itself is
-      // impossible under the current physical cup lifecycle.
+      // sales consumption may span trips. Region grouping is only a sales
+      // preference: when one prepared load spans preferred service groups,
+      // sell the current group prefix and carry the same physical contents
+      // forward with continue-loaded rather than inventing another fill.
+      const preferredServings = preferredCustomerPrefixServings(
+        jar,
+        customerTripPreferenceById,
+      )
       const fullTransition = simulateCupTrip(
         cupState,
-        trip.totalServings + jar.servings,
+        trip.totalServings + preferredServings,
         policy,
         proposedJarSlots,
       )
 
-      let servingsForTrip = jar.servings
+      let servingsForTrip = preferredServings
       if (!fullTransition) {
-        const fullLoadFitsAlone = simulateCupTrip(
+        const preferredSegmentFitsAlone = simulateCupTrip(
           cupState,
-          jar.servings,
+          preferredServings,
           policy,
           jarSlotsFor(1),
         )
-        if (fullLoadFitsAlone) continue
+        if (preferredSegmentFitsAlone) continue
 
         servingsForTrip = 0
         for (
-          let partialServings = jar.servings - 1;
+          let partialServings = preferredServings - 1;
           partialServings > 0;
           partialServings -= 1
         ) {
@@ -1307,6 +1382,7 @@ function buildTrips(
         jar.physicalJarId,
         servingsForTrip,
       )
+      selectedTripPreference ??= jarTripPreference
     }
 
     if (trip.juiceJars.length === 0) {
@@ -1630,6 +1706,7 @@ function selectTerminalLeftoverTimingCandidate(
   carryPolicy: MultiTripJarCarryPolicy,
   initialCupState: CupState,
   discardedJuiceServings: number,
+  customerTripPreferenceById?: Readonly<Record<string, number>>,
 ): ReturnType<typeof buildTrips> {
   try {
     const timingCandidate = buildTrips(
@@ -1638,6 +1715,7 @@ function selectTerminalLeftoverTimingCandidate(
       carryPolicy,
       initialCupState,
       'terminal-leftovers-last',
+      customerTripPreferenceById,
     )
     const baselineMetrics = terminalLeftoverScheduleMetrics(
       baselineTripBuild.trips,
@@ -2005,6 +2083,7 @@ export function buildMultiTripReplenishmentPlan(
   shortfall: PreparationShortfall,
   carryPolicy?: MultiTripJarCarryPolicy,
   allowDiscardRetainedJuice = false,
+  options: MultiTripReplenishmentOptions = {},
 ): MultiTripReplenishmentPlan {
   const carriedJuiceJars =
     normalizeCarriedJuiceJars(availableJuiceJarInventory)
@@ -2075,6 +2154,8 @@ export function buildMultiTripReplenishmentPlan(
     policy,
     normalizedCarryPolicy,
     initialCupState,
+    'baseline',
+    options.customerTripPreferenceById,
   )
   const baselineSelectedTripBuild =
     selectTerminalLeftoverTimingCandidate(
@@ -2084,6 +2165,7 @@ export function buildMultiTripReplenishmentPlan(
       normalizedCarryPolicy,
       initialCupState,
       discardedJuiceServings,
+      options.customerTripPreferenceById,
     )
   let selectedTripBuild = baselineSelectedTripBuild
 
@@ -2097,6 +2179,8 @@ export function buildMultiTripReplenishmentPlan(
         policy,
         normalizedCarryPolicy,
         initialCupState,
+        'baseline',
+        options.customerTripPreferenceById,
       )
       const prefillSelectedTripBuild =
         selectTerminalLeftoverTimingCandidate(
@@ -2106,6 +2190,7 @@ export function buildMultiTripReplenishmentPlan(
           normalizedCarryPolicy,
           initialCupState,
           discardedJuiceServings,
+          options.customerTripPreferenceById,
         )
 
       if (

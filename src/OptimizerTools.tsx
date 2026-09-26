@@ -6,6 +6,12 @@ import { recipes } from './data/recipes'
 import { recipeIngredientCapabilities } from './data/recipeIngredientCapabilities'
 import { ingredientIsAvailable } from './domain/availability'
 import {
+  availableProductionWorkshopRegions,
+  productionCustomerRegionById,
+  productionRegionRoutingInput,
+} from './domain/regionProductionAdapter'
+import type { RegionPhysicalSalesPlan } from './domain/regionPhysicalSalesPlanner'
+import {
   optimizerCustomerIds,
   optimizerCustomerLabel,
   optimizerMoney,
@@ -105,7 +111,9 @@ interface OptimizerToolsProps {
 
 interface SalesTripPlans {
   selected: MultiTripReplenishmentPlan
+  selectedRegion: RegionPhysicalSalesPlan
   alternate: MultiTripReplenishmentPlan | null
+  alternateRegion: RegionPhysicalSalesPlan | null
   alternatePolicy: UsedCupTripPolicy
   alternateError: string | null
 }
@@ -819,6 +827,8 @@ function OptimizerTools({
     readPlannerSettings(window.localStorage, inventoryState),
   )
   const [maxJarTypeSwitches, setMaxJarTypeSwitches] = useState('')
+  const [activeWorkshopRegionId, setActiveWorkshopRegionId] =
+    useState<VillageId>('east-harbor')
   const [runState, setRunState] = useState<OptimizerRunState>({
     status: 'idle',
   })
@@ -834,6 +844,11 @@ function OptimizerTools({
   const priorities = useMemo(
     () => uniquePriorities(primaryCriterion, secondaryOne, secondaryTwo),
     [primaryCriterion, secondaryOne, secondaryTwo],
+  )
+
+  const availableWorkshopRegions = useMemo(
+    () => availableProductionWorkshopRegions(currentProgress),
+    [currentProgress],
   )
 
   const availableInventoryIngredients = useMemo(
@@ -1041,6 +1056,21 @@ function OptimizerTools({
   }, [customerTargetQuery, targetableCustomers])
 
   useEffect(() => {
+    if (
+      availableWorkshopRegions.some(
+        (workshop) =>
+          workshop.regionId === activeWorkshopRegionId,
+      )
+    ) {
+      return
+    }
+    const fallback = availableWorkshopRegions[0]
+    if (fallback) {
+      setActiveWorkshopRegionId(fallback.regionId)
+    }
+  }, [availableWorkshopRegions, activeWorkshopRegionId])
+
+  useEffect(() => {
     optimizerAbortControllerRef.current?.abort()
     optimizerAbortControllerRef.current = null
     setRunState({ status: 'idle' })
@@ -1057,6 +1087,7 @@ function OptimizerTools({
     priorities,
     plannerSettings,
     maxJarTypeSwitches,
+    activeWorkshopRegionId,
     recipeCandidatePool,
   ])
 
@@ -1210,13 +1241,13 @@ function OptimizerTools({
         { buildPreparationDemand },
         { buildPreparationShortfall },
         { buildProductionLogisticsPlan },
-        { buildMultiTripReplenishmentPlan },
+        { buildRegionPhysicalSalesPlan },
         { buildPlanApplicationTransactionDraft },
       ] = await Promise.all([
         import('./domain/preparationDemand'),
         import('./domain/preparationShortfall'),
         import('./domain/productionLogistics'),
-        import('./domain/multiTripReplenishment'),
+        import('./domain/regionPhysicalSalesPlanner'),
         import('./domain/planApplicationTransaction'),
       ])
       const parsedMaxSwitches =
@@ -1280,27 +1311,47 @@ function OptimizerTools({
         selectedPolicy === 'retain-and-wash'
           ? 'allow-drop-if-full'
           : 'retain-and-wash'
+      const regionRouting = productionRegionRoutingInput(
+        currentProgress,
+        activeWorkshopRegionId,
+      )
+      const customerRegionById =
+        productionCustomerRegionById(
+          preparationDemand.recipes.flatMap(
+            (recipe) => recipe.customerIds,
+          ),
+        )
 
       const buildCheckedSalesTripPlan = (
         policy: UsedCupTripPolicy,
-      ): MultiTripReplenishmentPlan => {
-        const plan = buildMultiTripReplenishmentPlan(
-          preparationDemand,
+      ): {
+        plan: MultiTripReplenishmentPlan
+        regionPlan: RegionPhysicalSalesPlan
+      } => {
+        const regionPlan = buildRegionPhysicalSalesPlan({
+          demand: preparationDemand,
+          shortfall: preparationShortfall,
           policy,
-          accessibleJuiceJars,
-          {
+          availableJuiceJarInventory:
+            accessibleJuiceJars,
+          cups: {
             cleanCups: inventoryState.cleanCups,
             usedCups: inventoryState.usedCups,
           },
-          preparationShortfall,
-          {
+          carryPolicy: {
             mode: plannerSettings.juiceJarCarryMode,
-            reservedSlots: plannerSettings.reservedJuiceJarSlots,
+            reservedSlots:
+              plannerSettings.reservedJuiceJarSlots,
             minimumCarriedSlots:
               capacitySummary.minimumCarriedJuiceJarSlots,
           },
-          plannerSettings.allowDiscardRetainedJuice,
-        )
+          allowDiscardRetainedJuice:
+            plannerSettings.allowDiscardRetainedJuice,
+          activeWorkshop: regionRouting.activeWorkshop,
+          topology: regionRouting.topology,
+          customerRegionById,
+        })
+        const plan = regionPlan.salesPlan
         // result.jarTypeSwitches is the optimizer's structural lower bound.
         // The physical planner is terminal-aware: prefilled recipes that must
         // remain as final leftovers can require revisiting a jar, so its exact
@@ -1321,11 +1372,15 @@ function OptimizerTools({
             `Terminal-aware physical schedule requires ${plan.jarTypeSwitches} jar switch(es), exceeding the configured maximum of ${parsedMaxSwitches}`,
           )
         }
-        return plan
+        return { plan, regionPlan }
       }
 
-      const selectedSalesTripPlan =
+      const selectedSalesTripBuild =
         buildCheckedSalesTripPlan(selectedPolicy)
+      const selectedSalesTripPlan =
+        selectedSalesTripBuild.plan
+      const selectedRegionSalesPlan =
+        selectedSalesTripBuild.regionPlan
       const productionLogistics = buildProductionLogisticsPlan(
         preparationShortfall,
         inventoryState,
@@ -1333,17 +1388,24 @@ function OptimizerTools({
         selectedSalesTripPlan.productionJarFills,
       )
       let alternateSalesTripPlan: MultiTripReplenishmentPlan | null = null
+      let alternateRegionSalesPlan: RegionPhysicalSalesPlan | null = null
       let alternateError: string | null = null
       try {
-        alternateSalesTripPlan =
+        const alternateSalesTripBuild =
           buildCheckedSalesTripPlan(alternatePolicy)
+        alternateSalesTripPlan =
+          alternateSalesTripBuild.plan
+        alternateRegionSalesPlan =
+          alternateSalesTripBuild.regionPlan
       } catch (error) {
         alternateError = presentPlanningError(error).message
       }
 
       const salesTripPlans: SalesTripPlans = {
         selected: selectedSalesTripPlan,
+        selectedRegion: selectedRegionSalesPlan,
         alternate: alternateSalesTripPlan,
+        alternateRegion: alternateRegionSalesPlan,
         alternatePolicy,
         alternateError,
       }
@@ -1684,6 +1746,41 @@ function OptimizerTools({
             </div>
           </section>
         )}
+
+        <section
+          className="optimizer-inventory-editor"
+          aria-label="販售工作間與區域路線"
+        >
+          <div className="section-title">
+            <strong>販售工作間與區域路線</strong>
+            <span>Region 粗粒度規劃；村內顧客順序仍由玩家安排</span>
+          </div>
+          <div className="optimizer-inventory-grid">
+            <label>
+              <span>本次出發／補給工作間</span>
+              <select
+                value={activeWorkshopRegionId}
+                onChange={(event) =>
+                  setActiveWorkshopRegionId(
+                    event.target.value as VillageId,
+                  )
+                }
+              >
+                {availableWorkshopRegions.map((workshop) => (
+                  <option
+                    key={workshop.id}
+                    value={workshop.regionId}
+                  >
+                    {workshop.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <p className="optimizer-inventory-empty">
+            只列目前主線已解鎖、且已進 production 的 Region 工作間；跨區只使用已確認的 Region adjacency，第一版每條已確認 edge 成本視為 1。西部城堡尚未進 production Region identity，因此不會從未啟用資料推入本次規劃。
+          </p>
+        </section>
 
         <section className="optimizer-inventory-editor">
           <div className="section-title">
@@ -3629,7 +3726,10 @@ function OptimizerResultPanel({
           <span>目前策略：{tripPolicyLabel(selectedSalesTripPlan)}</span>
         </div>
 
-        <SalesTripPlanBlock plan={selectedSalesTripPlan} />
+        <SalesTripPlanBlock
+          plan={selectedSalesTripPlan}
+          regionPlan={salesTripPlans.selectedRegion}
+        />
 
         <details className="optimizer-policy-comparison">
           <summary>
@@ -3638,8 +3738,11 @@ function OptimizerResultPanel({
               ? '（' + alternateSalesTripPlan.tripCount + ' 趟）'
               : '（目前不可行）'}
           </summary>
-          {alternateSalesTripPlan ? (
-            <SalesTripPlanBlock plan={alternateSalesTripPlan} />
+          {alternateSalesTripPlan && salesTripPlans.alternateRegion ? (
+            <SalesTripPlanBlock
+              plan={alternateSalesTripPlan}
+              regionPlan={salesTripPlans.alternateRegion}
+            />
           ) : (
             <p className="optimizer-policy-unavailable">
               {salesTripPlans.alternateError ??
@@ -3649,7 +3752,7 @@ function OptimizerResultPanel({
         </details>
 
         <small className="optimizer-boundary-note">
-          兩種 policy 都使用實際持有杯數與逐杯 clean → used stack transition 驗證可行性；回家清洗會計入杯數與用水，掉落只代表 NPC 回傳時背包無空位。這裡仍不推導跨村路線、顧客順序或到達時間。
+          兩種 policy 都使用實際持有杯數與逐杯 clean → used stack transition 驗證可行性；回工作間清洗會計入杯數與用水，掉落只代表 NPC 回傳時背包無空位。區域層只比較已確認的 Region edge footprint；不推導村內顧客順序、住處導航或到達時間。
         </small>
       </section>
 
@@ -3665,10 +3768,16 @@ function OptimizerResultPanel({
   )
 }
 
+function regionDisplayName(regionId: string): string {
+  return villageNames[regionId as VillageId] ?? regionId
+}
+
 export function SalesTripPlanBlock({
   plan,
+  regionPlan,
 }: {
   plan: MultiTripReplenishmentPlan
+  regionPlan?: RegionPhysicalSalesPlan
 }) {
   return (
     <div className="optimizer-batch-list">
@@ -3683,6 +3792,31 @@ export function SalesTripPlanBlock({
           販售排程使用 {plan.physicalJarsUsed} / {plan.carriedJuiceJarCount}{' '}
           個實體果汁罐；單趟最多使用 {plan.maxJuiceJarSlotsCarried} 個果汁罐格。
         </p>
+        {regionPlan && (
+          <>
+            <p>
+              出發／補給工作間：
+              {regionDisplayName(regionPlan.activeWorkshop.regionId)}
+              {' · '}區域路線成本 {regionPlan.routeCost}
+              {' · '}地區分散服務 {regionPlan.serviceFragmentation} 次
+            </p>
+            {regionPlan.requiredByRegion.map((required) => (
+              <p key={'region-demand-' + required.regionId}>
+                {regionDisplayName(required.regionId)}：需求{' '}
+                {required.totalServings} 杯 ·{' '}
+                {required.recipes
+                  .map(
+                    (recipe) =>
+                      formatRecipeDisplayName(recipe.recipeName) +
+                      ' ' +
+                      recipe.servings +
+                      ' 杯',
+                  )
+                  .join('、')}
+              </p>
+            ))}
+          </>
+        )}
         <p>
           本日可用實體罐：{' '}
           {plan.carriedJuiceJars
@@ -3742,7 +3876,15 @@ export function SalesTripPlanBlock({
         </small>
       </article>
 
-      {plan.trips.map((trip) => (
+      {plan.trips.map((trip) => {
+        const regionTrip = regionPlan?.trips.find(
+          (item) => item.tripNumber === trip.tripNumber,
+        )
+        const fillsBeforeTrip = plan.productionJarFills.filter(
+          (fill) => fill.beforeTripNumber === trip.tripNumber,
+        )
+
+        return (
         <article
           className="optimizer-batch-card"
           key={plan.policy + '-' + trip.tripNumber}
@@ -3754,6 +3896,68 @@ export function SalesTripPlanBlock({
               實際隨身 {trip.carriedPhysicalJarIds.length} 罐
             </span>
           </div>
+          {regionTrip && (
+            <>
+              <p>
+                主要服務：
+                {regionTrip.primaryRegionIds.length > 0
+                  ? regionTrip.primaryRegionIds
+                      .map(regionDisplayName)
+                      .join('、')
+                  : '無'}
+                {' · '}順帶服務：
+                {regionTrip.sideRegionIds.length > 0
+                  ? regionTrip.sideRegionIds
+                      .map(regionDisplayName)
+                      .join('、')
+                  : '無'}
+                {' · '}本趟 route cost {regionTrip.routeCost}
+              </p>
+              {regionTrip.transitRegionIds.length > 0 && (
+                <p>
+                  只經過（不服務）：
+                  {regionTrip.transitRegionIds
+                    .map(regionDisplayName)
+                    .join('、')}
+                </p>
+              )}
+              {regionTrip.routeFootprint.length > 0 && (
+                <p>
+                  跨區路線邊：
+                  {regionTrip.routeFootprint
+                    .map(
+                      (edge) =>
+                        regionDisplayName(edge.from) +
+                        ' ↔ ' +
+                        regionDisplayName(edge.to) +
+                        ' ×' +
+                        edge.traversalCount,
+                    )
+                    .join('、')}
+                </p>
+              )}
+            </>
+          )}
+          <p>
+            本趟出發前裝罐：
+            {fillsBeforeTrip.length > 0
+              ? fillsBeforeTrip
+                  .map(
+                    (fill) =>
+                      fill.physicalJarId +
+                      ' ' +
+                      transactionFillActionLabel(fill) +
+                      ' ' +
+                      formatRecipeDisplayName(fill.recipeName) +
+                      ' +' +
+                      fill.servings +
+                      ' 杯（裝後 ' +
+                      fill.servingsAfterFill +
+                      ' 杯）',
+                  )
+                  .join('、')
+              : '不需新增 production fill'}
+          </p>
           <p>
             隨身果汁罐：{trip.carriedPhysicalJarIds.join('、')}
             {' · '}果汁罐占用／預留 {trip.juiceJarSlotsCarried} 格
@@ -3768,7 +3972,7 @@ export function SalesTripPlanBlock({
             {trip.cupsWashedBeforeTrip > 0
               ? ' · 先清洗 ' + trip.cupsWashedBeforeTrip + ' 個'
               : ' · 不需先清洗'}
-            {' · '}回家後 clean {trip.cleanCupsAfterTrip} / used {trip.usedCupsAfterTrip}
+            {' · '}回工作間後 clean {trip.cleanCupsAfterTrip} / used {trip.usedCupsAfterTrip}
             {trip.droppedUsedCups > 0
               ? ' · 本趟掉落 ' + trip.droppedUsedCups + ' 個 used cup'
               : ''}
@@ -3797,7 +4001,8 @@ export function SalesTripPlanBlock({
             </div>
           ))}
         </article>
-      ))}
+        )
+      })}
     </div>
   )
 }

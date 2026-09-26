@@ -8,6 +8,7 @@ import {
 import type { OptimizationResult } from './domain/optimizer'
 import type { PreparationDemand } from './domain/preparationDemand'
 import { buildPreparationShortfall } from './domain/preparationShortfall'
+import { buildRegionPhysicalSalesPlan } from './domain/regionPhysicalSalesPlanner'
 import type {
   DeliveryExecutionCursor,
   DeliveryExecutionPlan,
@@ -999,6 +1000,112 @@ describe('sales trip terminal leftover UI', () => {
     expect(html).toContain('第 3 趟')
     expect(html).toContain('果汁罐 jar-2：B')
     expect(html).toContain('果汁罐 jar-3：C')
+  })
+  it('renders Region service roles, transit, physical continuation, and fill timing together', () => {
+    const salesDemand: PreparationDemand = {
+      ingredients: [],
+      productionWaterUnits: 2,
+      cleanCupUses: 4,
+      producedServings: 4,
+      assignedServings: 4,
+      leftoverServings: 0,
+      recipes: [
+        {
+          recipeId: 'a',
+          recipeName: 'A',
+          customerIds: ['east-a', 'ibex-a'],
+          ingredientIds: [],
+          productionUnits: 1,
+          producedServings: 2,
+          assignedServings: 2,
+          leftoverServings: 0,
+          ingredientUnitsPerJuiceUnit: [],
+        },
+        {
+          recipeId: 'b',
+          recipeName: 'B',
+          customerIds: ['east-b', 'ibex-b'],
+          ingredientIds: [],
+          productionUnits: 1,
+          producedServings: 2,
+          assignedServings: 2,
+          leftoverServings: 0,
+          ingredientUnitsPerJuiceUnit: [],
+        },
+      ],
+    }
+    const inventory: InventoryState = {
+      ingredientUnits: {},
+      intermediateJuiceUnits: {},
+      waterUnits: 0,
+      cleanCups: 2,
+      usedCups: 0,
+      juiceJars: [
+        { id: 'jar-1', recipeId: null, servings: 0 },
+        { id: 'jar-2', recipeId: null, servings: 0 },
+      ],
+      shelfCount: 0,
+      jarRackCount: 1,
+    }
+    const shortfall = buildPreparationShortfall(
+      salesDemand,
+      inventory,
+    )
+    const regionPlan = buildRegionPhysicalSalesPlan({
+      demand: salesDemand,
+      shortfall,
+      policy: 'retain-and-wash',
+      availableJuiceJarInventory: inventory.juiceJars,
+      cups: {
+        cleanCups: inventory.cleanCups,
+        usedCups: inventory.usedCups,
+      },
+      carryPolicy: {
+        mode: 'auto',
+        reservedSlots: 0,
+        minimumCarriedSlots: 0,
+      },
+      activeWorkshop: {
+        id: 'workshop:east-harbor',
+        regionId: 'east-harbor',
+      },
+      topology: {
+        edges: [
+          {
+            from: 'east-harbor',
+            to: 'tranquil-fountain',
+            cost: 1,
+          },
+          {
+            from: 'tranquil-fountain',
+            to: 'ibex-statue',
+            cost: 1,
+          },
+        ],
+      },
+      customerRegionById: {
+        'east-a': 'east-harbor',
+        'east-b': 'east-harbor',
+        'ibex-a': 'ibex-statue',
+        'ibex-b': 'ibex-statue',
+      },
+    })
+
+    const html = renderToStaticMarkup(
+      <SalesTripPlanBlock
+        plan={regionPlan.salesPlan}
+        regionPlan={regionPlan}
+      />,
+    )
+
+    expect(html).toContain('出發／補給工作間：東港村')
+    expect(html).toContain('羱羊雕像：需求 2 杯')
+    expect(html).toContain('主要服務：東港村')
+    expect(html).toContain('主要服務：羱羊雕像')
+    expect(html).toContain('只經過（不服務）：靜謐噴泉')
+    expect(html).toContain('跨區路線邊')
+    expect(html).toContain('本趟出發前裝罐')
+    expect(html).toContain('沿用罐內成品')
   })
 })
 

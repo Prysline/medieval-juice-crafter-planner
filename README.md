@@ -26,6 +26,7 @@
 - Core model correction 2B 已把 physical jar identity 接進多趟販售 schedule。Phase 2 capacity contract 也已完成：`mjc-inventory` 保存原料、水、clean / used cups、一般架子數、果汁罐架數與每個 physical jar；PR #39 / Phase 5B1 後批次規劃已有實際 Inventory editor，可逐罐設定 recipe identity / servings。`mjc-planner-settings` 現在保存果汁罐攜帶策略 `juiceJarCarryMode`、固定格數 `reservedJuiceJarSlots` 與 used-cup drop opt-in；舊的 `carriedJuiceJarIds`／count 只會遷移成固定格數，不再保留特定實體罐綁定。沒有果汁罐架時，所有持有的實體果汁罐都必須隨身；有果汁罐架後，規劃器可在各趟之間整罐上架／取出，固定模式只固定果汁罐占用格數，自動模式則依每趟需求計算攜帶數。
 - Inventory / packing D1～D4 與 Phase 4 cup lifecycle 已建立：`PreparationDemand` 消費 production-unit optimizer 結果，已有 stock offset、single-trip packing 與 physical-jar-aware multi-trip replenishment；販售排程現在會用玩家實際持有的 clean / used cups，逐杯追蹤 clean → used stack transition，不再固定預留 1 slot。PR #32 先把 optimizer `leftoverServings` 保留在同一實體罐；PR #37 再把 sales schedule 的 plan-local 罐號改成 persistent `mjc-inventory` jar ID，並攜帶該罐規劃前的 `recipeId / servings` metadata。剩餘成品仍不能跨罐倒果汁；果汁罐只能整罐移動，居家放置只使用果汁罐架。Correctness-2B / PR #72 允許玩家明確 opt-in 時倒掉達成可行性所需的既有內容；Debug-C / PR #86 再把同一 opt-in 擴充到**本次新製作後無法保留的最少殘餘量**。顧客已分配杯數永遠不丟；成品台仍先依合法偶數產量完整裝入實體罐，販售後才在記錄的趟次結束時倒掉殘餘。transaction preview 會分開標示「既有內容」與「本次新製作殘餘」。
 - PR #140～#142 補齊多趟販售的期末剩餘與同配方預補裝 correctness：規劃摘要的「剩餘杯」以實際 physical sales plan 的 `totalLeftoverServings` 為 authority；某罐在較早趟次完成最後販售後留下成品，即使後續趟次不再攜帶該罐，期末內容仍保留並顯示實體罐明細。排程會在不增加趟數、倒掉杯／果汁、必要洗杯用水或換罐次數，且不改變同一 physical jar load sequence 時，嘗試把 terminal leftover 的形成延後。另若同一罐已有同配方成品，且下一個同配方新製作 load 可在容量內先補入，規劃器會建立預補裝候選；候選不得增加販售趟數、丟杯、倒汁、必要洗杯用水或換罐次數，也不得改壞期末實體罐內容／剩餘時序。若主要 physical metrics 相同，會偏好在首次需要該罐前完成合法的同配方補裝，讓後續趟以 `continue-loaded` 延續，而不是延後產生不必要的 `refill-same-type` handoff。
+- Planner P1-C/P1-D / PR #157 把 P1-B 的 Region service plan 接到同一份 physical jar / cup / fill scheduler：optimizer 先固定 `recipeId → customerIds`，Region 層只在 downstream 決定服務分組偏好；physical scheduler 仍可依實體罐、杯具、fill、discard、wash 與 retained contents 拆趟。若 Region-aware 候選在實際 physical schedule 上沒有改善 `route cost → trip count → Region service fragmentation`，保留原 physical 排程，避免為區域分組製造無收益的 sales split。跨趟 partial sales 只把同一 persistent jar 轉成 `continue-loaded`，不新增 production fill、type switch 或 jar-to-jar transfer。production adapter 的 active workshop 由批次規劃明確選擇目前已解鎖的 production Region；目前 confirmed topology 只使用東港村 ↔ 靜謐噴泉 ↔ 羱羊雕像的等成本 Region edges，西部城堡未進 production identity 前不偷接 dormant data。販售 UI 會顯示各 Region 需求、每趟 primary / side / transit、跨區 edge footprint、實體罐／杯具與出發前裝填時機。
 - 特性同分時會先套用已確認的順序規則：**較晚加入原料所提供／最後貢獻的特性排序較高**；只有套用此規則後，cutoff 候選仍同分且最後貢獻位置相同時才保留 ambiguous，且 ambiguous computed candidate 不參與完全匹配推薦。
 - 舊版 `mjc-stage` / `mjc-satisfaction` localStorage 會保守遷移到新版進度資料。
 
@@ -97,7 +98,10 @@ src/
     planApplicationValidation.ts # transaction basis 與目前 canonical 狀態的純 stale / mismatch 比對
     purchaseSources.ts # 已知購買來源、最低價／同價保留 decision
     singleTripPacking.ts # 販售趟 finished-drink jars + clean cups 最小必要 slot / overflow
-    multiTripReplenishment.ts # 持久果汁罐 ID、初始內容、多趟販售、實際裝罐時序、leftover / discard 與杯具 policy；PR #96 initial-match preservation；PR #98 以 terminal-aware exact sequence plan 驅動多配方 physical jar queue
+    multiTripReplenishment.ts # 持久果汁罐 ID、初始內容、多趟販售、實際裝罐時序、leftover / discard 與杯具 policy；P1-C 可接 generic customer-trip preference，但 physical feasibility / fill lifecycle 仍由本模組決定
+    regionServicePlanner.ts # P1-B 純 Region route / service core；recipe assignment immutable，route cost → trip count → fragmentation
+    regionPhysicalSalesPlanner.ts # P1-C：Region service intent → physical scheduler preference → realized Region trip annotation / comparator
+    regionProductionAdapter.ts # P1-D：目前 production Region 工作間、confirmed Region topology、customer.villageId → Region adapter
     deliveryExecution.ts # Workflow-3A：physical sales plan → partial execution trace；Inventory I3 依既有 per-unit provenance 在實際 preparation 時消耗 planned intermediate stock，同一 prepared trip 不重複扣除
     scheduleRouteReadiness.ts # 作息觀察 normalization 與 route-data blockers
   storage/
@@ -229,7 +233,7 @@ D2 的 single-trip packing 仍只負責單趟 required / overflow 計算；**多
 
 ## Multi-trip replenishment boundary
 
-D4 只處理從家出發、賣完回家的**販售趟**。它不加入顧客 schedule、跨村時間或 route objective，也不重新修改 optimizer recipe assignment。
+D4 的 physical scheduler 仍只處理工作間 replenishment boundary 之間的**販售趟**，不加入顧客 schedule、住處級導航或到達時間，也不重新修改 optimizer recipe assignment。P1-C/P1-D 在它上層加入 Region-level route/service grouping：只使用已確認的 Region adjacency 與 active workshop，比較 realized physical trips 的跨區 edge footprint；村內顧客順序仍不在本層推導。
 
 used-cup handling 必須明確選 policy：
 
@@ -245,7 +249,7 @@ Core model correction 2B 已把 physical jar identity 接進 D4 schedule；Phase
 
 `jarTypeSwitches` 與 `tripCount` 現在都從**同一份可行 physical jar schedule** 取得：換裝數可從 schedule 逐罐重算，趟數就是 schedule 的 trip 數；optimizer UI 會再檢查 downstream schedule 的換裝數與 recipe-assignment solver 回報一致，若漂移則停止顯示結果。兩種 used-cup policy 仍各自建 schedule，因此趟數不同時會分開顯示，不合併成沒有 policy 語意的單一數字。
 
-trip grouping 仍是 deterministic capacity-first feasible planning；它目標是產生可解釋、符合 physical jar ownership / carried-jar / backpack / cup constraints 的共同排程。`jarRackCount × 5` 是獨立 staging capacity，不再作 D4 單趟固定上限；**目前仍不宣稱已做最少趟數的全域最佳化**。
+physical trip packing 仍是 deterministic feasible planning；它目標是產生可解釋、符合 physical jar ownership / carried-jar / backpack / cup constraints 的共同排程。`jarRackCount × 5` 是獨立 staging capacity，不再作單趟固定上限。P1-C 只用 P1-B Region intent 產生 downstream grouping preference，再以 realized physical schedule 的 `route cost → trip count → Region service fragmentation` 決定是否採用；**目前仍不宣稱已做 jar / cup / route 的大型 coupled state-space 全域最佳化**。
 
 
 ## Next planner corrections
@@ -313,7 +317,7 @@ Phase 4 已完成：
 48. **2026-09-25 追加實測配方**：新增 `橙子 → 橙子`（12，橙子 - 橙子（調製飲品））、`橙子 → 橙子 → 紅蘿蔔 → 肉桂`（48，免疫 摯友）、`紅蘿蔔 → 肉桂 → 橙子`（48，血糖平衡 衝擊）、`紅蘿蔔 → 肉桂 → 橙子 → 橙子`（48，免疫 純真）。兩個四原料序列雖原料 multiset 相同、售價與最終特性相同，但杯中圖示還原出的 ordered sequence 不同，因此分開保留 recipe identity；不由此直接推定所有配方都與順序無關。
 49. **羱羊雕像顧客資料修正**：把既有直接實測的 21 名羱羊雕像潛在顧客同步進 `customers.ts`，統一使用 `villageId = 'ibex-statue'`。托爾斯滕／薩維烏斯的顧客滿意度門檻分別為 350／250，喜好仍顯示「？」因此保存為 `preferences: null`；其餘 19 名目前記錄門檻為 0。顧客 availability 繼續由 Region milestone + 各區 satisfaction 驅動，不另增 customer-level progression gate。\n50. PR #155 完成 **Planner P1-B｜Region route / service core**：新增獨立純 domain `regionServicePlanner.ts`；輸入為既定 `recipeId → customerIds`、顧客 Region、單一 active workshop、weighted Region topology 與抽象每趟服務容量，不接 optimizer objective、physical jar/cup scheduler 或 UI。每趟以 workshop 到 serviced Regions 的 canonical shortest-path edge union 作 route footprint，區分 primary / side service 與 transit Region；比較順序固定為 `route cost → total trip count → Region service fragmentation`。7 個 synthetic regression 覆蓋本地＋遠端集中、workshop 改變造成 grouping 翻轉、沿途順帶、T 型共用前段 edge、兩層 tie-break 與 assignment invariant；未新增 production Region，也未復活 PR #137 的 regional optimizer objective。implementation CI #836：58 test files / 471 tests passed、production build 與 Pages-like HiGHS smoke 成功。
 
-**Inventory-Intermediate I1～I3 與 P0｜新地區／主線 progression runtime 同步皆已完成。**PR #149 已同步階段七後半羱羊雕像 Region 與桃子／黃瓜／番茄／丁香；後續小切片再補 `sales-assistant-adam-arrived`，讓「目前主線進度」可保存階段八，但不實作 Adam 功能。**P1-B｜Region route / service core 已完成；下一個 active slice 是 P1-C + P1-D｜physical integration + production adapter / UI。** P2 Data Authority Cleanup 為次要短護欄。Delivery-Order Correctness、Candidate-3 等維持後續。PR #88 維持 Draft prototype-only；PR #137 只保留 Region planner prototype／regression evidence，不直接復活。
+**Inventory-Intermediate I1～I3 與 P0｜新地區／主線 progression runtime 同步皆已完成。**PR #149 已同步階段七後半羱羊雕像 Region 與桃子／黃瓜／番茄／丁香；後續小切片再補 `sales-assistant-adam-arrived`，讓「目前主線進度」可保存階段八，但不實作 Adam 功能。**Planner P1-A～P1-D 已完成；P1-C/P1-D / PR #157 把 Region service intent 接到 existing physical scheduler，並完成 production workshop/topology adapter 與第一版 Region-aware 販售 UI。** 下一階段 Delivery-Order Correctness（D2）仍只排隊、尚未開始；Candidate-3 等維持後續。P2 Data Authority Cleanup 為次要短護欄。PR #88 維持 Draft prototype-only；PR #137 只保留 Region planner prototype／regression evidence，不直接復活。
 
 
 ## Schedule / route readiness boundary
