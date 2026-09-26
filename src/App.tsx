@@ -589,30 +589,10 @@ function App() {
     customerSortKey,
   ])
 
-  const recipeRows = useMemo(() => {
-    const rows = recipeSequenceEntries
-      .filter((entry) =>
-        recipeEntryMatchesResearchFilters(entry, {
-          ingredientCount: recipeIngredientCountFilter,
-          ingredientId: null,
-          confirmedEffect: recipeConfirmedEffectFilter,
-          possibleEffect: recipePossibleEffectFilter,
-          source: recipeSourceFilter,
-          price: recipePriceFilter,
-        }),
-      )
-      .filter((entry) => {
-        if (!normalizedRecipeQuery) return true
-        return (
-          recipeSearchTextById
-            .get(entry.id)
-            ?.includes(normalizedRecipeQuery) ?? false
-        )
-      })
-
+  const sortedRecipeSequenceEntries = useMemo(() => {
     const direction = recipeSortDirection === 'asc' ? 1 : -1
 
-    return [...rows].sort((a, b) => {
+    return [...recipeSequenceEntries].sort((a, b) => {
       const left = a.candidate
       const right = b.candidate
 
@@ -636,17 +616,47 @@ function App() {
       return left.name.localeCompare(right.name, 'zh-Hant') * direction
     })
   }, [
-    normalizedRecipeQuery,
     recipeSequenceEntries,
     recipeListOrder,
-    recipeSearchTextById,
-    recipeIngredientCountFilter,
-    recipeConfirmedEffectFilter,
-    recipePossibleEffectFilter,
-    recipePriceFilter,
     recipeSortDirection,
     recipeSortKey,
-    recipeSourceFilter,
+  ])
+
+  const researchFilteredRecipeEntries = useMemo(
+    () =>
+      sortedRecipeSequenceEntries.filter((entry) =>
+        recipeEntryMatchesResearchFilters(entry, {
+          ingredientCount: recipeIngredientCountFilter,
+          ingredientId: null,
+          confirmedEffect: recipeConfirmedEffectFilter,
+          possibleEffect: recipePossibleEffectFilter,
+          source: recipeSourceFilter,
+          price: recipePriceFilter,
+        }),
+      ),
+    [
+      sortedRecipeSequenceEntries,
+      recipeIngredientCountFilter,
+      recipeConfirmedEffectFilter,
+      recipePossibleEffectFilter,
+      recipePriceFilter,
+      recipeSourceFilter,
+    ],
+  )
+
+  const recipeRows = useMemo(() => {
+    if (!normalizedRecipeQuery) return researchFilteredRecipeEntries
+
+    return researchFilteredRecipeEntries.filter(
+      (entry) =>
+        recipeSearchTextById
+          .get(entry.id)
+          ?.includes(normalizedRecipeQuery) ?? false,
+    )
+  }, [
+    normalizedRecipeQuery,
+    researchFilteredRecipeEntries,
+    recipeSearchTextById,
   ])
 
   const recipePageCount = Math.max(
