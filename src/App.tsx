@@ -524,7 +524,27 @@ function App() {
     ],
   )
 
-  const customerRows = useMemo(() => {
+  const customerSearchTextById = useMemo(
+    () =>
+      new Map(
+        customerRecommendationRows.map(({ customer, matches }) => [
+          customer.id,
+          [
+            customer.name,
+            customer.occupation,
+            ...(customer.preferences ?? []).map(
+              (preference) => preference.value,
+            ),
+            ...matches.map((recipe) => recipe.name),
+          ]
+            .join(' ')
+            .toLocaleLowerCase('zh-Hant'),
+        ]),
+      ),
+    [customerRecommendationRows],
+  )
+
+  const sortedCustomerResearchRows = useMemo(() => {
     const rows = customerRecommendationRows
       .map((row) => ({
         ...row,
@@ -549,31 +569,13 @@ function App() {
       ? rows
       : rows.filter(({ customer }) => !supplied.has(customer.id))
 
-    const searchedRows = suppliedFilteredRows.filter(({ customer, matches }) => {
-      if (!normalizedCustomerQuery) return true
-      const haystack = [
-        customer.name,
-        customer.occupation,
-        ...(customer.preferences ?? []).map((preference) => preference.value),
-        ...matches.map((recipe) => recipe.name),
-      ]
-        .join(' ')
-        .toLocaleLowerCase('zh-Hant')
-      return haystack.includes(normalizedCustomerQuery)
-    })
-
-    const rowByCustomerId = new Map(
-      searchedRows.map((row) => [row.customer.id, row]),
-    )
-
     return sortCustomerRows(
-      searchedRows,
+      suppliedFilteredRows,
       customerSortKey,
       customerSortDirection,
       recipeOrder,
-    ).map((row) => rowByCustomerId.get(row.customer.id)!)
+    )
   }, [
-    normalizedCustomerQuery,
     customerRecommendationRows,
     currentProgress,
     satisfactionByVillage,
@@ -587,6 +589,21 @@ function App() {
     suppliedCustomerIds,
     customerSortDirection,
     customerSortKey,
+  ])
+
+  const customerRows = useMemo(() => {
+    if (!normalizedCustomerQuery) return sortedCustomerResearchRows
+
+    return sortedCustomerResearchRows.filter(
+      ({ customer }) =>
+        customerSearchTextById
+          .get(customer.id)
+          ?.includes(normalizedCustomerQuery) ?? false,
+    )
+  }, [
+    normalizedCustomerQuery,
+    sortedCustomerResearchRows,
+    customerSearchTextById,
   ])
 
   const sortedRecipeSequenceEntries = useMemo(() => {
