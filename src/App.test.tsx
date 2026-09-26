@@ -3,9 +3,11 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { customers } from './data/customers'
 import {
   ComparisonDock,
+  FormalCustomerStats,
   SatisfactionFields,
   withSatisfactionUpdate,
 } from './App'
+import { villages } from './data/villages'
 
 describe('shared customer comparison dock', () => {
   it('keeps multiple selected customers visible outside the recipe tools tab', () => {
@@ -89,5 +91,64 @@ describe('data-driven satisfaction fields', () => {
       'east-harbor': 12,
       'future-region': 78,
     })
+  })
+})
+
+
+describe('data-driven formal customer summaries', () => {
+  it('shows a formal-customer card only after its region is unlocked', () => {
+    const beforeIbex = renderToStaticMarkup(
+      <FormalCustomerStats
+        villageDefinitions={villages}
+        currentProgress="advanced-citrus-juicer-unlocked"
+        customerDefinitions={customers}
+        formalCustomerIds={[]}
+      />,
+    )
+
+    expect(beforeIbex).not.toContain('羱羊雕像正式顧客')
+
+    const atIbex = renderToStaticMarkup(
+      <FormalCustomerStats
+        villageDefinitions={villages}
+        currentProgress="ibex-statue-unlocked"
+        customerDefinitions={customers}
+        formalCustomerIds={[]}
+      />,
+    )
+
+    expect(atIbex).toContain(
+      '<span>羱羊雕像正式顧客</span><strong>0 人</strong>',
+    )
+  })
+
+  it('counts formal customers for an arbitrary unlocked region definition', () => {
+    const villageDefinitions = [
+      { id: 'starter', name: '起始地區', unlockedAt: 'opening' },
+      {
+        id: 'future-region',
+        name: '未來地區',
+        unlockedAt: 'juice-blender-unlocked',
+      },
+    ] as const
+    const customerDefinitions = [
+      { id: 'starter-customer', villageId: 'starter' },
+      { id: 'future-a', villageId: 'future-region' },
+      { id: 'future-b', villageId: 'future-region' },
+    ] as const
+
+    const html = renderToStaticMarkup(
+      <FormalCustomerStats
+        villageDefinitions={villageDefinitions}
+        currentProgress="juice-blender-unlocked"
+        customerDefinitions={customerDefinitions}
+        formalCustomerIds={['starter-customer', 'future-b']}
+      />,
+    )
+
+    expect(html).toContain('起始地區正式顧客')
+    expect(html).toContain(
+      '<span>未來地區正式顧客</span><strong>1 人</strong>',
+    )
   })
 })
