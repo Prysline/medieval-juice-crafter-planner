@@ -131,11 +131,25 @@ interface DeliveryExecutionBasis {
   suppliedCustomerIds: string[]
 }
 
+export type OptimizerRunPhase =
+  | 'loading-runtime'
+  | 'solving'
+  | 'finalizing'
+
 type OptimizerRunState =
   | { status: 'idle' }
-  | { status: 'loading' }
+  | {
+      status: 'loading'
+      phase: OptimizerRunPhase
+      startedAtMs: number
+      candidatePolicy: OptimizationCandidatePolicy
+      customerCount: number
+    }
   | {
       status: 'success'
+      elapsedMs: number
+      candidatePolicy: OptimizationCandidatePolicy
+      customerCount: number
       result: OptimizationResult
       preparationShortfall: PreparationShortfall
       productionLogistics: ProductionLogisticsPlan
@@ -270,6 +284,115 @@ export function criterionLabel(criterion: OptimizationCriterion): string {
   if (criterion === 'maximum-known-gross-profit') return '最高已知毛利'
   if (criterion === 'minimum-machine-operations') return '最少機器操作'
   return '最少果汁罐換裝'
+}
+
+export function optimizerRunPhaseLabel(
+  phase: OptimizerRunPhase,
+): string {
+  if (phase === 'loading-runtime') return '載入規劃模組'
+  if (phase === 'solving') return '背景最佳化求解'
+  return '整理製作／販售排程'
+}
+
+export function optimizerCandidatePolicyLabel(
+  policy: OptimizationCandidatePolicy,
+): string {
+  return policy === 'allow-unambiguous-computed'
+    ? '正式實測＋已確認個人配方＋無歧義預測'
+    : '正式實測＋已確認個人配方'
+}
+
+export function formatOptimizerDuration(elapsedMs: number): string {
+  const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000))
+  if (totalSeconds < 1) return '不到 1 秒'
+
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  const paddedMinutes = String(minutes).padStart(2, '0')
+  const paddedSeconds = String(seconds).padStart(2, '0')
+
+  if (hours > 0) {
+    return `${hours} 小時 ${paddedMinutes} 分 ${paddedSeconds} 秒`
+  }
+  if (minutes > 0) {
+    return `${minutes} 分 ${paddedSeconds} 秒`
+  }
+  return `${seconds} 秒`
+}
+
+export function OptimizerRunStatus({
+  phase,
+  elapsedMs,
+  candidatePolicy,
+  customerCount,
+}: {
+  phase: OptimizerRunPhase
+  elapsedMs: number
+  candidatePolicy: OptimizationCandidatePolicy
+  customerCount: number
+}) {
+  return (
+    <div className="optimizer-run-progress">
+      <div>
+        <strong role="status">{optimizerRunPhaseLabel(phase)}</strong>
+        <span>已耗時 {formatOptimizerDuration(elapsedMs)}</span>
+      </div>
+      <small>
+        {optimizerCandidatePolicyLabel(candidatePolicy)} · {customerCount} 位顧客
+      </small>
+    </div>
+  )
+}
+
+function OptimizerLiveRunStatus({
+  phase,
+  startedAtMs,
+  candidatePolicy,
+  customerCount,
+}: {
+  phase: OptimizerRunPhase
+  startedAtMs: number
+  candidatePolicy: OptimizationCandidatePolicy
+  customerCount: number
+}) {
+  const [nowMs, setNowMs] = useState(() => Date.now())
+
+  useEffect(() => {
+    setNowMs(Date.now())
+    const timer = window.setInterval(() => {
+      setNowMs(Date.now())
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [startedAtMs])
+
+  return (
+    <OptimizerRunStatus
+      phase={phase}
+      elapsedMs={Math.max(0, nowMs - startedAtMs)}
+      candidatePolicy={candidatePolicy}
+      customerCount={customerCount}
+    />
+  )
+}
+
+export function OptimizerRunSummary({
+  elapsedMs,
+  candidatePolicy,
+  customerCount,
+}: {
+  elapsedMs: number
+  candidatePolicy: OptimizationCandidatePolicy
+  customerCount: number
+}) {
+  return (
+    <div className="optimizer-run-summary" role="status">
+      <strong>規劃完成 · {formatOptimizerDuration(elapsedMs)}</strong>
+      <span>
+        {optimizerCandidatePolicyLabel(candidatePolicy)} · {customerCount} 位顧客
+      </span>
+    </div>
+  )
 }
 
 export function recipePreparationSourceSummary(
@@ -1308,10 +1431,19 @@ function OptimizerTools({
     optimizerAbortControllerRef.current?.abort()
     const optimizerAbortController = new AbortController()
     optimizerAbortControllerRef.current = optimizerAbortController
+    const runStartedAtMs = Date.now()
+    const runCandidatePolicy = candidatePolicy
+    const runCustomerCount = customerIds.length
 
     setApplicationState({ status: 'idle' })
     setDeliveryUiState({ status: 'idle' })
-    setRunState({ status: 'loading' })
+    setRunState({
+      status: 'loading',
+      phase: 'loading-runtime',
+      startedAtMs: runStartedAtMs,
+      candidatePolicy: runCandidatePolicy,
+      customerCount: runCustomerCount,
+    })
 
     try {
       const [
@@ -1341,6 +1473,12 @@ function OptimizerTools({
       if (capacitySummary.maxJuiceJarSlotsPerTrip < 1) {
         throw new PlanningUserError('missing-jar-slot')
       }
+
+      setRunState((current) =>
+        current.status === 'loading'
+          ? { ...current, phase: 'solving' }
+          : current,
+      )
 
       const result = await runOptimizerInWorker(
         {
@@ -1373,6 +1511,12 @@ function OptimizerTools({
           candidatePool: recipeCandidatePool,
         },
         optimizerAbortController.signal,
+      )
+
+      setRunState((current) =>
+        current.status === 'loading'
+          ? { ...current, phase: 'finalizing' }
+          : current,
       )
 
       const preparationDemand = buildPreparationDemand(result)
@@ -1514,6 +1658,9 @@ function OptimizerTools({
 
       setRunState({
         status: 'success',
+        elapsedMs: Math.max(0, Date.now() - runStartedAtMs),
+        candidatePolicy: runCandidatePolicy,
+        customerCount: runCustomerCount,
         result,
         preparationShortfall,
         productionLogistics,
@@ -2222,7 +2369,7 @@ function OptimizerTools({
             onClick={runOptimizer}
           >
             {runState.status === 'loading'
-              ? '正在背景求解並規劃…'
+              ? '正在規劃…'
               : '產生最佳化規劃'}
           </button>
           {runState.status === 'loading' && (
@@ -2236,8 +2383,17 @@ function OptimizerTools({
           )}
         </div>
 
+        {runState.status === 'loading' && (
+          <OptimizerLiveRunStatus
+            phase={runState.phase}
+            startedAtMs={runState.startedAtMs}
+            candidatePolicy={runState.candidatePolicy}
+            customerCount={runState.customerCount}
+          />
+        )}
+
         <p className="optimizer-lazy-note">
-          求解器只會在按下規劃後載入，並在背景 Worker 執行 HiGHS；第一次執行仍需要載入 WASM。大型候選或一般 fallback 可能需要較久，可隨時取消且不會寫入半成品結果。
+          求解器只會在按下規劃後載入，並在背景 Worker 執行 HiGHS；第一次執行仍需要載入 WASM。上方會顯示目前可觀察階段與已耗時；各階段耗時不是線性，因此目前不顯示估算百分比。大型候選或一般 fallback 可能需要較久，可隨時取消且不會寫入半成品結果。
         </p>
       </div>
 
@@ -2304,7 +2460,13 @@ function OptimizerTools({
       )}
 
       {runState.status === 'success' && (
-        <OptimizerResultPanel
+        <>
+          <OptimizerRunSummary
+            elapsedMs={runState.elapsedMs}
+            candidatePolicy={runState.candidatePolicy}
+            customerCount={runState.customerCount}
+          />
+          <OptimizerResultPanel
           result={runState.result}
           currentProgress={currentProgress}
           activeWorkshopRegionId={activeWorkshopRegionId}
@@ -2324,6 +2486,7 @@ function OptimizerTools({
           onCommitDelivery={commitDeliveryCustomer}
           onCommitDeliveryGroup={commitDeliveryCustomers}
         />
+        </>
       )}
     </section>
   )
