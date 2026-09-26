@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type {
-  PlanApplicationBasisState,
-  PlanApplicationTransactionDraft,
+import {
+  rebasePlanApplicationTransactionSuppliedCustomers,
+  type PlanApplicationBasisState,
+  type PlanApplicationTransactionDraft,
 } from '../domain/planApplicationTransaction'
 import {
   INVENTORY_STORAGE_KEY,
@@ -259,6 +260,29 @@ describe('plan application commit', () => {
     })
     expect(storage.writes).toEqual([])
     expect(storage.raw(PLAN_APPLICATION_STATE_STORAGE_KEY)).toBeNull()
+  })
+
+  it('rebases the supplied basis without changing the inventory transaction', () => {
+    const draft = draftFromBasis(basis())
+
+    const rebased =
+      rebasePlanApplicationTransactionSuppliedCustomers(
+        draft,
+        ['ulrich', 'alia'],
+      )
+
+    expect(rebased).not.toBeNull()
+    expect(rebased?.before.inventory).toBe(draft.before.inventory)
+    expect(rebased?.after.inventory).toBe(draft.after.inventory)
+    expect(rebased?.before.suppliedCustomerIds).toEqual([
+      'ulrich',
+      'alia',
+    ])
+    expect(rebased?.after.suppliedCustomerIds).toEqual([
+      'ulrich',
+      'alia',
+    ])
+    expect(rebased?.changes.newlySuppliedCustomerIds).toEqual([])
   })
 
   it('applies inventory after a planned customer was manually marked supplied', () => {
