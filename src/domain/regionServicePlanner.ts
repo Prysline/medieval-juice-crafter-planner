@@ -94,7 +94,7 @@ interface ShortestPath {
   cost: number
 }
 
-interface RouteFootprint {
+export interface RegionRouteFootprint {
   routeCost: number
   edges: RegionRouteFootprintEdge[]
   primaryRegionIds: RegionId[]
@@ -291,7 +291,7 @@ function buildRouteFootprint(
   graph: RegionGraph,
   workshopRegionId: RegionId,
   servicedRegionIds: readonly RegionId[],
-): RouteFootprint {
+): RegionRouteFootprint {
   const uniqueServicedRegionIds = [...new Set(servicedRegionIds)].sort()
   const servicedSet = new Set(uniqueServicedRegionIds)
   const pathByRegion = new Map<RegionId, ShortestPath>()
@@ -344,6 +344,19 @@ function buildRouteFootprint(
     sideRegionIds,
     transitRegionIds,
   }
+}
+
+export function buildRegionRouteFootprint(input: {
+  activeWorkshop: ActiveWorkshop
+  topology: { edges: readonly RegionTopologyEdge[] }
+  servicedRegionIds: readonly RegionId[]
+}): RegionRouteFootprint {
+  const graph = buildRegionGraph(input.topology.edges)
+  return buildRouteFootprint(
+    graph,
+    input.activeWorkshop.regionId,
+    input.servicedRegionIds,
+  )
 }
 
 export function compareRegionServicePlanScores(
