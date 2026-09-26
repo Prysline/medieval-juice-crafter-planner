@@ -1428,6 +1428,7 @@ export function shouldAcceptTerminalLeftoverTimingCandidate(
 export interface SameRecipePrefillCandidateMetrics
   extends TerminalLeftoverScheduleMetrics {
   terminalJarStateSignature: string
+  salesTripAssignmentSignature: string
   sameRecipeRefillTripScore: number
 }
 
@@ -1457,6 +1458,26 @@ function terminalJarStateSignature(
     .join('|')
 }
 
+function salesTripAssignmentSignature(
+  trips: readonly MutableTrip[],
+): string {
+  return trips
+    .map((trip) =>
+      trip.juiceJars
+        .map((load) =>
+          [
+            load.physicalJarId,
+            load.recipeId,
+            load.servings,
+            load.customerIds.join(','),
+          ].join(':'),
+        )
+        .sort()
+        .join('|'),
+    )
+    .join('||')
+}
+
 function sameRecipePrefillCandidateMetrics(
   trips: readonly MutableTrip[],
   discardedJuiceServings: number,
@@ -1468,6 +1489,8 @@ function sameRecipePrefillCandidateMetrics(
     ),
     terminalJarStateSignature:
       terminalJarStateSignature(trips),
+    salesTripAssignmentSignature:
+      salesTripAssignmentSignature(trips),
     sameRecipeRefillTripScore: trips.reduce(
       (score, trip, index) =>
         score +
@@ -1493,9 +1516,7 @@ export function shouldAcceptSameRecipePrefillCandidate(
     candidate.cupWashWaterUnits > baseline.cupWashWaterUnits ||
     candidate.jarTypeSwitches > baseline.jarTypeSwitches ||
     candidate.terminalJarStateSignature !==
-      baseline.terminalJarStateSignature ||
-    candidate.terminalLeftoverTripScore <
-      baseline.terminalLeftoverTripScore
+      baseline.terminalJarStateSignature
   ) {
     return false
   }
@@ -1505,8 +1526,17 @@ export function shouldAcceptSameRecipePrefillCandidate(
   }
 
   return (
+    candidate.droppedUsedCups === baseline.droppedUsedCups &&
+    candidate.discardedJuiceServings ===
+      baseline.discardedJuiceServings &&
+    candidate.cupWashWaterUnits === baseline.cupWashWaterUnits &&
+    candidate.jarTypeSwitches === baseline.jarTypeSwitches &&
+    candidate.salesTripAssignmentSignature ===
+      baseline.salesTripAssignmentSignature &&
+    candidate.terminalLeftoverTripScore ===
+      baseline.terminalLeftoverTripScore &&
     candidate.sameRecipeRefillTripScore <
-    baseline.sameRecipeRefillTripScore
+      baseline.sameRecipeRefillTripScore
   )
 }
 
