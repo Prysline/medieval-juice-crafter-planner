@@ -3797,8 +3797,8 @@ export function SalesTripPlanBlock({
             <p>
               出發／補給工作間：
               {regionDisplayName(regionPlan.activeWorkshop.regionId)}
-              {' · '}Region route cost {regionPlan.routeCost}
-              {' · '}Region 分散服務 {regionPlan.serviceFragmentation} 次
+              {' · '}區域路線成本 {regionPlan.routeCost}
+              {' · '}地區分散服務 {regionPlan.serviceFragmentation} 次
             </p>
             {regionPlan.requiredByRegion.map((required) => (
               <p key={'region-demand-' + required.regionId}>
@@ -3923,7 +3923,7 @@ export function SalesTripPlanBlock({
               )}
               {regionTrip.routeFootprint.length > 0 && (
                 <p>
-                  Region edge footprint：
+                  跨區路線邊：
                   {regionTrip.routeFootprint
                     .map(
                       (edge) =>
