@@ -17,6 +17,7 @@ import type { PlanApplicationTransactionDraft } from './domain/planApplicationTr
 import {
   DeliveryCustomerCheckbox,
   DeliveryRecipeGroupCheckbox,
+  DeliveryTripGroupCheckbox,
   INVENTORY_RECIPE_SEARCH_RESULT_LIMIT,
   INTERMEDIATE_JUICE_SEARCH_RESULT_LIMIT,
   JuiceJarRecipeCombobox,
@@ -456,6 +457,73 @@ describe('delivery checklist UI', () => {
 
     expect(html).not.toContain('disabled=""')
     expect(html).toContain('可記錄今日已供應')
+  })
+
+  it('shows the canonical customer Region beside delivery checklist names', () => {
+    const eastHtml = renderToStaticMarkup(
+      <DeliveryCustomerCheckbox
+        customerId="jack"
+        plan={deliveryPlan()}
+        cursor={deliveryCursor()}
+        suppliedCustomerIds={[]}
+        onChange={() => {}}
+      />,
+    )
+    const fountainHtml = renderToStaticMarkup(
+      <DeliveryCustomerCheckbox
+        customerId="florida"
+        plan={deliveryPlan()}
+        cursor={deliveryCursor()}
+        suppliedCustomerIds={[]}
+        onChange={() => {}}
+      />,
+    )
+
+    expect(eastHtml).toContain('東港村')
+    expect(fountainHtml).toContain('靜謐噴泉')
+    expect(eastHtml).toContain('optimizer-customer-region-badge')
+  })
+
+  it('lets a trip bulk checkbox share the same supplied-customer authority', () => {
+    const plan = deliveryPlan()
+    const cursor = deliveryCursor()
+
+    const empty = renderToStaticMarkup(
+      <DeliveryTripGroupCheckbox
+        tripNumber={1}
+        customerIds={['jack', 'leticia']}
+        plan={plan}
+        cursor={cursor}
+        suppliedCustomerIds={[]}
+        onChange={() => {}}
+      />,
+    )
+    const partial = renderToStaticMarkup(
+      <DeliveryTripGroupCheckbox
+        tripNumber={1}
+        customerIds={['jack', 'leticia']}
+        plan={plan}
+        cursor={cursor}
+        suppliedCustomerIds={['jack']}
+        onChange={() => {}}
+      />,
+    )
+    const complete = renderToStaticMarkup(
+      <DeliveryTripGroupCheckbox
+        tripNumber={1}
+        customerIds={['jack', 'leticia']}
+        plan={plan}
+        cursor={cursor}
+        suppliedCustomerIds={['jack', 'leticia']}
+        onChange={() => {}}
+      />,
+    )
+
+    expect(empty).toContain('完成 0 / 2')
+    expect(partial).toContain('aria-checked="mixed"')
+    expect(partial).toContain('完成 1 / 2')
+    expect(complete).toContain('checked=""')
+    expect(complete).toContain('完成 2 / 2')
   })
 
   it('keeps planned trip metadata without blocking out-of-order delivery checkboxes', () => {
@@ -958,6 +1026,91 @@ describe('optimizer summary', () => {
 
     expect(html).toContain('<span>剩餘杯</span><strong>1</strong>')
     expect(html).not.toContain('<span>剩餘杯</span><strong>0</strong>')
+  })
+})
+
+describe('sales trip interactive checklist UI', () => {
+  it('renders selected trips as shared supplied checklists and keeps read-only comparison plans non-interactive', () => {
+    const salesDemand: PreparationDemand = {
+      ingredients: [],
+      productionWaterUnits: 1,
+      cleanCupUses: 2,
+      producedServings: 2,
+      assignedServings: 2,
+      leftoverServings: 0,
+      recipes: [
+        {
+          recipeId: 'recipe-a',
+          recipeName: 'A',
+          customerIds: ['jack', 'leticia'],
+          ingredientIds: [],
+          productionUnits: 1,
+          producedServings: 2,
+          assignedServings: 2,
+          leftoverServings: 0,
+          ingredientUnitsPerJuiceUnit: [],
+        },
+      ],
+    }
+    const inventory: InventoryState = {
+      ingredientUnits: {},
+      intermediateJuiceUnits: {},
+      waterUnits: 0,
+      cleanCups: 2,
+      usedCups: 0,
+      juiceJars: [
+        { id: 'jar-a', recipeId: null, servings: 0 },
+      ],
+      shelfCount: 0,
+      jarRackCount: 0,
+    }
+    const shortfall = buildPreparationShortfall(
+      salesDemand,
+      inventory,
+    )
+    const plan = buildMultiTripReplenishmentPlan(
+      salesDemand,
+      'retain-and-wash',
+      inventory.juiceJars,
+      {
+        cleanCups: inventory.cleanCups,
+        usedCups: inventory.usedCups,
+      },
+      shortfall,
+      {
+        mode: 'fixed-slots',
+        reservedSlots: 1,
+        minimumCarriedSlots: 0,
+      },
+      false,
+    )
+
+    const interactiveHtml = renderToStaticMarkup(
+      <SalesTripPlanBlock
+        plan={plan}
+        deliveryControls={{
+          plan: deliveryPlan(),
+          cursor: deliveryCursor(),
+          suppliedCustomerIds: ['jack'],
+          onChangeCustomer: () => {},
+          onChangeGroup: () => {},
+        }}
+      />,
+    )
+    const readOnlyHtml = renderToStaticMarkup(
+      <SalesTripPlanBlock plan={plan} />,
+    )
+
+    expect(interactiveHtml).toContain('第 1 趟全部交付完成')
+    expect(interactiveHtml).toContain('aria-checked="mixed"')
+    expect(interactiveHtml).toContain('完成 1 / 2')
+    expect(interactiveHtml).toContain('東港村')
+    expect(interactiveHtml).toContain('出發前')
+    expect(interactiveHtml).toContain('販售')
+    expect(interactiveHtml).toContain('回工作間')
+    expect(interactiveHtml).toContain('容量／路線細節')
+    expect(readOnlyHtml).not.toContain('第 1 趟全部交付完成')
+    expect(readOnlyHtml).not.toContain('type="checkbox"')
   })
 })
 
