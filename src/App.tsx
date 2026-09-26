@@ -9,7 +9,6 @@ import {
   customerIsUnlocked,
   customerVillageIsAvailable,
   isAvailableAtProgress,
-  villageIsAvailable,
 } from './domain/availability'
 import {
   sortCustomerRows,
@@ -22,10 +21,7 @@ import {
   type CustomerRecipeRecommendations,
   type RecommendationCostMode,
 } from './domain/customerRecommendation'
-import {
-  countFormalCustomersByVillage,
-  isFormalCustomer,
-} from './domain/customerState'
+import { isFormalCustomer } from './domain/customerState'
 import {
   matchingRecipeCandidatesForCustomer,
   recipeCandidateMatchesCustomer,
@@ -180,6 +176,68 @@ export function SatisfactionFields<TVillageId extends string>({
   )
 }
 
+export function formalCustomerStatsAtProgress<TVillageId extends string>(
+  villageDefinitions: readonly SatisfactionVillageDefinition<TVillageId>[],
+  currentProgress: ProgressMilestoneId,
+  customerDefinitions: readonly { id: string; villageId: TVillageId }[],
+  formalCustomerIds: readonly string[],
+) {
+  const formalIds = new Set(formalCustomerIds)
+
+  return villageDefinitions
+    .filter((village) =>
+      isAvailableAtProgress(village.unlockedAt, currentProgress),
+    )
+    .map((village) => ({
+      id: village.id,
+      name: village.name,
+      count: customerDefinitions.filter(
+        (customer) =>
+          customer.villageId === village.id && formalIds.has(customer.id),
+      ).length,
+    }))
+}
+
+function formalCustomerProgressNote(
+  villageId: string,
+  formalCount: number,
+): string {
+  if (villageId === 'east-harbor') {
+    return `階段三 ${Math.min(formalCount, 14)}/14 · 階段四 ${Math.min(formalCount, 17)}/17`
+  }
+
+  return '目前沒有已確認的正式顧客數主線門檻'
+}
+
+export function FormalCustomerStats<TVillageId extends string>({
+  villageDefinitions,
+  currentProgress,
+  customerDefinitions,
+  formalCustomerIds,
+}: {
+  villageDefinitions: readonly SatisfactionVillageDefinition<TVillageId>[]
+  currentProgress: ProgressMilestoneId
+  customerDefinitions: readonly { id: string; villageId: TVillageId }[]
+  formalCustomerIds: readonly string[]
+}) {
+  return (
+    <>
+      {formalCustomerStatsAtProgress(
+        villageDefinitions,
+        currentProgress,
+        customerDefinitions,
+        formalCustomerIds,
+      ).map((village) => (
+        <div className="progress-stat" key={village.id}>
+          <span>{village.name}正式顧客</span>
+          <strong>{village.count} 人</strong>
+          <small>{formalCustomerProgressNote(village.id, village.count)}</small>
+        </div>
+      ))}
+    </>
+  )
+}
+
 export type CustomerRecipeSearches = {
   observedOnly: ProgressiveRecipeSearchResult
   allowComputed: ProgressiveRecipeSearchResult
@@ -283,10 +341,6 @@ function App() {
     tab === 'customers' ? normalizedQuery : ''
   const normalizedRecipeQuery =
     tab === 'recipes' ? normalizedQuery : ''
-  const tranquilFountainAvailable = villageIsAvailable(
-    'tranquil-fountain',
-    currentProgress,
-  )
   const recipeCandidatePool = useMemo(
     () => buildRecipeCandidatePool(currentProgress, savedRecipes),
     [currentProgress, savedRecipes],
@@ -345,17 +399,6 @@ function App() {
       ),
     [recipeListEntries],
   )
-  const eastHarborFormalCount = countFormalCustomersByVillage(
-    customers,
-    formalCustomerIds,
-    'east-harbor',
-  )
-  const tranquilFountainFormalCount = countFormalCustomersByVillage(
-    customers,
-    formalCustomerIds,
-    'tranquil-fountain',
-  )
-
   const customerPreferenceIngredientOptions = useMemo(
     () =>
       [...new Set(
@@ -712,45 +755,45 @@ function App() {
       </header>
 
       <section className="progress-panel" aria-label="目前進度">
-        <label>
-          <span>目前主線進度</span>
-          <select
-            value={currentProgress}
-            onChange={(event) =>
-              updateProgress(event.target.value as ProgressMilestoneId)
-            }
-          >
-            {progressMilestones.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="progress-settings">
+          <label>
+            <span>目前主線進度</span>
+            <select
+              value={currentProgress}
+              onChange={(event) =>
+                updateProgress(event.target.value as ProgressMilestoneId)
+              }
+            >
+              {progressMilestones.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
 
-        <SatisfactionFields
-          villageDefinitions={villages}
-          currentProgress={currentProgress}
-          satisfactionByVillage={satisfactionByVillage}
-          onSatisfactionChange={updateSatisfaction}
-        />
-
-        <div className="progress-stat">
-          <span>東港村正式顧客</span>
-          <strong>{eastHarborFormalCount} 人</strong>
-          <small>
-            階段三 {Math.min(eastHarborFormalCount, 14)}/14 · 階段四{' '}
-            {Math.min(eastHarborFormalCount, 17)}/17
-          </small>
+          <SatisfactionFields
+            villageDefinitions={villages}
+            currentProgress={currentProgress}
+            satisfactionByVillage={satisfactionByVillage}
+            onSatisfactionChange={updateSatisfaction}
+          />
         </div>
 
-        {tranquilFountainAvailable && (
-          <div className="progress-stat">
-            <span>靜謐噴泉正式顧客</span>
-            <strong>{tranquilFountainFormalCount} 人</strong>
-            <small>目前沒有已確認的正式顧客數主線門檻</small>
+        <div className="progress-summary">
+          <div className="progress-summary-heading">
+            <strong>正式顧客</strong>
+            <span>依目前主線進度顯示已解鎖地區</span>
           </div>
-        )}
+          <div className="progress-stat-grid">
+            <FormalCustomerStats
+              villageDefinitions={villages}
+              currentProgress={currentProgress}
+              customerDefinitions={customers}
+              formalCustomerIds={formalCustomerIds}
+            />
+          </div>
+        </div>
       </section>
 
       {(tab === 'customers' || tab === 'recipes') && (
@@ -933,10 +976,15 @@ function App() {
               重置今日供應
             </button>
             <span>
-              今日已供應 {suppliedCustomerIds.length} 人 · 東港村滿意度{' '}
-              {satisfactionByVillage['east-harbor']}
-              {tranquilFountainAvailable &&
-                ` · 靜謐噴泉滿意度 ${satisfactionByVillage['tranquil-fountain']}`}
+              今日已供應 {suppliedCustomerIds.length} 人
+              {satisfactionFieldsAtProgress(
+                villages,
+                currentProgress,
+                satisfactionByVillage,
+              ).map(
+                (village) =>
+                  ` · ${village.name}滿意度 ${village.value}`,
+              )}
             </span>
           </div>
 
