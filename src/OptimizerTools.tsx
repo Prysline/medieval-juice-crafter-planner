@@ -3326,7 +3326,7 @@ export function DeliveryTripGroupCheckbox({
       <span>
         <strong>第 {tripNumber} 趟</strong>
         <small>
-          完成 {completedCount} / {customerIds.length}
+          本趟完成 {completedCount} / {customerIds.length}
         </small>
       </span>
     </label>
@@ -4125,6 +4125,12 @@ export function SalesTripPlanBlock({
             </span>
           </div>
         </header>
+
+        {deliveryControls && (
+          <p className="optimizer-sales-checklist-note">
+            本區勾選與上方「果汁分配」同步，共用「今日已供應」狀態；手動勾選不會修改庫存、杯具、果汁罐或製作狀態。
+          </p>
+        )}
 
         {regionPlan && regionPlan.requiredByRegion.length > 0 && (
           <div
