@@ -45,6 +45,10 @@ import {
   type ProgressiveRecipeSearchResult,
 } from './domain/recipeSearch'
 import {
+  buildContiguousRecipeSequenceIndex,
+  recipeEntriesForContiguousSequence,
+} from './domain/recipeSequenceIndex'
+import {
   calculateRecipeIngredientCost,
   type RecipeIngredientCost,
 } from './domain/recipeCost'
@@ -80,6 +84,9 @@ type RecipeSortKey = 'name' | 'salePrice'
 type CustomerVisibility = 'available' | 'all'
 
 const RECIPE_PAGE_SIZE = 50
+const ingredientNameById = new Map(
+  ingredients.map((ingredient) => [ingredient.id, ingredient.name]),
+)
 const MemoizedOptimizerTools = memo(OptimizerTools)
 const MemoizedRecipeRow = memo(RecipeRow)
 
@@ -315,8 +322,10 @@ function App() {
     useState<RecipePriceFilter>('all')
   const [recipeIngredientCountFilter, setRecipeIngredientCountFilter] =
     useState<number | null>(null)
-  const [recipeIngredientFilter, setRecipeIngredientFilter] =
-    useState<string | null>(null)
+  const [
+    recipeIngredientSequenceFilter,
+    setRecipeIngredientSequenceFilter,
+  ] = useState<string[]>([])
   const [recipeConfirmedEffectFilter, setRecipeConfirmedEffectFilter] =
     useState<string | null>(null)
   const [recipePossibleEffectFilter, setRecipePossibleEffectFilter] =
@@ -361,6 +370,23 @@ function App() {
           ),
       ),
     [recipeCandidatePool],
+  )
+  const recipeSequenceIndex = useMemo(
+    () => buildContiguousRecipeSequenceIndex(recipeListEntries),
+    [recipeListEntries],
+  )
+  const recipeSequenceEntries = useMemo(
+    () =>
+      recipeEntriesForContiguousSequence(
+        recipeListEntries,
+        recipeSequenceIndex,
+        recipeIngredientSequenceFilter,
+      ),
+    [
+      recipeIngredientSequenceFilter,
+      recipeListEntries,
+      recipeSequenceIndex,
+    ],
   )
   const recipeOrder = useMemo(
     () =>
@@ -426,6 +452,13 @@ function App() {
       [...new Set(recipeListEntries.map((entry) => entry.ingredientIds.length))]
         .sort((a, b) => a - b),
     [recipeListEntries],
+  )
+  const recipeSequenceIngredientOptions = useMemo(
+    () =>
+      ingredients.filter((ingredient) =>
+        isAvailableAtProgress(ingredient.unlockedAt, currentProgress),
+      ),
+    [currentProgress],
   )
   const recipeConfirmedEffectOptions = useMemo(
     () =>
@@ -557,11 +590,11 @@ function App() {
   ])
 
   const recipeRows = useMemo(() => {
-    const rows = recipeListEntries
+    const rows = recipeSequenceEntries
       .filter((entry) =>
         recipeEntryMatchesResearchFilters(entry, {
           ingredientCount: recipeIngredientCountFilter,
-          ingredientId: recipeIngredientFilter,
+          ingredientId: null,
           confirmedEffect: recipeConfirmedEffectFilter,
           possibleEffect: recipePossibleEffectFilter,
           source: recipeSourceFilter,
@@ -604,11 +637,10 @@ function App() {
     })
   }, [
     normalizedRecipeQuery,
-    recipeListEntries,
+    recipeSequenceEntries,
     recipeListOrder,
     recipeSearchTextById,
     recipeIngredientCountFilter,
-    recipeIngredientFilter,
     recipeConfirmedEffectFilter,
     recipePossibleEffectFilter,
     recipePriceFilter,
@@ -633,7 +665,7 @@ function App() {
     currentProgress,
     normalizedRecipeQuery,
     recipeIngredientCountFilter,
-    recipeIngredientFilter,
+    recipeIngredientSequenceFilter,
     recipeConfirmedEffectFilter,
     recipePossibleEffectFilter,
     recipePriceFilter,
@@ -739,7 +771,7 @@ function App() {
 
   function clearRecipeResearchFilters() {
     setRecipeIngredientCountFilter(null)
-    setRecipeIngredientFilter(null)
+    setRecipeIngredientSequenceFilter([])
     setRecipeConfirmedEffectFilter(null)
     setRecipePossibleEffectFilter(null)
     setRecipeSourceFilter('all')
@@ -1051,6 +1083,78 @@ function App() {
                 清除篩選
               </button>
             </div>
+            <div
+              className="recipe-sequence-filter"
+              aria-label="連續原料順序篩選"
+            >
+              <div className="recipe-sequence-filter-heading">
+                <div>
+                  <strong>連續原料順序</strong>
+                  <span>
+                    只匹配相鄰且順序完全一致的片段；例如「檸檬 → 薄荷」不會匹配「檸檬 → 糖 → 薄荷」。
+                  </span>
+                </div>
+                {recipeIngredientSequenceFilter.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setRecipeIngredientSequenceFilter([])}
+                  >
+                    清除順序
+                  </button>
+                )}
+              </div>
+              <div className="recipe-sequence-selected">
+                {recipeIngredientSequenceFilter.length === 0 ? (
+                  <span className="recipe-sequence-empty">
+                    尚未指定原料順序
+                  </span>
+                ) : (
+                  recipeIngredientSequenceFilter.map(
+                    (ingredientId, index) => (
+                      <span
+                        className="recipe-sequence-token"
+                        key={ingredientId + '-' + index}
+                      >
+                        {index > 0 && <b aria-hidden="true">→</b>}
+                        <button
+                          type="button"
+                          title="移除這個位置"
+                          onClick={() =>
+                            setRecipeIngredientSequenceFilter((current) =>
+                              current.filter(
+                                (_, currentIndex) => currentIndex !== index,
+                              ),
+                            )
+                          }
+                        >
+                          {ingredientNameById.get(ingredientId) ?? ingredientId}
+                          <span aria-hidden="true"> ×</span>
+                        </button>
+                      </span>
+                    ),
+                  )
+                )}
+              </div>
+              <div
+                className="recipe-sequence-options"
+                aria-label="加入原料"
+              >
+                {recipeSequenceIngredientOptions.map((ingredient) => (
+                  <button
+                    type="button"
+                    key={ingredient.id}
+                    onClick={() =>
+                      setRecipeIngredientSequenceFilter((current) => [
+                        ...current,
+                        ingredient.id,
+                      ])
+                    }
+                  >
+                    + {ingredient.name}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="research-filter-grid recipe-research-filters">
               <label>
                 <span>原料總數</span>
@@ -1067,22 +1171,6 @@ function App() {
                   <option value="">不限</option>
                   {recipeIngredientCountOptions.map((count) => (
                     <option value={count} key={count}>{count} 項</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                <span>具體原料</span>
-                <select
-                  value={recipeIngredientFilter ?? ''}
-                  onChange={(event) =>
-                    setRecipeIngredientFilter(event.target.value || null)
-                  }
-                >
-                  <option value="">不限</option>
-                  {ingredients.map((ingredient) => (
-                    <option value={ingredient.id} key={ingredient.id}>
-                      {ingredient.name}
-                    </option>
                   ))}
                 </select>
               </label>
@@ -1152,6 +1240,18 @@ function App() {
               </label>
             </div>
             <p className="research-filter-summary">
+              {recipeIngredientSequenceFilter.length > 0 && (
+                <>
+                  連續順序「
+                  {recipeIngredientSequenceFilter
+                    .map(
+                      (ingredientId) =>
+                        ingredientNameById.get(ingredientId) ?? ingredientId,
+                    )
+                    .join(' → ')}
+                  」 ·{' '}
+                </>
+              )}
               符合 {recipeRows.length} 筆 · 每頁最多 {RECIPE_PAGE_SIZE} 筆
             </p>
           </section>
