@@ -564,6 +564,8 @@ describe('multi-trip replenishment', () => {
         'jar-1=a:use-existing>a:refill-same-type',
       terminalLeftoverTripScore: 2,
       terminalJarStateSignature: 'jar-1=a:1',
+      salesTripAssignmentSignature:
+        'jar-1:a:1:a-customer-1||jar-1:a:1:a-customer-2',
       sameRecipeRefillTripScore: 2,
     }
     const candidate: SameRecipePrefillCandidateMetrics = {
@@ -593,6 +595,8 @@ describe('multi-trip replenishment', () => {
       physicalJarSequenceSignature: 'baseline',
       terminalLeftoverTripScore: 2,
       terminalJarStateSignature: 'jar-1=a:1',
+      salesTripAssignmentSignature:
+        'jar-1:a:1:a-customer-1||jar-1:a:1:a-customer-2',
       sameRecipeRefillTripScore: 2,
     }
     const earlierCandidate: SameRecipePrefillCandidateMetrics = {
@@ -613,7 +617,16 @@ describe('multi-trip replenishment', () => {
       },
       {
         ...earlierCandidate,
+        salesTripAssignmentSignature:
+          'jar-1:a:1:a-customer-2||jar-1:a:1:a-customer-1',
+      },
+      {
+        ...earlierCandidate,
         terminalLeftoverTripScore: 1,
+      },
+      {
+        ...earlierCandidate,
+        terminalLeftoverTripScore: 3,
       },
       {
         ...earlierCandidate,
