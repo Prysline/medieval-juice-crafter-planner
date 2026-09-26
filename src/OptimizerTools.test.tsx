@@ -31,6 +31,7 @@ import {
   criterionLabel,
   customerIdsInPlannedTripOrder,
   recipePlansInPlannedTripOrder,
+  recipePreparationSourceSummary,
   deliveryCanonicalSyncStatus,
   deliveryCustomerControlState,
   deliveryRecipeGroupControlState,
@@ -1308,5 +1309,136 @@ describe('plan application preview', () => {
     expect(html).toContain('傑克')
     expect(html).toContain('帽匠')
     expect(html).toContain('任一項改變')
+  })
+})
+
+
+describe('recipe allocation preparation source summary', () => {
+  it('shows existing finished jar stock without claiming new production', () => {
+    const shortfall = buildPreparationShortfall(
+      {
+        ingredients: [
+          { ingredientId: 'lemon', name: '檸檬', quantity: 1 },
+          { ingredientId: 'mint', name: '薄荷', quantity: 1 },
+          { ingredientId: 'sugar', name: '糖', quantity: 1 },
+        ],
+        productionWaterUnits: 1,
+        cleanCupUses: 1,
+        producedServings: 2,
+        assignedServings: 1,
+        leftoverServings: 1,
+        recipes: [
+          {
+            recipeId: 'sweet',
+            recipeName: '甜味',
+            customerIds: ['betsy'],
+            ingredientIds: ['lemon', 'mint', 'sugar'],
+            productionUnits: 1,
+            producedServings: 2,
+            assignedServings: 1,
+            leftoverServings: 1,
+            ingredientUnitsPerJuiceUnit: [
+              { ingredientId: 'lemon', quantityPerJuiceUnit: 1 },
+              { ingredientId: 'mint', quantityPerJuiceUnit: 1 },
+              { ingredientId: 'sugar', quantityPerJuiceUnit: 1 },
+            ],
+          },
+        ],
+      },
+      {
+        ingredientUnits: {},
+        intermediateJuiceUnits: {},
+        waterUnits: 0,
+        cleanCups: 1,
+        usedCups: 0,
+        juiceJars: [
+          {
+            id: 'jar-1',
+            recipeId: 'sweet',
+            servings: 1,
+          },
+        ],
+        shelfCount: 0,
+        jarRackCount: 0,
+      },
+    )
+
+    expect(
+      recipePreparationSourceSummary(
+        {
+          recipeId: 'sweet',
+          assignedServings: 1,
+          juiceUnits: 1,
+          producedServings: 2,
+          leftoverServings: 1,
+        },
+        shortfall,
+      ),
+    ).toBe(
+      '需求 1 杯 · 使用既有成品 1 杯（jar-1 1 杯） · 不需新增製作',
+    )
+  })
+
+  it('separates existing finished stock from new production', () => {
+    const shortfall = buildPreparationShortfall(
+      {
+        ingredients: [
+          { ingredientId: 'lemon', name: '檸檬', quantity: 2 },
+          { ingredientId: 'sugar', name: '糖', quantity: 2 },
+        ],
+        productionWaterUnits: 2,
+        cleanCupUses: 3,
+        producedServings: 4,
+        assignedServings: 3,
+        leftoverServings: 1,
+        recipes: [
+          {
+            recipeId: 'lemon-sugar',
+            recipeName: '檸檬糖',
+            customerIds: ['a', 'b', 'c'],
+            ingredientIds: ['lemon', 'sugar'],
+            productionUnits: 2,
+            producedServings: 4,
+            assignedServings: 3,
+            leftoverServings: 1,
+            ingredientUnitsPerJuiceUnit: [
+              { ingredientId: 'lemon', quantityPerJuiceUnit: 1 },
+              { ingredientId: 'sugar', quantityPerJuiceUnit: 1 },
+            ],
+          },
+        ],
+      },
+      {
+        ingredientUnits: {},
+        intermediateJuiceUnits: {},
+        waterUnits: 0,
+        cleanCups: 3,
+        usedCups: 0,
+        juiceJars: [
+          {
+            id: 'jar-1',
+            recipeId: 'lemon-sugar',
+            servings: 1,
+          },
+        ],
+        shelfCount: 0,
+        jarRackCount: 0,
+      },
+    )
+
+    expect(
+      recipePreparationSourceSummary(
+        {
+          recipeId: 'lemon-sugar',
+          assignedServings: 3,
+          juiceUnits: 2,
+          producedServings: 4,
+          leftoverServings: 1,
+        },
+        shortfall,
+      ),
+    ).toBe(
+      '需求 3 杯 · 使用既有成品 1 杯（jar-1 1 杯） · 新製作果汁 1 份 → 2 杯',
+    )
   })
 })
