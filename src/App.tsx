@@ -569,12 +569,16 @@ function App() {
       ? rows
       : rows.filter(({ customer }) => !supplied.has(customer.id))
 
+    const rowByCustomerId = new Map(
+      suppliedFilteredRows.map((row) => [row.customer.id, row]),
+    )
+
     return sortCustomerRows(
       suppliedFilteredRows,
       customerSortKey,
       customerSortDirection,
       recipeOrder,
-    )
+    ).map((row) => rowByCustomerId.get(row.customer.id)!)
   }, [
     customerRecommendationRows,
     currentProgress,
