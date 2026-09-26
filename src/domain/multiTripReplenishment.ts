@@ -1623,6 +1623,45 @@ function terminalLeftoverScheduleMetrics(
   }
 }
 
+function selectTerminalLeftoverTimingCandidate(
+  queues: JarQueue[],
+  baselineTripBuild: ReturnType<typeof buildTrips>,
+  policy: UsedCupTripPolicy,
+  carryPolicy: MultiTripJarCarryPolicy,
+  initialCupState: CupState,
+  discardedJuiceServings: number,
+): ReturnType<typeof buildTrips> {
+  try {
+    const timingCandidate = buildTrips(
+      queues,
+      policy,
+      carryPolicy,
+      initialCupState,
+      'terminal-leftovers-last',
+    )
+    const baselineMetrics = terminalLeftoverScheduleMetrics(
+      baselineTripBuild.trips,
+      discardedJuiceServings,
+    )
+    const candidateMetrics = terminalLeftoverScheduleMetrics(
+      timingCandidate.trips,
+      discardedJuiceServings,
+    )
+
+    return shouldAcceptTerminalLeftoverTimingCandidate(
+      baselineMetrics,
+      candidateMetrics,
+    )
+      ? timingCandidate
+      : baselineTripBuild
+  } catch (error) {
+    if (!(error instanceof PlanningUserError)) {
+      throw error
+    }
+    return baselineTripBuild
+  }
+}
+
 function allocateLeftoverJarContents(
   shortfall: PreparationShortfall,
   trips: MultiTripSalesTrip[],
@@ -2037,70 +2076,56 @@ export function buildMultiTripReplenishmentPlan(
     normalizedCarryPolicy,
     initialCupState,
   )
-  let selectedQueues = queues
-  let selectedTripBuild = baselineTripBuild
+  const baselineSelectedTripBuild =
+    selectTerminalLeftoverTimingCandidate(
+      queues,
+      baselineTripBuild,
+      policy,
+      normalizedCarryPolicy,
+      initialCupState,
+      discardedJuiceServings,
+    )
+  let selectedTripBuild = baselineSelectedTripBuild
 
   const prefillQueues = cloneJarQueues(queues)
   const coalescedLoadCount =
     coalesceInitialSameRecipeRefills(prefillQueues)
   if (coalescedLoadCount > 0) {
     try {
-      const prefillCandidate = buildTrips(
+      const prefillTripBuild = buildTrips(
         prefillQueues,
         policy,
         normalizedCarryPolicy,
         initialCupState,
       )
+      const prefillSelectedTripBuild =
+        selectTerminalLeftoverTimingCandidate(
+          prefillQueues,
+          prefillTripBuild,
+          policy,
+          normalizedCarryPolicy,
+          initialCupState,
+          discardedJuiceServings,
+        )
+
       if (
         shouldAcceptSameRecipePrefillCandidate(
           sameRecipePrefillCandidateMetrics(
-            baselineTripBuild.trips,
+            baselineSelectedTripBuild.trips,
             discardedJuiceServings,
           ),
           sameRecipePrefillCandidateMetrics(
-            prefillCandidate.trips,
+            prefillSelectedTripBuild.trips,
             discardedJuiceServings,
           ),
         )
       ) {
-        selectedQueues = prefillQueues
-        selectedTripBuild = prefillCandidate
+        selectedTripBuild = prefillSelectedTripBuild
       }
     } catch (error) {
       if (!(error instanceof PlanningUserError)) {
         throw error
       }
-    }
-  }
-
-  try {
-    const timingCandidate = buildTrips(
-      selectedQueues,
-      policy,
-      normalizedCarryPolicy,
-      initialCupState,
-      'terminal-leftovers-last',
-    )
-    const baselineMetrics = terminalLeftoverScheduleMetrics(
-      selectedTripBuild.trips,
-      discardedJuiceServings,
-    )
-    const candidateMetrics = terminalLeftoverScheduleMetrics(
-      timingCandidate.trips,
-      discardedJuiceServings,
-    )
-
-    if (
-      shouldAcceptTerminalLeftoverTimingCandidate(
-        baselineMetrics,
-        candidateMetrics,
-      )
-    ) {
-      selectedTripBuild = timingCandidate
-    }
-  } catch (error) {
-    if (!(error instanceof PlanningUserError)) {
-      throw error
     }
   }
 
