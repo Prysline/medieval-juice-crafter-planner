@@ -98,6 +98,40 @@ describe('minimum-cost stage certificate preparation', () => {
     ).toEqual(['shared-1', 'b-cheap'])
   })
 
+  it('does not let an equal-cost superset dominate a minimum-cost subset identity', () => {
+    const domain = model([
+      recipe('a-only', 4, ['a']),
+      recipe('shared', 4, ['a', 'b']),
+      recipe('a-expensive', 5, ['a']),
+    ])
+
+    const certificate = prepareMinimumCostStageCertificate(domain)
+
+    expect(
+      certificate?.continuationDomain.recipes.map(
+        (entry) => entry.candidate.id,
+      ),
+    ).toEqual(['a-only', 'shared'])
+    expect(certificate?.frontierRecipeCount).toBe(2)
+  })
+
+  it('keeps exact cheaper-superset dominance after compressing coverage masks', () => {
+    const domain = model([
+      recipe('a-cheap', 1, ['a']),
+      recipe('shared-middle', 2, ['a', 'b']),
+      recipe('b-expensive', 3, ['b']),
+    ])
+
+    const certificate = prepareMinimumCostStageCertificate(domain)
+
+    expect(
+      certificate?.continuationDomain.recipes.map(
+        (entry) => entry.candidate.id,
+      ),
+    ).toEqual(['a-cheap', 'shared-middle'])
+    expect(certificate?.frontierRecipeCount).toBe(2)
+  })
+
   it('falls back when a finite jar-switch hard limit makes recipe identity part of Stage 1 feasibility', () => {
     const certificate = prepareMinimumCostStageCertificate(
       model(
