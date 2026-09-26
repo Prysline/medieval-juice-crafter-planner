@@ -23,6 +23,7 @@ import {
   MachineBatchFlow,
   ProductionStepFinalJuiceNote,
   SeasoningStageMaterialSummary,
+  SeasoningStepStageUsageNote,
   OptimizerSummaryMetrics,
   PlanApplicationPreview,
   PlanningErrorBlock,
@@ -851,6 +852,29 @@ describe('production checklist UI', () => {
     expect(html).toContain('本階段基礎果汁：')
     expect(html).toContain('檸檬原汁 ×12')
     expect(html).toContain('橙子原汁 ×4')
+  })
+
+
+  it('shows which seasoning output must stay carried and which can be racked', () => {
+    const mixed = renderToStaticMarkup(
+      <SeasoningStepStageUsageNote
+        quantity={8}
+        stillNeededUnits={5}
+      />,
+    )
+    const releaseAll = renderToStaticMarkup(
+      <SeasoningStepStageUsageNote
+        quantity={3}
+        stillNeededUnits={0}
+      />,
+    )
+
+    expect(mixed).toContain('本階段還會用到 5 份')
+    expect(mixed).toContain('本階段不再使用 3 份，可先放架上')
+    expect(releaseAll).not.toContain('本階段還會用到')
+    expect(releaseAll).toContain(
+      '本階段不再使用 3 份，可先放架上',
+    )
   })
 
 })
