@@ -241,7 +241,9 @@ describe('region physical sales planner', () => {
       'b:ibex-b',
     ])
 
-    expect(fromEast.trips[0].servicedRegionIds).toEqual(['east-harbor'])
-    expect(fromIbex.trips[0].servicedRegionIds).toEqual(['ibex-statue'])
+    expect(fromEast.activeWorkshop.regionId).toBe('east-harbor')
+    expect(fromIbex.activeWorkshop.regionId).toBe('ibex-statue')
+    expect(fromEast.routeCost).toBe(4)
+    expect(fromIbex.routeCost).toBe(4)
   })
 })
