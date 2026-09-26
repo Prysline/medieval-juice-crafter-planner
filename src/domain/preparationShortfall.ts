@@ -268,6 +268,10 @@ export function buildPreparationShortfall(
           netProductionPlan: {
             steps: stockOffsetPlan.steps,
             machineOperations: stockOffsetPlan.machineOperations,
+            readyForFinalizingUnitsByStepKey:
+              stockOffsetPlan.readyForFinalizingUnitsByStepKey,
+            seasoningIngredientUnits:
+              stockOffsetPlan.seasoningIngredientUnits,
           },
           intermediateStockUsage:
             stockOffsetPlan.intermediateStockUsage,

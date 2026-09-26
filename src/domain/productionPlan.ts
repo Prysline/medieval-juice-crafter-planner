@@ -59,6 +59,13 @@ export interface MachineOperationSummary {
 export interface ProductionPlan {
   steps: ProductionStep[]
   machineOperations: MachineOperationSummary
+  /**
+   * Newly produced juice units from each step that are already recipe-complete
+   * and go directly to finalizing. Existing intermediate stock is excluded.
+   */
+  readyForFinalizingUnitsByStepKey?: Record<string, number>
+  /** Raw seasoning materials required by the executable production plan. */
+  seasoningIngredientUnits?: Record<string, number>
 }
 
 export interface IntermediateJuiceStockUsage {
@@ -102,6 +109,44 @@ const capabilityByIngredientId = new Map<
 
 function sequenceKey(ids: readonly string[]): string {
   return ids.join('>')
+}
+
+function seasoningIngredientUnitsForSteps(
+  steps: readonly ProductionStep[],
+): Record<string, number> {
+  const units: Record<string, number> = {}
+
+  for (const step of steps) {
+    if (step.kind !== 'seasoning' || !step.addedIngredientId) continue
+    units[step.addedIngredientId] =
+      (units[step.addedIngredientId] ?? 0) + step.quantity
+  }
+
+  return units
+}
+
+function readyForFinalizingUnitsForFullPlan(
+  steps: readonly ProductionStep[],
+): Record<string, number> {
+  const producerByNode = new Map<string, ProductionStep>()
+
+  for (const step of steps) {
+    if (step.kind === 'finalizing') continue
+    producerByNode.set(sequenceKey(step.toIngredientIds), step)
+  }
+
+  const result: Record<string, number> = {}
+  for (const finalizer of steps) {
+    if (finalizer.kind !== 'finalizing') continue
+    const producer = producerByNode.get(
+      sequenceKey(finalizer.fromIngredientIds),
+    )
+    if (!producer) continue
+    result[producer.key] =
+      (result[producer.key] ?? 0) + finalizer.quantity
+  }
+
+  return result
 }
 
 export function productionPathForIngredientIds(
@@ -281,6 +326,10 @@ export function buildProductionPlan(
   return {
     steps,
     machineOperations: summary,
+    readyForFinalizingUnitsByStepKey:
+      readyForFinalizingUnitsForFullPlan(steps),
+    seasoningIngredientUnits:
+      seasoningIngredientUnitsForSteps(steps),
   }
 }
 
@@ -339,6 +388,7 @@ export function buildStockOffsetProductionPlan(
   }
 
   const quantityByStepKey = new Map<string, number>()
+  const readyForFinalizingUnitsByStepKey = new Map<string, number>()
   const recipeUsageById = new Map<string, StockOffsetRecipeUsage>()
 
   function usageForRecipe(recipeId: string): StockOffsetRecipeUsage {
@@ -367,6 +417,7 @@ export function buildStockOffsetProductionPlan(
     quantity: number,
     recipeId: string,
     unitUsage: StockOffsetRecipeUnitUsage,
+    directToFinalizing = false,
   ) {
     if (quantity <= 0) return
 
@@ -399,6 +450,13 @@ export function buildStockOffsetProductionPlan(
     }
 
     addStepQuantity(producer, remaining)
+    if (directToFinalizing) {
+      readyForFinalizingUnitsByStepKey.set(
+        producer.key,
+        (readyForFinalizingUnitsByStepKey.get(producer.key) ?? 0) +
+          remaining,
+      )
+    }
 
     if (
       (producer.kind === 'juicing' || producer.kind === 'seasoning') &&
@@ -419,6 +477,7 @@ export function buildStockOffsetProductionPlan(
         remaining,
         recipeId,
         unitUsage,
+        false,
       )
       return
     }
@@ -429,12 +488,14 @@ export function buildStockOffsetProductionPlan(
         remaining,
         recipeId,
         unitUsage,
+        false,
       )
       requireIntermediate(
         producer.secondaryFromIngredientIds ?? [],
         remaining,
         recipeId,
         unitUsage,
+        false,
       )
     }
   }
@@ -468,6 +529,7 @@ export function buildStockOffsetProductionPlan(
         1,
         recipe.recipeId,
         unitUsage,
+        true,
       )
       usage.units.push(unitUsage)
     }
@@ -544,6 +606,11 @@ export function buildStockOffsetProductionPlan(
   return {
     steps,
     machineOperations,
+    readyForFinalizingUnitsByStepKey: Object.fromEntries(
+      readyForFinalizingUnitsByStepKey,
+    ),
+    seasoningIngredientUnits:
+      seasoningIngredientUnitsForSteps(steps),
     intermediateStockUsage,
     recipeUsage,
   }

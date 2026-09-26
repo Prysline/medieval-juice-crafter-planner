@@ -21,6 +21,8 @@ import {
   INTERMEDIATE_JUICE_SEARCH_RESULT_LIMIT,
   JuiceJarRecipeCombobox,
   MachineBatchFlow,
+  ProductionStepFinalJuiceNote,
+  SeasoningStageMaterialSummary,
   OptimizerSummaryMetrics,
   PlanApplicationPreview,
   PlanningErrorBlock,
@@ -804,6 +806,50 @@ describe('production checklist UI', () => {
     expect(html).toContain('檸檬 ×5')
     expect(html).toContain('檸檬原汁 ×5')
   })
+
+  it('labels final juice produced by seasoning or blending before finalizing', () => {
+    const seasoningHtml = renderToStaticMarkup(
+      <ProductionStepFinalJuiceNote
+        stepKind="seasoning"
+        readyForFinalizingUnits={3}
+      />,
+    )
+    const blendingHtml = renderToStaticMarkup(
+      <ProductionStepFinalJuiceNote
+        stepKind="blending"
+        readyForFinalizingUnits={2}
+      />,
+    )
+    const hiddenHtml = renderToStaticMarkup(
+      <ProductionStepFinalJuiceNote
+        stepKind="seasoning"
+        readyForFinalizingUnits={0}
+      />,
+    )
+
+    expect(seasoningHtml).toContain(
+      '其中 3 份為最終果汁（下一步進果汁成品台）',
+    )
+    expect(blendingHtml).toContain(
+      '其中 2 份為最終果汁（下一步進果汁成品台）',
+    )
+    expect(hiddenHtml).toBe('')
+  })
+
+  it('renders the seasoning-stage material totals without juice inputs', () => {
+    const html = renderToStaticMarkup(
+      <SeasoningStageMaterialSummary
+        ingredientUnits={{ mint: 8, sugar: 3, cinnamon: 5 }}
+      />,
+    )
+
+    expect(html).toContain('本階段材料：')
+    expect(html).toContain('薄荷 ×8')
+    expect(html).toContain('糖 ×3')
+    expect(html).toContain('肉桂 ×5')
+    expect(html).not.toContain('果汁 input')
+  })
+
 })
 
 describe('optimizer inventory availability', () => {
