@@ -20,6 +20,26 @@ describe('responsiveness wiring regression', () => {
     )
   })
 
+  it('keeps customer indexing, research filters, and sorting off text-query keystrokes', () => {
+    const searchTextMemo = appSource.match(
+      /const customerSearchTextById = useMemo\([\s\S]*?\n  \)\n\n  const sortedCustomerResearchRows/,
+    )?.[0]
+    const sortedMemo = appSource.match(
+      /const sortedCustomerResearchRows = useMemo\([\s\S]*?\n  \]\)\n\n  const customerRows/,
+    )?.[0]
+
+    expect(searchTextMemo).toBeDefined()
+    expect(sortedMemo).toBeDefined()
+    expect(searchTextMemo).not.toContain('normalizedCustomerQuery')
+    expect(sortedMemo).not.toContain('normalizedCustomerQuery')
+    expect(appSource).toMatch(
+      /const customerRows = useMemo\(\(\) => \{[\s\S]*?sortedCustomerResearchRows\.filter/,
+    )
+    expect(appSource).toContain(
+      'customerSearchTextById\n          .get(customer.id)\n          ?.includes(normalizedCustomerQuery)',
+    )
+  })
+
   it('narrows structured ingredient-sequence search before recipe filtering', () => {
     expect(appSource).toContain(
       'buildRecipeIngredientEntryIndex(recipeListEntries)',
