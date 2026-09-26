@@ -272,6 +272,8 @@ export function buildPreparationShortfall(
               stockOffsetPlan.readyForFinalizingUnitsByStepKey,
             seasoningIngredientUnits:
               stockOffsetPlan.seasoningIngredientUnits,
+            seasoningBaseJuiceUnits:
+              stockOffsetPlan.seasoningBaseJuiceUnits,
           },
           intermediateStockUsage:
             stockOffsetPlan.intermediateStockUsage,
