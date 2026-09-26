@@ -1311,27 +1311,47 @@ function OptimizerTools({
         selectedPolicy === 'retain-and-wash'
           ? 'allow-drop-if-full'
           : 'retain-and-wash'
+      const regionRouting = productionRegionRoutingInput(
+        currentProgress,
+        activeWorkshopRegionId,
+      )
+      const customerRegionById =
+        productionCustomerRegionById(
+          preparationDemand.recipes.flatMap(
+            (recipe) => recipe.customerIds,
+          ),
+        )
 
       const buildCheckedSalesTripPlan = (
         policy: UsedCupTripPolicy,
-      ): MultiTripReplenishmentPlan => {
-        const plan = buildMultiTripReplenishmentPlan(
-          preparationDemand,
+      ): {
+        plan: MultiTripReplenishmentPlan
+        regionPlan: RegionPhysicalSalesPlan
+      } => {
+        const regionPlan = buildRegionPhysicalSalesPlan({
+          demand: preparationDemand,
+          shortfall: preparationShortfall,
           policy,
-          accessibleJuiceJars,
-          {
+          availableJuiceJarInventory:
+            accessibleJuiceJars,
+          cups: {
             cleanCups: inventoryState.cleanCups,
             usedCups: inventoryState.usedCups,
           },
-          preparationShortfall,
-          {
+          carryPolicy: {
             mode: plannerSettings.juiceJarCarryMode,
-            reservedSlots: plannerSettings.reservedJuiceJarSlots,
+            reservedSlots:
+              plannerSettings.reservedJuiceJarSlots,
             minimumCarriedSlots:
               capacitySummary.minimumCarriedJuiceJarSlots,
           },
-          plannerSettings.allowDiscardRetainedJuice,
-        )
+          allowDiscardRetainedJuice:
+            plannerSettings.allowDiscardRetainedJuice,
+          activeWorkshop: regionRouting.activeWorkshop,
+          topology: regionRouting.topology,
+          customerRegionById,
+        })
+        const plan = regionPlan.salesPlan
         // result.jarTypeSwitches is the optimizer's structural lower bound.
         // The physical planner is terminal-aware: prefilled recipes that must
         // remain as final leftovers can require revisiting a jar, so its exact
@@ -1352,11 +1372,15 @@ function OptimizerTools({
             `Terminal-aware physical schedule requires ${plan.jarTypeSwitches} jar switch(es), exceeding the configured maximum of ${parsedMaxSwitches}`,
           )
         }
-        return plan
+        return { plan, regionPlan }
       }
 
-      const selectedSalesTripPlan =
+      const selectedSalesTripBuild =
         buildCheckedSalesTripPlan(selectedPolicy)
+      const selectedSalesTripPlan =
+        selectedSalesTripBuild.plan
+      const selectedRegionSalesPlan =
+        selectedSalesTripBuild.regionPlan
       const productionLogistics = buildProductionLogisticsPlan(
         preparationShortfall,
         inventoryState,
@@ -1364,17 +1388,24 @@ function OptimizerTools({
         selectedSalesTripPlan.productionJarFills,
       )
       let alternateSalesTripPlan: MultiTripReplenishmentPlan | null = null
+      let alternateRegionSalesPlan: RegionPhysicalSalesPlan | null = null
       let alternateError: string | null = null
       try {
-        alternateSalesTripPlan =
+        const alternateSalesTripBuild =
           buildCheckedSalesTripPlan(alternatePolicy)
+        alternateSalesTripPlan =
+          alternateSalesTripBuild.plan
+        alternateRegionSalesPlan =
+          alternateSalesTripBuild.regionPlan
       } catch (error) {
         alternateError = presentPlanningError(error).message
       }
 
       const salesTripPlans: SalesTripPlans = {
         selected: selectedSalesTripPlan,
+        selectedRegion: selectedRegionSalesPlan,
         alternate: alternateSalesTripPlan,
+        alternateRegion: alternateRegionSalesPlan,
         alternatePolicy,
         alternateError,
       }
