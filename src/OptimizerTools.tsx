@@ -6,6 +6,12 @@ import { recipes } from './data/recipes'
 import { recipeIngredientCapabilities } from './data/recipeIngredientCapabilities'
 import { ingredientIsAvailable } from './domain/availability'
 import {
+  availableProductionWorkshopRegions,
+  productionCustomerRegionById,
+  productionRegionRoutingInput,
+} from './domain/regionProductionAdapter'
+import type { RegionPhysicalSalesPlan } from './domain/regionPhysicalSalesPlanner'
+import {
   optimizerCustomerIds,
   optimizerCustomerLabel,
   optimizerMoney,
@@ -105,7 +111,9 @@ interface OptimizerToolsProps {
 
 interface SalesTripPlans {
   selected: MultiTripReplenishmentPlan
+  selectedRegion: RegionPhysicalSalesPlan
   alternate: MultiTripReplenishmentPlan | null
+  alternateRegion: RegionPhysicalSalesPlan | null
   alternatePolicy: UsedCupTripPolicy
   alternateError: string | null
 }
@@ -819,6 +827,8 @@ function OptimizerTools({
     readPlannerSettings(window.localStorage, inventoryState),
   )
   const [maxJarTypeSwitches, setMaxJarTypeSwitches] = useState('')
+  const [activeWorkshopRegionId, setActiveWorkshopRegionId] =
+    useState<VillageId>('east-harbor')
   const [runState, setRunState] = useState<OptimizerRunState>({
     status: 'idle',
   })
@@ -834,6 +844,11 @@ function OptimizerTools({
   const priorities = useMemo(
     () => uniquePriorities(primaryCriterion, secondaryOne, secondaryTwo),
     [primaryCriterion, secondaryOne, secondaryTwo],
+  )
+
+  const availableWorkshopRegions = useMemo(
+    () => availableProductionWorkshopRegions(currentProgress),
+    [currentProgress],
   )
 
   const availableInventoryIngredients = useMemo(
@@ -1041,6 +1056,21 @@ function OptimizerTools({
   }, [customerTargetQuery, targetableCustomers])
 
   useEffect(() => {
+    if (
+      availableWorkshopRegions.some(
+        (workshop) =>
+          workshop.regionId === activeWorkshopRegionId,
+      )
+    ) {
+      return
+    }
+    const fallback = availableWorkshopRegions[0]
+    if (fallback) {
+      setActiveWorkshopRegionId(fallback.regionId)
+    }
+  }, [availableWorkshopRegions, activeWorkshopRegionId])
+
+  useEffect(() => {
     optimizerAbortControllerRef.current?.abort()
     optimizerAbortControllerRef.current = null
     setRunState({ status: 'idle' })
@@ -1057,6 +1087,7 @@ function OptimizerTools({
     priorities,
     plannerSettings,
     maxJarTypeSwitches,
+    activeWorkshopRegionId,
     recipeCandidatePool,
   ])
 
@@ -1210,13 +1241,13 @@ function OptimizerTools({
         { buildPreparationDemand },
         { buildPreparationShortfall },
         { buildProductionLogisticsPlan },
-        { buildMultiTripReplenishmentPlan },
+        { buildRegionPhysicalSalesPlan },
         { buildPlanApplicationTransactionDraft },
       ] = await Promise.all([
         import('./domain/preparationDemand'),
         import('./domain/preparationShortfall'),
         import('./domain/productionLogistics'),
-        import('./domain/multiTripReplenishment'),
+        import('./domain/regionPhysicalSalesPlanner'),
         import('./domain/planApplicationTransaction'),
       ])
       const parsedMaxSwitches =
