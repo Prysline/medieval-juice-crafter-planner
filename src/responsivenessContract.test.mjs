@@ -20,6 +20,18 @@ describe('responsiveness wiring regression', () => {
     )
   })
 
+  it('narrows structured ingredient-sequence search before recipe filters and sorting', () => {
+    expect(appSource).toContain(
+      'buildRecipeIngredientEntryIndex(recipeListEntries)',
+    )
+    expect(appSource).toContain(
+      'const recipeSequenceEntries = useMemo(',
+    )
+    expect(appSource).toMatch(
+      /const recipeRows = useMemo\(\(\) => \{\s*const rows = recipeSequenceEntries/,
+    )
+  })
+
   it('keeps urgent search typing local and the hidden optimizer memoized', () => {
     expect(appSource).toContain('const MemoizedOptimizerTools = memo(OptimizerTools)')
     expect(appSource).toContain('<MemoizedOptimizerTools')
