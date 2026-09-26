@@ -71,6 +71,11 @@ export interface ProductionPlan {
    * Multi-ingredient intermediates are intentionally excluded.
    */
   seasoningBaseJuiceUnits?: Record<string, number>
+  /**
+   * Newly produced output from each seasoning step that is still consumed by
+   * another seasoning step later in the same stage.
+   */
+  seasoningStageReuseUnitsByStepKey?: Record<string, number>
 }
 
 export interface IntermediateJuiceStockUsage {
@@ -149,6 +154,30 @@ function seasoningBaseJuiceUnitsForSteps(
   }
 
   return units
+}
+
+function seasoningStageReuseUnitsForFullPlan(
+  steps: readonly ProductionStep[],
+): Record<string, number> {
+  const producerByNode = new Map<string, ProductionStep>()
+
+  for (const step of steps) {
+    if (step.kind === 'finalizing') continue
+    producerByNode.set(sequenceKey(step.toIngredientIds), step)
+  }
+
+  const result: Record<string, number> = {}
+  for (const consumer of steps) {
+    if (consumer.kind !== 'seasoning') continue
+    const producer = producerByNode.get(
+      sequenceKey(consumer.fromIngredientIds),
+    )
+    if (!producer || producer.kind !== 'seasoning') continue
+    result[producer.key] =
+      (result[producer.key] ?? 0) + consumer.quantity
+  }
+
+  return result
 }
 
 function readyForFinalizingUnitsForFullPlan(
@@ -358,6 +387,8 @@ export function buildProductionPlan(
       seasoningIngredientUnitsForSteps(steps),
     seasoningBaseJuiceUnits:
       seasoningBaseJuiceUnitsForSteps(steps),
+    seasoningStageReuseUnitsByStepKey:
+      seasoningStageReuseUnitsForFullPlan(steps),
   }
 }
 
@@ -417,6 +448,7 @@ export function buildStockOffsetProductionPlan(
 
   const quantityByStepKey = new Map<string, number>()
   const readyForFinalizingUnitsByStepKey = new Map<string, number>()
+  const seasoningStageReuseUnitsByStepKey = new Map<string, number>()
   const recipeUsageById = new Map<string, StockOffsetRecipeUsage>()
 
   function usageForRecipe(recipeId: string): StockOffsetRecipeUsage {
@@ -445,7 +477,7 @@ export function buildStockOffsetProductionPlan(
     quantity: number,
     recipeId: string,
     unitUsage: StockOffsetRecipeUnitUsage,
-    directToFinalizing = false,
+    consumerKind: ProductionStepKind | null = null,
   ) {
     if (quantity <= 0) return
 
@@ -478,10 +510,20 @@ export function buildStockOffsetProductionPlan(
     }
 
     addStepQuantity(producer, remaining)
-    if (directToFinalizing) {
+    if (consumerKind === 'finalizing') {
       readyForFinalizingUnitsByStepKey.set(
         producer.key,
         (readyForFinalizingUnitsByStepKey.get(producer.key) ?? 0) +
+          remaining,
+      )
+    }
+    if (
+      consumerKind === 'seasoning' &&
+      producer.kind === 'seasoning'
+    ) {
+      seasoningStageReuseUnitsByStepKey.set(
+        producer.key,
+        (seasoningStageReuseUnitsByStepKey.get(producer.key) ?? 0) +
           remaining,
       )
     }
@@ -505,7 +547,7 @@ export function buildStockOffsetProductionPlan(
         remaining,
         recipeId,
         unitUsage,
-        false,
+        'seasoning',
       )
       return
     }
@@ -516,14 +558,14 @@ export function buildStockOffsetProductionPlan(
         remaining,
         recipeId,
         unitUsage,
-        false,
+        'blending',
       )
       requireIntermediate(
         producer.secondaryFromIngredientIds ?? [],
         remaining,
         recipeId,
         unitUsage,
-        false,
+        'blending',
       )
     }
   }
@@ -557,7 +599,7 @@ export function buildStockOffsetProductionPlan(
         1,
         recipe.recipeId,
         unitUsage,
-        true,
+        'finalizing',
       )
       usage.units.push(unitUsage)
     }
@@ -641,6 +683,9 @@ export function buildStockOffsetProductionPlan(
       seasoningIngredientUnitsForSteps(steps),
     seasoningBaseJuiceUnits:
       seasoningBaseJuiceUnitsForSteps(steps),
+    seasoningStageReuseUnitsByStepKey: Object.fromEntries(
+      seasoningStageReuseUnitsByStepKey,
+    ),
     intermediateStockUsage,
     recipeUsage,
   }
