@@ -836,10 +836,11 @@ describe('production checklist UI', () => {
     expect(hiddenHtml).toBe('')
   })
 
-  it('renders the seasoning-stage material totals without juice inputs', () => {
+  it('renders seasoning materials and only the base juices needed in that stage', () => {
     const html = renderToStaticMarkup(
       <SeasoningStageMaterialSummary
         ingredientUnits={{ mint: 8, sugar: 3, cinnamon: 5 }}
+        baseJuiceUnits={{ lemon: 12, orange: 4 }}
       />,
     )
 
@@ -847,7 +848,9 @@ describe('production checklist UI', () => {
     expect(html).toContain('薄荷 ×8')
     expect(html).toContain('糖 ×3')
     expect(html).toContain('肉桂 ×5')
-    expect(html).not.toContain('果汁 input')
+    expect(html).toContain('本階段基礎果汁：')
+    expect(html).toContain('檸檬原汁 ×12')
+    expect(html).toContain('橙子原汁 ×4')
   })
 
 })
