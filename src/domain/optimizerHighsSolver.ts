@@ -34,6 +34,8 @@ type ObjectiveKey =
 type IntVariable = ReturnType<Model['intVar']>
 type BoolVariable = ReturnType<Model['boolVar']>
 
+const PRODUCTION_CERTIFICATE_RECIPE_COUNT_GATE = 3000
+
 interface ObjectiveFix {
   objective: ObjectiveKey
   value: number
@@ -1096,7 +1098,7 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
         minimumCostCertificateApplied &&
         fixes.length === 1 &&
         fixes[0].objective === 'cost' &&
-        currentDomain.recipes.length >= 4000
+        currentDomain.recipes.length >= PRODUCTION_CERTIFICATE_RECIPE_COUNT_GATE
       ) {
         const certificate = await tryMachineOperationCertificate(
           currentDomain,
@@ -1125,7 +1127,7 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
         fixes.length === 2 &&
         fixes[0].objective === 'cost' &&
         fixes[1].objective === 'machineOperations' &&
-        currentDomain.recipes.length >= 4000
+        currentDomain.recipes.length >= PRODUCTION_CERTIFICATE_RECIPE_COUNT_GATE
       ) {
         const certificate = await tryJarSwitchCertificate(
           currentDomain,

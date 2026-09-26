@@ -499,53 +499,103 @@ describe('optimizer model', () => {
       model.recipes[0].productionPath.edges.map((edge) => edge.kind),
     ).toContain('blending')
   })
-  it('excludes repeated-ingredient candidates when maximum ingredient cost is a priority', () => {
-    const repeated: RecipeCandidate = {
-      id: 'repeat-expensive',
-      name: '重複高成本',
-      ingredients: ['檸檬', '糖', '糖'],
-      effects: [],
-      source: 'computed' as const,
-      salePrice: null,
-      unlockedAt: 'seasoner-unlocked' as const,
-      equipment: [],
+  it('prefers a unique full match even when a repeated Blender recipe is cheaper', () => {
+    const target: Customer = {
+      id: 'macarius-fixture',
+      name: '馬卡里烏斯',
+      occupation: '旅行者',
+      villageId: 'ibex-statue',
+      satisfactionRequired: 0,
+      preferences: [
+        { kind: 'ingredient', value: '黃瓜' },
+        { kind: 'effect', value: '補充精力' },
+      ],
     }
-    const unique: RecipeCandidate = {
-      id: 'unique-expensive',
-      name: '不重複高成本',
-      ingredients: ['檸檬', '糖'],
-      effects: [],
-      source: 'computed' as const,
-      salePrice: null,
-      unlockedAt: 'seasoner-unlocked' as const,
-      equipment: [],
-    }
-    const source = {
-      customers: [{
-        id: 'test-customer',
-        name: '測試顧客',
-        occupation: '測試',
-        villageId: 'east-harbor' as const,
-        satisfactionRequired: 0,
-        preferences: [],
-      }],
-      candidates: [repeated, unique],
-    }
-    const request = {
-      customerIds: ['test-customer'],
-      currentProgress: 'seasoner-unlocked' as const,
-      suppliedCustomerIds: [],
-      satisfactionByVillage: baseRequest.satisfactionByVillage,
-      formalCustomerIds: [],
-      candidatePolicy: 'allow-unambiguous-computed' as const,
-      objective: 'maximum-ingredient-cost' as const,
-      priorities: ['maximum-ingredient-cost' as const],
-      availableJuiceJarCount: 1,
-    }
-    const model = buildOptimizationModel(request, source)
-    expect(model.recipes.map((recipe) => recipe.candidate.id)).not.toContain(
-      'repeat-expensive',
+    const repeated = candidate(
+      'repeat-cheap-55',
+      'computed',
+      ['黃瓜', '薄荷', '黃瓜', '香蕉'],
+      [
+        { name: '補充精力', value: 4 },
+        { name: '輔助瘦身', value: 4 },
+        { name: '紓解壓力', value: 4 },
+      ],
+      'ibex-statue-unlocked',
     )
+    const unique = candidate(
+      'unique-58',
+      'computed',
+      ['黃瓜', '薄荷', '香蕉', '肉桂'],
+      [
+        { name: '補充精力', value: 4 },
+        { name: '輔助瘦身', value: 4 },
+        { name: '紓解壓力', value: 4 },
+      ],
+      'ibex-statue-unlocked',
+    )
+
+    const model = buildOptimizationModel(
+      {
+        ...baseRequest,
+        customerIds: [target.id],
+        formalCustomerIds: [],
+        currentProgress: 'ibex-statue-unlocked',
+        objective: 'minimum-cost',
+        priorities: ['minimum-cost'],
+      },
+      {
+        customers: [target],
+        candidates: [repeated, unique],
+      },
+    )
+
+    expect(model.serviceableCustomerIds).toEqual([target.id])
+    expect(model.recipes.map((recipe) => recipe.candidate.id)).toEqual([
+      unique.id,
+    ])
+    expect(model.recipes[0]?.juiceUnitIngredientCost).toBe(58)
+  })
+
+  it('keeps a repeated full match as fallback when no unique full match exists', () => {
+    const target: Customer = {
+      id: 'repeat-required',
+      name: '重複配方測試顧客',
+      occupation: '測試',
+      villageId: 'east-harbor',
+      satisfactionRequired: 0,
+      preferences: [{ kind: 'effect', value: '甜味' }],
+    }
+    const repeated = candidate(
+      'repeat-only',
+      'computed',
+      ['檸檬', '糖', '糖'],
+      [{ name: '甜味', value: 10 }],
+      'seasoner-unlocked',
+    )
+
+    for (const objective of [
+      'minimum-cost',
+      'maximum-ingredient-cost',
+    ] as const) {
+      const model = buildOptimizationModel(
+        {
+          ...baseRequest,
+          customerIds: [target.id],
+          formalCustomerIds: [],
+          objective,
+          priorities: [objective],
+        },
+        {
+          customers: [target],
+          candidates: [repeated],
+        },
+      )
+
+      expect(model.serviceableCustomerIds).toEqual([target.id])
+      expect(model.recipes.map((recipe) => recipe.candidate.id)).toEqual([
+        repeated.id,
+      ])
+    }
   })
 
 })
