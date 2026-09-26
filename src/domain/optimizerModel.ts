@@ -4,6 +4,7 @@ import { recipeCandidateMatchesCustomer } from './matching'
 import { calculateRecipeIngredientCost } from './recipeCost'
 import type { RecipeCandidatePool } from './recipeCandidatePool'
 import {
+  preferUniqueIngredientFullMatchesForCustomer,
   searchRecipeCandidatesForCustomer,
   type ProgressiveRecipeSearchPolicy,
 } from './recipeSearch'
@@ -187,14 +188,6 @@ function candidateIsEligible(
 ): boolean {
   if (candidate.effectAmbiguity) return false
   if (
-    normalizedOptimizationPriorities(request).includes(
-      'maximum-ingredient-cost',
-    ) &&
-    new Set(candidate.ingredients).size !== candidate.ingredients.length
-  ) {
-    return false
-  }
-  if (
     request.candidatePolicy === 'observed-only' &&
     candidate.source !== 'observed'
   ) {
@@ -288,28 +281,33 @@ export function buildOptimizationModel(
       continue
     }
 
+    const searchOptions = {
+      candidatePolicy: request.candidatePolicy,
+      mode: 'bounded-exhaustive' as const,
+      additionalCandidateEligibility: (candidate: RecipeCandidate) => {
+        if (!cachedEligibleEntry(candidate)) return false
+        if (
+          revenueSensitive &&
+          formalIds.has(customerId) &&
+          candidate.salePrice === null
+        ) {
+          return false
+        }
+        return true
+      },
+    }
     const candidateSource = source.candidatePool
       ? searchRecipeCandidatesForCustomer(
           source.candidatePool,
           request.currentProgress,
           customer,
-          {
-            candidatePolicy: request.candidatePolicy,
-            mode: 'bounded-exhaustive',
-            additionalCandidateEligibility: (candidate) => {
-              if (!cachedEligibleEntry(candidate)) return false
-              if (
-                revenueSensitive &&
-                formalIds.has(customerId) &&
-                candidate.salePrice === null
-              ) {
-                return false
-              }
-              return true
-            },
-          },
+          searchOptions,
         ).candidates
-      : (source.candidates ?? [])
+      : preferUniqueIngredientFullMatchesForCustomer(
+          source.candidates ?? [],
+          customer,
+          searchOptions,
+        )
 
     const recipeIds: string[] = []
     for (const candidate of candidateSource) {
