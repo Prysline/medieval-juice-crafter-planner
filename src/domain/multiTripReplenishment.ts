@@ -1253,22 +1253,59 @@ function buildTrips(
       )
       if (proposedJarSlots > BACKPACK_SLOT_CAPACITY) continue
 
-      // A prepared physical jar load is the atomic sales-trip unit. If the
-      // whole load cannot fit the current cup/backpack state, leave it for a
-      // later trip instead of splitting the same jar contents across trips.
-      const transition = simulateCupTrip(
+      // A production fill / prepared jar content identity stays atomic, but
+      // sales consumption may span trips. Preserve a complete load whenever
+      // it can fit on its own later trip; split only when the load itself is
+      // impossible under the current physical cup lifecycle.
+      const fullTransition = simulateCupTrip(
         cupState,
         trip.totalServings + jar.servings,
         policy,
         proposedJarSlots,
       )
-      if (!transition) continue
 
-      trip.juiceJars.push({ ...jar })
-      trip.totalServings += jar.servings
+      let servingsForTrip = jar.servings
+      if (!fullTransition) {
+        const fullLoadFitsAlone = simulateCupTrip(
+          cupState,
+          jar.servings,
+          policy,
+          jarSlotsFor(1),
+        )
+        if (fullLoadFitsAlone) continue
+
+        servingsForTrip = 0
+        for (
+          let partialServings = jar.servings - 1;
+          partialServings > 0;
+          partialServings -= 1
+        ) {
+          const partialTransition = simulateCupTrip(
+            cupState,
+            trip.totalServings + partialServings,
+            policy,
+            proposedJarSlots,
+          )
+          if (!partialTransition) continue
+
+          servingsForTrip = partialServings
+          break
+        }
+        if (servingsForTrip === 0) continue
+      }
+
+      const unsoldServings = jar.servings - servingsForTrip
+      trip.juiceJars.push({
+        ...jar,
+        customerIds: jar.customerIds.slice(0, servingsForTrip),
+        servings: servingsForTrip,
+        retainedLeftoverServings:
+          jar.retainedLeftoverServings + unsoldServings,
+      })
+      trip.totalServings += servingsForTrip
       selectedServingsByJarId.set(
         jar.physicalJarId,
-        jar.servings,
+        servingsForTrip,
       )
     }
 
@@ -1329,12 +1366,20 @@ function buildTrips(
         )
       }
 
-      if (served !== head.servings) {
-        throw new Error(
-          'Physical jar load must remain atomic within one sales trip',
-        )
+      if (served === head.servings) {
+        queue.loads.shift()
+        continue
       }
-      queue.loads.shift()
+
+      queue.loads[0] = {
+        ...head,
+        customerIds: head.customerIds.slice(served),
+        servings: head.servings - served,
+        plannedFillServings: 0,
+        fillAction: 'continue-loaded',
+        previousRecipeId: head.recipeId,
+        previousRecipeName: head.recipeName,
+      }
     }
 
     trips.push({
@@ -1428,6 +1473,21 @@ function terminalLeftoverScheduleMetrics(
   trips: readonly MutableTrip[],
   discardedJuiceServings: number,
 ): TerminalLeftoverScheduleMetrics {
+  const finalJarStateById = new Map<
+    string,
+    { retainedLeftoverServings: number; tripIndex: number }
+  >()
+
+  trips.forEach((trip, index) => {
+    for (const load of trip.juiceJars) {
+      finalJarStateById.set(load.physicalJarId, {
+        retainedLeftoverServings:
+          load.retainedLeftoverServings,
+        tripIndex: index,
+      })
+    }
+  })
+
   return {
     feasible: true,
     tripCount: trips.length,
@@ -1450,17 +1510,14 @@ function terminalLeftoverScheduleMetrics(
     ),
     physicalJarSequenceSignature:
       mutableTripSequenceSignature(trips),
-    terminalLeftoverTripScore: trips.reduce(
-      (score, trip, index) =>
+    terminalLeftoverTripScore: [
+      ...finalJarStateById.values(),
+    ].reduce(
+      (score, state) =>
         score +
-        trip.juiceJars.reduce(
-          (tripScore, load) =>
-            tripScore +
-            (load.retainedLeftoverServings > 0
-              ? index + 1
-              : 0),
-          0,
-        ),
+        (state.retainedLeftoverServings > 0
+          ? state.tripIndex + 1
+          : 0),
       0,
     ),
   }
@@ -1472,20 +1529,25 @@ function allocateLeftoverJarContents(
   discardedInitialJuice: readonly MultiTripDiscardedInitialJuice[] = [],
   discardedNewProductionJuice: readonly MultiTripDiscardedNewProductionJuice[] = [],
 ): MultiTripLeftoverJarContent[] {
-  const contents = trips
-    .flatMap((trip) =>
-      trip.juiceJars.flatMap((load) =>
-        load.retainedLeftoverServings > 0
-          ? [{
-              physicalJarId: load.physicalJarId,
-              recipeId: load.recipeId,
-              recipeName: load.recipeName,
-              servings: load.retainedLeftoverServings,
-              tripNumber: trip.tripNumber,
-            }]
-          : [],
-      ),
-    )
+  const finalContentsByJarId = new Map<
+    string,
+    MultiTripLeftoverJarContent
+  >()
+
+  for (const trip of trips) {
+    for (const load of trip.juiceJars) {
+      finalContentsByJarId.set(load.physicalJarId, {
+        physicalJarId: load.physicalJarId,
+        recipeId: load.recipeId,
+        recipeName: load.recipeName,
+        servings: load.retainedLeftoverServings,
+        tripNumber: trip.tripNumber,
+      })
+    }
+  }
+
+  const contents = [...finalContentsByJarId.values()]
+    .filter((item) => item.servings > 0)
     .sort(
       (a, b) =>
         a.physicalJarId.localeCompare(b.physicalJarId) ||
@@ -2148,4 +2210,3 @@ export function buildMultiTripReplenishmentPlan(
     returnsHomeBetweenTrips: trips.length > 1,
   }
 }
-
