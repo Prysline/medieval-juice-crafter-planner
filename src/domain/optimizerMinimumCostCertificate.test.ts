@@ -38,6 +38,10 @@ describe('production-scale minimum-cost certificate', () => {
 
     expect(domain.serviceableCustomerIds).toHaveLength(49)
     expect(certificate).not.toBeNull()
+
+    // Candidate/frontier/representative counts are data-dependent compression
+    // statistics. New legitimate observed recipes may change them without
+    // changing optimizer correctness, so only lock structural invariants here.
     expect(certificate?.originalRecipeCount).toBe(domain.recipes.length)
     expect(certificate!.frontierRecipeCount).toBeLessThanOrEqual(
       certificate!.originalRecipeCount,
