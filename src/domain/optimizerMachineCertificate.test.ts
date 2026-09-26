@@ -44,9 +44,6 @@ describe('production-scale optimizer certificates', () => {
     const stage1 = prepareMinimumCostStageCertificate(domain)
 
     expect(stage1).not.toBeNull()
-    console.info(
-      `[optimizer certificate diagnostics] original=${stage1!.originalRecipeCount} frontier=${stage1!.frontierRecipeCount} representative=${stage1!.representativeRecipeCount}`,
-    )
     expect(stage1!.originalRecipeCount).toBe(domain.recipes.length)
     expect(stage1!.continuationDomain.recipes).toHaveLength(
       stage1!.frontierRecipeCount,
