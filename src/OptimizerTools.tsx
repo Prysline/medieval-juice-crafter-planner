@@ -24,6 +24,7 @@ import type {
   OptimizationCandidatePolicy,
   OptimizationCriterion,
   OptimizationResult,
+  RecipeProductionPlan,
 } from './domain/optimizer'
 import {
   isOptimizerWorkerCancelledError,
@@ -255,6 +256,59 @@ export function criterionLabel(criterion: OptimizationCriterion): string {
   if (criterion === 'maximum-known-gross-profit') return '最高已知毛利'
   if (criterion === 'minimum-machine-operations') return '最少機器操作'
   return '最少果汁罐換裝'
+}
+
+export function recipePreparationSourceSummary(
+  plan: Pick<
+    RecipeProductionPlan,
+    'recipeId' | 'assignedServings' | 'juiceUnits' | 'producedServings' | 'leftoverServings'
+  >,
+  preparationShortfall: PreparationShortfall,
+): string {
+  const stock = preparationShortfall.recipes.find(
+    (recipe) => recipe.recipeId === plan.recipeId,
+  )
+
+  if (!stock) {
+    return [
+      `需求 ${plan.assignedServings} 杯`,
+      `製作果汁 ${plan.juiceUnits} 份 → ${plan.producedServings} 杯`,
+      ...(plan.leftoverServings > 0
+        ? [`剩餘 ${plan.leftoverServings} 杯`]
+        : []),
+    ].join(' · ')
+  }
+
+  const parts = [`需求 ${stock.assignedServings} 杯`]
+
+  if (stock.finishedServingsUsed > 0) {
+    const sources = stock.finishedStockSources
+      .filter((source) => source.servingsUsed > 0)
+      .map(
+        (source) =>
+          `${source.physicalJarId} ${source.servingsUsed} 杯`,
+      )
+
+    parts.push(
+      `使用既有成品 ${stock.finishedServingsUsed} 杯` +
+        (sources.length > 0 ? `（${sources.join('、')}）` : ''),
+    )
+  }
+
+  if (stock.juiceUnitsToPrepare > 0) {
+    parts.push(
+      `新製作果汁 ${stock.juiceUnitsToPrepare} 份 → ${stock.newlyProducedServings} 杯`,
+    )
+    if (stock.newProductionLeftoverServings > 0) {
+      parts.push(
+        `新製作剩餘 ${stock.newProductionLeftoverServings} 杯`,
+      )
+    }
+  } else {
+    parts.push('不需新增製作')
+  }
+
+  return parts.join(' · ')
 }
 
 export const INVENTORY_RECIPE_SEARCH_RESULT_LIMIT = 8
@@ -3810,7 +3864,7 @@ function OptimizerResultPanel({
                     onChange={onCommitDeliveryGroup}
                   />
                   <span>
-                    原料成本：{optimizerMoney(plan.totalIngredientCost)}
+                    配方基準原料成本：{optimizerMoney(plan.totalIngredientCost)}
                   </span>
                 </div>
                 <div className="optimizer-delivery-customer-list">
@@ -3832,11 +3886,10 @@ function OptimizerResultPanel({
                   )}
                 </div>
                 <p>
-                  需求 {plan.assignedServings} 杯 · 製作果汁 {plan.juiceUnits}{' '}
-                  份 → {plan.producedServings} 杯
-                  {plan.leftoverServings > 0
-                    ? ' · 剩餘 ' + plan.leftoverServings + ' 杯'
-                    : ''}
+                  {recipePreparationSourceSummary(
+                    plan,
+                    preparationShortfall,
+                  )}
                 </p>
               </article>
             ))}
