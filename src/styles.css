@@ -2798,6 +2798,28 @@ footer {
   font-size: 0.76rem;
 }
 
+.optimizer-remaining-sales-plan {
+  margin-top: 2px;
+}
+
+.optimizer-remaining-sales-customer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.optimizer-remaining-sales-customer > small {
+  border: 1px solid #ddd1bf;
+  border-radius: 999px;
+  background: #fbf7ef;
+  padding: 3px 7px;
+  color: #6d604d;
+  font-size: 0.67rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
 .optimizer-sales-warning {
   color: #9b4d36 !important;
   font-weight: 800;
