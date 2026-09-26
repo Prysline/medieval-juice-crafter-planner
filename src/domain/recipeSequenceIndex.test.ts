@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { RecipeCandidatePoolEntry } from './recipeCandidatePool'
 import {
-  buildContiguousRecipeSequenceIndex,
+  buildRecipeIngredientEntryIndex,
   recipeEntriesForContiguousSequence,
 } from './recipeSequenceIndex'
 
@@ -37,7 +37,7 @@ describe('contiguous recipe sequence index', () => {
     entry('reverse', ['mint', 'lemon']),
     entry('repeated', ['lemon', 'mint', 'mint', 'sugar']),
   ]
-  const index = buildContiguousRecipeSequenceIndex(entries)
+  const index = buildRecipeIngredientEntryIndex(entries)
 
   it('matches an exact contiguous ingredient fragment anywhere in a recipe', () => {
     expect(
