@@ -9,8 +9,10 @@ import type { InventoryState } from '../types'
 import { normalizeInventoryState } from './inventoryState'
 import {
   readPlanApplicationBasisState,
-  validateStoredPlanApplicationTransactionBasis,
 } from './planApplicationBasis'
+import {
+  validatePlanApplicationTransactionBasis,
+} from '../domain/planApplicationValidation'
 import {
   writePlanApplicationStoredState,
 } from './planApplicationState'
@@ -58,17 +60,24 @@ export function commitPlanApplicationTransaction(
 ): PlanApplicationCommitResult {
   try {
     const currentBasis = readPlanApplicationBasisState(storage)
-    const rebasedDraft =
-      rebasePlanApplicationTransactionSuppliedCustomers(
-        draft,
-        currentBasis.suppliedCustomerIds,
-      )
+    const initialValidation =
+      validatePlanApplicationTransactionBasis(draft, currentBasis)
+    const suppliedOnlyMismatch =
+      initialValidation.mismatches.length === 1 &&
+      initialValidation.mismatches[0] === 'supplied-customers'
+    const rebasedDraft = suppliedOnlyMismatch
+      ? rebasePlanApplicationTransactionSuppliedCustomers(
+          draft,
+          currentBasis.suppliedCustomerIds,
+        )
+      : null
     const effectiveDraft = rebasedDraft ?? draft
-    const validation =
-      validateStoredPlanApplicationTransactionBasis(
-        effectiveDraft,
-        storage,
-      )
+    const validation = rebasedDraft
+      ? validatePlanApplicationTransactionBasis(
+          effectiveDraft,
+          currentBasis,
+        )
+      : initialValidation
 
     if (!validation.valid) {
       return Object.freeze({
