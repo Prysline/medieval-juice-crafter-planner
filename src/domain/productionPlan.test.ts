@@ -515,4 +515,77 @@ describe('production plan stock offset', () => {
     ).toBe(1)
   })
 
+  it('marks only the newly produced shared-prefix units that are already ready for finalizing', () => {
+    const result = buildStockOffsetProductionPlan([
+      {
+        recipeId: 'ab',
+        recipeName: 'AB',
+        ingredientIds: ['lemon', 'sugar'],
+        juiceUnits: 1,
+        assignedServings: 2,
+      },
+      {
+        recipeId: 'abc',
+        recipeName: 'ABC',
+        ingredientIds: ['lemon', 'sugar', 'mint'],
+        juiceUnits: 1,
+        assignedServings: 2,
+      },
+    ])
+
+    expect(
+      result.steps.find((step) => step.key === 'season:lemon>sugar'),
+    ).toMatchObject({ quantity: 2 })
+    expect(result.readyForFinalizingUnitsByStepKey).toMatchObject({
+      'season:lemon>sugar': 1,
+      'season:lemon>sugar>mint': 1,
+    })
+  })
+
+  it('does not count intermediate stock as newly produced final juice', () => {
+    const identity = juiceStateIdentity([
+      'lemon',
+      'sugar',
+      'orange',
+      'mint',
+    ])
+    const result = buildStockOffsetProductionPlan(
+      [
+        {
+          recipeId: 'blend',
+          recipeName: 'Blend',
+          ingredientIds: ['lemon', 'sugar', 'orange', 'mint'],
+          juiceUnits: 2,
+          assignedServings: 4,
+        },
+      ],
+      { [identity]: 1 },
+    )
+
+    expect(result.readyForFinalizingUnitsByStepKey).toMatchObject({
+      'blend:lemon>sugar+orange>mint': 1,
+    })
+  })
+
+  it('aggregates seasoning materials from the stock-offset net production plan', () => {
+    const seasonedIdentity = juiceStateIdentity(['lemon', 'sugar'])
+    const result = buildStockOffsetProductionPlan(
+      [
+        {
+          recipeId: 'lemon-sugar-mint',
+          recipeName: 'Lemon Sugar Mint',
+          ingredientIds: ['lemon', 'sugar', 'mint'],
+          juiceUnits: 2,
+          assignedServings: 4,
+        },
+      ],
+      { [seasonedIdentity]: 1 },
+    )
+
+    expect(result.seasoningIngredientUnits).toEqual({
+      sugar: 1,
+      mint: 2,
+    })
+  })
+
 })
