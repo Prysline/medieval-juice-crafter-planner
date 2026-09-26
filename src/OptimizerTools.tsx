@@ -59,7 +59,10 @@ import {
 import type { ProductionLogisticsPlan } from './domain/productionLogistics'
 import { productionPathForIngredientIds } from './domain/productionPlan'
 import { juiceStateIdentity } from './domain/juiceStateIdentity'
-import type { PlanApplicationTransactionDraft } from './domain/planApplicationTransaction'
+import {
+  rebasePlanApplicationTransactionSuppliedCustomers,
+  type PlanApplicationTransactionDraft,
+} from './domain/planApplicationTransaction'
 import type { PlanApplicationBasisMismatchField } from './domain/planApplicationValidation'
 import {
   buildInventoryCapacitySummary,
@@ -1269,15 +1272,24 @@ function OptimizerTools({
 
     writeSuppliedCustomerIds(window.localStorage, committedSupplied)
     onSuppliedCustomerIdsCommitted(committedSupplied)
-    setRunState((current) =>
-      current.status === 'success'
-        ? {
-            ...current,
-            transactionDraft: null,
-            transactionDraftInvalidatedByPartialDelivery: true,
-          }
-        : current,
-    )
+    setRunState((current) => {
+      if (current.status !== 'success') return current
+
+      if (!current.transactionDraft) return current
+
+      const rebasedTransactionDraft =
+        rebasePlanApplicationTransactionSuppliedCustomers(
+          current.transactionDraft,
+          committedSupplied,
+        )
+
+      return {
+        ...current,
+        transactionDraft: rebasedTransactionDraft,
+        transactionDraftInvalidatedByPartialDelivery:
+          rebasedTransactionDraft === null,
+      }
+    })
     setApplicationState({ status: 'idle' })
     setDeliveryUiState({
       status: 'applied',
@@ -2266,7 +2278,7 @@ function OptimizerTools({
             {deliveryUiState.customerIds.map(customerLabel).join('、')}
           </strong>
           <span>
-            這次手動勾選只更新「今日已供應」；不修改庫存、果汁罐、杯具或製作狀態。若只需要重排尚未送達顧客的行程，可使用下方「剩餘販售重排」；若要重算製作或庫存，請先回到上方確認目前狀態後重新產生完整規劃。
+            這次手動勾選只更新「今日已供應」；不修改庫存、果汁罐、杯具或製作狀態。若這些勾選都屬於目前這份規劃，整份套用預覽會保留並以新的今日供應狀態重新對齊，仍可回頭確認套用物資變更；若只需要重排尚未送達顧客的行程，也可使用下方「剩餘販售重排」。
           </span>
         </div>
       )}
@@ -3652,7 +3664,7 @@ function OptimizerResultPanel({
           </div>
           <p className="optimizer-transaction-warning">
             {transactionDraftInvalidatedByPartialDelivery
-              ? '已有顧客被記錄為今日已供應，原本的整份套用預覽已失效，避免再次扣除同一批物資。若只要重新安排尚未送達顧客的行程，使用下方「剩餘販售重排」；若要重算製作或庫存，請先回到上方確認目前狀態後重新產生完整規劃。'
+              ? '今日已供應狀態出現無法與這份規劃安全對齊的變更，因此原本的整份套用預覽已失效。只有「原本未供應、且屬於這份規劃的顧客被勾為已供應」能保留套用預覽；其他供應狀態變更請重新產生完整規劃。'
               : '目前製作物流不可行，因此不建立交易草稿，也不會修改庫存。請先處理下方製作物流警告後重新產生規劃。'}
           </p>
         </section>
