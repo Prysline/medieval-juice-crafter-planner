@@ -3768,6 +3768,10 @@ function OptimizerResultPanel({
   )
 }
 
+function regionDisplayName(regionId: string): string {
+  return villageNames[regionId as VillageId] ?? regionId
+}
+
 export function SalesTripPlanBlock({
   plan,
   regionPlan,
@@ -3872,7 +3876,15 @@ export function SalesTripPlanBlock({
         </small>
       </article>
 
-      {plan.trips.map((trip) => (
+      {plan.trips.map((trip) => {
+        const regionTrip = regionPlan?.trips.find(
+          (item) => item.tripNumber === trip.tripNumber,
+        )
+        const fillsBeforeTrip = plan.productionJarFills.filter(
+          (fill) => fill.beforeTripNumber === trip.tripNumber,
+        )
+
+        return (
         <article
           className="optimizer-batch-card"
           key={plan.policy + '-' + trip.tripNumber}
@@ -3884,6 +3896,68 @@ export function SalesTripPlanBlock({
               實際隨身 {trip.carriedPhysicalJarIds.length} 罐
             </span>
           </div>
+          {regionTrip && (
+            <>
+              <p>
+                主要服務：
+                {regionTrip.primaryRegionIds.length > 0
+                  ? regionTrip.primaryRegionIds
+                      .map(regionDisplayName)
+                      .join('、')
+                  : '無'}
+                {' · '}順帶服務：
+                {regionTrip.sideRegionIds.length > 0
+                  ? regionTrip.sideRegionIds
+                      .map(regionDisplayName)
+                      .join('、')
+                  : '無'}
+                {' · '}本趟 route cost {regionTrip.routeCost}
+              </p>
+              {regionTrip.transitRegionIds.length > 0 && (
+                <p>
+                  只經過（不服務）：
+                  {regionTrip.transitRegionIds
+                    .map(regionDisplayName)
+                    .join('、')}
+                </p>
+              )}
+              {regionTrip.routeFootprint.length > 0 && (
+                <p>
+                  Region edge footprint：
+                  {regionTrip.routeFootprint
+                    .map(
+                      (edge) =>
+                        regionDisplayName(edge.from) +
+                        ' ↔ ' +
+                        regionDisplayName(edge.to) +
+                        ' ×' +
+                        edge.traversalCount,
+                    )
+                    .join('、')}
+                </p>
+              )}
+            </>
+          )}
+          <p>
+            本趟出發前裝罐：
+            {fillsBeforeTrip.length > 0
+              ? fillsBeforeTrip
+                  .map(
+                    (fill) =>
+                      fill.physicalJarId +
+                      ' ' +
+                      transactionFillActionLabel(fill) +
+                      ' ' +
+                      formatRecipeDisplayName(fill.recipeName) +
+                      ' +' +
+                      fill.servings +
+                      ' 杯（裝後 ' +
+                      fill.servingsAfterFill +
+                      ' 杯）',
+                  )
+                  .join('、')
+              : '不需新增 production fill'}
+          </p>
           <p>
             隨身果汁罐：{trip.carriedPhysicalJarIds.join('、')}
             {' · '}果汁罐占用／預留 {trip.juiceJarSlotsCarried} 格
@@ -3898,7 +3972,7 @@ export function SalesTripPlanBlock({
             {trip.cupsWashedBeforeTrip > 0
               ? ' · 先清洗 ' + trip.cupsWashedBeforeTrip + ' 個'
               : ' · 不需先清洗'}
-            {' · '}回家後 clean {trip.cleanCupsAfterTrip} / used {trip.usedCupsAfterTrip}
+            {' · '}回工作間後 clean {trip.cleanCupsAfterTrip} / used {trip.usedCupsAfterTrip}
             {trip.droppedUsedCups > 0
               ? ' · 本趟掉落 ' + trip.droppedUsedCups + ' 個 used cup'
               : ''}
@@ -3927,7 +4001,8 @@ export function SalesTripPlanBlock({
             </div>
           ))}
         </article>
-      ))}
+        )
+      })}
     </div>
   )
 }
