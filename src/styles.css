@@ -2724,6 +2724,20 @@ footer {
   font-weight: 800;
 }
 
+.optimizer-seasoning-stage-usage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  color: #66533a;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.optimizer-seasoning-stage-usage span:last-child {
+  color: #49623f;
+}
+
 .optimizer-operation-batches {
   display: grid;
   gap: 7px;
