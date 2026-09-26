@@ -2326,6 +2326,47 @@ function MachineSlotPill({
   )
 }
 
+export function ProductionStepFinalJuiceNote({
+  stepKind,
+  readyForFinalizingUnits,
+}: {
+  stepKind: ProductionStep['kind']
+  readyForFinalizingUnits: number
+}) {
+  if (
+    readyForFinalizingUnits <= 0 ||
+    (stepKind !== 'seasoning' && stepKind !== 'blending')
+  ) {
+    return null
+  }
+
+  return (
+    <p className="optimizer-final-juice-note">
+      其中 {readyForFinalizingUnits} 份為最終果汁（下一步進果汁成品台）
+    </p>
+  )
+}
+
+export function SeasoningStageMaterialSummary({
+  ingredientUnits,
+}: {
+  ingredientUnits: Readonly<Record<string, number>>
+}) {
+  const entries = Object.entries(ingredientUnits)
+    .filter(([, quantity]) => quantity > 0)
+    .map(([ingredientId, quantity]) =>
+      `${ingredientLabel(ingredientId)} ×${quantity}`,
+    )
+
+  if (entries.length === 0) return null
+
+  return (
+    <small className="optimizer-machine-material-summary">
+      本階段材料：{entries.join('、')}
+    </small>
+  )
+}
+
 export function MachineBatchFlow({
   step,
   quantity,
@@ -3478,6 +3519,14 @@ function OptimizerResultPanel({
                   <div>
                     <span>機器</span>
                     <strong>{equipment}</strong>
+                    {equipment === '調味器' && (
+                      <SeasoningStageMaterialSummary
+                        ingredientUnits={
+                          productionLogistics.productionPlan
+                            .seasoningIngredientUnits ?? {}
+                        }
+                      />
+                    )}
                   </div>
                   <span>
                     {steps.reduce(
@@ -3489,46 +3538,56 @@ function OptimizerResultPanel({
                 </header>
 
                 <div className="optimizer-machine-steps">
-                  {steps.map((step) => (
-                    <article
-                      className="optimizer-production-step-card"
-                      key={step.key}
-                    >
-                      <div className="optimizer-production-step-heading">
-                        <strong>{productionStepLabel(step)}</strong>
-                        <span>
-                          總量 {step.quantity} 份 · {step.operationCount} 批
-                        </span>
-                      </div>
-                      <div className="optimizer-operation-batches">
-                        {optimizerOperationQuantities(step.quantity).map(
-                          (quantity, index) => {
-                            const operationId = productionOperationId(
-                              step.key,
-                              index,
-                            )
-                            return (
-                              <MachineBatchFlow
-                                key={operationId}
-                                step={step}
-                                quantity={quantity}
-                                batchIndex={index}
-                                completed={completedProductionOperationIds.has(
-                                  operationId,
-                                )}
-                                onCompletedChange={(completed) =>
-                                  setProductionOperationCompleted(
+                  {steps.map((step) => {
+                    const readyForFinalizingUnits =
+                      productionLogistics.productionPlan
+                        .readyForFinalizingUnitsByStepKey?.[step.key] ?? 0
+
+                    return (
+                      <article
+                        className="optimizer-production-step-card"
+                        key={step.key}
+                      >
+                        <div className="optimizer-production-step-heading">
+                          <strong>{productionStepLabel(step)}</strong>
+                          <span>
+                            總量 {step.quantity} 份 · {step.operationCount} 批
+                          </span>
+                        </div>
+                        <ProductionStepFinalJuiceNote
+                          stepKind={step.kind}
+                          readyForFinalizingUnits={readyForFinalizingUnits}
+                        />
+                        <div className="optimizer-operation-batches">
+                          {optimizerOperationQuantities(step.quantity).map(
+                            (quantity, index) => {
+                              const operationId = productionOperationId(
+                                step.key,
+                                index,
+                              )
+                              return (
+                                <MachineBatchFlow
+                                  key={operationId}
+                                  step={step}
+                                  quantity={quantity}
+                                  batchIndex={index}
+                                  completed={completedProductionOperationIds.has(
                                     operationId,
-                                    completed,
-                                  )
-                                }
-                              />
-                            )
-                          },
-                        )}
-                      </div>
-                    </article>
-                  ))}
+                                  )}
+                                  onCompletedChange={(completed) =>
+                                    setProductionOperationCompleted(
+                                      operationId,
+                                      completed,
+                                    )
+                                  }
+                                />
+                              )
+                            },
+                          )}
+                        </div>
+                      </article>
+                    )
+                  })}
                 </div>
               </section>
             ),
