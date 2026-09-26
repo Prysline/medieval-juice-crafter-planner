@@ -7,8 +7,10 @@ import {
   buildMultiTripReplenishmentPlan as buildMultiTripReplenishmentPlanWithCups,
   buildProductionJarFillsFromSchedule,
   countJarTypeSwitchesFromSchedule,
+  shouldAcceptSameRecipePrefillCandidate,
   shouldAcceptTerminalLeftoverTimingCandidate,
   type MultiTripReplenishmentPlan,
+  type SameRecipePrefillCandidateMetrics,
   type MultiTripSalesTrip,
   type UsedCupTripPolicy,
 } from './multiTripReplenishment'
@@ -441,7 +443,7 @@ describe('multi-trip replenishment', () => {
     expectScheduleConsistency(result)
   })
 
-  it('keeps the baseline split when pre-filling would make the atomic load infeasible', () => {
+  it('prefills matching initial juice before trip 1 when trip count stays unchanged', () => {
     const salesDemand = demand([
       {
         recipeId: 'a',
@@ -461,11 +463,172 @@ describe('multi-trip replenishment', () => {
     )
 
     expect(result.tripCount).toBe(2)
+    expect(result.trips[0]?.juiceJars[0]).toMatchObject({
+      physicalJarId: 'jar-1',
+      recipeId: 'a',
+      servings: 1,
+      plannedFillServings: 2,
+      retainedLeftoverServings: 2,
+      fillAction: 'refill-same-type',
+    })
+    expect(result.trips[1]?.juiceJars[0]).toMatchObject({
+      physicalJarId: 'jar-1',
+      recipeId: 'a',
+      servings: 1,
+      plannedFillServings: 0,
+      retainedLeftoverServings: 1,
+      fillAction: 'continue-loaded',
+    })
+    expect(result.productionJarFills).toEqual([
+      expect.objectContaining({
+        physicalJarId: 'jar-1',
+        recipeId: 'a',
+        beforeTripNumber: 1,
+        servings: 2,
+        servingsAfterFill: 3,
+        fillAction: 'refill-same-type',
+      }),
+    ])
+    expect(result.leftoverJarContents).toEqual([
+      {
+        physicalJarId: 'jar-1',
+        recipeId: 'a',
+        recipeName: 'A',
+        servings: 1,
+        tripNumber: 2,
+      },
+    ])
+    expect(result.totalLeftoverServings).toBe(1)
+    expectScheduleConsistency(result)
+  })
+
+  it('keeps the capacity guard when existing plus new same-recipe juice would exceed one jar', () => {
+    const salesDemand = demand([
+      {
+        recipeId: 'a',
+        recipeName: 'A',
+        assignedServings: 10,
+      },
+    ])
+    const jars: JuiceJarInventoryItem[] = [
+      { id: 'jar-1', recipeId: 'a', servings: 9 },
+    ]
+
+    const result = buildPlanWithJars(
+      salesDemand,
+      'retain-and-wash',
+      jars,
+      { cleanCups: 10, usedCups: 0 },
+    )
+
+    expect(result.tripCount).toBe(2)
     expect(
       result.trips.map((trip) => trip.juiceJars[0]?.fillAction),
     ).toEqual(['use-existing', 'refill-same-type'])
-    expect(result.totalLeftoverServings).toBe(1)
+    expect(result.productionJarFills).toEqual([
+      expect.objectContaining({
+        physicalJarId: 'jar-1',
+        recipeId: 'a',
+        beforeTripNumber: 2,
+        servings: 2,
+        servingsAfterFill: 2,
+        fillAction: 'refill-same-type',
+      }),
+    ])
+    expect(
+      result.productionJarFills.every(
+        (fill) => fill.servingsAfterFill <= 10,
+      ),
+    ).toBe(true)
+    expect(result.leftoverJarContents).toEqual([
+      {
+        physicalJarId: 'jar-1',
+        recipeId: 'a',
+        recipeName: 'A',
+        servings: 1,
+        tripNumber: 2,
+      },
+    ])
     expectScheduleConsistency(result)
+  })
+
+  it('accepts earlier same-recipe prefill as an equal-trip physical timing tie-break', () => {
+    const baseline: SameRecipePrefillCandidateMetrics = {
+      feasible: true,
+      tripCount: 2,
+      droppedUsedCups: 0,
+      discardedJuiceServings: 0,
+      cupWashWaterUnits: 1,
+      jarTypeSwitches: 0,
+      physicalJarSequenceSignature:
+        'jar-1=a:use-existing>a:refill-same-type',
+      terminalLeftoverTripScore: 2,
+      terminalJarStateSignature: 'jar-1=a:1',
+      sameRecipeRefillTripScore: 2,
+    }
+    const candidate: SameRecipePrefillCandidateMetrics = {
+      ...baseline,
+      physicalJarSequenceSignature:
+        'jar-1=a:refill-same-type>a:continue-loaded',
+      sameRecipeRefillTripScore: 1,
+    }
+
+    expect(candidate.tripCount).toBe(baseline.tripCount)
+    expect(
+      shouldAcceptSameRecipePrefillCandidate(
+        baseline,
+        candidate,
+      ),
+    ).toBe(true)
+  })
+
+  it('rejects same-recipe prefill candidates that worsen physical costs or terminal state', () => {
+    const baseline: SameRecipePrefillCandidateMetrics = {
+      feasible: true,
+      tripCount: 2,
+      droppedUsedCups: 0,
+      discardedJuiceServings: 0,
+      cupWashWaterUnits: 1,
+      jarTypeSwitches: 0,
+      physicalJarSequenceSignature: 'baseline',
+      terminalLeftoverTripScore: 2,
+      terminalJarStateSignature: 'jar-1=a:1',
+      sameRecipeRefillTripScore: 2,
+    }
+    const earlierCandidate: SameRecipePrefillCandidateMetrics = {
+      ...baseline,
+      physicalJarSequenceSignature: 'candidate',
+      sameRecipeRefillTripScore: 1,
+    }
+    const worsenedCandidates: SameRecipePrefillCandidateMetrics[] = [
+      { ...earlierCandidate, feasible: false },
+      { ...earlierCandidate, tripCount: 3 },
+      { ...earlierCandidate, droppedUsedCups: 1 },
+      { ...earlierCandidate, discardedJuiceServings: 1 },
+      { ...earlierCandidate, cupWashWaterUnits: 2 },
+      { ...earlierCandidate, jarTypeSwitches: 1 },
+      {
+        ...earlierCandidate,
+        terminalJarStateSignature: 'jar-1=a:0',
+      },
+      {
+        ...earlierCandidate,
+        terminalLeftoverTripScore: 1,
+      },
+      {
+        ...earlierCandidate,
+        sameRecipeRefillTripScore: 2,
+      },
+    ]
+
+    for (const candidate of worsenedCandidates) {
+      expect(
+        shouldAcceptSameRecipePrefillCandidate(
+          baseline,
+          candidate,
+        ),
+      ).toBe(false)
+    }
   })
 
   it('keeps a terminal leftover from trip 2 when moving it later would increase trip count', () => {
