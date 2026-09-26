@@ -97,61 +97,23 @@ export function prepareMinimumCostStageCertificate(
   )
 
   const dominatedRecipeIds = new Set<string>()
-  const sortedServiceGroups = [...serviceGroups].sort(
-    (a, b) => a.minimumCost - b.minimumCost,
-  )
-  let cheaperCoverageMasks: bigint[] = []
 
-  for (
-    let tierStart = 0;
-    tierStart < sortedServiceGroups.length;
-  ) {
-    const tierCost = sortedServiceGroups[tierStart].minimumCost
-    let tierEnd = tierStart + 1
+  for (const group of serviceGroups) {
+    let bestSupersetCost = Infinity
 
-    while (
-      tierEnd < sortedServiceGroups.length &&
-      sortedServiceGroups[tierEnd].minimumCost === tierCost
-    ) {
-      tierEnd += 1
+    for (const candidateGroup of serviceGroups) {
+      if ((candidateGroup.mask & group.mask) !== group.mask) continue
+      bestSupersetCost = Math.min(
+        bestSupersetCost,
+        candidateGroup.minimumCost,
+      )
     }
 
-    const tierGroups = sortedServiceGroups.slice(
-      tierStart,
-      tierEnd,
-    )
-
-    for (const group of tierGroups) {
-      const hasCheaperSuperset = cheaperCoverageMasks.some(
-        (mask) => (mask & group.mask) === group.mask,
-      )
-
-      for (const recipe of group.recipes) {
-        if (
-          hasCheaperSuperset ||
-          recipe.juiceUnitIngredientCost > group.minimumCost
-        ) {
-          dominatedRecipeIds.add(recipe.candidate.id)
-        }
+    for (const recipe of group.recipes) {
+      if (recipe.juiceUnitIngredientCost > bestSupersetCost) {
+        dominatedRecipeIds.add(recipe.candidate.id)
       }
     }
-
-    for (const group of tierGroups) {
-      if (
-        cheaperCoverageMasks.some(
-          (mask) => (mask & group.mask) === group.mask,
-        )
-      ) {
-        continue
-      }
-
-      cheaperCoverageMasks = cheaperCoverageMasks.filter(
-        (mask) => (group.mask & mask) !== mask,
-      )
-      cheaperCoverageMasks.push(group.mask)
-    }
-
-    tierStart = tierEnd
   }
 
   const frontierRecipes = domain.recipes.filter(
