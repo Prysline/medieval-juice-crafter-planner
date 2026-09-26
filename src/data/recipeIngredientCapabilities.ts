@@ -38,4 +38,5 @@ export const recipeIngredientCapabilities: RecipeIngredientCapability[] = [
   { ingredientId: 'sugar', roles: ['seasoning'] },
   { ingredientId: 'mint', roles: ['seasoning'] },
   { ingredientId: 'cinnamon', roles: ['seasoning'] },
+  { ingredientId: 'clove', roles: ['seasoning'] },
 ]
