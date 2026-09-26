@@ -66,6 +66,11 @@ export interface ProductionPlan {
   readyForFinalizingUnitsByStepKey?: Record<string, number>
   /** Raw seasoning materials required by the executable production plan. */
   seasoningIngredientUnits?: Record<string, number>
+  /**
+   * Single-ingredient juice inputs that must be available when seasoning starts.
+   * Multi-ingredient intermediates are intentionally excluded.
+   */
+  seasoningBaseJuiceUnits?: Record<string, number>
 }
 
 export interface IntermediateJuiceStockUsage {
@@ -120,6 +125,27 @@ function seasoningIngredientUnitsForSteps(
     if (step.kind !== 'seasoning' || !step.addedIngredientId) continue
     units[step.addedIngredientId] =
       (units[step.addedIngredientId] ?? 0) + step.quantity
+  }
+
+  return units
+}
+
+function seasoningBaseJuiceUnitsForSteps(
+  steps: readonly ProductionStep[],
+): Record<string, number> {
+  const units: Record<string, number> = {}
+
+  for (const step of steps) {
+    if (
+      step.kind !== 'seasoning' ||
+      step.fromIngredientIds.length !== 1
+    ) {
+      continue
+    }
+
+    const ingredientId = step.fromIngredientIds[0]
+    units[ingredientId] =
+      (units[ingredientId] ?? 0) + step.quantity
   }
 
   return units
@@ -330,6 +356,8 @@ export function buildProductionPlan(
       readyForFinalizingUnitsForFullPlan(steps),
     seasoningIngredientUnits:
       seasoningIngredientUnitsForSteps(steps),
+    seasoningBaseJuiceUnits:
+      seasoningBaseJuiceUnitsForSteps(steps),
   }
 }
 
@@ -611,6 +639,8 @@ export function buildStockOffsetProductionPlan(
     ),
     seasoningIngredientUnits:
       seasoningIngredientUnitsForSteps(steps),
+    seasoningBaseJuiceUnits:
+      seasoningBaseJuiceUnitsForSteps(steps),
     intermediateStockUsage,
     recipeUsage,
   }
