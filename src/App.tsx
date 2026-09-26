@@ -1,4 +1,4 @@
-import { memo, startTransition, useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { memo, startTransition, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import OptimizerTools from './OptimizerTools'
 import RecipeTools from './RecipeTools'
 import { customers } from './data/customers'
@@ -88,6 +88,7 @@ const ingredientNameById = new Map(
   ingredients.map((ingredient) => [ingredient.id, ingredient.name]),
 )
 const MemoizedOptimizerTools = memo(OptimizerTools)
+const MemoizedCustomerRow = memo(CustomerRow)
 const MemoizedRecipeRow = memo(RecipeRow)
 
 const scheduleLabels = {
@@ -742,7 +743,7 @@ function App() {
     setRecipeSortDirection(key === 'salePrice' ? 'desc' : 'asc')
   }
 
-  function toggleSuppliedToday(customerId: string) {
+  const toggleSuppliedToday = useCallback((customerId: string) => {
     setSuppliedCustomerIds((current) => {
       const next = current.includes(customerId)
         ? current.filter((id) => id !== customerId)
@@ -751,14 +752,14 @@ function App() {
       writeSuppliedCustomerIds(window.localStorage, next)
       return next
     })
-  }
+  }, [])
 
   function resetSuppliedToday() {
     setSuppliedCustomerIds([])
     writeSuppliedCustomerIds(window.localStorage, [])
   }
 
-  function toggleFormalCustomer(customerId: string) {
+  const toggleFormalCustomer = useCallback((customerId: string) => {
     setFormalCustomerIds((current) => {
       const next = current.includes(customerId)
         ? current.filter((id) => id !== customerId)
@@ -767,7 +768,7 @@ function App() {
       writeFormalCustomerIds(window.localStorage, next)
       return next
     })
-  }
+  }, [])
 
   function addComparisonCustomer(customerId: string) {
     setComparisonCustomerIds((current) =>
@@ -781,13 +782,13 @@ function App() {
     )
   }
 
-  function toggleComparisonCustomer(customerId: string) {
+  const toggleComparisonCustomer = useCallback((customerId: string) => {
     setComparisonCustomerIds((current) =>
       current.includes(customerId)
         ? current.filter((id) => id !== customerId)
         : [...current, customerId],
     )
-  }
+  }, [])
 
   function clearComparisonCustomers() {
     setComparisonCustomerIds([])
@@ -1080,7 +1081,7 @@ function App() {
 
           {customerRows.map(
             ({ customer, matches, unlocked, recommendations }) => (
-              <CustomerRow
+              <MemoizedCustomerRow
                 key={customer.id}
                 customer={customer}
                 matches={matches}
@@ -1090,9 +1091,9 @@ function App() {
                 formal={isFormalCustomer(customer.id, formalCustomerIds)}
                 suppliedToday={suppliedCustomerIds.includes(customer.id)}
                 comparisonSelected={comparisonCustomerIds.includes(customer.id)}
-                onToggleFormal={() => toggleFormalCustomer(customer.id)}
-                onToggleSupplied={() => toggleSuppliedToday(customer.id)}
-                onToggleComparison={() => toggleComparisonCustomer(customer.id)}
+                onToggleFormal={toggleFormalCustomer}
+                onToggleSupplied={toggleSuppliedToday}
+                onToggleComparison={toggleComparisonCustomer}
               />
             ),
           )}
@@ -1493,11 +1494,14 @@ function CustomerRow({
   formal: boolean
   suppliedToday: boolean
   comparisonSelected: boolean
-  onToggleFormal: () => void
-  onToggleSupplied: () => void
-  onToggleComparison: () => void
+  onToggleFormal: (customerId: string) => void
+  onToggleSupplied: (customerId: string) => void
+  onToggleComparison: (customerId: string) => void
 }) {
   const bestMatch = matches[0]
+  const handleToggleFormal = () => onToggleFormal(customer.id)
+  const handleToggleSupplied = () => onToggleSupplied(customer.id)
+  const handleToggleComparison = () => onToggleComparison(customer.id)
   const visibleMatches = matches.slice(0, 8)
   const remainingMatches = matches.slice(8)
   const preferencesKnown = customer.preferences !== null
@@ -1517,10 +1521,10 @@ function CustomerRow({
           <strong>{customer.name}</strong>
           <span className="cell-secondary">{customer.occupation}</span>
           <div className="customer-quick-actions">
-            <FormalToggle formal={formal} onToggle={onToggleFormal} />
+            <FormalToggle formal={formal} onToggle={handleToggleFormal} />
             <CompareToggle
               selected={comparisonSelected}
-              onToggle={onToggleComparison}
+              onToggle={handleToggleComparison}
             />
           </div>
           <span className="mobile-customer-meta">
@@ -1531,7 +1535,7 @@ function CustomerRow({
           <SupplyToggle
             mobile
             supplied={suppliedToday}
-            onToggle={onToggleSupplied}
+            onToggle={handleToggleSupplied}
           />
         </div>
 
@@ -1576,7 +1580,7 @@ function CustomerRow({
             : '—'}
         </div>
 
-        <SupplyToggle supplied={suppliedToday} onToggle={onToggleSupplied} />
+        <SupplyToggle supplied={suppliedToday} onToggle={handleToggleSupplied} />
       </summary>
 
       <div className="row-details">
