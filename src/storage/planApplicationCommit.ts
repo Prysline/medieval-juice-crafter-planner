@@ -1,12 +1,14 @@
 import type {
   PlanApplicationBasisMismatchField,
 } from '../domain/planApplicationValidation'
-import type {
-  PlanApplicationTransactionDraft,
+import {
+  rebasePlanApplicationTransactionSuppliedCustomers,
+  type PlanApplicationTransactionDraft,
 } from '../domain/planApplicationTransaction'
 import type { InventoryState } from '../types'
 import { normalizeInventoryState } from './inventoryState'
 import {
+  readPlanApplicationBasisState,
   validateStoredPlanApplicationTransactionBasis,
 } from './planApplicationBasis'
 import {
@@ -55,8 +57,18 @@ export function commitPlanApplicationTransaction(
   storage: StorageLike,
 ): PlanApplicationCommitResult {
   try {
+    const currentBasis = readPlanApplicationBasisState(storage)
+    const rebasedDraft =
+      rebasePlanApplicationTransactionSuppliedCustomers(
+        draft,
+        currentBasis.suppliedCustomerIds,
+      )
+    const effectiveDraft = rebasedDraft ?? draft
     const validation =
-      validateStoredPlanApplicationTransactionBasis(draft, storage)
+      validateStoredPlanApplicationTransactionBasis(
+        effectiveDraft,
+        storage,
+      )
 
     if (!validation.valid) {
       return Object.freeze({
@@ -65,9 +77,9 @@ export function commitPlanApplicationTransaction(
       })
     }
 
-    const inventory = inventoryFromTransaction(draft)
+    const inventory = inventoryFromTransaction(effectiveDraft)
     const suppliedCustomerIds = [
-      ...new Set(draft.after.suppliedCustomerIds),
+      ...new Set(effectiveDraft.after.suppliedCustomerIds),
     ]
 
     writePlanApplicationStoredState(storage, {
