@@ -1518,6 +1518,13 @@ function OptimizerTools({
           ? { ...current, phase: 'finalizing' }
           : current,
       )
+      // Let React paint the post-solve phase before the synchronous physical
+      // planning / transaction work starts. Without this yield, a long
+      // finalization can visually remain stuck on the Worker phase.
+      await new Promise<void>((resolve) => {
+        window.setTimeout(resolve, 0)
+      })
+      if (optimizerAbortController.signal.aborted) return
 
       const preparationDemand = buildPreparationDemand(result)
       const preparationShortfall = buildPreparationShortfall(
