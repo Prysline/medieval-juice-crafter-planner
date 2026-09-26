@@ -97,7 +97,7 @@ function eligibleFullMatchCandidates(
   )
 }
 
-function preferUniqueIngredientFullMatches(
+export function preferUniqueIngredientFullMatchesForCustomer(
   candidates: readonly RecipeCandidate[],
   customer: Customer,
   options: ProgressiveRecipeSearchOptions,
@@ -188,7 +188,7 @@ function resultWithStop({
   guaranteedFullMatchFound?: boolean
 }): ProgressiveRecipeSearchResult {
   return {
-    candidates: preferUniqueIngredientFullMatches(
+    candidates: preferUniqueIngredientFullMatchesForCustomer(
       candidates,
       customer,
       options,
