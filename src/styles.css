@@ -79,9 +79,15 @@ h1 {
 
 .progress-panel {
   display: grid;
-  gap: 12px;
-  padding: 14px;
+  gap: 16px;
+  padding: 16px;
   border-radius: 18px;
+}
+
+.progress-settings,
+.progress-stat-grid {
+  display: grid;
+  gap: 12px;
 }
 
 .progress-panel label {
@@ -92,15 +98,39 @@ h1 {
   font-weight: 700;
 }
 
+.progress-summary {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid rgba(82, 66, 44, 0.13);
+  padding-top: 14px;
+}
+
+.progress-summary-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  color: #4f4538;
+}
+
+.progress-summary-heading strong {
+  font-size: 0.88rem;
+}
+
+.progress-summary-heading span {
+  color: #8a7b68;
+  font-size: 0.72rem;
+}
+
 .progress-stat {
   display: grid;
   gap: 3px;
   align-content: center;
-  min-height: 72px;
+  min-height: 76px;
   border: 1px solid #dfd2bd;
   border-radius: 12px;
-  background: #faf4e8;
-  padding: 9px 11px;
+  background: #faf7ef;
+  padding: 10px 12px;
   color: #6d604d;
 }
 
@@ -836,6 +866,12 @@ footer {
     padding-top: 8px;
   }
 
+  .progress-summary-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+
   .table-list {
     overflow: hidden;
   }
@@ -936,8 +972,12 @@ footer {
     padding-inline: 28px;
   }
 
-  .progress-panel {
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  .progress-settings {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
+
+  .progress-stat-grid {
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   }
 }
 
