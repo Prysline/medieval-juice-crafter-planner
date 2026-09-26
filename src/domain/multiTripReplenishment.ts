@@ -1425,18 +1425,88 @@ export function shouldAcceptTerminalLeftoverTimingCandidate(
   )
 }
 
-function shouldAcceptSameRecipePrefillCandidate(
-  baseline: TerminalLeftoverScheduleMetrics,
-  candidate: TerminalLeftoverScheduleMetrics,
+export interface SameRecipePrefillCandidateMetrics
+  extends TerminalLeftoverScheduleMetrics {
+  terminalJarStateSignature: string
+  sameRecipeRefillTripScore: number
+}
+
+function terminalJarStateSignature(
+  trips: readonly MutableTrip[],
+): string {
+  const finalStateByJarId = new Map<
+    string,
+    { recipeId: string; servings: number }
+  >()
+
+  for (const trip of trips) {
+    for (const load of trip.juiceJars) {
+      finalStateByJarId.set(load.physicalJarId, {
+        recipeId: load.recipeId,
+        servings: load.retainedLeftoverServings,
+      })
+    }
+  }
+
+  return [...finalStateByJarId.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(
+      ([physicalJarId, state]) =>
+        `${physicalJarId}=${state.recipeId}:${state.servings}`,
+    )
+    .join('|')
+}
+
+function sameRecipePrefillCandidateMetrics(
+  trips: readonly MutableTrip[],
+  discardedJuiceServings: number,
+): SameRecipePrefillCandidateMetrics {
+  return {
+    ...terminalLeftoverScheduleMetrics(
+      trips,
+      discardedJuiceServings,
+    ),
+    terminalJarStateSignature:
+      terminalJarStateSignature(trips),
+    sameRecipeRefillTripScore: trips.reduce(
+      (score, trip, index) =>
+        score +
+        trip.juiceJars.filter(
+          (load) => load.fillAction === 'refill-same-type',
+        ).length *
+          (index + 1),
+      0,
+    ),
+  }
+}
+
+export function shouldAcceptSameRecipePrefillCandidate(
+  baseline: SameRecipePrefillCandidateMetrics,
+  candidate: SameRecipePrefillCandidateMetrics,
 ): boolean {
+  if (
+    !candidate.feasible ||
+    candidate.tripCount > baseline.tripCount ||
+    candidate.droppedUsedCups > baseline.droppedUsedCups ||
+    candidate.discardedJuiceServings >
+      baseline.discardedJuiceServings ||
+    candidate.cupWashWaterUnits > baseline.cupWashWaterUnits ||
+    candidate.jarTypeSwitches > baseline.jarTypeSwitches ||
+    candidate.terminalJarStateSignature !==
+      baseline.terminalJarStateSignature ||
+    candidate.terminalLeftoverTripScore <
+      baseline.terminalLeftoverTripScore
+  ) {
+    return false
+  }
+
+  if (candidate.tripCount < baseline.tripCount) {
+    return true
+  }
+
   return (
-    candidate.feasible &&
-    candidate.tripCount < baseline.tripCount &&
-    candidate.droppedUsedCups <= baseline.droppedUsedCups &&
-    candidate.discardedJuiceServings ===
-      baseline.discardedJuiceServings &&
-    candidate.cupWashWaterUnits <= baseline.cupWashWaterUnits &&
-    candidate.jarTypeSwitches === baseline.jarTypeSwitches
+    candidate.sameRecipeRefillTripScore <
+    baseline.sameRecipeRefillTripScore
   )
 }
 
@@ -1953,11 +2023,11 @@ export function buildMultiTripReplenishmentPlan(
       )
       if (
         shouldAcceptSameRecipePrefillCandidate(
-          terminalLeftoverScheduleMetrics(
+          sameRecipePrefillCandidateMetrics(
             baselineTripBuild.trips,
             discardedJuiceServings,
           ),
-          terminalLeftoverScheduleMetrics(
+          sameRecipePrefillCandidateMetrics(
             prefillCandidate.trips,
             discardedJuiceServings,
           ),
