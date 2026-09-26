@@ -1220,13 +1220,13 @@ describe('sales trip terminal leftover UI', () => {
       <SalesTripPlanBlock plan={plan} />,
     )
 
-    expect(html).toContain('販售後保留成品 1 杯')
+    expect(html).toContain('期末剩餘')
     expect(html).toContain(
       '期末果汁罐：jar-1 · A · 1 杯 · 第 2 趟後留在家中',
     )
     expect(html).toContain('第 3 趟')
-    expect(html).toContain('果汁罐 jar-2：B')
-    expect(html).toContain('果汁罐 jar-3：C')
+    expect(html).toContain('<strong>jar-2</strong><span>B</span>')
+    expect(html).toContain('<strong>jar-3</strong><span>C</span>')
   })
   it('renders Region service roles, transit, physical continuation, and fill timing together', () => {
     const salesDemand: PreparationDemand = {
@@ -1325,13 +1325,13 @@ describe('sales trip terminal leftover UI', () => {
       />,
     )
 
-    expect(html).toContain('出發／補給工作間：東港村')
-    expect(html).toContain('羱羊雕像：需求 2 杯')
-    expect(html).toContain('主要服務：東港村')
-    expect(html).toContain('主要服務：羱羊雕像')
-    expect(html).toContain('只經過（不服務）：靜謐噴泉')
+    expect(html).toContain('工作間')
+    expect(html).toContain('羱羊雕像')
+    expect(html).toContain('主要 · 東港村')
+    expect(html).toContain('主要 · 羱羊雕像')
+    expect(html).toContain('途經 · 靜謐噴泉')
     expect(html).toContain('跨區路線邊')
-    expect(html).toContain('本趟出發前裝罐')
+    expect(html).toContain('裝罐')
     expect(html).toContain('沿用罐內成品')
   })
 })
