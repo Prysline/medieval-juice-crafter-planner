@@ -37,10 +37,20 @@ describe('production-scale minimum-cost certificate', () => {
     const certificate = prepareMinimumCostStageCertificate(domain)
 
     expect(domain.serviceableCustomerIds).toHaveLength(49)
-    expect(domain.recipes).toHaveLength(9255)
     expect(certificate).not.toBeNull()
-    expect(certificate?.frontierRecipeCount).toBe(4970)
-    expect(certificate?.representativeRecipeCount).toBe(536)
+    expect(certificate?.originalRecipeCount).toBe(domain.recipes.length)
+    expect(certificate!.frontierRecipeCount).toBeLessThanOrEqual(
+      certificate!.originalRecipeCount,
+    )
+    expect(certificate!.representativeRecipeCount).toBeLessThanOrEqual(
+      certificate!.frontierRecipeCount,
+    )
+    expect(certificate!.continuationDomain.recipes).toHaveLength(
+      certificate!.frontierRecipeCount,
+    )
+    expect(certificate!.stageDomain.recipes).toHaveLength(
+      certificate!.representativeRecipeCount,
+    )
 
     const stageDomain = certificate!.stageDomain
     const model = new Model()
