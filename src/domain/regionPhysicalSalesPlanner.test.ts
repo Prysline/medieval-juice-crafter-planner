@@ -161,6 +161,96 @@ describe('region physical sales planner', () => {
     ).toBe(true)
   })
 
+  it('preserves same-recipe prefill timing and continues the same persistent jar across Region trips', () => {
+    const salesDemand = demand([
+      {
+        recipeId: 'a',
+        recipeName: 'A',
+        customerIds: ['east-a', 'ibex-a'],
+      },
+    ])
+    const jars: JuiceJarInventoryItem[] = [
+      { id: 'jar-1', recipeId: 'a', servings: 1 },
+    ]
+    const stock = inventory(jars, 1)
+    const shortfall = buildPreparationShortfall(
+      salesDemand,
+      stock,
+      { finishedJuiceJarIds: ['jar-1'] },
+    )
+
+    const plan = buildRegionPhysicalSalesPlan({
+      demand: salesDemand,
+      shortfall,
+      policy: 'retain-and-wash',
+      availableJuiceJarInventory: jars,
+      cups: { cleanCups: 1, usedCups: 0 },
+      carryPolicy: {
+        mode: 'auto',
+        reservedSlots: 0,
+        minimumCarriedSlots: 0,
+      },
+      allowDiscardRetainedJuice: false,
+      activeWorkshop: {
+        id: 'workshop:east-harbor',
+        regionId: 'east-harbor',
+      },
+      topology: {
+        edges: [
+          {
+            from: 'east-harbor',
+            to: 'tranquil-fountain',
+            cost: 1,
+          },
+          {
+            from: 'tranquil-fountain',
+            to: 'ibex-statue',
+            cost: 1,
+          },
+        ],
+      },
+      customerRegionById: {
+        'east-a': 'east-harbor',
+        'ibex-a': 'ibex-statue',
+      },
+    })
+
+    expect(plan.salesPlan.tripCount).toBe(2)
+    expect(plan.salesPlan.productionJarFills).toEqual([
+      expect.objectContaining({
+        physicalJarId: 'jar-1',
+        recipeId: 'a',
+        beforeTripNumber: 1,
+        servings: 2,
+        servingsAfterFill: 3,
+        fillAction: 'refill-same-type',
+      }),
+    ])
+    expect(plan.salesPlan.trips[0]?.juiceJars[0]).toMatchObject({
+      physicalJarId: 'jar-1',
+      recipeId: 'a',
+      servings: 1,
+      plannedFillServings: 2,
+      fillAction: 'refill-same-type',
+    })
+    expect(plan.salesPlan.trips[1]?.juiceJars[0]).toMatchObject({
+      physicalJarId: 'jar-1',
+      recipeId: 'a',
+      servings: 1,
+      plannedFillServings: 0,
+      fillAction: 'continue-loaded',
+    })
+    expect(plan.salesPlan.leftoverJarContents).toEqual([
+      {
+        physicalJarId: 'jar-1',
+        recipeId: 'a',
+        recipeName: 'A',
+        servings: 1,
+        tripNumber: 2,
+      },
+    ])
+  })
+
   it('keeps recipe-to-customer assignment invariant when only the active workshop changes', () => {
     const salesDemand = demand([
       {
