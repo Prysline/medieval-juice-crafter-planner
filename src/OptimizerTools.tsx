@@ -240,6 +240,13 @@ function customerLabel(customerId: string): string {
   return customer ? optimizerCustomerLabel(customer) : customerId
 }
 
+function customerRegionLabel(customerId: string): string | null {
+  const customer = customerById.get(customerId)
+  return customer
+    ? (villageNames[customer.villageId] ?? customer.villageId)
+    : null
+}
+
 function ingredientLabel(ingredientId: string): string {
   return ingredientNameById.get(ingredientId) ?? ingredientId
 }
@@ -2251,11 +2258,11 @@ function OptimizerTools({
       {deliveryUiState.status === 'applied' && (
         <div className="optimizer-result-note" role="status">
           <strong>
-            已正式交付：
+            已記錄今日供應：
             {deliveryUiState.customerIds.map(customerLabel).join('、')}
           </strong>
           <span>
-            庫存、果汁罐、杯具與「今日已供應」已原子同步；可繼續完成目前販售趟，或在果汁分配區依目前狀態重新規劃。
+            這次手動勾選只更新「今日已供應」；不修改庫存、果汁罐、杯具或製作狀態。需要依目前供應紀錄重算時，再重新產生規劃。
           </span>
         </div>
       )}
@@ -3071,6 +3078,7 @@ export function DeliveryCustomerCheckbox({
   cursor,
   suppliedCustomerIds,
   disabled = false,
+  showPlanningDetail = true,
   onChange,
 }: {
   customerId: string
@@ -3078,6 +3086,7 @@ export function DeliveryCustomerCheckbox({
   cursor: DeliveryExecutionCursor | null
   suppliedCustomerIds: readonly string[]
   disabled?: boolean
+  showPlanningDetail?: boolean
   onChange: (customerId: string, supplied: boolean) => void
 }) {
   const control = deliveryCustomerControlState(
@@ -3088,6 +3097,7 @@ export function DeliveryCustomerCheckbox({
   )
   const committed = control.status === 'committed'
   const canChange = control.status !== 'unavailable' && !disabled
+  const regionLabel = customerRegionLabel(customerId)
 
   const detail =
     control.status === 'committed'
@@ -3120,8 +3130,15 @@ export function DeliveryCustomerCheckbox({
         aria-label={`${customerLabel(customerId)}交付完成`}
       />
       <span>
-        <strong>{customerLabel(customerId)}</strong>
-        <small>{detail}</small>
+        <span className="optimizer-delivery-customer-heading">
+          <strong>{customerLabel(customerId)}</strong>
+          {regionLabel && (
+            <span className="optimizer-customer-region-badge">
+              {regionLabel}
+            </span>
+          )}
+        </span>
+        {showPlanningDetail && <small>{detail}</small>}
       </span>
     </label>
   )
@@ -3238,6 +3255,80 @@ export function DeliveryRecipeGroupCheckbox({
         aria-label={`${formatRecipeDisplayName(recipeName)}整組交付完成`}
       />
       <strong>{formatRecipeDisplayName(recipeName)}</strong>
+    </label>
+  )
+}
+
+export function DeliveryTripGroupCheckbox({
+  tripNumber,
+  customerIds,
+  plan,
+  cursor,
+  suppliedCustomerIds,
+  disabled = false,
+  onChange,
+}: {
+  tripNumber: number
+  customerIds: readonly string[]
+  plan: DeliveryExecutionPlan | null
+  cursor: DeliveryExecutionCursor | null
+  suppliedCustomerIds: readonly string[]
+  disabled?: boolean
+  onChange: (customerIds: readonly string[], supplied: boolean) => void
+}) {
+  const control = deliveryRecipeGroupControlState(
+    plan,
+    cursor,
+    suppliedCustomerIds,
+    customerIds,
+    disabled,
+  )
+  const inputRef = useRef<HTMLInputElement>(null)
+  const completedCount = customerIds.filter((customerId) =>
+    suppliedCustomerIds.includes(customerId),
+  ).length
+
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.indeterminate = control.partial
+    }
+  }, [control.partial])
+
+  return (
+    <label
+      className={
+        control.checked
+          ? 'optimizer-delivery-trip-group committed'
+          : control.partial
+            ? 'optimizer-delivery-trip-group partial'
+            : control.canCommit
+              ? 'optimizer-delivery-trip-group active'
+              : 'optimizer-delivery-trip-group'
+      }
+    >
+      <input
+        ref={inputRef}
+        type="checkbox"
+        checked={control.checked}
+        aria-checked={control.partial ? 'mixed' : control.checked}
+        disabled={disabled || customerIds.length === 0}
+        onChange={(event) => {
+          if (event.target.checked) {
+            if (control.canCommit) {
+              onChange(control.pendingCustomerIds, true)
+            }
+          } else {
+            onChange(customerIds, false)
+          }
+        }}
+        aria-label={`第 ${tripNumber} 趟全部交付完成`}
+      />
+      <span>
+        <strong>第 {tripNumber} 趟</strong>
+        <small>
+          完成 {completedCount} / {customerIds.length}
+        </small>
+      </span>
     </label>
   )
 }
@@ -3906,6 +3997,14 @@ function OptimizerResultPanel({
         <SalesTripPlanBlock
           plan={selectedSalesTripPlan}
           regionPlan={salesTripPlans.selectedRegion}
+          deliveryControls={{
+            plan: deliveryExecutionPlan,
+            cursor: deliveryCursor,
+            suppliedCustomerIds,
+            disabled: deliveryUiState.status === 'stale',
+            onChangeCustomer: onCommitDelivery,
+            onChangeGroup: onCommitDeliveryGroup,
+          }}
         />
 
         <details className="optimizer-policy-comparison">
