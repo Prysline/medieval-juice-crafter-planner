@@ -1,5 +1,6 @@
-import type {
-  PlanApplicationBasisMismatchField,
+import {
+  validatePlanApplicationTransactionBasis,
+  type PlanApplicationBasisMismatchField,
 } from '../domain/planApplicationValidation'
 import {
   rebasePlanApplicationTransactionSuppliedCustomers,
@@ -10,9 +11,6 @@ import { normalizeInventoryState } from './inventoryState'
 import {
   readPlanApplicationBasisState,
 } from './planApplicationBasis'
-import {
-  validatePlanApplicationTransactionBasis,
-} from '../domain/planApplicationValidation'
 import {
   writePlanApplicationStoredState,
 } from './planApplicationState'
