@@ -344,6 +344,34 @@ describe('recipe research invariants', () => {
     })
   })
 
+  it('stores the 2026-09-26 observed blender screenshot and preserves reconfirmed recipe identity', () => {
+    expect(recipeById('lemon-sugar-orange-mint-blend')).toMatchObject({
+      observedDisplayName: '免疫 溫柔',
+      salePrice: 57,
+      ingredients: ['檸檬', '糖', '橙子', '薄荷'],
+      effects: [
+        { name: '增強免疫', value: 7 },
+        { name: '甜味', value: 5 },
+        { name: '清新口氣', value: 4 },
+        { name: '酸味', value: 4 },
+        { name: '舒緩腸胃', value: 3 },
+      ],
+    })
+
+    // The other screenshot reconfirms the existing ordered identity.
+    // "血糖平衡 護盾" is another random display suffix, not a second recipe.
+    expect(recipeById('carrot-cinnamon-orange-blend')).toMatchObject({
+      salePrice: 48,
+      ingredients: ['紅蘿蔔', '肉桂', '橙子'],
+      effects: [
+        { name: '調節血糖', value: 7 },
+        { name: '增強免疫', value: 5 },
+        { name: '改善視力', value: 4 },
+        { name: '煥亮肌膚', value: 2 },
+      ],
+    })
+  })
+
   it('stores the 2026-09-24 blender screenshots with the observed bottom-to-top ordering', () => {
     const observations = [
       {

@@ -37,10 +37,24 @@ describe('production-scale minimum-cost certificate', () => {
     const certificate = prepareMinimumCostStageCertificate(domain)
 
     expect(domain.serviceableCustomerIds).toHaveLength(49)
-    expect(domain.recipes).toHaveLength(9254)
     expect(certificate).not.toBeNull()
-    expect(certificate?.frontierRecipeCount).toBe(4986)
-    expect(certificate?.representativeRecipeCount).toBe(538)
+
+    // Candidate/frontier/representative counts are data-dependent compression
+    // statistics. New legitimate observed recipes may change them without
+    // changing optimizer correctness, so only lock structural invariants here.
+    expect(certificate?.originalRecipeCount).toBe(domain.recipes.length)
+    expect(certificate!.frontierRecipeCount).toBeLessThanOrEqual(
+      certificate!.originalRecipeCount,
+    )
+    expect(certificate!.representativeRecipeCount).toBeLessThanOrEqual(
+      certificate!.frontierRecipeCount,
+    )
+    expect(certificate!.continuationDomain.recipes).toHaveLength(
+      certificate!.frontierRecipeCount,
+    )
+    expect(certificate!.stageDomain.recipes).toHaveLength(
+      certificate!.representativeRecipeCount,
+    )
 
     const stageDomain = certificate!.stageDomain
     const model = new Model()

@@ -866,6 +866,22 @@ export const recipes: Recipe[] = [
     ],
   },
   {
+    id: 'lemon-sugar-orange-mint-blend',
+    name: '免疫（檸檬 → 糖 → 橙子 → 薄荷）',
+    observedDisplayName: '免疫 溫柔',
+    unlockedAt: 'juice-blender-unlocked',
+    salePrice: 57,
+    ingredients: ['檸檬', '糖', '橙子', '薄荷'],
+    effects: [
+      { name: '增強免疫', value: 7 },
+      { name: '甜味', value: 5 },
+      { name: '清新口氣', value: 4 },
+      { name: '酸味', value: 4 },
+      { name: '舒緩腸胃', value: 3 },
+    ],
+    equipment: ['柑橘榨汁機', '調味器', '果汁調和器', '果汁成品台'],
+  },
+  {
     id: 'lemon-sugar-mint-orange-mint-sugar-blend',
     name: '甜味（檸檬 → 糖 → 薄荷 → 橙子 → 薄荷 → 糖）',
     observedDisplayName: '甜味 非凡',

@@ -633,6 +633,19 @@ describe('recipe sequence evaluator', () => {
       ],
     },
     {
+      ingredientIds: ['lemon', 'sugar', 'orange', 'mint'],
+      id: 'lemon-sugar-orange-mint-blend',
+      observedDisplayName: '免疫 溫柔',
+      salePrice: 57,
+      effects: [
+        { name: '增強免疫', value: 7 },
+        { name: '甜味', value: 5 },
+        { name: '清新口氣', value: 4 },
+        { name: '酸味', value: 4 },
+        { name: '舒緩腸胃', value: 3 },
+      ],
+    },
+    {
       ingredientIds: ['lemon', 'sugar', 'mint', 'orange', 'mint', 'sugar'],
       id: 'lemon-sugar-mint-orange-mint-sugar-blend',
       observedDisplayName: '甜味 非凡',
