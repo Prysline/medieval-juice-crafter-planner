@@ -1747,6 +1747,41 @@ function OptimizerTools({
           </section>
         )}
 
+        <section
+          className="optimizer-inventory-editor"
+          aria-label="販售工作間與區域路線"
+        >
+          <div className="section-title">
+            <strong>販售工作間與區域路線</strong>
+            <span>Region 粗粒度規劃；村內顧客順序仍由玩家安排</span>
+          </div>
+          <div className="optimizer-inventory-grid">
+            <label>
+              <span>本次出發／補給工作間</span>
+              <select
+                value={activeWorkshopRegionId}
+                onChange={(event) =>
+                  setActiveWorkshopRegionId(
+                    event.target.value as VillageId,
+                  )
+                }
+              >
+                {availableWorkshopRegions.map((workshop) => (
+                  <option
+                    key={workshop.id}
+                    value={workshop.regionId}
+                  >
+                    {workshop.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <p className="optimizer-inventory-empty">
+            只列目前主線已解鎖、且已進 production 的 Region 工作間；跨區只使用已確認的 Region adjacency，第一版每條已確認 edge 成本視為 1。西部城堡尚未進 production Region identity，因此不會從未啟用資料推入本次規劃。
+          </p>
+        </section>
+
         <section className="optimizer-inventory-editor">
           <div className="section-title">
             <strong>實際庫存</strong>
@@ -3691,7 +3726,10 @@ function OptimizerResultPanel({
           <span>目前策略：{tripPolicyLabel(selectedSalesTripPlan)}</span>
         </div>
 
-        <SalesTripPlanBlock plan={selectedSalesTripPlan} />
+        <SalesTripPlanBlock
+          plan={selectedSalesTripPlan}
+          regionPlan={salesTripPlans.selectedRegion}
+        />
 
         <details className="optimizer-policy-comparison">
           <summary>
@@ -3700,8 +3738,11 @@ function OptimizerResultPanel({
               ? '（' + alternateSalesTripPlan.tripCount + ' 趟）'
               : '（目前不可行）'}
           </summary>
-          {alternateSalesTripPlan ? (
-            <SalesTripPlanBlock plan={alternateSalesTripPlan} />
+          {alternateSalesTripPlan && salesTripPlans.alternateRegion ? (
+            <SalesTripPlanBlock
+              plan={alternateSalesTripPlan}
+              regionPlan={salesTripPlans.alternateRegion}
+            />
           ) : (
             <p className="optimizer-policy-unavailable">
               {salesTripPlans.alternateError ??
@@ -3711,7 +3752,7 @@ function OptimizerResultPanel({
         </details>
 
         <small className="optimizer-boundary-note">
-          兩種 policy 都使用實際持有杯數與逐杯 clean → used stack transition 驗證可行性；回家清洗會計入杯數與用水，掉落只代表 NPC 回傳時背包無空位。這裡仍不推導跨村路線、顧客順序或到達時間。
+          兩種 policy 都使用實際持有杯數與逐杯 clean → used stack transition 驗證可行性；回工作間清洗會計入杯數與用水，掉落只代表 NPC 回傳時背包無空位。區域層只比較已確認的 Region edge footprint；不推導村內顧客順序、住處導航或到達時間。
         </small>
       </section>
 
@@ -3729,8 +3770,10 @@ function OptimizerResultPanel({
 
 export function SalesTripPlanBlock({
   plan,
+  regionPlan,
 }: {
   plan: MultiTripReplenishmentPlan
+  regionPlan?: RegionPhysicalSalesPlan
 }) {
   return (
     <div className="optimizer-batch-list">
@@ -3745,6 +3788,31 @@ export function SalesTripPlanBlock({
           販售排程使用 {plan.physicalJarsUsed} / {plan.carriedJuiceJarCount}{' '}
           個實體果汁罐；單趟最多使用 {plan.maxJuiceJarSlotsCarried} 個果汁罐格。
         </p>
+        {regionPlan && (
+          <>
+            <p>
+              出發／補給工作間：
+              {regionDisplayName(regionPlan.activeWorkshop.regionId)}
+              {' · '}Region route cost {regionPlan.routeCost}
+              {' · '}Region 分散服務 {regionPlan.serviceFragmentation} 次
+            </p>
+            {regionPlan.requiredByRegion.map((required) => (
+              <p key={'region-demand-' + required.regionId}>
+                {regionDisplayName(required.regionId)}：需求{' '}
+                {required.totalServings} 杯 ·{' '}
+                {required.recipes
+                  .map(
+                    (recipe) =>
+                      formatRecipeDisplayName(recipe.recipeName) +
+                      ' ' +
+                      recipe.servings +
+                      ' 杯',
+                  )
+                  .join('、')}
+              </p>
+            ))}
+          </>
+        )}
         <p>
           本日可用實體罐：{' '}
           {plan.carriedJuiceJars
