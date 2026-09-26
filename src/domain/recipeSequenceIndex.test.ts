@@ -1,90 +1,82 @@
 import { describe, expect, it } from 'vitest'
-import { buildRecipeCandidatePool } from './recipeCandidatePool'
+import type { RecipeCandidatePoolEntry } from './recipeCandidatePool'
 import {
   buildContiguousRecipeSequenceIndex,
   recipeEntriesForContiguousSequence,
 } from './recipeSequenceIndex'
 
-function sequences(entries: readonly { ingredientIds: readonly string[] }[]) {
-  return entries.map((entry) => entry.ingredientIds.join('>'))
+function entry(
+  id: string,
+  ingredientIds: readonly string[],
+): RecipeCandidatePoolEntry {
+  return {
+    id,
+    ingredientIds,
+    candidate: {
+      id,
+      name: id,
+      source: 'computed',
+      unlockedAt: 'opening',
+      salePrice: null,
+      ingredients: [...ingredientIds],
+      effects: [],
+      equipment: [],
+    },
+    sources: ['computed'],
+    savedRecipeIds: [],
+    availableAtCurrentProgress: true,
+    inGeneratedSearchScope: true,
+  }
 }
 
 describe('contiguous recipe sequence index', () => {
-  const pool = buildRecipeCandidatePool('juice-blender-unlocked')
-  const entries = pool.entries.filter(
-    (entry) => entry.availableAtCurrentProgress,
-  )
+  const entries = [
+    entry('exact', ['lemon', 'mint']),
+    entry('interrupted', ['lemon', 'sugar', 'mint']),
+    entry('embedded', ['sugar', 'lemon', 'mint', 'pear']),
+    entry('reverse', ['mint', 'lemon']),
+    entry('repeated', ['lemon', 'mint', 'mint', 'sugar']),
+  ]
   const index = buildContiguousRecipeSequenceIndex(entries)
 
-  it('matches exact contiguous ingredient order anywhere in a recipe', () => {
-    const matches = recipeEntriesForContiguousSequence(
-      entries,
-      index,
-      ['lemon', 'mint'],
-    )
-
+  it('matches an exact contiguous ingredient fragment anywhere in a recipe', () => {
     expect(
-      matches.every((entry) => {
-        const sequence = entry.ingredientIds
-        return sequence.some(
-          (ingredientId, position) =>
-            ingredientId === 'lemon' &&
-            sequence[position + 1] === 'mint',
-        )
-      }),
-    ).toBe(true)
+      recipeEntriesForContiguousSequence(
+        entries,
+        index,
+        ['lemon', 'mint'],
+      ).map((item) => item.id),
+    ).toEqual(['exact', 'embedded', 'repeated'])
   })
 
-  it('does not match the same ingredients when another ingredient interrupts the sequence', () => {
-    const matches = recipeEntriesForContiguousSequence(
-      entries,
-      index,
-      ['lemon', 'mint'],
-    )
-    const matchingSequences = new Set(sequences(matches))
-
-    expect(matchingSequences.has('lemon>sugar>mint')).toBe(false)
+  it('does not match when another ingredient interrupts the selected order', () => {
+    expect(
+      recipeEntriesForContiguousSequence(
+        entries,
+        index,
+        ['lemon', 'mint'],
+      ).map((item) => item.id),
+    ).not.toContain('interrupted')
   })
 
   it('keeps ingredient order significant', () => {
-    const forward = new Set(
-      sequences(
-        recipeEntriesForContiguousSequence(
-          entries,
-          index,
-          ['lemon', 'mint'],
-        ),
-      ),
-    )
-    const reverse = new Set(
-      sequences(
-        recipeEntriesForContiguousSequence(
-          entries,
-          index,
-          ['mint', 'lemon'],
-        ),
-      ),
-    )
-
-    expect(forward).not.toEqual(reverse)
+    expect(
+      recipeEntriesForContiguousSequence(
+        entries,
+        index,
+        ['mint', 'lemon'],
+      ).map((item) => item.id),
+    ).toEqual(['reverse'])
   })
 
-  it('supports repeated contiguous ingredients and returns all entries for an empty sequence', () => {
-    const repeated = recipeEntriesForContiguousSequence(
-      entries,
-      index,
-      ['mint', 'mint'],
-    )
-
+  it('supports repeated contiguous ingredients and an empty filter', () => {
     expect(
-      repeated.every((entry) =>
-        entry.ingredientIds.some(
-          (ingredientId, position) =>
-            ingredientId === 'mint' &&
-            entry.ingredientIds[position + 1] === 'mint',
-        ),
-      ),
-    ).toBe(true)
+      recipeEntriesForContiguousSequence(
+        entries,
+        index,
+        ['mint', 'mint'],
+      ).map((item) => item.id),
+    ).toEqual(['repeated'])
     expect(
       recipeEntriesForContiguousSequence(entries, index, []),
     ).toBe(entries)
