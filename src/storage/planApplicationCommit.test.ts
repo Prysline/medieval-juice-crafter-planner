@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type {
-  PlanApplicationBasisState,
-  PlanApplicationTransactionDraft,
+import {
+  rebasePlanApplicationTransactionSuppliedCustomers,
+  type PlanApplicationBasisState,
+  type PlanApplicationTransactionDraft,
 } from '../domain/planApplicationTransaction'
 import {
   INVENTORY_STORAGE_KEY,
@@ -256,6 +257,68 @@ describe('plan application commit', () => {
     expect(result).toEqual({
       status: 'stale',
       mismatches: ['satisfaction'],
+    })
+    expect(storage.writes).toEqual([])
+    expect(storage.raw(PLAN_APPLICATION_STATE_STORAGE_KEY)).toBeNull()
+  })
+
+  it('rebases the supplied basis without changing the inventory transaction', () => {
+    const draft = draftFromBasis(basis())
+
+    const rebased =
+      rebasePlanApplicationTransactionSuppliedCustomers(
+        draft,
+        ['ulrich', 'alia'],
+      )
+
+    expect(rebased).not.toBeNull()
+    expect(rebased?.before.inventory).toBe(draft.before.inventory)
+    expect(rebased?.after.inventory).toBe(draft.after.inventory)
+    expect(rebased?.before.suppliedCustomerIds).toEqual([
+      'ulrich',
+      'alia',
+    ])
+    expect(rebased?.after.suppliedCustomerIds).toEqual([
+      'ulrich',
+      'alia',
+    ])
+    expect(rebased?.changes.newlySuppliedCustomerIds).toEqual([])
+  })
+
+  it('applies inventory after a planned customer was manually marked supplied', () => {
+    const storage = legacyStorage()
+    const draft = draftFromBasis(basis())
+
+    writeSuppliedCustomerIds(storage, ['ulrich', 'alia'])
+    storage.writes = []
+
+    const result = commitPlanApplicationTransaction(draft, storage)
+
+    expect(result).toEqual({
+      status: 'applied',
+      inventory: draft.after.inventory,
+      suppliedCustomerIds: ['ulrich', 'alia'],
+    })
+    expect(storage.writes).toHaveLength(1)
+    expect(storage.writes[0]?.key).toBe(
+      PLAN_APPLICATION_STATE_STORAGE_KEY,
+    )
+    expect(readInventoryState(storage)).toEqual(draft.after.inventory)
+    expect(readSuppliedCustomerIds(storage)).toEqual(['ulrich', 'alia'])
+  })
+
+  it('still rejects supplied changes outside the plan application range', () => {
+    const storage = legacyStorage()
+    const draft = draftFromBasis(basis())
+
+    writeSuppliedCustomerIds(storage, ['ulrich', 'outsider'])
+    storage.writes = []
+
+    const result = commitPlanApplicationTransaction(draft, storage)
+
+    expect(result).toEqual({
+      status: 'stale',
+      mismatches: ['supplied-customers'],
     })
     expect(storage.writes).toEqual([])
     expect(storage.raw(PLAN_APPLICATION_STATE_STORAGE_KEY)).toBeNull()

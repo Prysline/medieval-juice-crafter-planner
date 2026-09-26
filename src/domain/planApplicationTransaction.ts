@@ -733,6 +733,42 @@ function buildJarChanges(
   })
 }
 
+export function rebasePlanApplicationTransactionSuppliedCustomers(
+  draft: PlanApplicationTransactionDraft,
+  currentSuppliedCustomerIds: readonly string[],
+): PlanApplicationTransactionDraft | null {
+  const currentSupplied = [...new Set(currentSuppliedCustomerIds)]
+  const beforeSupplied = new Set(draft.before.suppliedCustomerIds)
+  const afterSupplied = new Set(draft.after.suppliedCustomerIds)
+
+  for (const customerId of beforeSupplied) {
+    if (!currentSupplied.includes(customerId)) return null
+  }
+
+  for (const customerId of currentSupplied) {
+    if (!afterSupplied.has(customerId)) return null
+  }
+
+  const before: PlanApplicationStateSnapshot = {
+    ...draft.before,
+    suppliedCustomerIds: currentSupplied,
+  }
+  const changes: PlanApplicationTransactionChanges = {
+    ...draft.changes,
+    newlySuppliedCustomerIds: draft.after.suppliedCustomerIds.filter(
+      (customerId) => !currentSupplied.includes(customerId),
+    ),
+  }
+  const rebased: PlanApplicationTransactionDraft = {
+    schemaVersion: draft.schemaVersion,
+    before: freezeStateSnapshot(before),
+    after: draft.after,
+    changes: freezeChanges(changes),
+  }
+
+  return Object.freeze(rebased)
+}
+
 export function buildPlanApplicationTransactionDraft(
   input: BuildPlanApplicationTransactionInput,
 ): PlanApplicationTransactionDraft {

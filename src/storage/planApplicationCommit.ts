@@ -1,13 +1,15 @@
-import type {
-  PlanApplicationBasisMismatchField,
+import {
+  validatePlanApplicationTransactionBasis,
+  type PlanApplicationBasisMismatchField,
 } from '../domain/planApplicationValidation'
-import type {
-  PlanApplicationTransactionDraft,
+import {
+  rebasePlanApplicationTransactionSuppliedCustomers,
+  type PlanApplicationTransactionDraft,
 } from '../domain/planApplicationTransaction'
 import type { InventoryState } from '../types'
 import { normalizeInventoryState } from './inventoryState'
 import {
-  validateStoredPlanApplicationTransactionBasis,
+  readPlanApplicationBasisState,
 } from './planApplicationBasis'
 import {
   writePlanApplicationStoredState,
@@ -55,8 +57,25 @@ export function commitPlanApplicationTransaction(
   storage: StorageLike,
 ): PlanApplicationCommitResult {
   try {
-    const validation =
-      validateStoredPlanApplicationTransactionBasis(draft, storage)
+    const currentBasis = readPlanApplicationBasisState(storage)
+    const initialValidation =
+      validatePlanApplicationTransactionBasis(draft, currentBasis)
+    const suppliedOnlyMismatch =
+      initialValidation.mismatches.length === 1 &&
+      initialValidation.mismatches[0] === 'supplied-customers'
+    const rebasedDraft = suppliedOnlyMismatch
+      ? rebasePlanApplicationTransactionSuppliedCustomers(
+          draft,
+          currentBasis.suppliedCustomerIds,
+        )
+      : null
+    const effectiveDraft = rebasedDraft ?? draft
+    const validation = rebasedDraft
+      ? validatePlanApplicationTransactionBasis(
+          effectiveDraft,
+          currentBasis,
+        )
+      : initialValidation
 
     if (!validation.valid) {
       return Object.freeze({
@@ -65,9 +84,9 @@ export function commitPlanApplicationTransaction(
       })
     }
 
-    const inventory = inventoryFromTransaction(draft)
+    const inventory = inventoryFromTransaction(effectiveDraft)
     const suppliedCustomerIds = [
-      ...new Set(draft.after.suppliedCustomerIds),
+      ...new Set(effectiveDraft.after.suppliedCustomerIds),
     ]
 
     writePlanApplicationStoredState(storage, {
