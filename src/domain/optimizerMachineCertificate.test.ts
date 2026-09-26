@@ -44,7 +44,13 @@ describe('production-scale optimizer certificates', () => {
     const stage1 = prepareMinimumCostStageCertificate(domain)
 
     expect(stage1).not.toBeNull()
-    expect(stage1?.continuationDomain.recipes).toHaveLength(4970)
+    expect(stage1!.originalRecipeCount).toBe(domain.recipes.length)
+    expect(stage1!.continuationDomain.recipes).toHaveLength(
+      stage1!.frontierRecipeCount,
+    )
+    expect(stage1!.stageDomain.recipes).toHaveLength(
+      stage1!.representativeRecipeCount,
+    )
 
     const certificate =
       await solveMachineOperationCertificateForCostFix(
