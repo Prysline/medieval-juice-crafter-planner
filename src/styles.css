@@ -2560,6 +2560,11 @@ footer {
   align-items: center;
 }
 
+.optimizer-delivery-customer-heading > strong {
+  color: #38502f;
+  font-size: 0.78rem;
+}
+
 .optimizer-customer-region-badge {
   display: inline-flex;
   align-items: center;
