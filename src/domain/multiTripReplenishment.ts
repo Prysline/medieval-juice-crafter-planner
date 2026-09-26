@@ -1425,18 +1425,118 @@ export function shouldAcceptTerminalLeftoverTimingCandidate(
   )
 }
 
-function shouldAcceptSameRecipePrefillCandidate(
-  baseline: TerminalLeftoverScheduleMetrics,
-  candidate: TerminalLeftoverScheduleMetrics,
+export interface SameRecipePrefillCandidateMetrics
+  extends TerminalLeftoverScheduleMetrics {
+  terminalJarStateSignature: string
+  salesTripAssignmentSignature: string
+  sameRecipeRefillTripScore: number
+}
+
+function terminalJarStateSignature(
+  trips: readonly MutableTrip[],
+): string {
+  const finalStateByJarId = new Map<
+    string,
+    { recipeId: string; servings: number }
+  >()
+
+  for (const trip of trips) {
+    for (const load of trip.juiceJars) {
+      finalStateByJarId.set(load.physicalJarId, {
+        recipeId: load.recipeId,
+        servings: load.retainedLeftoverServings,
+      })
+    }
+  }
+
+  return [...finalStateByJarId.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(
+      ([physicalJarId, state]) =>
+        `${physicalJarId}=${state.recipeId}:${state.servings}`,
+    )
+    .join('|')
+}
+
+function salesTripAssignmentSignature(
+  trips: readonly MutableTrip[],
+): string {
+  return trips
+    .map((trip) =>
+      trip.juiceJars
+        .map((load) =>
+          [
+            load.physicalJarId,
+            load.recipeId,
+            load.servings,
+            load.customerIds.join(','),
+          ].join(':'),
+        )
+        .sort()
+        .join('|'),
+    )
+    .join('||')
+}
+
+function sameRecipePrefillCandidateMetrics(
+  trips: readonly MutableTrip[],
+  discardedJuiceServings: number,
+): SameRecipePrefillCandidateMetrics {
+  return {
+    ...terminalLeftoverScheduleMetrics(
+      trips,
+      discardedJuiceServings,
+    ),
+    terminalJarStateSignature:
+      terminalJarStateSignature(trips),
+    salesTripAssignmentSignature:
+      salesTripAssignmentSignature(trips),
+    sameRecipeRefillTripScore: trips.reduce(
+      (score, trip, index) =>
+        score +
+        trip.juiceJars.filter(
+          (load) => load.fillAction === 'refill-same-type',
+        ).length *
+          (index + 1),
+      0,
+    ),
+  }
+}
+
+export function shouldAcceptSameRecipePrefillCandidate(
+  baseline: SameRecipePrefillCandidateMetrics,
+  candidate: SameRecipePrefillCandidateMetrics,
 ): boolean {
+  if (
+    !candidate.feasible ||
+    candidate.tripCount > baseline.tripCount ||
+    candidate.droppedUsedCups > baseline.droppedUsedCups ||
+    candidate.discardedJuiceServings >
+      baseline.discardedJuiceServings ||
+    candidate.cupWashWaterUnits > baseline.cupWashWaterUnits ||
+    candidate.jarTypeSwitches > baseline.jarTypeSwitches ||
+    candidate.terminalJarStateSignature !==
+      baseline.terminalJarStateSignature
+  ) {
+    return false
+  }
+
+  if (candidate.tripCount < baseline.tripCount) {
+    return true
+  }
+
   return (
-    candidate.feasible &&
-    candidate.tripCount < baseline.tripCount &&
-    candidate.droppedUsedCups <= baseline.droppedUsedCups &&
+    candidate.droppedUsedCups === baseline.droppedUsedCups &&
     candidate.discardedJuiceServings ===
       baseline.discardedJuiceServings &&
-    candidate.cupWashWaterUnits <= baseline.cupWashWaterUnits &&
-    candidate.jarTypeSwitches === baseline.jarTypeSwitches
+    candidate.cupWashWaterUnits === baseline.cupWashWaterUnits &&
+    candidate.jarTypeSwitches === baseline.jarTypeSwitches &&
+    candidate.salesTripAssignmentSignature ===
+      baseline.salesTripAssignmentSignature &&
+    candidate.terminalLeftoverTripScore ===
+      baseline.terminalLeftoverTripScore &&
+    candidate.sameRecipeRefillTripScore <
+      baseline.sameRecipeRefillTripScore
   )
 }
 
@@ -1520,6 +1620,45 @@ function terminalLeftoverScheduleMetrics(
           : 0),
       0,
     ),
+  }
+}
+
+function selectTerminalLeftoverTimingCandidate(
+  queues: JarQueue[],
+  baselineTripBuild: ReturnType<typeof buildTrips>,
+  policy: UsedCupTripPolicy,
+  carryPolicy: MultiTripJarCarryPolicy,
+  initialCupState: CupState,
+  discardedJuiceServings: number,
+): ReturnType<typeof buildTrips> {
+  try {
+    const timingCandidate = buildTrips(
+      queues,
+      policy,
+      carryPolicy,
+      initialCupState,
+      'terminal-leftovers-last',
+    )
+    const baselineMetrics = terminalLeftoverScheduleMetrics(
+      baselineTripBuild.trips,
+      discardedJuiceServings,
+    )
+    const candidateMetrics = terminalLeftoverScheduleMetrics(
+      timingCandidate.trips,
+      discardedJuiceServings,
+    )
+
+    return shouldAcceptTerminalLeftoverTimingCandidate(
+      baselineMetrics,
+      candidateMetrics,
+    )
+      ? timingCandidate
+      : baselineTripBuild
+  } catch (error) {
+    if (!(error instanceof PlanningUserError)) {
+      throw error
+    }
+    return baselineTripBuild
   }
 }
 
@@ -1937,70 +2076,56 @@ export function buildMultiTripReplenishmentPlan(
     normalizedCarryPolicy,
     initialCupState,
   )
-  let selectedQueues = queues
-  let selectedTripBuild = baselineTripBuild
+  const baselineSelectedTripBuild =
+    selectTerminalLeftoverTimingCandidate(
+      queues,
+      baselineTripBuild,
+      policy,
+      normalizedCarryPolicy,
+      initialCupState,
+      discardedJuiceServings,
+    )
+  let selectedTripBuild = baselineSelectedTripBuild
 
   const prefillQueues = cloneJarQueues(queues)
   const coalescedLoadCount =
     coalesceInitialSameRecipeRefills(prefillQueues)
   if (coalescedLoadCount > 0) {
     try {
-      const prefillCandidate = buildTrips(
+      const prefillTripBuild = buildTrips(
         prefillQueues,
         policy,
         normalizedCarryPolicy,
         initialCupState,
       )
+      const prefillSelectedTripBuild =
+        selectTerminalLeftoverTimingCandidate(
+          prefillQueues,
+          prefillTripBuild,
+          policy,
+          normalizedCarryPolicy,
+          initialCupState,
+          discardedJuiceServings,
+        )
+
       if (
         shouldAcceptSameRecipePrefillCandidate(
-          terminalLeftoverScheduleMetrics(
-            baselineTripBuild.trips,
+          sameRecipePrefillCandidateMetrics(
+            baselineSelectedTripBuild.trips,
             discardedJuiceServings,
           ),
-          terminalLeftoverScheduleMetrics(
-            prefillCandidate.trips,
+          sameRecipePrefillCandidateMetrics(
+            prefillSelectedTripBuild.trips,
             discardedJuiceServings,
           ),
         )
       ) {
-        selectedQueues = prefillQueues
-        selectedTripBuild = prefillCandidate
+        selectedTripBuild = prefillSelectedTripBuild
       }
     } catch (error) {
       if (!(error instanceof PlanningUserError)) {
         throw error
       }
-    }
-  }
-
-  try {
-    const timingCandidate = buildTrips(
-      selectedQueues,
-      policy,
-      normalizedCarryPolicy,
-      initialCupState,
-      'terminal-leftovers-last',
-    )
-    const baselineMetrics = terminalLeftoverScheduleMetrics(
-      selectedTripBuild.trips,
-      discardedJuiceServings,
-    )
-    const candidateMetrics = terminalLeftoverScheduleMetrics(
-      timingCandidate.trips,
-      discardedJuiceServings,
-    )
-
-    if (
-      shouldAcceptTerminalLeftoverTimingCandidate(
-        baselineMetrics,
-        candidateMetrics,
-      )
-    ) {
-      selectedTripBuild = timingCandidate
-    }
-  } catch (error) {
-    if (!(error instanceof PlanningUserError)) {
-      throw error
     }
   }
 
