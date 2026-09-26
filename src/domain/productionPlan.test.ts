@@ -588,4 +588,40 @@ describe('production plan stock offset', () => {
     })
   })
 
+
+  it('lists only single-ingredient juice inputs needed during the seasoning stage', () => {
+    const result = buildStockOffsetProductionPlan([
+      {
+        recipeId: 'season-then-blend',
+        recipeName: 'Season Then Blend',
+        ingredientIds: ['lemon', 'sugar', 'orange'],
+        juiceUnits: 3,
+        assignedServings: 6,
+      },
+    ])
+
+    expect(result.seasoningBaseJuiceUnits).toEqual({
+      lemon: 3,
+    })
+    expect(result.seasoningBaseJuiceUnits).not.toHaveProperty('orange')
+  })
+
+  it('drops a base juice from the seasoning carry summary when stock skips that seasoning input', () => {
+    const seasonedIdentity = juiceStateIdentity(['lemon', 'sugar'])
+    const result = buildStockOffsetProductionPlan(
+      [
+        {
+          recipeId: 'lemon-sugar-mint',
+          recipeName: 'Lemon Sugar Mint',
+          ingredientIds: ['lemon', 'sugar', 'mint'],
+          juiceUnits: 2,
+          assignedServings: 4,
+        },
+      ],
+      { [seasonedIdentity]: 2 },
+    )
+
+    expect(result.seasoningBaseJuiceUnits).toEqual({})
+  })
+
 })
