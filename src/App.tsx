@@ -1502,6 +1502,7 @@ function CustomerRow({
   const handleToggleFormal = () => onToggleFormal(customer.id)
   const handleToggleSupplied = () => onToggleSupplied(customer.id)
   const handleToggleComparison = () => onToggleComparison(customer.id)
+  const [expanded, setExpanded] = useState(false)
   const visibleMatches = matches.slice(0, 8)
   const remainingMatches = matches.slice(8)
   const preferencesKnown = customer.preferences !== null
@@ -1515,7 +1516,10 @@ function CustomerRow({
     .join(' ')
 
   return (
-    <details className={rowClassName}>
+    <details
+      className={rowClassName}
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+    >
       <summary className="customer-columns">
         <div className="primary-cell">
           <strong>{customer.name}</strong>
@@ -1583,7 +1587,8 @@ function CustomerRow({
         <SupplyToggle supplied={suppliedToday} onToggle={handleToggleSupplied} />
       </summary>
 
-      <div className="row-details">
+      {expanded && (
+        <div className="row-details">
         <div className="detail-line">
           <span className="detail-label">村子</span>
           <span>{villageNames[customer.villageId]}</span>
@@ -1668,7 +1673,8 @@ function CustomerRow({
             ))}
           </div>
         )}
-      </div>
+        </div>
+      )}
     </details>
   )
 }
