@@ -76,16 +76,75 @@ function candidateEligibleForSearch(
   return options.additionalCandidateEligibility?.(candidate) ?? true
 }
 
+function usesUniqueIngredients(
+  candidate: RecipeCandidate,
+): boolean {
+  return (
+    new Set(candidate.ingredients).size ===
+    candidate.ingredients.length
+  )
+}
+
+function eligibleFullMatchCandidates(
+  candidates: readonly RecipeCandidate[],
+  customer: Customer,
+  options: ProgressiveRecipeSearchOptions,
+): RecipeCandidate[] {
+  return candidates.filter(
+    (candidate) =>
+      candidateEligibleForSearch(candidate, options) &&
+      recipeCandidateMatchesCustomer(candidate, customer),
+  )
+}
+
+function preferUniqueIngredientFullMatches(
+  candidates: readonly RecipeCandidate[],
+  customer: Customer,
+  options: ProgressiveRecipeSearchOptions,
+): RecipeCandidate[] {
+  const fullMatches = eligibleFullMatchCandidates(
+    candidates,
+    customer,
+    options,
+  )
+  if (!fullMatches.some(usesUniqueIngredients)) {
+    return [...candidates]
+  }
+
+  const repeatedFullMatchIds = new Set(
+    fullMatches
+      .filter((candidate) => !usesUniqueIngredients(candidate))
+      .map((candidate) => candidate.id),
+  )
+
+  return candidates.filter(
+    (candidate) => !repeatedFullMatchIds.has(candidate.id),
+  )
+}
+
+
 function layerHasGuaranteedFullMatch(
   candidates: readonly RecipeCandidate[],
   customer: Customer,
   options: ProgressiveRecipeSearchOptions,
 ): boolean {
-  return candidates.some(
-    (candidate) =>
-      candidateEligibleForSearch(candidate, options) &&
-      recipeCandidateMatchesCustomer(candidate, customer),
-  )
+  return eligibleFullMatchCandidates(
+    candidates,
+    customer,
+    options,
+  ).length > 0
+}
+
+function layerHasGuaranteedUniqueFullMatch(
+  candidates: readonly RecipeCandidate[],
+  customer: Customer,
+  options: ProgressiveRecipeSearchOptions,
+): boolean {
+  return eligibleFullMatchCandidates(
+    candidates,
+    customer,
+    options,
+  ).some(usesUniqueIngredients)
 }
 
 function repeatFallbackMayChangeMatch(
@@ -115,6 +174,8 @@ function resultWithStop({
   stoppedAt,
   usedRepeatedSeasoningFallback,
   truncated,
+  customer,
+  options,
   guaranteedFullMatchFound = stoppedAt !== null,
 }: {
   candidates: RecipeCandidate[]
@@ -122,10 +183,16 @@ function resultWithStop({
   stoppedAt: ProgressiveRecipeSearchStop | null
   usedRepeatedSeasoningFallback: boolean
   truncated: boolean
+  customer: Customer
+  options: ProgressiveRecipeSearchOptions
   guaranteedFullMatchFound?: boolean
 }): ProgressiveRecipeSearchResult {
   return {
-    candidates,
+    candidates: preferUniqueIngredientFullMatches(
+      candidates,
+      customer,
+      options,
+    ),
     exploredLayers,
     guaranteedFullMatchFound,
     stoppedAt,
@@ -165,6 +232,8 @@ export function searchRecipeCandidatesForCustomer(
       stoppedAt: null,
       usedRepeatedSeasoningFallback: false,
       truncated: false,
+      customer,
+      options,
       guaranteedFullMatchFound: candidates.some((candidate) =>
         recipeCandidateMatchesCustomer(candidate, customer),
       ),
@@ -182,8 +251,34 @@ export function searchRecipeCandidatesForCustomer(
   const singleSegmentCandidates: RecipeCandidate[] = []
   const exploredLayers: ProgressiveRecipeSearchLayerResult[] = []
   const mode = options.mode ?? 'first-feasible'
-  let guaranteedFullMatchFound = false
+  let guaranteedFullMatchFound = layerHasGuaranteedFullMatch(
+    candidates,
+    customer,
+    options,
+  )
+  let guaranteedUniqueFullMatchFound =
+    layerHasGuaranteedUniqueFullMatch(
+      candidates,
+      customer,
+      options,
+    )
   let truncated = false
+
+  if (
+    guaranteedUniqueFullMatchFound &&
+    mode === 'first-feasible'
+  ) {
+    return resultWithStop({
+      candidates,
+      exploredLayers,
+      stoppedAt: null,
+      usedRepeatedSeasoningFallback: false,
+      truncated,
+      customer,
+      options,
+      guaranteedFullMatchFound: true,
+    })
+  }
 
   for (const layer of pool.generatedLayers) {
     if (
@@ -223,9 +318,19 @@ export function searchRecipeCandidatesForCustomer(
       customer,
       options,
     )
+    const layerUniqueFullMatchFound =
+      layerHasGuaranteedUniqueFullMatch(
+        layerCandidates,
+        customer,
+        options,
+      )
     guaranteedFullMatchFound ||= layerFullMatchFound
+    guaranteedUniqueFullMatchFound ||= layerUniqueFullMatchFound
 
-    if (layerFullMatchFound && mode === 'first-feasible') {
+    if (
+      layerUniqueFullMatchFound &&
+      mode === 'first-feasible'
+    ) {
       return resultWithStop({
         candidates,
         exploredLayers,
@@ -235,6 +340,8 @@ export function searchRecipeCandidatesForCustomer(
         },
         usedRepeatedSeasoningFallback: false,
         truncated,
+        customer,
+        options,
       })
     }
 
@@ -245,6 +352,8 @@ export function searchRecipeCandidatesForCustomer(
         stoppedAt: null,
         usedRepeatedSeasoningFallback: false,
         truncated: true,
+        customer,
+        options,
         guaranteedFullMatchFound,
       })
     }
@@ -257,6 +366,8 @@ export function searchRecipeCandidatesForCustomer(
       stoppedAt: null,
       usedRepeatedSeasoningFallback: false,
       truncated,
+      customer,
+      options,
       guaranteedFullMatchFound: true,
     })
   }
@@ -273,6 +384,8 @@ export function searchRecipeCandidatesForCustomer(
       stoppedAt: null,
       usedRepeatedSeasoningFallback: false,
       truncated,
+      customer,
+      options,
     })
   }
 
@@ -336,6 +449,8 @@ export function searchRecipeCandidatesForCustomer(
         },
         usedRepeatedSeasoningFallback,
         truncated,
+        customer,
+        options,
       })
     }
 
@@ -348,6 +463,8 @@ export function searchRecipeCandidatesForCustomer(
     stoppedAt: null,
     usedRepeatedSeasoningFallback,
     truncated,
+    customer,
+    options,
     guaranteedFullMatchFound,
   })
 }
