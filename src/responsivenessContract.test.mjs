@@ -22,7 +22,7 @@ describe('responsiveness wiring regression', () => {
 
   it('narrows structured ingredient-sequence search before recipe filters and sorting', () => {
     expect(appSource).toContain(
-      'buildContiguousRecipeSequenceIndex(recipeListEntries)',
+      'buildRecipeIngredientEntryIndex(recipeListEntries)',
     )
     expect(appSource).toContain(
       'const recipeSequenceEntries = useMemo(',
