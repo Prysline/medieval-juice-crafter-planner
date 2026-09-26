@@ -26,6 +26,8 @@ import {
   ProductionStepFinalJuiceNote,
   SeasoningStageMaterialSummary,
   SeasoningStepStageUsageNote,
+  OptimizerRunStatus,
+  OptimizerRunSummary,
   OptimizerSummaryMetrics,
   PlanApplicationPreview,
   PlanningErrorBlock,
@@ -38,6 +40,7 @@ import {
   deliveryCanonicalSyncStatus,
   deliveryCustomerControlState,
   deliveryRecipeGroupControlState,
+  formatOptimizerDuration,
   moveInventoryRecipeSearchIndex,
   optimizerCriterionOptions,
   optimizerInventoryIngredients,
@@ -1657,6 +1660,51 @@ describe('recipe allocation preparation source summary', () => {
       ),
     ).toBe(
       '需求 3 杯 · 使用既有成品 1 杯（jar-1 1 杯） · 新製作果汁 1 份 → 2 杯',
+    )
+  })
+})
+
+
+describe('optimizer run timing UI', () => {
+  it('formats short, minute and hour durations without fake precision', () => {
+    expect(formatOptimizerDuration(0)).toBe('不到 1 秒')
+    expect(formatOptimizerDuration(42_900)).toBe('42 秒')
+    expect(formatOptimizerDuration(137_000)).toBe('2 分 17 秒')
+    expect(formatOptimizerDuration(3_723_000)).toBe(
+      '1 小時 02 分 03 秒',
+    )
+  })
+
+  it('shows the observable phase, elapsed time and run scope while solving', () => {
+    const html = renderToStaticMarkup(
+      <OptimizerRunStatus
+        phase="solving"
+        elapsedMs={137_000}
+        candidatePolicy="allow-unambiguous-computed"
+        customerCount={49}
+      />,
+    )
+
+    expect(html).toContain('背景最佳化求解')
+    expect(html).toContain('已耗時 2 分 17 秒')
+    expect(html).toContain(
+      '正式實測＋已確認個人配方＋無歧義預測 · 49 位顧客',
+    )
+    expect(html).not.toContain('%')
+  })
+
+  it('keeps the total elapsed time and run scope on the completed result', () => {
+    const html = renderToStaticMarkup(
+      <OptimizerRunSummary
+        elapsedMs={222_000}
+        candidatePolicy="allow-unambiguous-computed"
+        customerCount={49}
+      />,
+    )
+
+    expect(html).toContain('規劃完成 · 3 分 42 秒')
+    expect(html).toContain(
+      '正式實測＋已確認個人配方＋無歧義預測 · 49 位顧客',
     )
   })
 })
