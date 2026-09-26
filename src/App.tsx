@@ -45,7 +45,7 @@ import {
   type ProgressiveRecipeSearchResult,
 } from './domain/recipeSearch'
 import {
-  buildContiguousRecipeSequenceIndex,
+  buildRecipeIngredientEntryIndex,
   recipeEntriesForContiguousSequence,
 } from './domain/recipeSequenceIndex'
 import {
@@ -371,21 +371,21 @@ function App() {
       ),
     [recipeCandidatePool],
   )
-  const recipeSequenceIndex = useMemo(
-    () => buildContiguousRecipeSequenceIndex(recipeListEntries),
+  const recipeIngredientEntryIndex = useMemo(
+    () => buildRecipeIngredientEntryIndex(recipeListEntries),
     [recipeListEntries],
   )
   const recipeSequenceEntries = useMemo(
     () =>
       recipeEntriesForContiguousSequence(
         recipeListEntries,
-        recipeSequenceIndex,
+        recipeIngredientEntryIndex,
         recipeIngredientSequenceFilter,
       ),
     [
       recipeIngredientSequenceFilter,
       recipeListEntries,
-      recipeSequenceIndex,
+      recipeIngredientEntryIndex,
     ],
   )
   const recipeOrder = useMemo(
