@@ -17,6 +17,7 @@ import type { PlanApplicationTransactionDraft } from './domain/planApplicationTr
 import {
   DeliveryCustomerCheckbox,
   DeliveryRecipeGroupCheckbox,
+  DeliveryTripGroupCheckbox,
   INVENTORY_RECIPE_SEARCH_RESULT_LIMIT,
   INTERMEDIATE_JUICE_SEARCH_RESULT_LIMIT,
   JuiceJarRecipeCombobox,
@@ -456,6 +457,73 @@ describe('delivery checklist UI', () => {
 
     expect(html).not.toContain('disabled=""')
     expect(html).toContain('可記錄今日已供應')
+  })
+
+  it('shows the canonical customer Region beside delivery checklist names', () => {
+    const eastHtml = renderToStaticMarkup(
+      <DeliveryCustomerCheckbox
+        customerId="jack"
+        plan={deliveryPlan()}
+        cursor={deliveryCursor()}
+        suppliedCustomerIds={[]}
+        onChange={() => {}}
+      />,
+    )
+    const fountainHtml = renderToStaticMarkup(
+      <DeliveryCustomerCheckbox
+        customerId="florida"
+        plan={deliveryPlan()}
+        cursor={deliveryCursor()}
+        suppliedCustomerIds={[]}
+        onChange={() => {}}
+      />,
+    )
+
+    expect(eastHtml).toContain('東港村')
+    expect(fountainHtml).toContain('靜謐噴泉')
+    expect(eastHtml).toContain('optimizer-customer-region-badge')
+  })
+
+  it('lets a trip bulk checkbox share the same supplied-customer authority', () => {
+    const plan = deliveryPlan()
+    const cursor = deliveryCursor()
+
+    const empty = renderToStaticMarkup(
+      <DeliveryTripGroupCheckbox
+        tripNumber={1}
+        customerIds={['jack', 'leticia']}
+        plan={plan}
+        cursor={cursor}
+        suppliedCustomerIds={[]}
+        onChange={() => {}}
+      />,
+    )
+    const partial = renderToStaticMarkup(
+      <DeliveryTripGroupCheckbox
+        tripNumber={1}
+        customerIds={['jack', 'leticia']}
+        plan={plan}
+        cursor={cursor}
+        suppliedCustomerIds={['jack']}
+        onChange={() => {}}
+      />,
+    )
+    const complete = renderToStaticMarkup(
+      <DeliveryTripGroupCheckbox
+        tripNumber={1}
+        customerIds={['jack', 'leticia']}
+        plan={plan}
+        cursor={cursor}
+        suppliedCustomerIds={['jack', 'leticia']}
+        onChange={() => {}}
+      />,
+    )
+
+    expect(empty).toContain('完成 0 / 2')
+    expect(partial).toContain('aria-checked="mixed"')
+    expect(partial).toContain('完成 1 / 2')
+    expect(complete).toContain('checked=""')
+    expect(complete).toContain('完成 2 / 2')
   })
 
   it('keeps planned trip metadata without blocking out-of-order delivery checkboxes', () => {
@@ -961,6 +1029,91 @@ describe('optimizer summary', () => {
   })
 })
 
+describe('sales trip interactive checklist UI', () => {
+  it('renders selected trips as shared supplied checklists and keeps read-only comparison plans non-interactive', () => {
+    const salesDemand: PreparationDemand = {
+      ingredients: [],
+      productionWaterUnits: 1,
+      cleanCupUses: 2,
+      producedServings: 2,
+      assignedServings: 2,
+      leftoverServings: 0,
+      recipes: [
+        {
+          recipeId: 'recipe-a',
+          recipeName: 'A',
+          customerIds: ['jack', 'leticia'],
+          ingredientIds: [],
+          productionUnits: 1,
+          producedServings: 2,
+          assignedServings: 2,
+          leftoverServings: 0,
+          ingredientUnitsPerJuiceUnit: [],
+        },
+      ],
+    }
+    const inventory: InventoryState = {
+      ingredientUnits: {},
+      intermediateJuiceUnits: {},
+      waterUnits: 0,
+      cleanCups: 2,
+      usedCups: 0,
+      juiceJars: [
+        { id: 'jar-a', recipeId: null, servings: 0 },
+      ],
+      shelfCount: 0,
+      jarRackCount: 0,
+    }
+    const shortfall = buildPreparationShortfall(
+      salesDemand,
+      inventory,
+    )
+    const plan = buildMultiTripReplenishmentPlan(
+      salesDemand,
+      'retain-and-wash',
+      inventory.juiceJars,
+      {
+        cleanCups: inventory.cleanCups,
+        usedCups: inventory.usedCups,
+      },
+      shortfall,
+      {
+        mode: 'fixed-slots',
+        reservedSlots: 1,
+        minimumCarriedSlots: 0,
+      },
+      false,
+    )
+
+    const interactiveHtml = renderToStaticMarkup(
+      <SalesTripPlanBlock
+        plan={plan}
+        deliveryControls={{
+          plan: deliveryPlan(),
+          cursor: deliveryCursor(),
+          suppliedCustomerIds: ['jack'],
+          onChangeCustomer: () => {},
+          onChangeGroup: () => {},
+        }}
+      />,
+    )
+    const readOnlyHtml = renderToStaticMarkup(
+      <SalesTripPlanBlock plan={plan} />,
+    )
+
+    expect(interactiveHtml).toContain('第 1 趟全部交付完成')
+    expect(interactiveHtml).toContain('aria-checked="mixed"')
+    expect(interactiveHtml).toContain('完成 1 / 2')
+    expect(interactiveHtml).toContain('東港村')
+    expect(interactiveHtml).toContain('出發前')
+    expect(interactiveHtml).toContain('販售')
+    expect(interactiveHtml).toContain('回工作間')
+    expect(interactiveHtml).toContain('容量／路線細節')
+    expect(readOnlyHtml).not.toContain('第 1 趟全部交付完成')
+    expect(readOnlyHtml).not.toContain('type="checkbox"')
+  })
+})
+
 describe('sales trip terminal leftover UI', () => {
   it('renders a constrained trip-2 terminal jar as staying home during trip 3', () => {
     const salesDemand: PreparationDemand = {
@@ -1067,13 +1220,13 @@ describe('sales trip terminal leftover UI', () => {
       <SalesTripPlanBlock plan={plan} />,
     )
 
-    expect(html).toContain('販售後保留成品 1 杯')
+    expect(html).toContain('期末剩餘')
     expect(html).toContain(
       '期末果汁罐：jar-1 · A · 1 杯 · 第 2 趟後留在家中',
     )
     expect(html).toContain('第 3 趟')
-    expect(html).toContain('果汁罐 jar-2：B')
-    expect(html).toContain('果汁罐 jar-3：C')
+    expect(html).toContain('<strong>jar-2</strong><span>B</span>')
+    expect(html).toContain('<strong>jar-3</strong><span>C</span>')
   })
   it('renders Region service roles, transit, physical continuation, and fill timing together', () => {
     const salesDemand: PreparationDemand = {
@@ -1172,13 +1325,13 @@ describe('sales trip terminal leftover UI', () => {
       />,
     )
 
-    expect(html).toContain('出發／補給工作間：東港村')
-    expect(html).toContain('羱羊雕像：需求 2 杯')
-    expect(html).toContain('主要服務：東港村')
-    expect(html).toContain('主要服務：羱羊雕像')
-    expect(html).toContain('只經過（不服務）：靜謐噴泉')
+    expect(html).toContain('工作間')
+    expect(html).toContain('羱羊雕像')
+    expect(html).toContain('主要 · 東港村')
+    expect(html).toContain('主要 · 羱羊雕像')
+    expect(html).toContain('途經 · 靜謐噴泉')
     expect(html).toContain('跨區路線邊')
-    expect(html).toContain('本趟出發前裝罐')
+    expect(html).toContain('裝罐')
     expect(html).toContain('沿用罐內成品')
   })
 })
