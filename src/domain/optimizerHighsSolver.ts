@@ -1152,9 +1152,16 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
       }
     }
 
-    const includeInitialJarReleaseTieBreak = domain.recipes.some(
-      (recipe) => (recipe.initialFinishedServings ?? 0) > 0,
+    const eligibleRecipeIds = new Set(
+      domain.recipes.map((recipe) => recipe.candidate.id),
     )
+    const includeInitialJarReleaseTieBreak =
+      normalizedInitialCarriedJuiceJars(domain.request).some(
+        (jar) =>
+          Boolean(jar.recipeId) &&
+          jar.servings > 0 &&
+          eligibleRecipeIds.has(jar.recipeId ?? ''),
+      )
     const objectives = objectiveOrder(
       priorities,
       includeInitialJarReleaseTieBreak,
