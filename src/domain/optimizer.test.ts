@@ -1051,4 +1051,163 @@ describe('production optimizer', () => {
       result.shoppingList.reduce((sum, item) => sum + item.totalCost, 0),
     ).toBe(result.totalIngredientCost)
   }, 30000)
+  it('re-solves the same customer against current stock instead of purchasing the normal-mode cheapest raw ingredient', async () => {
+    const source = {
+      customers: [customer('a', '甜味')],
+      candidates: [
+        recipe('cheap-lemon', ['檸檬'], ['甜味']),
+        recipe('stocked-orange', ['橙子'], ['甜味']),
+      ],
+    }
+    const inventory: InventoryState = {
+      ingredientUnits: { orange: 1 },
+      intermediateJuiceUnits: {},
+      waterUnits: 0,
+      cleanCups: 1,
+      usedCups: 0,
+      juiceJars: [
+        { id: 'jar-1', recipeId: null, servings: 0 },
+      ],
+      shelfCount: 0,
+      jarRackCount: 0,
+    }
+
+    const normal = await optimizeBatchPlan(
+      request(['a']),
+      { source },
+    )
+    const normalShortfall = buildPreparationShortfall(
+      buildPreparationDemand(normal),
+      inventory,
+    )
+
+    expect(normal.assignments).toEqual([
+      { customerId: 'a', recipeId: 'cheap-lemon' },
+    ])
+    expect(
+      normalShortfall.ingredients.find(
+        (item) => item.ingredientId === 'lemon',
+      )?.purchaseUnits,
+    ).toBe(1)
+
+    const inventoryOnly = await optimizeBatchPlan(
+      {
+        ...request(['a']),
+        materialSourceMode: 'inventory-only',
+        materialInventory: {
+          ingredientUnits: { ...inventory.ingredientUnits },
+          intermediateJuiceUnits: {
+            ...(inventory.intermediateJuiceUnits ?? {}),
+          },
+        },
+      },
+      { source },
+    )
+    const inventoryOnlyShortfall = buildPreparationShortfall(
+      buildPreparationDemand(inventoryOnly),
+      inventory,
+    )
+
+    expect(inventoryOnly.assignments).toEqual([
+      { customerId: 'a', recipeId: 'stocked-orange' },
+    ])
+    expect(inventoryOnly.assignedServings).toBe(1)
+    expect(inventoryOnlyShortfall.ingredients).toEqual([
+      expect.objectContaining({
+        ingredientId: 'orange',
+        inventoryUnitsUsed: 1,
+        purchaseUnits: 0,
+      }),
+    ])
+    expect(
+      inventoryOnlyShortfall.ingredients.every(
+        (item) => item.purchaseUnits === 0,
+      ),
+    ).toBe(true)
+    expect(inventoryOnlyShortfall.waterUnitsToFetch).toBe(1)
+  })
+
+  it('does not reuse one intermediate juice stock unit across multiple production units in inventory-only mode', async () => {
+    const source = {
+      customers: [
+        customer('a', '甜味'),
+        customer('b', '甜味'),
+        customer('c', '甜味'),
+      ],
+      candidates: [
+        recipe('sweet', ['檸檬', '糖'], ['甜味']),
+      ],
+    }
+
+    await expect(
+      optimizeBatchPlan(
+        {
+          ...request(['a', 'b', 'c']),
+          materialSourceMode: 'inventory-only',
+          materialInventory: {
+            ingredientUnits: {
+              lemon: 0,
+              sugar: 2,
+            },
+            intermediateJuiceUnits: {
+              'juice-state:v1:lemon': 1,
+            },
+          },
+        },
+        { source },
+      ),
+    ).rejects.toMatchObject({
+      name: 'PlanningUserError',
+      context: {
+        materialSourceMode: 'inventory-only',
+        inventoryShortfalls: [
+          {
+            ingredientId: 'lemon',
+            units: 1,
+          },
+        ],
+      },
+    })
+  })
+
+  it('keeps existing finished servings as optimizer capacity in inventory-only mode without raw stock', async () => {
+    const result = await optimizeBatchPlan(
+      {
+        ...request(['a']),
+        materialSourceMode: 'inventory-only',
+        materialInventory: {
+          ingredientUnits: {},
+          intermediateJuiceUnits: {},
+        },
+        initialAvailableJuiceJars: [
+          {
+            recipeId: 'stocked',
+            servings: 1,
+          },
+        ],
+      },
+      {
+        source: {
+          customers: [customer('a', '甜味')],
+          candidates: [
+            recipe('stocked', ['檸檬'], ['甜味']),
+          ],
+        },
+      },
+    )
+
+    expect(result.assignments).toEqual([
+      { customerId: 'a', recipeId: 'stocked' },
+    ])
+    expect(result.recipePlans[0]).toEqual(
+      expect.objectContaining({
+        recipeId: 'stocked',
+        juiceUnits: 0,
+        assignedServings: 1,
+      }),
+    )
+    expect(result.totalIngredientCost).toBe(0)
+  })
+
+
 })
