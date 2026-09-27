@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import type { InventoryState } from './types'
 import {
   buildMultiTripReplenishmentPlan,
+  type MultiTripJuiceJarLoad,
   type MultiTripProductionJarFill,
 } from './domain/multiTripReplenishment'
 import type { OptimizationResult } from './domain/optimizer'
@@ -52,6 +53,7 @@ import {
   optimizerCriterionOptions,
   optimizerInventoryIngredients,
   intermediateJuiceInventoryEntries,
+  jarFillActionLabel,
   searchIntermediateJuiceEntries,
   searchIntermediateJuiceIndex,
   searchInventoryRecipeEntries,
@@ -1153,7 +1155,7 @@ describe('optimizer summary', () => {
       <OptimizerSummaryMetrics
         result={result}
         salesPlan={{
-          jarTypeSwitches: 0,
+          productionJarFills: [],
           tripCount: 3,
           totalLeftoverServings: 1,
         }}
@@ -1166,8 +1168,59 @@ describe('optimizer summary', () => {
     expect(html).toContain(
       '<span>需求杯數 / 本次新製作</span><strong>2 / 2</strong>',
     )
+    expect(html).toContain(
+      '<span>裝罐操作（實體排程）</span><strong>0 次</strong>',
+    )
     expect(html).toContain('<span>剩餘杯</span><strong>1</strong>')
     expect(html).not.toContain('<span>剩餘杯</span><strong>0</strong>')
+  })
+})
+
+describe('jar fill operation UI semantics', () => {
+  function load(
+    fillAction: MultiTripJuiceJarLoad['fillAction'],
+  ): MultiTripJuiceJarLoad {
+    return {
+      physicalJarId: 'jar-1',
+      recipeId: 'new-recipe',
+      recipeName: '新果汁',
+      customerIds: ['jack'],
+      servings: 1,
+      retainedLeftoverServings: 0,
+      plannedFillServings:
+        fillAction === 'use-existing' ||
+        fillAction === 'continue-loaded'
+          ? 0
+          : 1,
+      slotCost: 1,
+      fillAction,
+      previousRecipeId: 'old-recipe',
+      previousRecipeName: '舊果汁',
+    }
+  }
+
+  it('labels player operation cost without exposing the previous recipe for type switches', () => {
+    expect(jarFillActionLabel(load('initial-fill'))).toBe('首次裝填')
+    expect(jarFillActionLabel(load('refill-same-type'))).toBe('補裝同種')
+    expect(jarFillActionLabel(load('type-switch'))).toBeNull()
+    expect(jarFillActionLabel(load('use-existing'))).toBe('使用既有成品')
+    expect(jarFillActionLabel(load('continue-loaded'))).toBe('沿用罐內成品')
+  })
+
+  it('exposes jar fill operations as the player-facing criterion', () => {
+    expect(criterionLabel('minimum-jar-fill-operations')).toBe(
+      '最少裝罐操作',
+    )
+    expect(
+      optimizerCriterionOptions.find(
+        (option) => option.value === 'minimum-jar-fill-operations',
+      )?.label,
+    ).toBe('最少裝罐操作')
+    expect(
+      optimizerCriterionOptions.some(
+        (option) => option.label.includes('果汁罐換裝'),
+      ),
+    ).toBe(false)
   })
 })
 
