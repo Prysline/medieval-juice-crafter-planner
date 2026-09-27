@@ -128,7 +128,7 @@ async function setCustomerQuery(sessionId, value, expectedRowCount = null) {
         return
       }
       const rowCount = () =>
-        table.querySelectorAll(':scope > .table-row').length
+        table.querySelectorAll(':scope > .table-row:not([hidden])').length
       const before = rowCount()
       const startedAt = performance.now()
       let frame = 0
@@ -192,7 +192,7 @@ async function measureCustomerClearExpansion(
       }
 
       const rowCount = () =>
-        table.querySelectorAll(':scope > .table-row').length
+        table.querySelectorAll(':scope > .table-row:not([hidden])').length
       const elementCount = () =>
         table.querySelectorAll('*').length
       const beforeRows = rowCount()
@@ -219,7 +219,12 @@ async function measureCustomerClearExpansion(
           }
         }
       })
-      observer.observe(table, { childList: true, subtree: true })
+      observer.observe(table, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['hidden'],
+      })
 
       const finish = (timedOut) => {
         if (finished) return
