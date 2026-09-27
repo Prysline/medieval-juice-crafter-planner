@@ -38,7 +38,7 @@ function median(values: number[]): number {
   return sorted[Math.floor(sorted.length / 2)] ?? 0
 }
 
-function measure(render: () => string, iterations = 3) {
+function measureCached(render: () => string, iterations = 3) {
   render()
   const samples: number[] = []
   let html = ''
@@ -51,7 +51,7 @@ function measure(render: () => string, iterations = 3) {
 }
 
 describe('optimizer first-activation responsiveness profile', () => {
-  it('measures inactive vs active render cost with production-scale search authority', () => {
+  it('separates first activation from cached active renders at production scale', () => {
     const storage = new MemoryStorage()
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
@@ -73,32 +73,47 @@ describe('optimizer first-activation responsiveness profile', () => {
       onFormalCustomerIdsCommitted: () => {},
     }
 
-    const inactive = measure(() =>
+    const renderInactive = () =>
       renderToStaticMarkup(
         <OptimizerTools
           {...commonProps}
           active={false}
         />,
-      ),
-    )
-    const active = measure(() =>
+      )
+    const renderActive = () =>
       renderToStaticMarkup(
         <OptimizerTools
           {...commonProps}
           active
         />,
-      ),
-    )
+      )
+
+    const inactive = measureCached(renderInactive)
+
+    // Do not warm up the active path before this sample. The searchable
+    // inventory indexes use WeakMap caches keyed by the pool arrays, so the
+    // first active render is the one that includes the one-time index build.
+    const firstActivationStartedAt = performance.now()
+    const firstActiveHtml = renderActive()
+    const firstActivationMs = performance.now() - firstActivationStartedAt
+
+    const cachedActive = measureCached(renderActive)
 
     console.log('[optimizer-activation-profile]', {
       poolEntries: recipeCandidatePool.entries.length,
       inactive,
-      active,
-      activationDeltaMs: active.medianMs - inactive.medianMs,
+      firstActivation: {
+        ms: firstActivationMs,
+        htmlChars: firstActiveHtml.length,
+      },
+      cachedActive,
+      activationDeltaMs: firstActivationMs - inactive.medianMs,
+      cachedActivationDeltaMs: cachedActive.medianMs - inactive.medianMs,
     })
 
     expect(recipeCandidatePool.entries.length).toBeGreaterThan(10_000)
     expect(inactive.htmlChars).toBeGreaterThan(0)
-    expect(active.htmlChars).toBe(inactive.htmlChars)
+    expect(firstActiveHtml.length).toBe(inactive.htmlChars)
+    expect(cachedActive.htmlChars).toBe(inactive.htmlChars)
   }, 30_000)
 })
