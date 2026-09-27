@@ -6,6 +6,7 @@ import { juiceStateIdentity } from './juiceStateIdentity'
 import { buildStockOffsetProductionPlan } from './productionPlan'
 import {
   buildNetProductionPlan,
+  buildPreProductionStorageSummary,
   buildProductionLogisticsPlan,
 } from './productionLogistics'
 
@@ -135,6 +136,71 @@ function receiverTimeline(
 }
 
 describe('production logistics', () => {
+  it('counts pre-production storage per material stack and reuses same-ingredient partial stacks', () => {
+    const summary = buildPreProductionStorageSummary(
+      shortfall(['lemon', 'sugar'], 5),
+      inventory({
+        ingredientUnits: { lemon: 4 },
+        juiceJars: [],
+        shelfCount: 0,
+      }),
+      settings(),
+    )
+
+    expect(summary).toMatchObject({
+      purchasedIngredientSlotsAdded: 1,
+      occupiedSlotsBeforePurchases: 1,
+      occupiedSlotsAfterPurchases: 2,
+      availableGeneralStorageSlots: 10,
+      missingSlots: 0,
+      additionalShelfCountRequired: 0,
+      remainingSlotsAfterRequiredShelves: 8,
+    })
+  })
+
+  it('includes existing intermediate juice and water but not future fetched water in the pre-production footprint', () => {
+    const identity = juiceStateIdentity(['lemon'])
+    const summary = buildPreProductionStorageSummary(
+      shortfall([], 0, {
+        ingredients: [],
+        waterUnitsToFetch: 30,
+      }),
+      inventory({
+        intermediateJuiceUnits: { [identity]: 6 },
+        waterUnits: 11,
+        juiceJars: [],
+        shelfCount: 0,
+      }),
+      settings(),
+    )
+
+    expect(summary).toMatchObject({
+      occupiedSlotsBeforePurchases: 4,
+      occupiedSlotsAfterPurchases: 4,
+      purchasedIngredientSlotsAdded: 0,
+    })
+  })
+
+  it('reports missing slots and minimum additional shelf count before shopping', () => {
+    const summary = buildPreProductionStorageSummary(
+      shortfall(['lemon'], 60),
+      inventory({
+        juiceJars: [],
+        shelfCount: 0,
+      }),
+      settings(),
+    )
+
+    expect(summary).toMatchObject({
+      purchasedIngredientSlotsAdded: 12,
+      occupiedSlotsAfterPurchases: 12,
+      availableGeneralStorageSlots: 10,
+      missingSlots: 2,
+      additionalShelfCountRequired: 1,
+      remainingSlotsAfterRequiredShelves: 7,
+    })
+  })
+
   it('rebuilds the production graph from stock-offset net units', () => {
     const plan = buildNetProductionPlan(
       shortfall(['lemon', 'sugar'], 1),
@@ -276,6 +342,88 @@ describe('production logistics', () => {
         requiresCompletedSalesTrips: 1,
       },
     ])
+  })
+
+  it('rejects a plan that would need to buy a later raw ingredient after production starts', () => {
+    const jars = Array.from({ length: 9 }, (_, index) => ({
+      id: `jar-${index + 1}`,
+      recipeId: null,
+      servings: 0,
+    }))
+
+    const result = buildProductionLogisticsPlan(
+      shortfall(['lemon', 'sugar'], 1),
+      inventory({
+        juiceJars: jars,
+        shelfCount: 0,
+      }),
+      settings({
+        juiceJarCarryMode: 'fixed-slots',
+        reservedJuiceJarSlots: 9,
+      }),
+      receiverTimeline(1),
+    )
+
+    expect(result.feasible).toBe(false)
+    expect(result.preProductionStorage).toMatchObject({
+      purchasedIngredientSlotsAdded: 2,
+      occupiedSlotsAfterPurchases: 2,
+      availableGeneralStorageSlots: 1,
+      missingSlots: 1,
+      additionalShelfCountRequired: 1,
+      remainingSlotsAfterRequiredShelves: 8,
+    })
+    expect(result.issues.join(' ')).toContain('開工前無法存放全部備料')
+    expect(
+      result.actions.some((action) => action.kind === 'run-machine'),
+    ).toBe(false)
+  })
+
+  it('buys every missing raw ingredient before the first machine operation when storage is sufficient', () => {
+    const jars = Array.from({ length: 9 }, (_, index) => ({
+      id: `jar-${index + 1}`,
+      recipeId: null,
+      servings: 0,
+    }))
+
+    const result = buildProductionLogisticsPlan(
+      shortfall(['lemon', 'sugar'], 1),
+      inventory({
+        juiceJars: jars,
+        shelfCount: 1,
+      }),
+      settings({
+        juiceJarCarryMode: 'fixed-slots',
+        reservedJuiceJarSlots: 9,
+      }),
+      receiverTimeline(1),
+    )
+
+    expect(result.feasible).toBe(true)
+    expect(result.preProductionStorage.missingSlots).toBe(0)
+
+    const firstMachineActionIndex = result.actions.findIndex(
+      (action) =>
+        action.kind === 'load-machine' ||
+        action.kind === 'run-machine',
+    )
+    const acquisitionIndexes = result.actions
+      .map((action, index) => ({ action, index }))
+      .filter(({ action }) => action.kind === 'acquire-ingredient')
+      .map(({ index }) => index)
+
+    expect(acquisitionIndexes).toHaveLength(2)
+    expect(firstMachineActionIndex).toBeGreaterThan(0)
+    expect(
+      acquisitionIndexes.every(
+        (index) => index < firstMachineActionIndex,
+      ),
+    ).toBe(true)
+    expect(
+      result.actions
+        .slice(firstMachineActionIndex)
+        .some((action) => action.kind === 'acquire-ingredient'),
+    ).toBe(false)
   })
 
   it('acquires missing raw ingredients through backpack capacity', () => {

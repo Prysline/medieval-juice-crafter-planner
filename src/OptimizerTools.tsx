@@ -3577,6 +3577,44 @@ export function DeliveryTripGroupCheckbox({
   )
 }
 
+export function PreProductionStorageCard({
+  plan,
+}: {
+  plan: ProductionLogisticsPlan
+}) {
+  const storage = plan.preProductionStorage
+  const capacityLabel =
+    `一般架 ${storage.shelfSlotsAvailable} 格 + 背包可用 ${storage.backpackSlotsAvailable} 格`
+
+  return (
+    <article className="optimizer-batch-card">
+      <div>
+        <strong>開工前備料容量</strong>
+        <span>{capacityLabel}</span>
+      </div>
+      <p>
+        本次新採買新增 {storage.purchasedIngredientSlotsAdded} 格 · 開工前總占用{' '}
+        {storage.occupiedSlotsAfterPurchases} / {storage.availableGeneralStorageSlots} 格
+      </p>
+      {storage.missingSlots > 0 ? (
+        <small>
+          目前還缺 {storage.missingSlots} 格 · 至少再買{' '}
+          {storage.additionalShelfCountRequired} 座一般架 · 補足後剩餘{' '}
+          {storage.remainingSlotsAfterRequiredShelves} 格
+        </small>
+      ) : (
+        <small>
+          目前容量足夠 · 採買完成後剩餘{' '}
+          {storage.remainingSlotsAfterRequiredShelves} 格
+        </small>
+      )}
+      <small>
+        開工前總占用包含現有原料、中間果汁與現有水；額外缺水可在製作途中再取，不要求預先占位。
+      </small>
+    </article>
+  )
+}
+
 export function OptimizerSummaryMetrics({
   result,
   salesPlan,
@@ -3900,10 +3938,11 @@ function OptimizerResultPanel({
       <section className="optimizer-result-section">
         <div className="section-title">
           <strong>其他製作需求</strong>
-          <span>原料已列於上方交易預覽；此處只保留水與杯具</span>
+          <span>開工前備料容量、取水與杯具</span>
         </div>
 
         <div className="optimizer-batch-list">
+          <PreProductionStorageCard plan={productionLogistics} />
           <article className="optimizer-batch-card">
             <div>
               <strong>水</strong>
