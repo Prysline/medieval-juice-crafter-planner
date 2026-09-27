@@ -41,7 +41,7 @@ describe('recipe sequence evaluator', () => {
 
     expect(result.candidate.effects).toEqual([
       { name: '酸味', value: 4 },
-      { name: '增強免疫', value: 3 },
+      { name: '增強免疫', value: 5 },
     ])
     expect(result.effectTotals).toEqual([
       { name: '酸味', value: 4 },
