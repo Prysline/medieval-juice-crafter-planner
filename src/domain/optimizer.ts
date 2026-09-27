@@ -249,6 +249,9 @@ export async function optimizeBatchPlan(
     unknownFormalSalePriceCount,
     producedServings,
     assignedServings,
-    leftoverServings: producedServings - assignedServings,
+    leftoverServings: recipePlans.reduce(
+      (total, plan) => total + plan.leftoverServings,
+      0,
+    ),
   }
 }
