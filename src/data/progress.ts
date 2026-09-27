@@ -51,6 +51,16 @@ export const progressMilestones: ProgressMilestoneDefinition[] = [
     label: '階段八｜售飲助手 Adam 已抵達',
     summary: '爺爺回信告知已找到 Adam；Adam 於該回信後隔日抵達。目前只表示主線進度，不啟用售飲助手功能。',
   },
+  {
+    id: 'advanced-juicer-unlocked',
+    label: '階段九｜高級榨汁機已解鎖',
+    summary: '羱羊雕像滿意度 50、正式顧客 7 人後寄信給爺爺；收到回信後解鎖高級榨汁機。',
+  },
+  {
+    id: 'liquid-blender-unlocked',
+    label: '階段十｜液料調和器已解鎖',
+    summary: '東港村滿意度 1000、靜謐噴泉滿意度 450、羱羊雕像滿意度 130 後寄信給爺爺；收到回信後解鎖液料調和器。',
+  },
 ]
 
 export const progressMilestoneIds = progressMilestones.map(
