@@ -20,6 +20,8 @@ export type {
   OptimizationCandidatePolicy,
   OptimizationCriterion,
   OptimizationConstraints,
+  OptimizationMaterialInventory,
+  OptimizationMaterialSourceMode,
   OptimizationObjective,
   OptimizationRequest,
 } from './optimizerModel'
@@ -170,6 +172,21 @@ export async function optimizeBatchPlan(
     candidatePool: buildRecipeCandidatePool(request.currentProgress),
   }
   const model = buildOptimizationModel(request, source)
+  if (
+    request.materialSourceMode === 'inventory-only' &&
+    model.unresolvedCustomerIds.length > 0
+  ) {
+    const { PlanningUserError } = await import('./planningErrors')
+    throw new PlanningUserError(
+      'optimizer-no-solution',
+      {
+        solverStatus: 'unresolved-customers',
+        materialSourceMode: 'inventory-only',
+        unresolvedCustomerIds: [...model.unresolvedCustomerIds],
+      },
+      'Inventory-only planning requires every selected unsupplied customer to remain serviceable',
+    )
+  }
   const solver = options.solver ?? highsSolverAdapter
   const priorities = normalizedOptimizationPriorities(request)
   const solution = await solver.solve(model, priorities)
