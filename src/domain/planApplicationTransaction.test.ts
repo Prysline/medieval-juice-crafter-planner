@@ -414,6 +414,17 @@ function productionLogistics(
     actions: [],
     ingredientAcquisitionActions: 0,
     waterFetchTrips: 0,
+    preProductionStorage: {
+      purchasedIngredientSlotsAdded: 0,
+      occupiedSlotsBeforePurchases: 0,
+      occupiedSlotsAfterPurchases: 0,
+      shelfSlotsAvailable: 9,
+      backpackSlotsAvailable: 9,
+      availableGeneralStorageSlots: 18,
+      missingSlots: 0,
+      additionalShelfCountRequired: 0,
+      remainingSlotsAfterRequiredShelves: 18,
+    },
     initialSnapshot: snapshot,
     finalSnapshot: snapshot,
   }
