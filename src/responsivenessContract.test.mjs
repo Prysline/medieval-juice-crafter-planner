@@ -66,6 +66,31 @@ describe('responsiveness wiring regression', () => {
     )
   })
 
+  it('keeps customer text-query visibility outside memoized row props', () => {
+    expect(appSource).toContain(
+      'const visibleCustomerIds = useMemo(',
+    )
+    expect(appSource).toContain(
+      '{sortedCustomerResearchRows.map(',
+    )
+    expect(appSource).toContain(
+      'className="customer-row-shell"',
+    )
+    expect(appSource).toContain(
+      'hidden={!visibleCustomerIds.has(customer.id)}',
+    )
+
+    const rowStart = appSource.indexOf('<MemoizedCustomerRow')
+    const rowEnd = appSource.indexOf('/>', rowStart)
+    const rowProps = appSource.slice(rowStart, rowEnd)
+
+    expect(rowStart).toBeGreaterThanOrEqual(0)
+    expect(rowEnd).toBeGreaterThan(rowStart)
+    expect(rowProps).not.toContain('normalizedCustomerQuery')
+    expect(rowProps).not.toContain('visibleCustomerIds')
+    expect(rowProps).not.toContain('hidden=')
+  })
+
   it('does not mount heavy customer details until the row is expanded', () => {
     expect(appSource).toContain('const [expanded, setExpanded] = useState(false)')
     expect(appSource).toContain(
