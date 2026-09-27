@@ -30,6 +30,7 @@ type ObjectiveKey =
   | 'negativeKnownGrossProfit'
   | 'machineOperations'
   | 'jarSwitches'
+  | 'negativeEmptiedInitialJars'
 
 type IntVariable = ReturnType<Model['intVar']>
 type BoolVariable = ReturnType<Model['boolVar']>
@@ -71,10 +72,14 @@ function criterionKey(
 
 function objectiveOrder(
   priorities: OptimizationCriterion[],
+  includeInitialJarReleaseTieBreak: boolean,
 ): ObjectiveKey[] {
   const explicit = priorities.map(criterionKey)
   const fallback: ObjectiveKey[] = [
     'cost',
+    ...(includeInitialJarReleaseTieBreak
+      ? (['negativeEmptiedInitialJars'] as const)
+      : []),
     'productionUnits',
     'machineOperations',
     'kinds',
@@ -90,6 +95,33 @@ interface HighsStageOptions {
   machineOperationKinds?: Set<ProductionStepKind>
   fixedRecipeUnits?: Map<string, number>
   productionUnitsLowerBound?: number
+}
+
+function initialFinishedJarEmptyingThresholds(
+  jars: readonly { recipeId: string | null; servings: number }[],
+): Map<string, number[]> {
+  const servingsByRecipeId = new Map<string, number[]>()
+
+  for (const jar of jars) {
+    if (!jar.recipeId || jar.servings <= 0) continue
+    const current = servingsByRecipeId.get(jar.recipeId) ?? []
+    current.push(jar.servings)
+    servingsByRecipeId.set(jar.recipeId, current)
+  }
+
+  const thresholdsByRecipeId = new Map<string, number[]>()
+  for (const [recipeId, servings] of servingsByRecipeId) {
+    let cumulative = 0
+    const thresholds = [...servings]
+      .sort((a, b) => a - b)
+      .map((value) => {
+        cumulative += value
+        return cumulative
+      })
+    thresholdsByRecipeId.set(recipeId, thresholds)
+  }
+
+  return thresholdsByRecipeId
 }
 
 function buildHighsStage(
@@ -125,6 +157,8 @@ function buildHighsStage(
   const initialJars = normalizedInitialCarriedJuiceJars(
     domain.request,
   )
+  const initialJarEmptyingThresholds =
+    initialFinishedJarEmptyingThresholds(initialJars)
   const emptyJarCount = initialJars.filter(
     (jar) => !jar.recipeId || jar.servings <= 0,
   ).length
@@ -146,6 +180,7 @@ function buildHighsStage(
     'negativeAssignedIngredientCost',
     'negativeKnownRevenue',
     'negativeKnownGrossProfit',
+    'negativeEmptiedInitialJars',
   )
 
   if (
@@ -522,6 +557,48 @@ function buildHighsStage(
       )
     : undefined
 
+  const emptiedInitialJarVars: BoolVariable[] = []
+  if (needsAnyObjective('negativeEmptiedInitialJars')) {
+    domain.recipes.forEach((recipe, recipeIndex) => {
+      const thresholds =
+        initialJarEmptyingThresholds.get(recipe.candidate.id) ?? []
+      if (thresholds.length === 0) return
+
+      const assignedServings = sum(
+        ...domain.serviceableCustomerIds.flatMap((customerId) => {
+          const y = yByCustomerRecipe.get(
+            `${customerId}\u001f${recipe.candidate.id}`,
+          )
+          return y ? [y] : []
+        }),
+      )
+
+      let previous: BoolVariable | undefined
+      thresholds.forEach((threshold, thresholdIndex) => {
+        const emptied = model.boolVar(
+          `initial_jar_emptied_${recipeIndex}_${thresholdIndex}`,
+        )
+        model.addConstraint(
+          emptied.times(threshold).minus(assignedServings).leq(0),
+          `initial_jar_empty_threshold_${recipeIndex}_${thresholdIndex}`,
+        )
+        if (previous) {
+          model.addConstraint(
+            emptied.minus(previous).leq(0),
+            `initial_jar_empty_prefix_${recipeIndex}_${thresholdIndex}`,
+          )
+        }
+        previous = emptied
+        emptiedInitialJarVars.push(emptied)
+      })
+    })
+  }
+
+  const negativeEmptiedInitialJarsExpression =
+    needsAnyObjective('negativeEmptiedInitialJars')
+      ? sum(...emptiedInitialJarVars).times(-1)
+      : undefined
+
   let jarSwitches: IntVariable | undefined
 
   if (needsJarStructure) {
@@ -627,6 +704,8 @@ function buildHighsStage(
         : undefined,
     machineOperations: machineOperationsExpression,
     jarSwitches,
+    negativeEmptiedInitialJars:
+      negativeEmptiedInitialJarsExpression,
   }
 
   const requiredObjectiveExpression = (key: ObjectiveKey) => {
@@ -1073,7 +1152,13 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
       }
     }
 
-    const objectives = objectiveOrder(priorities)
+    const includeInitialJarReleaseTieBreak = domain.recipes.some(
+      (recipe) => (recipe.initialFinishedServings ?? 0) > 0,
+    )
+    const objectives = objectiveOrder(
+      priorities,
+      includeInitialJarReleaseTieBreak,
+    )
     const fixes: ObjectiveFix[] = []
     let currentDomain = domain
     let minimumCostCertificateApplied = false
