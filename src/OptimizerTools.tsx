@@ -109,6 +109,7 @@ import type {
 } from './types'
 
 interface OptimizerToolsProps {
+  active: boolean
   currentProgress: ProgressMilestoneId
   satisfactionByVillage: SatisfactionByVillage
   suppliedCustomerIds: string[]
@@ -529,14 +530,23 @@ export interface IntermediateJuiceSearchIndexRow {
 }
 
 export interface IntermediateJuiceSearchIndex {
-  readonly rows: readonly IntermediateJuiceSearchIndexRow[]
+  readonly inputRows: readonly IntermediateJuiceSearchIndexRow[]
+  readonly rankedRows: readonly IntermediateJuiceSearchIndexRow[]
 }
+
+const intermediateJuiceSearchIndexCache = new WeakMap<
+  readonly IntermediateJuiceInventoryEntry[],
+  IntermediateJuiceSearchIndex
+>()
 
 export function buildIntermediateJuiceSearchIndex(
   entries: readonly IntermediateJuiceInventoryEntry[],
 ): IntermediateJuiceSearchIndex {
-  const rows = entries
-    .map((entry): IntermediateJuiceSearchIndexRow => {
+  const cached = intermediateJuiceSearchIndexCache.get(entries)
+  if (cached) return cached
+
+  const inputRows = entries.map(
+    (entry): IntermediateJuiceSearchIndexRow => {
       const ingredientNames = entry.ingredientIds.map(ingredientLabel)
       return {
         entry,
@@ -556,34 +566,42 @@ export function buildIntermediateJuiceSearchIndex(
             ? normalizeRecipeSearchText(entry.ingredientIds[0] ?? '')
             : null,
       }
-    })
-    .sort(
-      (a, b) =>
-        a.entry.label.localeCompare(b.entry.label, 'zh-Hant') ||
-        a.entry.identity.localeCompare(b.entry.identity),
-    )
-
-  return { rows }
+    },
+  )
+  const rankedRows = [...inputRows].sort(
+    (a, b) =>
+      a.entry.label.localeCompare(b.entry.label, 'zh-Hant') ||
+      a.entry.identity.localeCompare(b.entry.identity),
+  )
+  const index = { inputRows, rankedRows }
+  intermediateJuiceSearchIndexCache.set(entries, index)
+  return index
 }
 
 export function searchIntermediateJuiceIndex(
   index: IntermediateJuiceSearchIndex,
   query: string,
+  excludedIdentities: ReadonlySet<string> | null = null,
   limit = INTERMEDIATE_JUICE_SEARCH_RESULT_LIMIT,
 ): IntermediateJuiceInventoryEntry[] {
   const normalized = normalizeRecipeSearchText(query)
   const boundedLimit = Math.max(0, Math.floor(limit))
   if (boundedLimit === 0) return []
   if (!normalized) {
-    return index.rows
-      .slice(0, boundedLimit)
-      .map(({ entry }) => entry)
+    const result: IntermediateJuiceInventoryEntry[] = []
+    for (const row of index.inputRows) {
+      if (excludedIdentities?.has(row.entry.identity)) continue
+      result.push(row.entry)
+      if (result.length >= boundedLimit) break
+    }
+    return result
   }
 
   const buckets: IntermediateJuiceInventoryEntry[][] =
     Array.from({ length: 6 }, () => [])
 
-  for (const row of index.rows) {
+  for (const row of index.rankedRows) {
+    if (excludedIdentities?.has(row.entry.identity)) continue
     let rank = -1
     if (row.normalizedLabel === normalized) {
       rank = 0
@@ -630,6 +648,7 @@ export function searchIntermediateJuiceEntries(
   return searchIntermediateJuiceIndex(
     buildIntermediateJuiceSearchIndex(entries),
     query,
+    null,
     limit,
   )
 }
@@ -683,9 +702,26 @@ export interface InventoryRecipeSearchIndex {
   readonly byCandidateId: ReadonlyMap<string, RecipeCandidatePoolEntry>
 }
 
+const EMPTY_INTERMEDIATE_JUICE_SEARCH_INDEX: IntermediateJuiceSearchIndex = {
+  inputRows: [],
+  rankedRows: [],
+}
+const EMPTY_INVENTORY_RECIPE_SEARCH_INDEX: InventoryRecipeSearchIndex = {
+  rows: [],
+  byCandidateId: new Map(),
+}
+
+const inventoryRecipeSearchIndexCache = new WeakMap<
+  readonly RecipeCandidatePoolEntry[],
+  InventoryRecipeSearchIndex
+>()
+
 export function buildInventoryRecipeSearchIndex(
   entries: readonly RecipeCandidatePoolEntry[],
 ): InventoryRecipeSearchIndex {
+  const cached = inventoryRecipeSearchIndexCache.get(entries)
+  if (cached) return cached
+
   const rows = entries
     .map((entry): InventoryRecipeSearchIndexRow => {
       const displayName = formatRecipeDisplayName(entry.candidate.name)
@@ -718,12 +754,14 @@ export function buildInventoryRecipeSearchIndex(
         ),
     )
 
-  return {
+  const index = {
     rows,
     byCandidateId: new Map(
       rows.map(({ entry }) => [entry.candidate.id, entry]),
     ),
   }
+  inventoryRecipeSearchIndexCache.set(entries, index)
+  return index
 }
 
 export function searchInventoryRecipeIndex(
@@ -1006,17 +1044,26 @@ export function JuiceJarRecipeCombobox({
 
 export function IntermediateJuiceCombobox({
   searchIndex,
+  excludedIdentities,
   onChoose,
 }: {
   searchIndex: IntermediateJuiceSearchIndex
+  excludedIdentities: ReadonlySet<string>
   onChoose: (entry: IntermediateJuiceInventoryEntry) => void
 }) {
   const listboxId = useId()
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const results = useMemo(
-    () => (open ? searchIntermediateJuiceIndex(searchIndex, query) : []),
-    [open, query, searchIndex],
+    () =>
+      open
+        ? searchIntermediateJuiceIndex(
+            searchIndex,
+            query,
+            excludedIdentities,
+          )
+        : [],
+    [excludedIdentities, open, query, searchIndex],
   )
   return (
     <div className="optimizer-recipe-combobox" onBlur={(event) => {
@@ -1114,6 +1161,7 @@ function uniquePriorities(
 }
 
 function OptimizerTools({
+  active,
   currentProgress,
   satisfactionByVillage,
   suppliedCustomerIds,
@@ -1185,8 +1233,11 @@ function OptimizerTools({
   )
 
   const inventoryRecipeSearchIndex = useMemo(
-    () => buildInventoryRecipeSearchIndex(inventoryRecipeEntries),
-    [inventoryRecipeEntries],
+    () =>
+      active
+        ? buildInventoryRecipeSearchIndex(inventoryRecipeEntries)
+        : EMPTY_INVENTORY_RECIPE_SEARCH_INDEX,
+    [active, inventoryRecipeEntries],
   )
 
   const intermediateInventoryEntries = useMemo(
@@ -1194,23 +1245,22 @@ function OptimizerTools({
     [inventoryRecipeEntries, currentProgress],
   )
 
-  const availableIntermediateInventoryEntries = useMemo(() => {
-    const existing = new Set(
-      Object.keys(inventoryState.intermediateJuiceUnits ?? {}),
-    )
-    return intermediateInventoryEntries.filter(
-      (entry) => !existing.has(entry.identity),
-    )
-  }, [
-    intermediateInventoryEntries,
-    inventoryState.intermediateJuiceUnits,
-  ])
+  const intermediateInventoryIdentitySet = useMemo(
+    () =>
+      new Set(
+        Object.keys(inventoryState.intermediateJuiceUnits ?? {}),
+      ),
+    [inventoryState.intermediateJuiceUnits],
+  )
 
   const intermediateJuiceSearchIndex = useMemo(
-    () => buildIntermediateJuiceSearchIndex(
-      availableIntermediateInventoryEntries,
-    ),
-    [availableIntermediateInventoryEntries],
+    () =>
+      active
+        ? buildIntermediateJuiceSearchIndex(
+            intermediateInventoryEntries,
+          )
+        : EMPTY_INTERMEDIATE_JUICE_SEARCH_INDEX,
+    [active, intermediateInventoryEntries],
   )
 
   const accessibleJuiceJars = useMemo(
@@ -2313,6 +2363,7 @@ function OptimizerTools({
             </div>
             <IntermediateJuiceCombobox
               searchIndex={intermediateJuiceSearchIndex}
+              excludedIdentities={intermediateInventoryIdentitySet}
               onChoose={(entry) => setIntermediateJuiceInventory(entry.identity, 1)}
             />
             {Object.keys(inventoryState.intermediateJuiceUnits ?? {}).length === 0 ? (
