@@ -156,6 +156,10 @@ describe('responsiveness wiring regression', () => {
     expect(panelSource).toContain(
       'onChange={(event) => setQuery(event.target.value)}',
     )
+    expect(panelSource).toContain('if (!active) return null')
+    expect(optimizerSource).toContain(
+      "active={targetMode === 'customers'}",
+    )
     expect(optimizerSource).not.toContain('customerTargetQuery')
     expect(panelSource).toContain(
       'onSelectedCustomerIdsChange((current) => [',
