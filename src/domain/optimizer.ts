@@ -2,6 +2,7 @@ import { customers as canonicalCustomers } from '../data/customers'
 import { ingredients } from '../data/ingredients'
 import { buildRecipeCandidatePool } from './recipeCandidatePool'
 import { highsSolverAdapter } from './optimizerHighsSolver'
+import { PlanningUserError } from './planningErrors'
 import type { BatchOptimizerSolver } from './optimizerSolver'
 import {
   buildOptimizationModel,
@@ -176,7 +177,6 @@ export async function optimizeBatchPlan(
     request.materialSourceMode === 'inventory-only' &&
     model.unresolvedCustomerIds.length > 0
   ) {
-    const { PlanningUserError } = await import('./planningErrors')
     throw new PlanningUserError(
       'optimizer-no-solution',
       {
