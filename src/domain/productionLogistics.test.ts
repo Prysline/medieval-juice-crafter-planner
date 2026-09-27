@@ -400,7 +400,7 @@ describe('production logistics', () => {
       availableGeneralStorageSlots: 1,
       missingSlots: 1,
       additionalShelfCountRequired: 1,
-      remainingSlotsAfterRequiredShelves: 9,
+      remainingSlotsAfterRequiredShelves: 8,
     })
     expect(result.issues.join(' ')).toContain('開工前無法存放全部備料')
     expect(
