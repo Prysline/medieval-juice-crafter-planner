@@ -93,7 +93,7 @@ describe('recipe simulator UX', () => {
     expect(html).toContain('我的檸檬汁')
     expect(html).toContain('成品特性（正式實測）')
     expect(html).toContain('酸味（4）')
-    expect(html).toContain('增強免疫（3）')
+    expect(html).toContain('增強免疫（5）')
     expect(html).toContain('待研究配方')
     expect(html).toContain('確定成品特性（預測）')
     expect(html).toContain('可能特性：剩')
