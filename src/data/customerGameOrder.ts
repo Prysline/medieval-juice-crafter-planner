@@ -32,10 +32,62 @@ export const eastHarborCustomerGameOrder = [
   'patricia',
 ] as const
 
+export const tranquilFountainCustomerGameOrder = [
+  'ingrid',
+  'peter',
+  'wilmetta',
+  'solomon',
+  'daniel',
+  'lila',
+  'avina',
+  'hugo',
+  'christina',
+  'jacob',
+  'betty',
+  'ricon',
+  'tacy',
+  'nicholas',
+  'emerys',
+  'gavinus',
+  'florida',
+  'sarah',
+  'pauline',
+  'valerian',
+  'octavius',
+  'ulbert',
+  'macarius',
+] as const
+
+export const ibexStatueCustomerGameOrder = [
+  'milon',
+  'thorsten',
+  'julia',
+  'martha',
+  'charles',
+  'tiffany',
+  'harvey',
+  'nantelma',
+  'bernard',
+  'dominic',
+  'oliver',
+  'heloise',
+  'rolf',
+  'ambrosia',
+  'gisela',
+  'frotga',
+  'lismon',
+  'isabel',
+  'gonzalo',
+  'savius',
+  'petra',
+] as const
+
 export const observedCustomerGameOrderByVillage: Partial<
   Record<VillageId, readonly string[]>
 > = {
   'east-harbor': eastHarborCustomerGameOrder,
+  'tranquil-fountain': tranquilFountainCustomerGameOrder,
+  'ibex-statue': ibexStatueCustomerGameOrder,
 }
 
 export function buildCustomerGameOrder(
