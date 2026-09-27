@@ -6,6 +6,7 @@ import type {
 } from '../types'
 import {
   readPlanApplicationStoredState,
+  updateStoredPlanApplicationFormalCustomers,
   updateStoredPlanApplicationSuppliedCustomers,
 } from './planApplicationState'
 
@@ -162,6 +163,11 @@ function readStoredStringArray(
 }
 
 export function readFormalCustomerIds(storage: StorageLike): string[] {
+  const storedPlanState = readPlanApplicationStoredState(storage)
+  if (storedPlanState) {
+    return [...storedPlanState.formalCustomerIds]
+  }
+
   return readStoredStringArray(storage, STORAGE_KEYS.formalCustomers)
 }
 
@@ -198,8 +204,18 @@ export function writeFormalCustomerIds(
   storage: StorageLike,
   customerIds: string[],
 ): void {
+  const normalized = [...new Set(customerIds)]
+  if (
+    updateStoredPlanApplicationFormalCustomers(
+      storage,
+      normalized,
+    )
+  ) {
+    return
+  }
+
   storage.setItem(
     STORAGE_KEYS.formalCustomers,
-    JSON.stringify([...new Set(customerIds)]),
+    JSON.stringify(normalized),
   )
 }
