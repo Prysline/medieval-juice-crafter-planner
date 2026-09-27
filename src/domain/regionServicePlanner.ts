@@ -70,6 +70,12 @@ export interface RegionServicePlannerInput {
    * P1-C 才由 physical jar / cup scheduler 提供真實可行性；本層不重做實體物流。
    */
   maxCustomerServicesPerTrip: number
+  /**
+   * Optional candidate-order diversity supplied by the physical integration.
+   * This never changes Region scoring; it only changes the final deterministic
+   * order used when abstract plans have identical score metrics.
+   */
+  regionOrder?: readonly RegionId[]
 }
 
 interface CanonicalGraphEdge {
@@ -422,6 +428,54 @@ function enumerateFullTripPatterns(
   return result
 }
 
+function enumerateRegionCompletionPatterns(
+  remaining: readonly number[],
+  capacity: number,
+): TripPattern[] {
+  const totalRemaining = remaining.reduce(
+    (sum, value) => sum + value,
+    0,
+  )
+  if (totalRemaining <= capacity) return []
+
+  return remaining.flatMap((count, index) => {
+    if (count <= 0 || count >= capacity) return []
+
+    const servingsByRegion = new Array<number>(
+      remaining.length,
+    ).fill(0)
+    servingsByRegion[index] = count
+    return [{ servingsByRegion }]
+  })
+}
+
+function enumerateTripPatterns(
+  remaining: readonly number[],
+  capacity: number,
+): TripPattern[] {
+  const fullPatterns = enumerateFullTripPatterns(
+    remaining,
+    capacity,
+  )
+  const completionPatterns =
+    enumerateRegionCompletionPatterns(remaining, capacity)
+  const seen = new Set(
+    fullPatterns.map((pattern) =>
+      pattern.servingsByRegion.join(','),
+    ),
+  )
+
+  return [
+    ...fullPatterns,
+    ...completionPatterns.filter((pattern) => {
+      const key = pattern.servingsByRegion.join(',')
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    }),
+  ]
+}
+
 function comparePatternPlans(
   a: PatternPlan,
   b: PatternPlan,
@@ -466,7 +520,13 @@ function planTripPatterns(
 
     let best: PatternPlan | null = null
 
-    for (const pattern of enumerateFullTripPatterns(
+    // Keep the existing max-capacity search, plus a bounded Region
+    // completion candidate. A completion candidate never enumerates
+    // arbitrary partial serving counts: it clears exactly one Region whose
+    // remaining demand is below capacity while other demand still exists.
+    // Therefore each state adds at most one candidate per Region, and every
+    // added transition removes at least one non-zero Region from the state.
+    for (const pattern of enumerateTripPatterns(
       remaining,
       capacity,
     )) {
@@ -624,7 +684,18 @@ export function planRegionServiceTrips(
     assignmentsByRegion.set(assignment.regionId, current)
   }
 
-  const regions = [...assignmentsByRegion.keys()].sort()
+  const regionOrderIndex = new Map(
+    (input.regionOrder ?? []).map((regionId, index) => [
+      regionId,
+      index,
+    ]),
+  )
+  const regions = [...assignmentsByRegion.keys()].sort(
+    (a, b) =>
+      (regionOrderIndex.get(a) ?? Number.MAX_SAFE_INTEGER) -
+        (regionOrderIndex.get(b) ?? Number.MAX_SAFE_INTEGER) ||
+      a.localeCompare(b),
+  )
   const initialCounts = regions.map(
     (regionId) =>
       assignmentsByRegion.get(regionId)?.length ?? 0,

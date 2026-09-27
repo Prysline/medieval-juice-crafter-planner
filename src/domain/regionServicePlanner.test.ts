@@ -102,6 +102,69 @@ describe('region service planner', () => {
     expect(assignmentPairs(fromA)).toEqual(assignmentPairs(fromD))
   })
 
+
+  it('can finish a Region under capacity instead of forcing cross-Region mixing', () => {
+    const localCustomers = Array.from(
+      { length: 29 },
+      (_, index) => `local-${index + 1}`,
+    )
+    const middleCustomers = Array.from(
+      { length: 22 },
+      (_, index) => `middle-${index + 1}`,
+    )
+    const farCustomers = Array.from(
+      { length: 13 },
+      (_, index) => `far-${index + 1}`,
+    )
+    const customerRegionById = Object.fromEntries([
+      ...localCustomers.map((customerId) => [
+        customerId,
+        'a',
+      ]),
+      ...middleCustomers.map((customerId) => [
+        customerId,
+        'b',
+      ]),
+      ...farCustomers.map((customerId) => [
+        customerId,
+        'c',
+      ]),
+    ])
+
+    const plan = planRegionServiceTrips({
+      activeWorkshop: { id: 'workshop', regionId: 'a' },
+      topology: {
+        edges: [
+          { from: 'a', to: 'b', cost: 1 },
+          { from: 'b', to: 'c', cost: 1 },
+        ],
+      },
+      recipeAssignments: assignments([
+        'shared',
+        [
+          ...localCustomers,
+          ...middleCustomers,
+          ...farCustomers,
+        ],
+      ]),
+      customerRegionById,
+      maxCustomerServicesPerTrip: 20,
+    })
+
+    expect(plan.routeCost).toBe(6)
+    expect(plan.tripCount).toBe(4)
+    expect(plan.serviceFragmentation).toBe(2)
+    expect(
+      plan.trips.some(
+        (trip) =>
+          trip.servicedRegionIds.length === 1 &&
+          trip.servicedRegionIds[0] === 'a' &&
+          trip.services[0]?.customerAssignments.length === 9,
+      ),
+    ).toBe(true)
+    expect(assignmentPairs(plan)).toHaveLength(64)
+  })
+
   it('marks an along-route serviced Region as side service and keeps pure transit separate', () => {
     const topology = {
       edges: [
