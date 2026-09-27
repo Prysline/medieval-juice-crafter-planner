@@ -2,23 +2,48 @@ import { describe, expect, it } from 'vitest'
 import {
   buildCustomerGameOrder,
   eastHarborCustomerGameOrder,
+  ibexStatueCustomerGameOrder,
+  tranquilFountainCustomerGameOrder,
 } from './customerGameOrder'
 import { customers } from './customers'
 
 describe('observed customer game order', () => {
-  it('covers every East Harbor customer exactly once in the observed order', () => {
-    const eastHarborIds = customers
-      .filter((customer) => customer.villageId === 'east-harbor')
-      .map((customer) => customer.id)
+  const observedOrders = [
+    {
+      villageId: 'east-harbor',
+      order: eastHarborCustomerGameOrder,
+      count: 29,
+    },
+    {
+      villageId: 'tranquil-fountain',
+      order: tranquilFountainCustomerGameOrder,
+      count: 23,
+    },
+    {
+      villageId: 'ibex-statue',
+      order: ibexStatueCustomerGameOrder,
+      count: 21,
+    },
+  ] as const
 
-    expect(eastHarborCustomerGameOrder).toHaveLength(29)
-    expect(new Set(eastHarborCustomerGameOrder).size).toBe(29)
-    expect([...eastHarborCustomerGameOrder].sort()).toEqual(
-      [...eastHarborIds].sort(),
-    )
-  })
+  for (const observation of observedOrders) {
+    it(`covers every ${observation.villageId} customer exactly once in the observed order`, () => {
+      const villageIds = customers
+        .filter(
+          (customer) =>
+            customer.villageId === observation.villageId,
+        )
+        .map((customer) => customer.id)
 
-  it('reorders only East Harbor while preserving the source order of other villages', () => {
+      expect(observation.order).toHaveLength(observation.count)
+      expect(new Set(observation.order).size).toBe(observation.count)
+      expect([...observation.order].sort()).toEqual(
+        [...villageIds].sort(),
+      )
+    })
+  }
+
+  it('applies the observed game order independently inside all three villages', () => {
     const order = buildCustomerGameOrder(customers)
     const sorted = [...customers].sort(
       (left, right) =>
@@ -26,22 +51,15 @@ describe('observed customer game order', () => {
         (order.get(right.id) ?? Number.MAX_SAFE_INTEGER),
     )
 
-    expect(
-      sorted
-        .filter((customer) => customer.villageId === 'east-harbor')
-        .map((customer) => customer.id),
-    ).toEqual([...eastHarborCustomerGameOrder])
-
-    for (const villageId of ['tranquil-fountain', 'ibex-statue'] as const) {
+    for (const observation of observedOrders) {
       expect(
         sorted
-          .filter((customer) => customer.villageId === villageId)
+          .filter(
+            (customer) =>
+              customer.villageId === observation.villageId,
+          )
           .map((customer) => customer.id),
-      ).toEqual(
-        customers
-          .filter((customer) => customer.villageId === villageId)
-          .map((customer) => customer.id),
-      )
+      ).toEqual([...observation.order])
     }
   })
 })
