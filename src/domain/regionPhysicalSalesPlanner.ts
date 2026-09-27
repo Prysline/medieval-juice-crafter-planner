@@ -157,6 +157,27 @@ function tripPreferenceByCustomerId(
   return result
 }
 
+function regionPhasePreferenceByCustomerId(
+  servicePlan: RegionServicePlan,
+): Record<string, number> {
+  const phaseByRegion = new Map<RegionId, number>()
+  for (const trip of servicePlan.trips) {
+    for (const service of trip.services) {
+      if (!phaseByRegion.has(service.regionId)) {
+        phaseByRegion.set(service.regionId, trip.tripNumber)
+      }
+    }
+  }
+
+  return Object.fromEntries(
+    servicePlan.customerAssignments.map((assignment) => [
+      assignment.customerId,
+      phaseByRegion.get(assignment.regionId) ??
+        Number.MAX_SAFE_INTEGER,
+    ]),
+  )
+}
+
 function reorderRecipeCustomers(
   recipe: PreparationRecipeDemand,
   preferenceByCustomerId: Readonly<Record<string, number>>,
@@ -433,6 +454,22 @@ export function buildRegionPhysicalSalesPlan(
       ) === index
     )
   })
+  const regionPreferenceCandidates = regionServiceIntents.flatMap(
+    (regionServiceIntent) => [
+      {
+        regionServiceIntent,
+        preferenceByCustomerId:
+          tripPreferenceByCustomerId(regionServiceIntent),
+      },
+      {
+        regionServiceIntent,
+        preferenceByCustomerId:
+          regionPhasePreferenceByCustomerId(
+            regionServiceIntent,
+          ),
+      },
+    ],
+  )
 
   const baseline = describePhysicalTrips(
     baselineSalesPlan,
@@ -446,9 +483,11 @@ export function buildRegionPhysicalSalesPlan(
     regionServiceIntent: canonicalRegionServiceIntent,
   }
 
-  for (const regionServiceIntent of regionServiceIntents) {
-    const preferenceByCustomerId =
-      tripPreferenceByCustomerId(regionServiceIntent)
+  for (const candidate of regionPreferenceCandidates) {
+    const {
+      regionServiceIntent,
+      preferenceByCustomerId,
+    } = candidate
     const regionOrderedDemand =
       demandForRegionServicePlan(
         input.demand,
