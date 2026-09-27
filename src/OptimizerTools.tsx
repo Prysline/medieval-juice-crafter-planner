@@ -250,7 +250,7 @@ export const optimizerCriterionOptions: Array<{
   label: string
 }> = [
   { value: 'minimum-machine-operations', label: '最少機器操作' },
-  { value: 'minimum-jar-switches', label: '最少果汁罐換裝' },
+  { value: 'minimum-jar-fill-operations', label: '最少裝罐操作' },
   { value: 'minimum-cost', label: '最低原料成本' },
   { value: 'minimum-waste', label: '最少剩餘杯' },
   { value: 'maximum-ingredient-cost', label: '最高原料成本' },
@@ -285,7 +285,7 @@ export function criterionLabel(criterion: OptimizationCriterion): string {
   if (criterion === 'maximum-known-revenue') return '最高已知銷售總額'
   if (criterion === 'maximum-known-gross-profit') return '最高已知毛利'
   if (criterion === 'minimum-machine-operations') return '最少機器操作'
-  return '最少果汁罐換裝'
+  return '最少裝罐操作'
 }
 
 export function optimizerRunPhaseLabel(
@@ -1101,20 +1101,18 @@ export function IntermediateJuiceCombobox({
   )
 }
 
-function jarFillActionLabel(load: MultiTripJuiceJarLoad): string {
+function jarFillActionLabel(
+  load: MultiTripJuiceJarLoad,
+): string | null {
   if (load.fillAction === 'use-existing') return '使用既有成品'
   if (load.fillAction === 'continue-loaded') return '沿用罐內成品'
   if (load.fillAction === 'initial-fill') return '首次裝填'
   if (load.fillAction === 'refill-same-type') return '補裝同種'
 
-  return (
-    formatRecipeDisplayName(
-      load.previousRecipeName ?? load.previousRecipeId ?? '前一種果汁',
-    ) +
-    ' → ' +
-    formatRecipeDisplayName(load.recipeName) +
-    ' 換裝'
-  )
+  // type-switch remains internal physical-jar lifecycle authority. By the
+  // time the player fills the jar it is empty, so the previous recipe is not
+  // useful execution guidance here.
+  return null
 }
 
 function usedCupPolicyLabel(policy: UsedCupTripPolicy): string {
@@ -1297,7 +1295,7 @@ function OptimizerTools({
   const [plannerSettings, setPlannerSettings] = useState<PlannerSettings>(() =>
     readPlannerSettings(window.localStorage, inventoryState),
   )
-  const [maxJarTypeSwitches, setMaxJarTypeSwitches] = useState('')
+  const [maxJarFillOperations, setMaxJarFillOperations] = useState('')
   const [activeWorkshopRegionId, setActiveWorkshopRegionId] =
     useState<VillageId>('east-harbor')
   const [runState, setRunState] = useState<OptimizerRunState>({
@@ -1568,7 +1566,7 @@ function OptimizerTools({
     candidatePolicy,
     priorities,
     plannerSettings,
-    maxJarTypeSwitches,
+    maxJarFillOperations,
     activeWorkshopRegionId,
     recipeCandidatePool,
   ])
@@ -1753,10 +1751,10 @@ function OptimizerTools({
         import('./domain/regionPhysicalSalesPlanner'),
         import('./domain/planApplicationTransaction'),
       ])
-      const parsedMaxSwitches =
-        maxJarTypeSwitches.trim() === ''
+      const parsedMaxFillOperations =
+        maxJarFillOperations.trim() === ''
           ? undefined
-          : Math.max(0, Math.floor(Number(maxJarTypeSwitches)))
+          : Math.max(0, Math.floor(Number(maxJarFillOperations)))
 
       if (capacitySummary.physicalJuiceJarCount < 1) {
         throw new PlanningUserError('missing-physical-jar')
@@ -1784,7 +1782,7 @@ function OptimizerTools({
           candidatePolicy,
           objective:
             primaryCriterion === 'minimum-machine-operations' ||
-            primaryCriterion === 'minimum-jar-switches'
+            primaryCriterion === 'minimum-jar-fill-operations'
               ? 'minimum-cost'
               : primaryCriterion,
           priorities,
@@ -1795,10 +1793,10 @@ function OptimizerTools({
             servings: jar.servings,
           })),
           constraints:
-            parsedMaxSwitches === undefined ||
-            !Number.isFinite(parsedMaxSwitches)
+            parsedMaxFillOperations === undefined ||
+            !Number.isFinite(parsedMaxFillOperations)
               ? undefined
-              : { maxJarTypeSwitches: parsedMaxSwitches },
+              : { maxJarFillOperations: parsedMaxFillOperations },
         },
         {
           customers,
@@ -1874,24 +1872,30 @@ function OptimizerTools({
           customerRegionById,
         })
         const plan = regionPlan.salesPlan
-        // result.jarTypeSwitches is the optimizer's structural lower bound.
-        // The physical planner is terminal-aware: prefilled recipes that must
-        // remain as final leftovers can require revisiting a jar, so its exact
-        // minimum may legitimately be higher (covered by domain regression).
-        // The physical schedule is authoritative for the realized count.
+        const actualJarFillOperations =
+          plan.productionJarFills.length
+        const expectedJarFillOperations =
+          result.machineOperations.finalizing
+
+        if (actualJarFillOperations !== expectedJarFillOperations) {
+          throw new Error(
+            `Physical jar fill operations drifted: expected ${expectedJarFillOperations}, got ${actualJarFillOperations}`,
+          )
+        }
+
         if (
-          parsedMaxSwitches !== undefined &&
-          Number.isFinite(parsedMaxSwitches) &&
-          plan.jarTypeSwitches > parsedMaxSwitches
+          parsedMaxFillOperations !== undefined &&
+          Number.isFinite(parsedMaxFillOperations) &&
+          actualJarFillOperations > parsedMaxFillOperations
         ) {
           throw new PlanningUserError(
             'optimizer-no-solution',
             {
-              solverStatus: 'physical-jar-switch-limit',
-              expectedJarTypeSwitches: parsedMaxSwitches,
-              actualJarTypeSwitches: plan.jarTypeSwitches,
+              solverStatus: 'physical-jar-fill-limit',
+              expectedJarFillOperations: parsedMaxFillOperations,
+              actualJarFillOperations,
             },
-            `Terminal-aware physical schedule requires ${plan.jarTypeSwitches} jar switch(es), exceeding the configured maximum of ${parsedMaxSwitches}`,
+            `Physical schedule requires ${actualJarFillOperations} jar fill operation(s), exceeding the configured maximum of ${parsedMaxFillOperations}`,
           )
         }
         return { plan, regionPlan }
@@ -2015,7 +2019,7 @@ function OptimizerTools({
         </div>
 
         <p className="tool-description">
-          以 full match 顧客分配為基礎，同時計算實際果汁份數、1～5 份製作 stack、共享中間半成品、機器操作、果汁罐換裝與 downstream production logistics。路線仍不自行推導；果汁調和器 1:1:1、q = 1～5 已接入 production graph。
+          以 full match 顧客分配為基礎，同時計算實際果汁份數、1～5 份製作 stack、共享中間半成品、機器操作、裝罐操作與 downstream production logistics。路線仍不自行推導；果汁調和器 1:1:1、q = 1～5 已接入 production graph。
         </p>
 
         <div className="optimizer-controls">
@@ -2150,14 +2154,14 @@ function OptimizerTools({
           </label>
 
           <label>
-            <span>最大果汁罐換裝次數</span>
+            <span>最大裝罐操作次數</span>
             <input
               type="number"
               inputMode="numeric"
               min={0}
               placeholder="不限制"
-              value={maxJarTypeSwitches}
-              onChange={(event) => setMaxJarTypeSwitches(event.target.value)}
+              value={maxJarFillOperations}
+              onChange={(event) => setMaxJarFillOperations(event.target.value)}
             />
           </label>
         </div>
@@ -2555,9 +2559,9 @@ function OptimizerTools({
               : plannerSettings.juiceJarCarryMode === 'auto'
                 ? `每趟自動計算（最低隨身 ${capacitySummary.minimumCarriedJuiceJarSlots} 個）`
                 : `固定使用 ${capacitySummary.effectiveReservedJuiceJarSlots} 個果汁罐格`}
-            {maxJarTypeSwitches.trim() !== ''
-              ? ' · 最多換裝 ' + maxJarTypeSwitches + ' 次'
-              : ' · 換裝不限'}
+            {maxJarFillOperations.trim() !== ''
+              ? ' · 最多裝罐 ' + maxJarFillOperations + ' 次'
+              : ' · 裝罐不限'}
             {plannerSettings.allowDiscardRetainedJuice
               ? ' · 必要時可倒掉既有果汁'
               : ' · 保留既有果汁'}
@@ -3119,7 +3123,7 @@ function transactionJarChangeLabel(
 
   if (!beforeFilled && afterFilled) return '裝入成品'
   if (beforeFilled && !afterFilled) return '清空'
-  if (change.before.recipeId !== change.after.recipeId) return '換裝'
+  if (change.before.recipeId !== change.after.recipeId) return '內容改變'
   if (change.after.servings > change.before.servings) return '補裝同種'
   if (change.after.servings < change.before.servings) return '販售後保留'
   return '內容更新'
@@ -3130,7 +3134,7 @@ function transactionFillActionLabel(
 ): string {
   if (fill.fillAction === 'initial-fill') return '首次裝填'
   if (fill.fillAction === 'refill-same-type') return '補裝同種'
-  return '換裝'
+  return '裝入成品'
 }
 
 export function CollapsibleOptimizerResultSection({
@@ -3916,7 +3920,7 @@ export function OptimizerSummaryMetrics({
   result: OptimizationResult
   salesPlan: Pick<
     MultiTripReplenishmentPlan,
-    'jarTypeSwitches' | 'tripCount' | 'totalLeftoverServings'
+    'productionJarFills' | 'tripCount' | 'totalLeftoverServings'
   >
 }) {
   return (
@@ -3946,8 +3950,8 @@ export function OptimizerSummaryMetrics({
         value={result.machineOperations.total + ' 次'}
       />
       <MetricCard
-        label="果汁罐換裝（實體排程）"
-        value={salesPlan.jarTypeSwitches + ' 次'}
+        label="裝罐操作（實體排程）"
+        value={salesPlan.productionJarFills.length + ' 次'}
       />
       <MetricCard
         label="販售趟數（目前策略）"
@@ -4178,7 +4182,7 @@ function OptimizerResultPanel({
           {productionLogistics.productionPlan.machineOperations.finalizing}）
         </span>
         <span>
-          本日可用實體果汁罐 {result.availableJuiceJarCount} 個；有果汁罐架時可跨趟換罐，同罐改裝成另一種果汁才計入換裝。
+          本日可用實體果汁罐 {result.availableJuiceJarCount} 個；有果汁罐架時可跨趟換罐；裝罐操作計首次裝填、同種補裝與空罐改裝，沿用既有內容不另計。
         </span>
         <span>
           販售摘要採「{tripPolicyLabel(selectedSalesTripPlan)}」；杯具依實際持有量與 clean → used stack transition 計算，成品裝罐接收罐也依這份販售排程的 physical jar 時序安排；替代 policy 可在販售排程展開比較。
@@ -4799,8 +4803,8 @@ export function SalesTripPlanBlock({
               </span>
             )}
             <span>
-              <b>換裝</b>
-              {plan.jarTypeSwitches} 次
+              <b>裝罐</b>
+              {plan.productionJarFills.length} 次
             </span>
             <span>
               <b>清洗</b>
@@ -4923,7 +4927,7 @@ export function SalesTripPlanBlock({
               {plan.totalLeftoverServings > 0
                 ? ' 剩餘成品只會留在該 recipe 最後販售的同一 persistent physical jar；目前仍不寫回 inventory，跨日 commit 留待 Apply Plan。'
                 : ''}
-              {' '}所有持有果汁罐的既有內容都會納入今日販售來源；有果汁罐架時可在趟次之間整罐上架／換罐，未被今日需求喝空的既有內容不會為了減少換裝而自動丟棄。
+              {' '}所有持有果汁罐的既有內容都會納入今日販售來源；有果汁罐架時可在趟次之間整罐上架／換罐，未被今日需求喝空的既有內容不會為了減少裝罐操作而自動丟棄。
             </small>
           </div>
         </details>
@@ -5075,14 +5079,19 @@ export function SalesTripPlanBlock({
                       <span>{load.servings} 杯</span>
                     </header>
 
-                    <div className="optimizer-sales-jar-status">
-                      <span>{jarFillActionLabel(load)}</span>
-                      {load.retainedLeftoverServings > 0 && (
-                        <span>
-                          販售後保留 {load.retainedLeftoverServings} 杯
-                        </span>
-                      )}
-                    </div>
+                    {(jarFillActionLabel(load) ||
+                      load.retainedLeftoverServings > 0) && (
+                      <div className="optimizer-sales-jar-status">
+                        {jarFillActionLabel(load) && (
+                          <span>{jarFillActionLabel(load)}</span>
+                        )}
+                        {load.retainedLeftoverServings > 0 && (
+                          <span>
+                            販售後保留 {load.retainedLeftoverServings} 杯
+                          </span>
+                        )}
+                      </div>
+                    )}
 
                     <div className="optimizer-delivery-customer-list">
                       {load.customerIds.map((customerId) =>
