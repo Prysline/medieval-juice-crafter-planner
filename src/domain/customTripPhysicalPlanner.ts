@@ -132,18 +132,20 @@ function issueForError(
       typeof fixedTripNumber === 'number'
         ? customPlan.tripOrder[fixedTripNumber - 1]
         : undefined
-    const tripRecipeIds = tripId
-      ? new Set(
-          customerIdsForCustomTrip(customPlan, tripId).map(
-            (customerId) =>
-              customPlan.customersById[customerId]?.recipeId,
-          ),
-        )
-      : new Set<string>()
-    tripRecipeIds.delete(undefined)
+    const tripRecipeIds = new Set<string>(
+      tripId
+        ? customerIdsForCustomTrip(customPlan, tripId).flatMap(
+            (customerId) => {
+              const recipeId =
+                customPlan.customersById[customerId]?.recipeId
+              return recipeId ? [recipeId] : []
+            },
+          )
+        : [],
+    )
     const recipeId =
       tripRecipeIds.size === 1
-        ? ([...tripRecipeIds][0] as string)
+        ? [...tripRecipeIds][0]
         : undefined
 
     return {
