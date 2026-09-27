@@ -1032,7 +1032,7 @@ describe('production optimizer', () => {
       priorities: [
         'minimum-cost',
         'minimum-machine-operations',
-        'minimum-jar-switches',
+        'minimum-jar-fill-operations',
       ],
       availableJuiceJarCount: 2,
     })
