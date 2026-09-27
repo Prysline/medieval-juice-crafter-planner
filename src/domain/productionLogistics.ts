@@ -130,19 +130,59 @@ function normalizedUnits(quantity: number | undefined): number {
   return Math.max(0, Math.floor(quantity ?? 0))
 }
 
+function rawIngredientRequirements(
+  productionPlan: ProductionPlan,
+): Map<string, number> {
+  const required = new Map<string, number>()
+
+  for (const step of productionPlan.steps) {
+    if (
+      (step.kind !== 'juicing' && step.kind !== 'seasoning') ||
+      !step.addedIngredientId
+    ) {
+      continue
+    }
+
+    required.set(
+      step.addedIngredientId,
+      (required.get(step.addedIngredientId) ?? 0) +
+        normalizedUnits(step.quantity),
+    )
+  }
+
+  return required
+}
+
+function rawIngredientPurchases(
+  productionPlan: ProductionPlan,
+  inventory: InventoryState,
+): Map<string, number> {
+  const purchases = new Map<string, number>()
+
+  for (const [ingredientId, requiredUnits] of rawIngredientRequirements(
+    productionPlan,
+  )) {
+    const existingUnits = normalizedUnits(
+      inventory.ingredientUnits[ingredientId],
+    )
+    const purchaseUnits = Math.max(0, requiredUnits - existingUnits)
+    if (purchaseUnits > 0) {
+      purchases.set(ingredientId, purchaseUnits)
+    }
+  }
+
+  return purchases
+}
+
 export function buildPreProductionStorageSummary(
   shortfall: PreparationShortfall,
   inventory: InventoryState,
   settings: PlannerSettings,
 ): PreProductionStorageSummary {
   const capacity = buildInventoryCapacitySummary(inventory, settings)
-  const purchaseByIngredient = new Map(
-    shortfall.ingredients
-      .filter((item) => item.purchaseUnits > 0)
-      .map((item) => [
-        item.ingredientId,
-        normalizedUnits(item.purchaseUnits),
-      ]),
+  const purchaseByIngredient = rawIngredientPurchases(
+    buildNetProductionPlan(shortfall),
+    inventory,
   )
   const ingredientIds = new Set([
     ...Object.keys(inventory.ingredientUnits),
@@ -551,6 +591,10 @@ export function buildProductionLogisticsPlan(
   receiverTimeline: MultiTripProductionJarFill[],
 ): ProductionLogisticsPlan {
   const productionPlan = buildNetProductionPlan(shortfall)
+  const rawPurchaseByIngredient = rawIngredientPurchases(
+    productionPlan,
+    inventory,
+  )
   const capacitySummary = buildInventoryCapacitySummary(
     inventory,
     settings,
@@ -1082,11 +1126,9 @@ export function buildProductionLogisticsPlan(
   }
 
   function acquireAllPurchasedIngredientsBeforeProduction(): boolean {
-    for (const item of shortfall.ingredients) {
-      let remaining = normalizedUnits(item.purchaseUnits)
-      if (remaining <= 0) continue
-
-      const key = rawKey(item.ingredientId)
+    for (const [ingredientId, purchaseUnits] of rawPurchaseByIngredient) {
+      let remaining = purchaseUnits
+      const key = rawKey(ingredientId)
       while (remaining > 0) {
         const current = materialQuantity(backpackMaterials, key)
         let addCapacity = availableAdditionalQuantity(
