@@ -21,6 +21,7 @@ import {
   DeliveryTripGroupCheckbox,
   CollapsibleOptimizerResultSection,
   CollapsibleProductionMachineGroup,
+  CollapsibleSalesTripCard,
   INVENTORY_RECIPE_SEARCH_RESULT_LIMIT,
   INTERMEDIATE_JUICE_SEARCH_RESULT_LIMIT,
   JuiceJarRecipeCombobox,
@@ -1170,6 +1171,28 @@ describe('optimizer summary', () => {
   })
 })
 
+describe('sales trip collapse UI', () => {
+  it('renders an independently collapsible trip card expanded by default', () => {
+    const html = renderToStaticMarkup(
+      <CollapsibleSalesTripCard
+        tripNumber={2}
+        summary={<strong>第 2 趟</strong>}
+      >
+        <p>趟次內容</p>
+      </CollapsibleSalesTripCard>,
+    )
+
+    expect(html).toContain(
+      'class="optimizer-batch-card optimizer-sales-trip-card"',
+    )
+    expect(html).toContain('open=""')
+    expect(html).toContain('aria-label="第 2 趟販售排程"')
+    expect(html).toContain('<summary class="optimizer-sales-trip-header">')
+    expect(html).toContain('optimizer-sales-trip-toggle')
+    expect(html).toContain('趟次內容')
+  })
+})
+
 describe('sales trip interactive checklist UI', () => {
   it('renders selected trips as shared supplied checklists and keeps read-only comparison plans non-interactive', () => {
     const salesDemand: PreparationDemand = {
@@ -1242,6 +1265,11 @@ describe('sales trip interactive checklist UI', () => {
       <SalesTripPlanBlock plan={plan} />,
     )
 
+    expect(interactiveHtml).toContain(
+      'aria-label="第 1 趟販售排程"',
+    )
+    expect(interactiveHtml).toContain('optimizer-sales-trip-toggle')
+    expect(interactiveHtml).toContain('optimizer-sales-trip-delivery-control')
     expect(interactiveHtml).toContain('第 1 趟全部交付完成')
     expect(interactiveHtml).toContain('aria-checked="mixed"')
     expect(interactiveHtml).toContain('完成 1 / 2')
@@ -1305,6 +1333,9 @@ describe('remaining sales trip replan UI', () => {
       />,
     )
 
+    expect(html).toContain('aria-label="第 1 趟販售排程"')
+    expect(html).toContain('optimizer-sales-trip-toggle')
+    expect(html).toContain('optimizer-sales-trip-delivery-control')
     expect(html).not.toContain('傑克')
     expect(html).toContain('萊蒂西亞')
     expect(html).toContain('弗洛莉婭')
