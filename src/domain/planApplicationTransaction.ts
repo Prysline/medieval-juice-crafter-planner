@@ -107,6 +107,7 @@ export interface PlanApplicationTransactionChanges {
   readonly juiceJars: readonly JuiceJarTransactionChange[]
   readonly discardedJuice: readonly DiscardedJuiceTransactionChange[]
   readonly newlySuppliedCustomerIds: readonly string[]
+  readonly newlyFormalCustomerIds: readonly string[]
 }
 
 export interface PlanApplicationTransactionDraft {
@@ -183,13 +184,14 @@ function snapshotInventory(
 function snapshotState(
   basis: PlanApplicationBasisState,
   inventory: PlanApplicationInventorySnapshot,
+  formalCustomerIds: string[],
   suppliedCustomerIds: string[],
 ): PlanApplicationStateSnapshot {
   return {
     inventory,
     currentProgress: basis.currentProgress,
     satisfactionByVillage: { ...basis.satisfactionByVillage },
-    formalCustomerIds: [...basis.formalCustomerIds],
+    formalCustomerIds: [...formalCustomerIds],
     suppliedCustomerIds: [...suppliedCustomerIds],
     plannerSettings: {
       juiceJarCarryMode: basis.plannerSettings.juiceJarCarryMode,
@@ -245,6 +247,7 @@ function freezeChanges(
   changes.discardedJuice.forEach((change) => Object.freeze(change))
   Object.freeze(changes.discardedJuice)
   Object.freeze(changes.newlySuppliedCustomerIds)
+  Object.freeze(changes.newlyFormalCustomerIds)
   return Object.freeze(changes)
 }
 
@@ -816,19 +819,32 @@ export function buildPlanApplicationTransactionDraft(
     juiceJars: afterJars,
   }
 
+  const beforeFormalCustomerIds = unique(
+    basis.formalCustomerIds,
+  )
   const beforeSuppliedCustomerIds = unique(
     basis.suppliedCustomerIds,
   )
   const assignedCustomerIds = result.assignments.map(
     (assignment) => assignment.customerId,
   )
+  const formalSet = new Set(beforeFormalCustomerIds)
   const suppliedSet = new Set(beforeSuppliedCustomerIds)
+  const newlyFormalCustomerIds: string[] = []
   const newlySuppliedCustomerIds: string[] = []
   for (const customerId of assignedCustomerIds) {
+    if (!formalSet.has(customerId)) {
+      formalSet.add(customerId)
+      newlyFormalCustomerIds.push(customerId)
+    }
     if (suppliedSet.has(customerId)) continue
     suppliedSet.add(customerId)
     newlySuppliedCustomerIds.push(customerId)
   }
+  const afterFormalCustomerIds = [
+    ...beforeFormalCustomerIds,
+    ...newlyFormalCustomerIds,
+  ]
   const afterSuppliedCustomerIds = [
     ...beforeSuppliedCustomerIds,
     ...newlySuppliedCustomerIds,
@@ -837,11 +853,13 @@ export function buildPlanApplicationTransactionDraft(
   const before = snapshotState(
     basis,
     beforeInventory,
+    beforeFormalCustomerIds,
     beforeSuppliedCustomerIds,
   )
   const after = snapshotState(
     basis,
     afterInventory,
+    afterFormalCustomerIds,
     afterSuppliedCustomerIds,
   )
   const changes: PlanApplicationTransactionChanges = {
@@ -893,6 +911,7 @@ export function buildPlanApplicationTransactionDraft(
       ),
     ],
     newlySuppliedCustomerIds,
+    newlyFormalCustomerIds,
   }
 
   const draft: PlanApplicationTransactionDraft = {
