@@ -390,7 +390,7 @@ describe('plan application commit', () => {
 
     expect(second).toEqual({
       status: 'stale',
-      mismatches: ['inventory', 'supplied-customers'],
+      mismatches: ['inventory', 'formal-customers', 'supplied-customers'],
     })
     expect(storage.writes).toEqual([])
     expect(readInventoryState(storage)).toEqual(committedInventory)
