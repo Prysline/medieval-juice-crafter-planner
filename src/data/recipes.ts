@@ -16,7 +16,7 @@ export const recipes: Recipe[] = [
     ingredients: ['檸檬'],
     effects: [
       { name: '酸味', value: 4 },
-      { name: '增強免疫', value: 3 },
+      { name: '增強免疫', value: 5 },
     ],
     equipment: ['柑橘榨汁機', '果汁成品台'],
   },
@@ -370,6 +370,54 @@ export const recipes: Recipe[] = [
     effects: [
       { name: '改善視力', value: 4 },
       { name: '調節血糖', value: 3 },
+    ],
+    equipment: ['榨汁機', '果汁成品台'],
+  },
+  {
+    id: 'banana-juice',
+    name: '香蕉汁',
+    unlockedAt: 'tranquil-fountain-unlocked',
+    salePrice: 15,
+    ingredients: ['香蕉'],
+    effects: [
+      { name: '補充精力', value: 4 },
+      { name: '紓解壓力', value: 3 },
+    ],
+    equipment: ['榨汁機', '果汁成品台'],
+  },
+  {
+    id: 'peach-juice',
+    name: '桃汁',
+    unlockedAt: 'ibex-statue-unlocked',
+    salePrice: 17,
+    ingredients: ['桃子'],
+    effects: [
+      { name: '促進消化', value: 4 },
+      { name: '舒緩呼吸', value: 2 },
+    ],
+    equipment: ['榨汁機', '果汁成品台'],
+  },
+  {
+    id: 'cucumber-juice',
+    name: '黃瓜汁',
+    unlockedAt: 'ibex-statue-unlocked',
+    salePrice: 13,
+    ingredients: ['黃瓜'],
+    effects: [
+      { name: '補充水分', value: 4 },
+      { name: '輔助瘦身', value: 2 },
+    ],
+    equipment: ['榨汁機', '果汁成品台'],
+  },
+  {
+    id: 'tomato-juice',
+    name: '番茄汁',
+    unlockedAt: 'ibex-statue-unlocked',
+    salePrice: 12,
+    ingredients: ['番茄'],
+    effects: [
+      { name: '保護心臟', value: 4 },
+      { name: '煥亮肌膚', value: 2 },
     ],
     equipment: ['榨汁機', '果汁成品台'],
   },
