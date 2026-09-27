@@ -1475,7 +1475,7 @@ function SortableHeader({
   )
 }
 
-function CustomerRow({
+export function CustomerRow({
   customer,
   matches,
   recommendations,
@@ -1919,7 +1919,7 @@ export function ComparisonDock({
   )
 }
 
-function RecipeRow({
+export function RecipeRow({
   entry,
   currentProgress,
   satisfactionByVillage,
