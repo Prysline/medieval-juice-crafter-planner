@@ -1249,12 +1249,18 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
         }
       }
 
+      const nextObjectiveKey = objectives[objectiveIndex + 1]
+      const shouldTryMachineCertificate =
+        currentDomain.recipes.length >=
+          PRODUCTION_CERTIFICATE_RECIPE_COUNT_GATE ||
+        nextObjectiveKey === 'jarFillOperations'
+
       if (
         objectiveKey === 'machineOperations' &&
         minimumCostCertificateApplied &&
         fixes.length === 1 &&
         fixes[0].objective === 'cost' &&
-        currentDomain.recipes.length >= PRODUCTION_CERTIFICATE_RECIPE_COUNT_GATE
+        shouldTryMachineCertificate
       ) {
         const certificate = await tryMachineOperationCertificate(
           currentDomain,
