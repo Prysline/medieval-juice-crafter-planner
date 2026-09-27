@@ -147,6 +147,96 @@ describe('fixed customer trip physical realization', () => {
     ).toBe(true)
   })
 
+  it('keeps matching initial jar contents across player-fixed trips with continue-loaded', () => {
+    const salesDemand = demand([
+      {
+        recipeId: 'a',
+        recipeName: 'A',
+        customerIds: ['a-1', 'a-2', 'a-3', 'a-4'],
+      },
+    ])
+    const availableJars: JuiceJarInventoryItem[] = [
+      {
+        id: 'jar-1',
+        recipeId: 'a',
+        servings: 4,
+      },
+    ]
+    const plan = buildMultiTripReplenishmentPlan(
+      salesDemand,
+      'retain-and-wash',
+      availableJars,
+      { cleanCups: 4, usedCups: 0 },
+      shortfall(salesDemand, availableJars),
+      {
+        mode: 'auto',
+        reservedSlots: 0,
+        minimumCarriedSlots: 0,
+      },
+      false,
+      {
+        fixedCustomerTrips: [
+          { customerIds: ['a-1', 'a-2'] },
+          { customerIds: ['a-3', 'a-4'] },
+        ],
+      },
+    )
+
+    expect(plan.productionJarFills).toEqual([])
+    expect(plan.trips).toHaveLength(2)
+    expect(plan.trips[0]?.juiceJars[0]).toMatchObject({
+      physicalJarId: 'jar-1',
+      recipeId: 'a',
+      customerIds: ['a-1', 'a-2'],
+      servings: 2,
+      plannedFillServings: 0,
+      fillAction: 'use-existing',
+      retainedLeftoverServings: 2,
+    })
+    expect(plan.trips[1]?.juiceJars[0]).toMatchObject({
+      physicalJarId: 'jar-1',
+      recipeId: 'a',
+      customerIds: ['a-3', 'a-4'],
+      servings: 2,
+      plannedFillServings: 0,
+      fillAction: 'continue-loaded',
+    })
+  })
+
+  it('uses the player-fixed trip order when one jar must switch recipes between trips', () => {
+    const salesDemand = demand([
+      {
+        recipeId: 'a',
+        recipeName: 'A',
+        customerIds: ['a-1', 'a-2'],
+      },
+      {
+        recipeId: 'b',
+        recipeName: 'B',
+        customerIds: ['b-1', 'b-2'],
+      },
+    ])
+
+    const plan = fixedPlan(
+      salesDemand,
+      [
+        { customerIds: ['b-1', 'b-2'] },
+        { customerIds: ['a-1', 'a-2'] },
+      ],
+      1,
+    )
+
+    expect(
+      plan.trips.map((trip) =>
+        trip.juiceJars.flatMap((load) => load.customerIds),
+      ),
+    ).toEqual([
+      ['b-1', 'b-2'],
+      ['a-1', 'a-2'],
+    ])
+    expect(plan.jarTypeSwitches).toBe(1)
+  })
+
   it('reports the exact fixed trip when the requested group cannot fit in one physical trip', () => {
     const salesDemand = demand([
       {
