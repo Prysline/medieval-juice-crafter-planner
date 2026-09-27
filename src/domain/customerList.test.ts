@@ -54,7 +54,7 @@ describe('customer list regressions', () => {
     ])
   })
 
-    it('can hide supplied customers without changing the source rows', () => {
+  it('can hide supplied customers without changing the source rows', () => {
     const rows = [row('jack', [orange]), row('nanette', [lemon])]
 
     expect(
@@ -83,7 +83,13 @@ describe('customer list regressions', () => {
     ]
 
     expect(
-      sortCustomerRows(rows, 'bestMatch', 'asc', recipeOrder).map(
+      sortCustomerRows(
+        rows,
+        'bestMatch',
+        'asc',
+        recipeOrder,
+        customerGameOrder,
+      ).map(
         ({ customer }) => customer.id,
       ),
     ).toEqual(['nanette', 'jack', 'derrick'])
@@ -101,7 +107,13 @@ describe('customer list regressions', () => {
     ]
 
     expect(
-      sortCustomerRows(rows, 'bestPrice', 'desc', recipeOrder).map(
+      sortCustomerRows(
+        rows,
+        'bestPrice',
+        'desc',
+        recipeOrder,
+        customerGameOrder,
+      ).map(
         ({ customer }) => customer.id,
       ),
     ).toEqual(['nanette', 'jack'])
@@ -115,7 +127,13 @@ describe('customer list regressions', () => {
     ]
 
     expect(
-      sortCustomerRows(rows, 'bestPrice', 'desc', recipeOrder).map(
+      sortCustomerRows(
+        rows,
+        'bestPrice',
+        'desc',
+        recipeOrder,
+        customerGameOrder,
+      ).map(
         ({ customer }) => customer.id,
       ),
     ).toEqual(['jack', 'nanette', 'derrick'])
