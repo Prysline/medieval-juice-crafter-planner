@@ -213,6 +213,44 @@ describe('recipe sequence evaluator', () => {
     }
   })
 
+  it('uses the 2026-09-27 ibex-statue observed overlays with the correct blender boundary', () => {
+    const observations = [
+      { ingredientIds: ['banana', 'clove'], id: 'banana-clove', salePrice: 35, usesBlender: false },
+      { ingredientIds: ['tomato', 'clove'], id: 'tomato-clove', salePrice: 31, usesBlender: false },
+      { ingredientIds: ['tomato', 'sugar'], id: 'tomato-sugar', salePrice: 23, usesBlender: false },
+      { ingredientIds: ['banana', 'mint', 'cinnamon'], id: 'banana-mint-cinnamon', salePrice: 58, usesBlender: false },
+      { ingredientIds: ['tomato', 'clove', 'cinnamon'], id: 'tomato-clove-cinnamon', salePrice: 55, usesBlender: false },
+      { ingredientIds: ['tomato', 'clove', 'sugar'], id: 'tomato-clove-sugar', salePrice: 43, usesBlender: false },
+      { ingredientIds: ['tomato', 'sugar', 'mint'], id: 'tomato-sugar-mint', salePrice: 43, usesBlender: false },
+      { ingredientIds: ['orange', 'cucumber'], id: 'orange-cucumber-blend', salePrice: 29, usesBlender: true },
+      { ingredientIds: ['peach', 'cucumber'], id: 'peach-cucumber-blend', salePrice: 36, usesBlender: true },
+      { ingredientIds: ['orange', 'cinnamon', 'carrot'], id: 'orange-cinnamon-carrot-blend', salePrice: 48, usesBlender: true },
+      { ingredientIds: ['tomato', 'peach'], id: 'tomato-peach-blend', salePrice: 35, usesBlender: true },
+      { ingredientIds: ['tomato', 'peach', 'pear'], id: 'tomato-peach-pear-blend', salePrice: 55, usesBlender: true },
+      { ingredientIds: ['cucumber', 'banana', 'mint', 'cinnamon'], id: 'cucumber-banana-mint-cinnamon-blend', salePrice: 81, usesBlender: true },
+      { ingredientIds: ['peach', 'cucumber', 'lemon', 'sugar'], id: 'peach-cucumber-lemon-sugar-blend', salePrice: 64, usesBlender: true },
+      { ingredientIds: ['tomato', 'clove', 'sugar', 'peach'], id: 'tomato-clove-sugar-peach-blend', salePrice: 70, usesBlender: true },
+    ] as const
+
+    for (const observation of observations) {
+      const result = evaluateRecipeSequence(
+        [...observation.ingredientIds],
+        'ibex-statue-unlocked',
+      )
+
+      expect(result.valid).toBe(true)
+      if (!result.valid) continue
+
+      expect(result.candidate).toMatchObject({
+        id: observation.id,
+        source: 'observed',
+        salePrice: observation.salePrice,
+      })
+      expect(result.availableAtCurrentProgress).toBe(true)
+      expect(result.usesBlender).toBe(observation.usesBlender)
+    }
+  })
+
   it('returns computed data only when no observed overlay exists', () => {
     const result = evaluateRecipeSequence(
       ['banana', 'sugar'],
