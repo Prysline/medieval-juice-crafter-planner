@@ -2892,8 +2892,42 @@ footer {
 .optimizer-sales-trip-header {
   display: grid;
   gap: 7px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.optimizer-sales-trip-header::-webkit-details-marker {
+  display: none;
+}
+
+.optimizer-sales-trip-card[open] > .optimizer-sales-trip-header {
   border-bottom: 1px solid #e7ddce;
   padding-bottom: 8px;
+}
+
+.optimizer-sales-trip-body {
+  display: grid;
+  gap: 10px;
+}
+
+.optimizer-sales-trip-toggle {
+  justify-self: end;
+  color: #6d604d;
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.optimizer-sales-trip-toggle::after {
+  content: '展開';
+}
+
+.optimizer-sales-trip-card[open] .optimizer-sales-trip-toggle::after {
+  content: '收合';
+}
+
+.optimizer-sales-trip-delivery-control {
+  display: inline-flex;
+  min-width: 0;
 }
 
 .optimizer-sales-trip-section {
