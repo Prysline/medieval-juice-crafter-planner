@@ -35,12 +35,18 @@ function hasIdentitySensitiveJarConstraint(
   ).length
   const maxJarTypeSwitches =
     domain.request.constraints?.maxJarTypeSwitches
+  const maxJarFillOperations =
+    domain.request.constraints?.maxJarFillOperations
 
   return (
     emptyJarCount === 0 ||
     (
       typeof maxJarTypeSwitches === 'number' &&
       Number.isFinite(maxJarTypeSwitches)
+    ) ||
+    (
+      typeof maxJarFillOperations === 'number' &&
+      Number.isFinite(maxJarFillOperations)
     )
   )
 }
@@ -49,7 +55,7 @@ function hasIdentitySensitiveJarConstraint(
  * Stage 1 compression is only valid while minimum cost is solved without
  * recipe-identity-sensitive hard feasibility. Later stages must use the
  * continuation domain so equal-cost real recipe identities are available
- * again for machine-operation and jar objectives.
+ * again for machine-operation, jar-fill, and physical jar objectives.
  */
 export function prepareMinimumCostStageCertificate(
   domain: BatchOptimizationModel,
