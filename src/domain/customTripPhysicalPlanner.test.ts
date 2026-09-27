@@ -490,6 +490,7 @@ describe('custom trip physical validation adapter', () => {
         {
           category: 'physical-realization',
           tripId: 'auto-trip-1',
+          recipeId: 'a',
         },
       ],
     })
