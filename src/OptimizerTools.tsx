@@ -386,20 +386,26 @@ export function OptimizerRunSummary({
   candidatePolicy,
   customerCount,
   assignedCustomerCount,
+  unresolvedCustomerCount,
 }: {
   elapsedMs: number
   candidatePolicy: OptimizationCandidatePolicy
   customerCount: number
   assignedCustomerCount: number
+  unresolvedCustomerCount: number
 }) {
-  const customerSummary =
-    assignedCustomerCount === customerCount
-      ? `${customerCount} 位顧客`
-      : `已安排 ${assignedCustomerCount} / ${customerCount} 位顧客`
+  const plannedDemandCount =
+    assignedCustomerCount + unresolvedCustomerCount
+  const partial = unresolvedCustomerCount > 0
+  const customerSummary = partial
+    ? `已安排 ${assignedCustomerCount} / ${plannedDemandCount} 位待規劃顧客`
+    : `${customerCount} 位顧客`
 
   return (
     <div className="optimizer-run-summary" role="status">
-      <strong>規劃完成 · {formatOptimizerDuration(elapsedMs)}</strong>
+      <strong>
+        {partial ? '部分規劃完成' : '規劃完成'} · {formatOptimizerDuration(elapsedMs)}
+      </strong>
       <span>
         {optimizerCandidatePolicyLabel(candidatePolicy)} · {customerSummary}
       </span>
@@ -2778,6 +2784,7 @@ function OptimizerTools({
             candidatePolicy={runState.candidatePolicy}
             customerCount={runState.customerCount}
             assignedCustomerCount={runState.result.assignedServings}
+            unresolvedCustomerCount={runState.result.unresolvedCustomers.length}
           />
           <OptimizerResultPanel
           result={runState.result}
