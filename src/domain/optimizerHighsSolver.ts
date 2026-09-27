@@ -1296,6 +1296,19 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
           value: machineCertificate.lowerBounds.finalizing,
         })
         currentDomain = continuationDomain
+
+        const remainingObjectives = objectives.slice(
+          objectiveIndex + 1,
+        )
+        if (
+          remainingObjectives.every(
+            (remainingObjective) =>
+              remainingObjective === 'productionUnits' ||
+              remainingObjective === 'kinds',
+          )
+        ) {
+          break
+        }
         continue
       }
 
