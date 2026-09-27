@@ -1930,14 +1930,20 @@ export function RecipeRow({
 }) {
   const recipe = entry.candidate
   const cost = calculateRecipeIngredientCost(recipe)
-  const matchingCustomers = customers
-    .filter((customer) =>
-      customerIsUnlocked(customer, currentProgress, satisfactionByVillage),
-    )
-    .filter((customer) => recipeCandidateMatchesCustomer(recipe, customer))
+  const [expanded, setExpanded] = useState(false)
+  const matchingCustomers = expanded
+    ? customers
+        .filter((customer) =>
+          customerIsUnlocked(customer, currentProgress, satisfactionByVillage),
+        )
+        .filter((customer) => recipeCandidateMatchesCustomer(recipe, customer))
+    : []
 
   return (
-    <details className="table-row">
+    <details
+      className="table-row"
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+    >
       <summary className="recipe-columns">
         <div className="primary-cell">
           <strong>{formatRecipeDisplayName(recipe.name)}</strong>
@@ -1965,7 +1971,8 @@ export function RecipeRow({
         </div>
       </summary>
 
-      <div className="row-details">
+      {expanded && (
+        <div className="row-details">
         <TagGroup title="原料順序" tags={[formatRecipeSequence(recipe.ingredients)]} />
         <TagGroup
           title={
@@ -2004,7 +2011,8 @@ export function RecipeRow({
                 : '目前進度與滿意度下沒有能完全滿足的已知顧客。'}
           </p>
         </div>
-      </div>
+        </div>
+      )}
     </details>
   )
 }
