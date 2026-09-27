@@ -118,8 +118,8 @@ function transactionDraft(): PlanApplicationTransactionDraft {
         'tranquil-fountain': 0,
         'ibex-statue': 0,
       },
-      formalCustomerIds: ['jack'],
-      suppliedCustomerIds: ['jack'],
+      formalCustomerIds: ['jack', 'nanette'],
+      suppliedCustomerIds: ['jack', 'nanette'],
       plannerSettings: {
         juiceJarCarryMode: 'fixed-slots',
         reservedJuiceJarSlots: 1,
@@ -185,8 +185,8 @@ function transactionDraft(): PlanApplicationTransactionDraft {
           afterTripNumber: 2,
         },
       ],
-      newlySuppliedCustomerIds: ['jack'],
-      newlyFormalCustomerIds: [],
+      newlySuppliedCustomerIds: ['jack', 'nanette'],
+      newlyFormalCustomerIds: ['nanette'],
     },
   }
 }
@@ -1541,6 +1541,10 @@ describe('plan application preview', () => {
     expect(html).toContain('第 2 趟販售前')
     expect(html).toContain('傑克')
     expect(html).toContain('帽匠')
+    expect(html).toContain('正式顧客')
+    expect(html).toContain('本次成功試喝後轉正式')
+    expect(html).toContain('娜內特')
+    expect(html).toContain('魚販')
     expect(html).toContain('任一項改變')
   })
 })
