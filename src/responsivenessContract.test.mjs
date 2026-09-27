@@ -144,9 +144,16 @@ describe('responsiveness wiring regression', () => {
       "if (tab === 'recipes') setRecipePage(1)",
     )
     expect(appSource).toContain(
-      '{pagedRecipeRows.map((entry) => (',
+      '{pagedRecipeRows.map((entry, slotIndex) => (',
     )
-    expect(appSource).toContain('key={entry.id}')
+    expect(appSource).toContain('key={slotIndex}')
+    expect(recipeRowSource).toContain(
+      'const expanded = expandedEntryId === entry.id',
+    )
+    expect(recipeRowSource).toContain('open={expanded}')
+    expect(recipeRowSource).toContain(
+      'event.currentTarget.open ? entry.id : null',
+    )
   })
 
   it('keeps recipe sorting and research filters off text-query keystrokes', () => {
