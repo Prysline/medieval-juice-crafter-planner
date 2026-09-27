@@ -111,16 +111,10 @@ describe('responsiveness wiring regression', () => {
     )
 
     expect(recipeRowSource).toContain(
-      'const [expandedRecipeId, setExpandedRecipeId] = useState<string | null>(null)',
+      'const [expanded, setExpanded] = useState(false)',
     )
     expect(recipeRowSource).toContain(
-      'const expanded = expandedRecipeId === entry.id',
-    )
-    expect(recipeRowSource).toContain(
-      'open={expanded}',
-    )
-    expect(recipeRowSource).toContain(
-      'setExpandedRecipeId(event.currentTarget.open ? entry.id : null)',
+      'onToggle={(event) => setExpanded(event.currentTarget.open)}',
     )
     expect(recipeRowSource).toMatch(
       /const matchingCustomers = expanded\s*\?\s*customers/,
@@ -145,14 +139,14 @@ describe('responsiveness wiring regression', () => {
     )
   })
 
-  it('keeps recipe search page reset in the query transition and reuses positional row slots', () => {
+  it('keeps recipe search page reset in the query transition', () => {
     expect(appSource).toContain(
       "if (tab === 'recipes') setRecipePage(1)",
     )
     expect(appSource).toContain(
-      '{pagedRecipeRows.map((entry, slotIndex) => (',
+      '{pagedRecipeRows.map((entry) => (',
     )
-    expect(appSource).toContain('key={slotIndex}')
+    expect(appSource).toContain('key={entry.id}')
   })
 
   it('keeps recipe sorting and research filters off text-query keystrokes', () => {
