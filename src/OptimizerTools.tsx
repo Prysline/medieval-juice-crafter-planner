@@ -1160,7 +1160,7 @@ function uniquePriorities(
   )
 }
 
-function OptimizerTools({
+export function OptimizerTools({
   active,
   currentProgress,
   satisfactionByVillage,
