@@ -1,7 +1,13 @@
 import type { Customer } from '../types'
 
 export type SortDirection = 'asc' | 'desc'
-export type CustomerSortKey = 'name' | 'bestMatch' | 'bestPrice'
+export type CustomerSortKey =
+  | 'gameOrder'
+  | 'name'
+  | 'bestMatch'
+  | 'bestPrice'
+
+export const DEFAULT_CUSTOMER_SORT_KEY: CustomerSortKey = 'gameOrder'
 
 export interface CustomerListMatch {
   id: string
@@ -37,12 +43,24 @@ export function sortCustomerRows<
   sortKey: CustomerSortKey,
   sortDirection: SortDirection,
   recipeOrder: Map<string, number>,
+  customerGameOrder: Map<string, number>,
 ): CustomerListRow<TMatch>[] {
   const direction = sortDirection === 'asc' ? 1 : -1
 
   return [...rows].sort((a, b) => {
     const aBest = a.matches[0]
     const bBest = b.matches[0]
+
+    if (sortKey === 'gameOrder') {
+      return (
+        ((customerGameOrder.get(a.customer.id) ??
+          Number.MAX_SAFE_INTEGER) -
+          (customerGameOrder.get(b.customer.id) ??
+            Number.MAX_SAFE_INTEGER)) *
+          direction ||
+        a.customer.name.localeCompare(b.customer.name, 'zh-Hant')
+      )
+    }
 
     if (sortKey === 'bestMatch') {
       if (!aBest && !bBest) {
