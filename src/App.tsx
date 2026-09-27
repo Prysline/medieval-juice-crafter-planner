@@ -1,6 +1,7 @@
 import { memo, startTransition, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import OptimizerTools from './OptimizerTools'
 import RecipeTools from './RecipeTools'
+import { buildCustomerGameOrder } from './data/customerGameOrder'
 import { customers } from './data/customers'
 import { ingredients } from './data/ingredients'
 import { progressMilestoneLabels, progressMilestones } from './data/progress'
@@ -11,6 +12,7 @@ import {
   isAvailableAtProgress,
 } from './domain/availability'
 import {
+  DEFAULT_CUSTOMER_SORT_KEY,
   sortCustomerRows,
   type CustomerSortKey,
   type SortDirection,
@@ -293,7 +295,7 @@ function App() {
   const [query, setQuery] = useState('')
   const [tab, setTab] = useState<Tab>('customers')
   const [customerSortKey, setCustomerSortKey] =
-    useState<CustomerSortKey>('bestMatch')
+    useState<CustomerSortKey>(DEFAULT_CUSTOMER_SORT_KEY)
   const [customerVisibility, setCustomerVisibility] =
     useState<CustomerVisibility>('available')
   const [customerSortDirection, setCustomerSortDirection] =
@@ -395,6 +397,10 @@ function App() {
         recipeCandidates.map((candidate, index) => [candidate.id, index]),
       ),
     [recipeCandidates],
+  )
+  const customerGameOrder = useMemo(
+    () => buildCustomerGameOrder(customers),
+    [],
   )
   const recipeListOrder = useMemo(
     () =>
@@ -579,12 +585,14 @@ function App() {
       customerSortKey,
       customerSortDirection,
       recipeOrder,
+      customerGameOrder,
     ).map((row) => rowByCustomerId.get(row.customer.id)!)
   }, [
     customerRecommendationRows,
     currentProgress,
     satisfactionByVillage,
     recipeOrder,
+    customerGameOrder,
     customerVisibility,
     customerVillageFilter,
     customerPreferenceIngredientFilter,
@@ -991,6 +999,17 @@ function App() {
           </section>
 
           <div className="customer-toolbar" aria-label="顧客顯示範圍">
+            <button
+              type="button"
+              className={customerSortKey === 'gameOrder' ? 'active' : ''}
+              aria-pressed={customerSortKey === 'gameOrder'}
+              onClick={() => {
+                setCustomerSortKey('gameOrder')
+                setCustomerSortDirection('asc')
+              }}
+            >
+              遊戲順序
+            </button>
             <button
               type="button"
               className={customerVisibility === 'available' ? 'active' : ''}
