@@ -2167,7 +2167,7 @@ function OptimizerTools({
               </button>
             </div>
             <small>
-              庫存模式會把商店原料的新增取得量固定為 0；水仍可由水井補取。
+              庫存模式會把商店原料的新增取得量固定為 0；水仍可由水井補取。若庫存不足以涵蓋所有顧客，會先最大化可完成顧客數，照常產生部分規劃並列出未涵蓋顧客。
             </small>
           </fieldset>
 
@@ -2784,7 +2784,10 @@ function OptimizerTools({
             candidatePolicy={runState.candidatePolicy}
             customerCount={runState.customerCount}
             assignedCustomerCount={runState.result.assignedServings}
-            unresolvedCustomerCount={runState.result.unresolvedCustomers.length}
+            unresolvedCustomerCount={
+              runState.result.unresolvedCustomers.length +
+              (runState.result.inventoryUnfulfilledCustomers?.length ?? 0)
+            }
           />
           <OptimizerResultPanel
           result={runState.result}
@@ -4855,11 +4858,28 @@ function OptimizerResultPanel({
       {result.unresolvedCustomers.length > 0 && (
         <section className="optimizer-unresolved">
           <strong>
-            未納入本次規劃：{result.unresolvedCustomers.length} 人沒有可靠 full match
+            未納入本次規劃：{result.unresolvedCustomers.length} 人沒有可靠完整匹配
           </strong>
           <p>{result.unresolvedCustomers.map(customerLabel).join('、')}</p>
           <small>
-            一般規劃仍會替其餘有可靠 full match 的顧客產生結果；上方的採買、庫存與販售摘要只涵蓋已安排顧客，不能解讀成全部選定顧客都已完成。
+            這些顧客在目前主線進度與配方證據設定下沒有可用的完整匹配配方；上方結果只涵蓋已安排顧客。
+          </small>
+        </section>
+      )}
+
+      {(result.inventoryUnfulfilledCustomers?.length ?? 0) > 0 && (
+        <section className="optimizer-unresolved">
+          <strong>
+            現有庫存未涵蓋：
+            {result.inventoryUnfulfilledCustomers!.length} 人
+          </strong>
+          <p>
+            {result.inventoryUnfulfilledCustomers!
+              .map(customerLabel)
+              .join('、')}
+          </p>
+          <small>
+            庫存模式已先讓可完成的顧客數最大化，再依目前最佳化順序產生上方可執行規劃。這些顧客不會包含在本次製作、販售或套用規劃中。
           </small>
         </section>
       )}
