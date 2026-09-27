@@ -1,3 +1,5 @@
+import { ingredients } from '../data/ingredients'
+
 export type PlanningUserErrorCode =
   | 'missing-physical-jar'
   | 'missing-physical-cup'
@@ -20,6 +22,12 @@ export interface PlanningUserErrorContext {
   expectedJarFillOperations?: number
   actualJarFillOperations?: number
   solverStatus?: string
+  materialSourceMode?: 'inventory-only'
+  inventoryShortfalls?: Array<{
+    ingredientId: string
+    units: number
+  }>
+  unresolvedCustomerIds?: string[]
 }
 
 export class PlanningUserError extends Error {
@@ -183,7 +191,40 @@ export function presentPlanningError(
           technicalDetails: details,
         }
       }
-      case 'optimizer-no-solution':
+      case 'optimizer-no-solution': {
+        if (error.context.materialSourceMode === 'inventory-only') {
+          const ingredientNameById = new Map(
+            ingredients.map((ingredient) => [
+              ingredient.id,
+              ingredient.name,
+            ]),
+          )
+          const shortfalls = error.context.inventoryShortfalls ?? []
+          const unresolved = error.context.unresolvedCustomerIds ?? []
+          const shortfallText = shortfalls
+            .map(
+              ({ ingredientId, units }) =>
+                `${ingredientNameById.get(ingredientId) ?? ingredientId} ×${units}`,
+            )
+            .join('、')
+
+          return {
+            title: '現有庫存無法完成這批顧客',
+            message:
+              unresolved.length > 0
+                ? `目前選定的顧客中有 ${unresolved.length} 位在現行進度與配方政策下沒有可用的完整匹配配方，因此不能在不縮減顧客集合的前提下完成。`
+                : shortfallText
+                  ? `在保留全部選定顧客、既有中間果汁與成品庫存的前提下，最少仍缺少商店原料：${shortfallText}。庫存模式不會自動購買這些原料。`
+                  : '在保留全部選定顧客與目前 hard constraints 的前提下，現有庫存找不到完整可行方案；放寬商店 raw 原料後仍未得到可用的缺料診斷，阻塞可能來自候選配方或其他規劃限制。',
+            suggestions: [
+              '確認 raw ingredient、中間果汁與果汁罐內既有成品庫存是否已填寫正確。',
+              '若現在可以向商人購買原料，切回「一般規劃」重新求解。',
+              '若仍使用庫存模式，可調整候選配方政策或其他 hard limit；規劃器不會自動刪掉選定顧客。',
+            ],
+            technicalDetails: details,
+          }
+        }
+
         return {
           title: '目前條件找不到可行的批次規劃',
           message:
@@ -194,6 +235,7 @@ export function presentPlanningError(
           ],
           technicalDetails: details,
         }
+      }
     }
   }
 
