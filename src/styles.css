@@ -2813,7 +2813,7 @@ footer {
 }
 
 .optimizer-sales-overview-header > div:first-child,
-.optimizer-sales-trip-header > div:first-child {
+.optimizer-sales-trip-primary-summary {
   display: flex;
   gap: 10px;
   justify-content: space-between;
@@ -3728,7 +3728,7 @@ footer {
   }
 
   .optimizer-sales-overview-header > div:first-child,
-  .optimizer-sales-trip-header > div:first-child,
+  .optimizer-sales-trip-primary-summary,
   .optimizer-sales-jar-manifest > header {
     align-items: flex-start;
     flex-direction: column;
