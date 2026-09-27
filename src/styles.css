@@ -568,7 +568,7 @@ h1 {
   border-bottom: 1px solid #e6dccd;
 }
 
-.customer-row-shell:last-child > .table-row {
+.customer-row-shell.last-visible > .table-row {
   border-bottom: 0;
 }
 
