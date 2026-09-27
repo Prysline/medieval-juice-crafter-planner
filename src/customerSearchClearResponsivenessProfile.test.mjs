@@ -128,7 +128,7 @@ async function setCustomerQuery(sessionId, value, expectedRowCount = null) {
         return
       }
       const rowCount = () =>
-        table.querySelectorAll(':scope > .table-row:not([hidden])').length
+        table.querySelectorAll(':scope > .customer-row-shell:not([hidden]) > .table-row').length
       const before = rowCount()
       const startedAt = performance.now()
       let frame = 0
@@ -192,7 +192,7 @@ async function measureCustomerClearExpansion(
       }
 
       const rowCount = () =>
-        table.querySelectorAll(':scope > .table-row:not([hidden])').length
+        table.querySelectorAll(':scope > .customer-row-shell:not([hidden]) > .table-row').length
       const elementCount = () =>
         table.querySelectorAll('*').length
       const beforeRows = rowCount()
