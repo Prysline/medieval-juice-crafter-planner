@@ -9,6 +9,55 @@ import {
 import { prepareMinimumCostStageCertificate } from './optimizerCertificates'
 
 describe('production-scale minimum-cost certificate', () => {
+  it('falls back to the generic exact model when initial finished stock changes production cost', () => {
+    const domain = buildOptimizationModel(
+      {
+        customerIds: ['a'],
+        currentProgress: 'seasoner-unlocked',
+        suppliedCustomerIds: [],
+        satisfactionByVillage: {
+          'east-harbor': 999,
+          'tranquil-fountain': 999,
+          'ibex-statue': 0,
+        },
+        formalCustomerIds: ['a'],
+        candidatePolicy: 'observed-only',
+        objective: 'minimum-cost',
+        initialAvailableJuiceJars: [
+          { recipeId: 'stocked', servings: 1 },
+        ],
+      },
+      {
+        customers: [
+          {
+            id: 'a',
+            name: 'A',
+            occupation: '測試',
+            villageId: 'east-harbor',
+            satisfactionRequired: 0,
+            preferences: [{ kind: 'effect', value: '甜味' }],
+          },
+        ],
+        candidates: [
+          {
+            id: 'stocked',
+            name: 'stocked',
+            source: 'observed',
+            unlockedAt: 'seasoner-unlocked',
+            salePrice: 10,
+            ingredients: ['檸檬', '糖'],
+            effects: [{ name: '甜味', value: 5 }],
+            equipment: [],
+          },
+        ],
+      },
+    )
+
+    expect(domain.recipes[0]?.initialFinishedServings).toBe(1)
+    expect(prepareMinimumCostStageCertificate(domain)).toBeNull()
+  })
+
+
   it('preserves the exact 604 optimum and reconstructs all 49 serviceable customers', async () => {
     const customerIds = canonicalCustomers.map((customer) => customer.id)
     const request: OptimizationRequest = {
