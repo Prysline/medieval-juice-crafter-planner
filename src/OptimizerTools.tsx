@@ -1161,12 +1161,14 @@ function uniquePriorities(
 }
 
 function OptimizerCustomerTargetPanel({
+  active,
   targetableCustomers,
   selectedCustomerIds,
   selectedCustomerCount,
   targetableCustomerCount,
   onSelectedCustomerIdsChange,
 }: {
+  active: boolean
   targetableCustomers: readonly (typeof customers)[number][]
   selectedCustomerIds: string[]
   selectedCustomerCount: number
@@ -1190,6 +1192,8 @@ function OptimizerCustomerTargetPanel({
         .includes(normalizedQuery),
     )
   }, [query, targetableCustomers])
+
+  if (!active) return null
 
   return (
     <section
@@ -2198,15 +2202,14 @@ function OptimizerTools({
           </section>
         )}
 
-        {targetMode === 'customers' && (
-          <OptimizerCustomerTargetPanel
-            targetableCustomers={targetableCustomers}
-            selectedCustomerIds={selectedCustomerIds}
-            selectedCustomerCount={customerIds.length}
-            targetableCustomerCount={baseCustomerIds.length}
-            onSelectedCustomerIdsChange={setSelectedCustomerIds}
-          />
-        )}
+        <OptimizerCustomerTargetPanel
+          active={targetMode === 'customers'}
+          targetableCustomers={targetableCustomers}
+          selectedCustomerIds={selectedCustomerIds}
+          selectedCustomerCount={customerIds.length}
+          targetableCustomerCount={baseCustomerIds.length}
+          onSelectedCustomerIdsChange={setSelectedCustomerIds}
+        />
 
         <section
           className="optimizer-inventory-editor"
