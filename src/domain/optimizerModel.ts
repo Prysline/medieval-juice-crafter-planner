@@ -14,12 +14,22 @@ import {
 } from './productionPlan'
 import type {
   Customer,
+  IntermediateJuiceInventory,
   ProgressMilestoneId,
   RecipeCandidate,
   SatisfactionByVillage,
 } from '../types'
 
 export type OptimizationCandidatePolicy = ProgressiveRecipeSearchPolicy
+
+export type OptimizationMaterialSourceMode =
+  | 'normal'
+  | 'inventory-only'
+
+export interface OptimizationMaterialInventory {
+  ingredientUnits: Record<string, number>
+  intermediateJuiceUnits?: IntermediateJuiceInventory
+}
 
 export type OptimizationObjective =
   | 'minimum-cost'
@@ -60,6 +70,18 @@ export interface OptimizationRequest {
   /** Ordered lexicographic criteria. Defaults to [objective]. */
   priorities?: OptimizationCriterion[]
   constraints?: OptimizationConstraints
+  /**
+   * normal: shop raw ingredients may be acquired downstream as today.
+   * inventory-only: raw shop acquisition is hard-limited to zero while
+   * existing raw/intermediate/finished stock remains usable. Water is not
+   * part of this shop-material restriction.
+   */
+  materialSourceMode?: OptimizationMaterialSourceMode
+  /**
+   * Raw/intermediate inventory snapshot used by the inventory-only solver.
+   * Finished juice stays authoritative through initialAvailableJuiceJars.
+   */
+  materialInventory?: OptimizationMaterialInventory
   /** Legacy empty-jar summary used when no initial jar-state list is supplied. */
   availableJuiceJarCount?: number
   /**

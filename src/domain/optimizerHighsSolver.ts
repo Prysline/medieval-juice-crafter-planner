@@ -1,5 +1,6 @@
 import { Model, sum } from '@bubblyworld/highs-ts'
 import { PROCESSING_STACK_CAPACITY } from './inventoryRules'
+import { juiceStateIdentity } from './juiceStateIdentity'
 import {
   finalizingEdgesAreRecipeIdentityUnique,
   machineOperationBreakdownForSelection,
@@ -32,6 +33,7 @@ type ObjectiveKey =
   | 'jarFillOperations'
   | 'jarSwitches'
   | 'negativeEmptiedInitialJars'
+  | 'inventoryShortfall'
 
 type IntVariable = ReturnType<Model['intVar']>
 type BoolVariable = ReturnType<Model['boolVar']>
@@ -149,6 +151,8 @@ function buildHighsStage(
   const yByCustomerRecipe = new Map<string, BoolVariable>()
   const operationByEdgeKey = new Map<string, IntVariable>()
   const operationKindByEdgeKey = new Map<string, ProductionStepKind>()
+  const materialFlowByEdgeKey = new Map<string, IntVariable>()
+  const inventoryShortfallByIngredientId = new Map<string, IntVariable>()
   const neededObjectiveKeys = new Set<ObjectiveKey>([
     objective,
     ...fixes.map((fix) => fix.objective),
@@ -281,6 +285,196 @@ function buildHighsStage(
       )
     }
   })
+
+  if (domain.request.materialSourceMode === 'inventory-only') {
+    const rawInventory =
+      domain.request.materialInventory?.ingredientUnits ?? {}
+    const intermediateInventory =
+      domain.request.materialInventory?.intermediateJuiceUnits ?? {}
+    const edgeByKey = new Map<
+      string,
+      {
+        kind: ProductionStepKind
+        fromIngredientIds: string[]
+        secondaryFromIngredientIds?: string[]
+        toIngredientIds: string[]
+        addedIngredientId?: string
+      }
+    >()
+    const producerEdgeKeyByNode = new Map<string, string>()
+    const maxRecipeIngredientCount = Math.max(
+      1,
+      ...domain.recipes.map(
+        (recipe) => recipe.productionPath.ingredientIds.length,
+      ),
+    )
+    const materialFlowUpperBound =
+      maxTotalJuiceUnits * maxRecipeIngredientCount
+
+    for (const recipe of domain.recipes) {
+      for (const edge of recipe.productionPath.edges) {
+        if (edge.kind === 'finalizing') continue
+        if (!edgeByKey.has(edge.key)) {
+          edgeByKey.set(edge.key, {
+            kind: edge.kind,
+            fromIngredientIds: [...edge.fromIngredientIds],
+            secondaryFromIngredientIds:
+              edge.secondaryFromIngredientIds
+                ? [...edge.secondaryFromIngredientIds]
+                : undefined,
+            toIngredientIds: [...edge.toIngredientIds],
+            addedIngredientId: edge.addedIngredientId,
+          })
+        }
+        const nodeIdentity = juiceStateIdentity(edge.toIngredientIds)
+        const existingProducer = producerEdgeKeyByNode.get(nodeIdentity)
+        if (existingProducer && existingProducer !== edge.key) {
+          throw new Error(
+            `Multiple optimizer production edges produce intermediate node ${nodeIdentity}`,
+          )
+        }
+        producerEdgeKeyByNode.set(nodeIdentity, edge.key)
+      }
+    }
+
+    let materialEdgeIndex = 0
+    for (const edgeKey of edgeByKey.keys()) {
+      materialFlowByEdgeKey.set(
+        edgeKey,
+        model.intVar(
+          0,
+          Math.max(1, materialFlowUpperBound),
+          `material_flow_${materialEdgeIndex}`,
+        ),
+      )
+      materialEdgeIndex += 1
+    }
+
+    const demandTermsByNode = new Map<
+      string,
+      ReturnType<IntVariable['times']>[]
+    >()
+    const addNodeDemand = (
+      ingredientIds: string[],
+      term: ReturnType<IntVariable['times']>,
+    ) => {
+      const identity = juiceStateIdentity(ingredientIds)
+      const current = demandTermsByNode.get(identity)
+      if (current) current.push(term)
+      else demandTermsByNode.set(identity, [term])
+    }
+
+    for (const recipe of domain.recipes) {
+      const x = xByRecipeId.get(recipe.candidate.id)
+      if (!x) continue
+      for (const edge of recipe.productionPath.edges) {
+        if (edge.kind !== 'finalizing') continue
+        addNodeDemand(edge.fromIngredientIds, x.times(1))
+      }
+    }
+
+    for (const [edgeKey, edge] of edgeByKey) {
+      const flow = materialFlowByEdgeKey.get(edgeKey)
+      if (!flow) continue
+
+      if (edge.kind === 'seasoning' || edge.kind === 'blending') {
+        addNodeDemand(edge.fromIngredientIds, flow.times(1))
+      }
+      if (
+        edge.kind === 'blending' &&
+        edge.secondaryFromIngredientIds &&
+        edge.secondaryFromIngredientIds.length > 0
+      ) {
+        addNodeDemand(
+          edge.secondaryFromIngredientIds,
+          flow.times(1),
+        )
+      }
+    }
+
+    let materialNodeIndex = 0
+    for (const [nodeIdentity, producerEdgeKey] of producerEdgeKeyByNode) {
+      const flow = materialFlowByEdgeKey.get(producerEdgeKey)
+      if (!flow) continue
+      const demandTerms = demandTermsByNode.get(nodeIdentity) ?? []
+      const stock = Math.max(
+        0,
+        Math.floor(intermediateInventory[nodeIdentity] ?? 0),
+      )
+      const demand = sum(...demandTerms)
+
+      model.addConstraint(
+        demand.minus(flow).leq(stock),
+        `material_stock_${materialNodeIndex}`,
+      )
+      model.addConstraint(
+        flow.minus(demand).leq(0),
+        `material_no_overproduction_${materialNodeIndex}`,
+      )
+      materialNodeIndex += 1
+    }
+
+    const rawFlowTermsByIngredientId = new Map<
+      string,
+      ReturnType<IntVariable['times']>[]
+    >()
+    for (const [edgeKey, edge] of edgeByKey) {
+      if (!edge.addedIngredientId) continue
+      const flow = materialFlowByEdgeKey.get(edgeKey)
+      if (!flow) continue
+      const current =
+        rawFlowTermsByIngredientId.get(edge.addedIngredientId)
+      const term = flow.times(1)
+      if (current) current.push(term)
+      else {
+        rawFlowTermsByIngredientId.set(
+          edge.addedIngredientId,
+          [term],
+        )
+      }
+    }
+
+    let rawIngredientIndex = 0
+    for (const [ingredientId, terms] of rawFlowTermsByIngredientId) {
+      const available = Math.max(
+        0,
+        Math.floor(rawInventory[ingredientId] ?? 0),
+      )
+      const usage = sum(...terms)
+
+      if (objective === 'inventoryShortfall') {
+        const shortfall = model.intVar(
+          0,
+          Math.max(1, materialFlowUpperBound),
+          `inventory_shortfall_${rawIngredientIndex}`,
+        )
+        inventoryShortfallByIngredientId.set(
+          ingredientId,
+          shortfall,
+        )
+        model.addConstraint(
+          usage.minus(shortfall).leq(available),
+          `raw_inventory_${rawIngredientIndex}`,
+        )
+      } else {
+        model.addConstraint(
+          usage.leq(available),
+          `raw_inventory_${rawIngredientIndex}`,
+        )
+      }
+      rawIngredientIndex += 1
+    }
+
+    if (
+      objective === 'inventoryShortfall' &&
+      inventoryShortfallByIngredientId.size === 0
+    ) {
+      inventoryShortfallByIngredientId.set(
+        '__none__',
+        model.intVar(0, 0, 'inventory_shortfall_zero'),
+      )
+    }
+  }
 
   if (assignmentGroups) {
     domain.serviceableCustomerIds.forEach(
@@ -743,6 +937,10 @@ function buildHighsStage(
     jarSwitches,
     negativeEmptiedInitialJars:
       negativeEmptiedInitialJarsExpression,
+    inventoryShortfall:
+      objective === 'inventoryShortfall'
+        ? sum(...inventoryShortfallByIngredientId.values())
+        : undefined,
   }
 
   const requiredObjectiveExpression = (key: ObjectiveKey) => {
@@ -767,6 +965,7 @@ function buildHighsStage(
     xByRecipeId,
     yByCustomerRecipe,
     operationByEdgeKey,
+    inventoryShortfallByIngredientId,
   }
 }
 
@@ -1179,6 +1378,35 @@ export async function solveJarSwitchCertificateForCostAndMachineFix(
   }
 }
 
+async function diagnoseInventoryOnlyRawShortfall(
+  domain: BatchOptimizationModel,
+): Promise<Array<{ ingredientId: string; units: number }> | null> {
+  if (domain.request.materialSourceMode !== 'inventory-only') {
+    return null
+  }
+
+  const built = buildHighsStage(
+    domain,
+    'inventoryShortfall',
+    [],
+  )
+  const solution = await built.model.solve()
+  if (solution.status !== 'optimal') return null
+
+  return [...built.inventoryShortfallByIngredientId.entries()]
+    .flatMap(([ingredientId, variable]) => {
+      if (ingredientId === '__none__') return []
+      const units = Math.round(
+        requiredFiniteNumber(
+          solution.getValue(variable),
+          `inventory shortfall ${ingredientId}`,
+        ),
+      )
+      return units > 0 ? [{ ingredientId, units }] : []
+    })
+    .sort((a, b) => a.ingredientId.localeCompare(b.ingredientId))
+}
+
 export const highsSolverAdapter: BatchOptimizerSolver = {
   async solve(
     domain: BatchOptimizationModel,
@@ -1375,9 +1603,23 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
       }
 
       if (solution.status !== 'optimal') {
+        const inventoryShortfalls =
+          objectiveIndex === 0
+            ? await diagnoseInventoryOnlyRawShortfall(domain)
+            : null
         throw new PlanningUserError(
           'optimizer-no-solution',
-          { solverStatus: solution.status },
+          {
+            solverStatus: solution.status,
+            ...(domain.request.materialSourceMode === 'inventory-only'
+              ? {
+                  materialSourceMode: 'inventory-only' as const,
+                  ...(inventoryShortfalls
+                    ? { inventoryShortfalls }
+                    : {}),
+                }
+              : {}),
+          },
           `HiGHS optimizer ended with status: ${solution.status}`,
         )
       }

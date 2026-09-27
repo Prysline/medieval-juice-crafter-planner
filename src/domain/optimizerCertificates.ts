@@ -27,6 +27,10 @@ function serviceMaskForRecipe(
 function hasStageOneSensitiveConstraint(
   domain: BatchOptimizationModel,
 ): boolean {
+  if (domain.request.materialSourceMode === 'inventory-only') {
+    return true
+  }
+
   const initialJars = normalizedInitialCarriedJuiceJars(
     domain.request,
   )

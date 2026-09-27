@@ -74,4 +74,26 @@ describe('planning error presentation', () => {
     expect(result.suggestions.join(' ')).toContain('每趟自動計算')
     expect(result.suggestions.join(' ')).toContain('至少 1 格')
   })
+  it('explains the minimum raw shortfall for inventory-only infeasibility', () => {
+    const result = presentPlanningError(
+      new PlanningUserError(
+        'optimizer-no-solution',
+        {
+          solverStatus: 'infeasible',
+          materialSourceMode: 'inventory-only',
+          inventoryShortfalls: [
+            { ingredientId: 'lemon', units: 1 },
+          ],
+        },
+        'inventory constrained solve infeasible',
+      ),
+    )
+
+    expect(result.title).toBe('現有庫存無法完成這批顧客')
+    expect(result.message).toContain('檸檬 ×1')
+    expect(result.message).toContain('不會自動購買')
+    expect(result.suggestions.join(' ')).toContain('一般規劃')
+  })
+
+
 })

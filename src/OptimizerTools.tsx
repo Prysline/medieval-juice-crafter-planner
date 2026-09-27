@@ -27,6 +27,7 @@ import {
 import type {
   OptimizationCandidatePolicy,
   OptimizationCriterion,
+  OptimizationMaterialSourceMode,
   OptimizationResult,
   RecipeProductionPlan,
 } from './domain/optimizer'
@@ -145,12 +146,14 @@ type OptimizerRunState =
       phase: OptimizerRunPhase
       startedAtMs: number
       candidatePolicy: OptimizationCandidatePolicy
+      materialSourceMode: OptimizationMaterialSourceMode
       customerCount: number
     }
   | {
       status: 'success'
       elapsedMs: number
       candidatePolicy: OptimizationCandidatePolicy
+      materialSourceMode: OptimizationMaterialSourceMode
       customerCount: number
       result: OptimizationResult
       preparationShortfall: PreparationShortfall
@@ -1283,6 +1286,8 @@ function OptimizerTools({
     useState<string[]>([])
   const [candidatePolicy, setCandidatePolicy] =
     useState<OptimizationCandidatePolicy>('trusted-only')
+  const [materialSourceMode, setMaterialSourceMode] =
+    useState<OptimizationMaterialSourceMode>('normal')
   const [primaryCriterion, setPrimaryCriterion] =
     useState<OptimizationCriterion>('minimum-cost')
   const [secondaryOne, setSecondaryOne] =
@@ -1564,6 +1569,7 @@ function OptimizerTools({
     selectedVillageIds,
     selectedCustomerIds,
     candidatePolicy,
+    materialSourceMode,
     priorities,
     plannerSettings,
     maxJarFillOperations,
@@ -1725,6 +1731,7 @@ function OptimizerTools({
     optimizerAbortControllerRef.current = optimizerAbortController
     const runStartedAtMs = Date.now()
     const runCandidatePolicy = candidatePolicy
+    const runMaterialSourceMode = materialSourceMode
     const runCustomerCount = customerIds.length
 
     setApplicationState({ status: 'idle' })
@@ -1734,6 +1741,7 @@ function OptimizerTools({
       phase: 'loading-runtime',
       startedAtMs: runStartedAtMs,
       candidatePolicy: runCandidatePolicy,
+      materialSourceMode: runMaterialSourceMode,
       customerCount: runCustomerCount,
     })
 
@@ -1780,6 +1788,17 @@ function OptimizerTools({
           satisfactionByVillage,
           formalCustomerIds,
           candidatePolicy,
+          materialSourceMode: runMaterialSourceMode,
+          ...(runMaterialSourceMode === 'inventory-only'
+            ? {
+                materialInventory: {
+                  ingredientUnits: { ...inventoryState.ingredientUnits },
+                  intermediateJuiceUnits: {
+                    ...(inventoryState.intermediateJuiceUnits ?? {}),
+                  },
+                },
+              }
+            : {}),
           objective:
             primaryCriterion === 'minimum-machine-operations' ||
             primaryCriterion === 'minimum-jar-fill-operations'
@@ -1823,6 +1842,25 @@ function OptimizerTools({
         preparationDemand,
         inventoryState,
       )
+      if (runMaterialSourceMode === 'inventory-only') {
+        const inventoryShortfalls = preparationShortfall.ingredients
+          .filter((item) => item.purchaseUnits > 0)
+          .map((item) => ({
+            ingredientId: item.ingredientId,
+            units: item.purchaseUnits,
+          }))
+        if (inventoryShortfalls.length > 0) {
+          throw new PlanningUserError(
+            'optimizer-no-solution',
+            {
+              solverStatus: 'inventory-authority-mismatch',
+              materialSourceMode: 'inventory-only',
+              inventoryShortfalls,
+            },
+            'Inventory-only solver result still requires shop raw ingredients downstream',
+          )
+        }
+      }
       const selectedPolicy: UsedCupTripPolicy =
         plannerSettings.allowUsedCupDropIfFull
           ? 'allow-drop-if-full'
@@ -1965,6 +2003,7 @@ function OptimizerTools({
         status: 'success',
         elapsedMs: Math.max(0, Date.now() - runStartedAtMs),
         candidatePolicy: runCandidatePolicy,
+        materialSourceMode: runMaterialSourceMode,
         customerCount: runCustomerCount,
         result,
         preparationShortfall,
@@ -2095,6 +2134,29 @@ function OptimizerTools({
               </option>
             </select>
           </label>
+
+          <fieldset>
+            <legend>物資來源</legend>
+            <div className="segmented-control">
+              <button
+                type="button"
+                className={materialSourceMode === 'normal' ? 'active' : ''}
+                onClick={() => setMaterialSourceMode('normal')}
+              >
+                一般規劃
+              </button>
+              <button
+                type="button"
+                className={materialSourceMode === 'inventory-only' ? 'active' : ''}
+                onClick={() => setMaterialSourceMode('inventory-only')}
+              >
+                僅使用現有庫存
+              </button>
+            </div>
+            <small>
+              庫存模式會把商店原料的新增取得量固定為 0；水仍可由水井補取。
+            </small>
+          </fieldset>
 
           <label>
             <span>主要目標</span>
@@ -2711,6 +2773,7 @@ function OptimizerTools({
           />
           <OptimizerResultPanel
           result={runState.result}
+          materialSourceMode={runState.materialSourceMode}
           currentProgress={currentProgress}
           activeWorkshopRegionId={activeWorkshopRegionId}
           preparationShortfall={runState.preparationShortfall}
@@ -3971,6 +4034,7 @@ export function OptimizerSummaryMetrics({
 
 function OptimizerResultPanel({
   result,
+  materialSourceMode,
   currentProgress,
   activeWorkshopRegionId,
   preparationShortfall,
@@ -3988,6 +4052,7 @@ function OptimizerResultPanel({
   onCommitDeliveryGroup,
 }: {
   result: OptimizationResult
+  materialSourceMode: OptimizationMaterialSourceMode
   currentProgress: ProgressMilestoneId
   activeWorkshopRegionId: VillageId
   preparationShortfall: PreparationShortfall
@@ -4165,6 +4230,16 @@ function OptimizerResultPanel({
 
       <div className="optimizer-result-note">
         <strong>
+          物資來源：{materialSourceMode === 'inventory-only'
+            ? '僅使用現有庫存'
+            : '一般規劃'}
+        </strong>
+        <span>
+          {materialSourceMode === 'inventory-only'
+            ? '商店原料新增取得量固定為 0；水井取水仍允許。'
+            : '缺少的商店原料可列入採買需求。'}
+        </span>
+        <strong>
           最佳化順序：{priorities.map(criterionLabel).join(' → ')}
         </strong>
         <span>
@@ -4203,6 +4278,72 @@ function OptimizerResultPanel({
           </small>
         )}
       </div>
+
+      {materialSourceMode === 'inventory-only' && (
+        <section className="optimizer-result-section">
+          <div className="section-title">
+            <strong>現有庫存使用</strong>
+            <span>商店原料新增取得 0</span>
+          </div>
+          <div className="optimizer-batch-list">
+            <article className="optimizer-batch-card">
+              <div>
+                <strong>原料</strong>
+                <span>只計實際庫存消耗</span>
+              </div>
+              <p>
+                {preparationShortfall.ingredients
+                  .filter((item) => item.inventoryUnitsUsed > 0)
+                  .map(
+                    (item) =>
+                      `${item.name} ×${item.inventoryUnitsUsed}`,
+                  )
+                  .join('、') || '本次未使用現有原料'}
+              </p>
+            </article>
+            <article className="optimizer-batch-card">
+              <div>
+                <strong>中間果汁</strong>
+                <span>沿用既有中間果汁抵扣</span>
+              </div>
+              <p>
+                {(preparationShortfall.intermediateStockUsage ?? [])
+                  .filter((item) => item.usedUnits > 0)
+                  .map(
+                    (item) =>
+                      `${sequenceLabel(item.ingredientIds)} ×${item.usedUnits}`,
+                  )
+                  .join('、') || '本次未使用現有中間果汁'}
+              </p>
+            </article>
+            <article className="optimizer-batch-card">
+              <div>
+                <strong>既有成品</strong>
+                <span>physical jar 內既有杯數</span>
+              </div>
+              <p>
+                {preparationShortfall.recipes
+                  .filter((item) => item.finishedServingsUsed > 0)
+                  .map(
+                    (item) =>
+                      `${item.recipeName} ×${item.finishedServingsUsed} 杯`,
+                  )
+                  .join('、') || '本次未使用既有成品'}
+              </p>
+            </article>
+            <article className="optimizer-batch-card">
+              <div>
+                <strong>水井</strong>
+                <span>不受商店原料限制</span>
+              </div>
+              <p>
+                現有水使用 {preparationShortfall.waterUnitsUsed} ·
+                仍需由水井取得 {preparationShortfall.waterUnitsToFetch}
+              </p>
+            </article>
+          </div>
+        </section>
+      )}
 
       {transactionDraft ? (
         <PlanApplicationPreview

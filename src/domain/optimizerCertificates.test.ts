@@ -98,6 +98,24 @@ describe('minimum-cost stage certificate preparation', () => {
     ).toEqual(['shared-1', 'b-cheap'])
   })
 
+  it('falls back when inventory-only material feasibility depends on recipe identity', () => {
+    const certificate = prepareMinimumCostStageCertificate(
+      model(
+        [recipe('shared', 4, ['a', 'b'])],
+        {
+          ...baseRequest,
+          materialSourceMode: 'inventory-only',
+          materialInventory: {
+            ingredientUnits: { lemon: 1 },
+            intermediateJuiceUnits: {},
+          },
+        },
+      ),
+    )
+
+    expect(certificate).toBeNull()
+  })
+
   it('falls back when a finite jar-switch hard limit makes recipe identity part of Stage 1 feasibility', () => {
     const certificate = prepareMinimumCostStageCertificate(
       model(
