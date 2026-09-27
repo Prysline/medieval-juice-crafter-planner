@@ -70,6 +70,12 @@ export interface RegionServicePlannerInput {
    * P1-C 才由 physical jar / cup scheduler 提供真實可行性；本層不重做實體物流。
    */
   maxCustomerServicesPerTrip: number
+  /**
+   * Optional candidate-order diversity supplied by the physical integration.
+   * This never changes Region scoring; it only changes the final deterministic
+   * order used when abstract plans have identical score metrics.
+   */
+  regionOrder?: readonly RegionId[]
 }
 
 interface CanonicalGraphEdge {
@@ -678,7 +684,18 @@ export function planRegionServiceTrips(
     assignmentsByRegion.set(assignment.regionId, current)
   }
 
-  const regions = [...assignmentsByRegion.keys()].sort()
+  const regionOrderIndex = new Map(
+    (input.regionOrder ?? []).map((regionId, index) => [
+      regionId,
+      index,
+    ]),
+  )
+  const regions = [...assignmentsByRegion.keys()].sort(
+    (a, b) =>
+      (regionOrderIndex.get(a) ?? Number.MAX_SAFE_INTEGER) -
+        (regionOrderIndex.get(b) ?? Number.MAX_SAFE_INTEGER) ||
+      a.localeCompare(b),
+  )
   const initialCounts = regions.map(
     (regionId) =>
       assignmentsByRegion.get(regionId)?.length ?? 0,
