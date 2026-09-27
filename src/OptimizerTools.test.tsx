@@ -20,6 +20,7 @@ import {
   DeliveryRecipeGroupCheckbox,
   DeliveryTripGroupCheckbox,
   CollapsibleOptimizerResultSection,
+  CollapsibleProductionMachineGroup,
   INVENTORY_RECIPE_SEARCH_RESULT_LIMIT,
   INTERMEDIATE_JUICE_SEARCH_RESULT_LIMIT,
   JuiceJarRecipeCombobox,
@@ -917,6 +918,70 @@ describe('delivery checklist UI', () => {
   })
 })
 
+describe('production machine group UI', () => {
+  const juicingStep = {
+    key: 'juice:lemon',
+    kind: 'juicing' as const,
+    equipment: '柑橘榨汁機' as const,
+    fromIngredientIds: [],
+    toIngredientIds: ['lemon'],
+    addedIngredientId: 'lemon',
+    quantity: 5,
+    operationCount: 1,
+    recipeIds: ['recipe-lemon'],
+  }
+
+  const finalizingStep = {
+    key: 'finalize:lemon',
+    kind: 'finalizing' as const,
+    equipment: '果汁成品台' as const,
+    fromIngredientIds: ['lemon'],
+    toIngredientIds: ['lemon'],
+    quantity: 5,
+    operationCount: 1,
+    recipeIds: ['recipe-lemon'],
+  }
+
+  it('renders each machine group as an independently collapsible details block', () => {
+    const html = renderToStaticMarkup(
+      <CollapsibleProductionMachineGroup
+        equipment="柑橘榨汁機"
+        steps={[juicingStep]}
+      >
+        <p>批次內容</p>
+      </CollapsibleProductionMachineGroup>,
+    )
+
+    expect(html).toContain('<details')
+    expect(html).toContain('open=""')
+    expect(html).toContain('<summary')
+    expect(html).toContain('aria-label="柑橘榨汁機 製作步驟"')
+    expect(html).toContain('機器')
+    expect(html).toContain('柑橘榨汁機')
+    expect(html).toContain('1 批 · 每批 1～5 份')
+    expect(html).toContain('optimizer-machine-toggle')
+    expect(html).toContain('批次內容')
+  })
+
+  it('presents finalizing as finished-juice packing without changing its equipment authority', () => {
+    const html = renderToStaticMarkup(
+      <CollapsibleProductionMachineGroup
+        equipment="果汁成品台"
+        steps={[finalizingStep]}
+      >
+        <p>裝罐批次</p>
+      </CollapsibleProductionMachineGroup>,
+    )
+
+    expect(finalizingStep.equipment).toBe('果汁成品台')
+    expect(html).toContain('aria-label="成品裝罐 製作步驟"')
+    expect(html).toContain('最後步驟')
+    expect(html).toContain('成品裝罐')
+    expect(html).toContain('1 批 · 每批 2～10 杯成品')
+    expect(html).not.toContain('>果汁成品台<')
+  })
+})
+
 describe('production checklist UI', () => {
   it('renders each machine batch as an independently checkable completed step', () => {
     const html = renderToStaticMarkup(
@@ -968,10 +1033,10 @@ describe('production checklist UI', () => {
     )
 
     expect(seasoningHtml).toContain(
-      '其中 3 份為最終果汁（下一步進果汁成品台）',
+      '其中 3 份為最終果汁（下一步進行成品裝罐）',
     )
     expect(blendingHtml).toContain(
-      '其中 2 份為最終果汁（下一步進果汁成品台）',
+      '其中 2 份為最終果汁（下一步進行成品裝罐）',
     )
     expect(hiddenHtml).toBe('')
   })
