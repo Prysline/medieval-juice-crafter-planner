@@ -1,4 +1,4 @@
-import { memo, startTransition, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { memo, startTransition, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import OptimizerTools from './OptimizerTools'
 import RecipeTools from './RecipeTools'
 import { customers } from './data/customers'
@@ -614,6 +614,18 @@ function App() {
     () => new Set(customerRows.map(({ customer }) => customer.id)),
     [customerRows],
   )
+  const customerRowsRef = useRef<HTMLElement | null>(null)
+  useLayoutEffect(() => {
+    const table = customerRowsRef.current
+    if (!table) return
+
+    for (const shell of table.querySelectorAll<HTMLElement>(
+      ':scope > .customer-row-shell',
+    )) {
+      const customerId = shell.dataset.customerId
+      shell.hidden = !customerId || !visibleCustomerIds.has(customerId)
+    }
+  }, [visibleCustomerIds])
 
   const sortedRecipeSequenceEntries = useMemo(() => {
     const direction = recipeSortDirection === 'asc' ? 1 : -1
@@ -1056,7 +1068,11 @@ function App() {
             </span>
           </div>
 
-          <section className="table-list customer-table" aria-label="顧客">
+          <section
+            className="table-list customer-table"
+            aria-label="顧客"
+            ref={customerRowsRef}
+          >
           <div className="table-head customer-columns">
             <SortableHeader
               label="顧客"
@@ -1087,7 +1103,7 @@ function App() {
             ({ customer, matches, unlocked, recommendations }) => (
               <div
                 className="customer-row-shell"
-                hidden={!visibleCustomerIds.has(customer.id)}
+                data-customer-id={customer.id}
                 key={customer.id}
               >
                 <MemoizedCustomerRow
