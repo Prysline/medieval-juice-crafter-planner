@@ -4945,66 +4945,65 @@ export function SalesTripPlanBlock({
             tripNumber={trip.tripNumber}
             summary={
               <>
-              <div>
-                {deliveryControls ? (
-                  <span
-                  className="optimizer-sales-trip-delivery-control"
-                  onClick={(event) => event.stopPropagation()}
-                >
-  <DeliveryTripGroupCheckbox
-                      tripNumber={trip.tripNumber}
-                      customerIds={tripCustomerIds}
-                      plan={deliveryControls.plan}
-                      cursor={deliveryControls.cursor}
-                      suppliedCustomerIds={
-                        deliveryControls.suppliedCustomerIds
-                      }
-                      disabled={deliveryControls.disabled}
-                      onChange={deliveryControls.onChangeGroup}
-                    />
+                <span className="optimizer-sales-trip-primary-summary">
+                  {deliveryControls ? (
+                    <span
+                      className="optimizer-sales-trip-delivery-control"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <DeliveryTripGroupCheckbox
+                        tripNumber={trip.tripNumber}
+                        customerIds={tripCustomerIds}
+                        plan={deliveryControls.plan}
+                        cursor={deliveryControls.cursor}
+                        suppliedCustomerIds={
+                          deliveryControls.suppliedCustomerIds
+                        }
+                        disabled={deliveryControls.disabled}
+                        onChange={deliveryControls.onChangeGroup}
+                      />
+                    </span>
+                  ) : (
+                    <strong>第 {trip.tripNumber} 趟</strong>
+                  )}
+                  <span>
+                    {trip.totalServings} 杯 · 販售用{' '}
+                    {trip.juiceJars.length} 罐 · 實際隨身{' '}
+                    {trip.carriedPhysicalJarIds.length} 罐
+                  </span>
                 </span>
-                ) : (
-                  <strong>第 {trip.tripNumber} 趟</strong>
-                )}
-                <span>
-                  {trip.totalServings} 杯 · 販售用{' '}
-                  {trip.juiceJars.length} 罐 · 實際隨身{' '}
-                  {trip.carriedPhysicalJarIds.length} 罐
-                </span>
-              </div>
 
-              {regionTrip && (
-                <div
-                  className="optimizer-sales-region-chips"
-                  aria-label={'第 ' + trip.tripNumber + ' 趟地區'}
-                >
-                  {regionTrip.primaryRegionIds.map((regionId) => (
-                    <span
-                      className="optimizer-sales-region-chip primary"
-                      key={'primary-' + regionId}
-                    >
-                      主要 · {regionDisplayName(regionId)}
-                    </span>
-                  ))}
-                  {regionTrip.sideRegionIds.map((regionId) => (
-                    <span
-                      className="optimizer-sales-region-chip side"
-                      key={'side-' + regionId}
-                    >
-                      順帶 · {regionDisplayName(regionId)}
-                    </span>
-                  ))}
-                  {regionTrip.transitRegionIds.map((regionId) => (
-                    <span
-                      className="optimizer-sales-region-chip transit"
-                      key={'transit-' + regionId}
-                    >
-                      途經 · {regionDisplayName(regionId)}
-                    </span>
-                  ))}
-                </div>
-              )}
-            
+                {regionTrip && (
+                  <span
+                    className="optimizer-sales-region-chips"
+                    aria-label={'第 ' + trip.tripNumber + ' 趟地區'}
+                  >
+                    {regionTrip.primaryRegionIds.map((regionId) => (
+                      <span
+                        className="optimizer-sales-region-chip primary"
+                        key={'primary-' + regionId}
+                      >
+                        主要 · {regionDisplayName(regionId)}
+                      </span>
+                    ))}
+                    {regionTrip.sideRegionIds.map((regionId) => (
+                      <span
+                        className="optimizer-sales-region-chip side"
+                        key={'side-' + regionId}
+                      >
+                        順帶 · {regionDisplayName(regionId)}
+                      </span>
+                    ))}
+                    {regionTrip.transitRegionIds.map((regionId) => (
+                      <span
+                        className="optimizer-sales-region-chip transit"
+                        key={'transit-' + regionId}
+                      >
+                        途經 · {regionDisplayName(regionId)}
+                      </span>
+                    ))}
+                  </span>
+                )}
               </>
             }
             key={plan.policy + '-' + trip.tripNumber}
@@ -5234,56 +5233,55 @@ export function RemainingSalesTripPlanBlock({
             tripNumber={trip.tripNumber}
             summary={
               <>
-              <div>
-                <span
-                  className="optimizer-sales-trip-delivery-control"
-                  onClick={(event) => event.stopPropagation()}
-                >
-  <DeliveryTripGroupCheckbox
-                    tripNumber={trip.tripNumber}
-                    customerIds={customerIds}
-                    plan={deliveryControls.plan}
-                    cursor={deliveryControls.cursor}
-                    suppliedCustomerIds={
-                      deliveryControls.suppliedCustomerIds
-                    }
-                    disabled={deliveryControls.disabled}
-                    onChange={deliveryControls.onChangeGroup}
-                  />
+                <span className="optimizer-sales-trip-primary-summary">
+                  <span
+                    className="optimizer-sales-trip-delivery-control"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <DeliveryTripGroupCheckbox
+                      tripNumber={trip.tripNumber}
+                      customerIds={customerIds}
+                      plan={deliveryControls.plan}
+                      cursor={deliveryControls.cursor}
+                      suppliedCustomerIds={
+                        deliveryControls.suppliedCustomerIds
+                      }
+                      disabled={deliveryControls.disabled}
+                      onChange={deliveryControls.onChangeGroup}
+                    />
+                  </span>
+                  <span>{customerIds.length} 人</span>
                 </span>
-                <span>{customerIds.length} 人</span>
-              </div>
 
-              <div
-                className="optimizer-sales-region-chips"
-                aria-label={'剩餘第 ' + trip.tripNumber + ' 趟地區'}
-              >
-                {trip.primaryRegionIds.map((regionId) => (
-                  <span
-                    className="optimizer-sales-region-chip primary"
-                    key={'remaining-primary-' + regionId}
-                  >
-                    主要 · {regionDisplayName(regionId)}
-                  </span>
-                ))}
-                {trip.sideRegionIds.map((regionId) => (
-                  <span
-                    className="optimizer-sales-region-chip side"
-                    key={'remaining-side-' + regionId}
-                  >
-                    順帶 · {regionDisplayName(regionId)}
-                  </span>
-                ))}
-                {trip.transitRegionIds.map((regionId) => (
-                  <span
-                    className="optimizer-sales-region-chip transit"
-                    key={'remaining-transit-' + regionId}
-                  >
-                    途經 · {regionDisplayName(regionId)}
-                  </span>
-                ))}
-              </div>
-            
+                <span
+                  className="optimizer-sales-region-chips"
+                  aria-label={'剩餘第 ' + trip.tripNumber + ' 趟地區'}
+                >
+                  {trip.primaryRegionIds.map((regionId) => (
+                    <span
+                      className="optimizer-sales-region-chip primary"
+                      key={'remaining-primary-' + regionId}
+                    >
+                      主要 · {regionDisplayName(regionId)}
+                    </span>
+                  ))}
+                  {trip.sideRegionIds.map((regionId) => (
+                    <span
+                      className="optimizer-sales-region-chip side"
+                      key={'remaining-side-' + regionId}
+                    >
+                      順帶 · {regionDisplayName(regionId)}
+                    </span>
+                  ))}
+                  {trip.transitRegionIds.map((regionId) => (
+                    <span
+                      className="optimizer-sales-region-chip transit"
+                      key={'remaining-transit-' + regionId}
+                    >
+                      途經 · {regionDisplayName(regionId)}
+                    </span>
+                  ))}
+                </span>
               </>
             }
             key={'remaining-trip-' + trip.tripNumber}
