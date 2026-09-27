@@ -371,7 +371,7 @@ describe('production optimizer', () => {
     expect(result.producedServings).toBe(0)
   })
 
-  it('does not pay a higher incremental cost merely to empty an initial jar', async () => {
+  it('uses a free finished-stock serving without increasing the minimum incremental cost', async () => {
     const result = await optimizeBatchPlan(
       {
         ...request(['a', 'b']),
@@ -398,10 +398,11 @@ describe('production optimizer', () => {
     )
 
     expect(result.assignments).toEqual([
-      { customerId: 'a', recipeId: 'cheap-new' },
+      { customerId: 'a', recipeId: 'stocked-expensive' },
       { customerId: 'b', recipeId: 'cheap-new' },
     ])
     expect(result.totalIngredientCost).toBe(16)
+    expect(result.producedServings).toBe(2)
   })
 
   it('keeps an explicit revenue objective ahead of the initial-jar release tie-break', async () => {
