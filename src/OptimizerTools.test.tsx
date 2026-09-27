@@ -23,6 +23,7 @@ import {
   INVENTORY_RECIPE_SEARCH_RESULT_LIMIT,
   INTERMEDIATE_JUICE_SEARCH_RESULT_LIMIT,
   JuiceJarRecipeCombobox,
+  buildIntermediateJuiceSearchIndex,
   buildInventoryRecipeSearchIndex,
   MachineBatchFlow,
   ProductionStepFinalJuiceNote,
@@ -50,7 +51,9 @@ import {
   optimizerInventoryIngredients,
   intermediateJuiceInventoryEntries,
   searchIntermediateJuiceEntries,
+  searchIntermediateJuiceIndex,
   searchInventoryRecipeEntries,
+  searchInventoryRecipeIndex,
 } from './OptimizerTools'
 import {
   PlanningUserError,
@@ -235,6 +238,63 @@ describe('juice jar recipe search UX', () => {
     expect(
       searchInventoryRecipeEntries(entries, 'definitely-no-such-recipe'),
     ).toEqual([])
+  })
+
+  it('keeps indexed inventory recipe search result ordering equivalent to the compatibility search', () => {
+    const entries = recipeCandidateEntriesForInventoryEditor(
+      buildRecipeCandidatePool('juice-blender-unlocked'),
+    )
+    const index = buildInventoryRecipeSearchIndex(entries)
+
+    for (const query of ['', '檸', 'lemon pear', 'definitely-no-such-recipe']) {
+      expect(
+        searchInventoryRecipeIndex(index, query).map(
+          (entry) => entry.candidate.id,
+        ),
+      ).toEqual(
+        searchInventoryRecipeEntries(entries, query).map(
+          (entry) => entry.candidate.id,
+        ),
+      )
+    }
+  })
+
+  it('keeps indexed intermediate search ordering and excludes already-stocked identities without rebuilding the catalog', () => {
+    const inventoryEntries = recipeCandidateEntriesForInventoryEditor(
+      buildRecipeCandidatePool('juice-blender-unlocked'),
+    )
+    const entries = intermediateJuiceInventoryEntries(
+      inventoryEntries,
+      'juice-blender-unlocked',
+    )
+    const index = buildIntermediateJuiceSearchIndex(entries)
+
+    for (const query of ['', '檸', 'orange', 'definitely-no-such-juice']) {
+      expect(
+        searchIntermediateJuiceIndex(index, query).map(
+          (entry) => entry.identity,
+        ),
+      ).toEqual(
+        searchIntermediateJuiceEntries(entries, query).map(
+          (entry) => entry.identity,
+        ),
+      )
+    }
+
+    const unexcluded = searchIntermediateJuiceIndex(index, '檸')
+    expect(unexcluded.length).toBeGreaterThan(0)
+    const excludedIdentity = unexcluded[0]!.identity
+    const excluded = searchIntermediateJuiceIndex(
+      index,
+      '檸',
+      new Set([excludedIdentity]),
+    )
+    expect(excluded.map((entry) => entry.identity)).not.toContain(
+      excludedIdentity,
+    )
+    expect(entries.some((entry) => entry.identity === excludedIdentity)).toBe(
+      true,
+    )
   })
 
   it('builds raw juice stock directly and gates it by current progress', () => {
