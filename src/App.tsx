@@ -614,6 +614,8 @@ function App() {
     () => new Set(customerRows.map(({ customer }) => customer.id)),
     [customerRows],
   )
+  const lastVisibleCustomerId =
+    customerRows[customerRows.length - 1]?.customer.id
 
   const sortedRecipeSequenceEntries = useMemo(() => {
     const direction = recipeSortDirection === 'asc' ? 1 : -1
@@ -1086,7 +1088,11 @@ function App() {
           {sortedCustomerResearchRows.map(
             ({ customer, matches, unlocked, recommendations }) => (
               <div
-                className="customer-row-shell"
+                className={
+                  customer.id === lastVisibleCustomerId
+                    ? 'customer-row-shell last-visible'
+                    : 'customer-row-shell'
+                }
                 hidden={!visibleCustomerIds.has(customer.id)}
                 key={customer.id}
               >
