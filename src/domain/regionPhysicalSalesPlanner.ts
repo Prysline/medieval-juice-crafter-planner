@@ -715,11 +715,8 @@ function boundedPhysicalAwareRegionPreferences(
     targetTripCount += 1
   ) {
     let beam: RegionPreferenceBeamState[] = [{
-      tripServings: new Array<number>(targetTripCount).fill(0),
-      tripRegions: Array.from(
-        { length: targetTripCount },
-        () => [] as RegionId[],
-      ),
+      tripServings: [],
+      tripRegions: [],
       tripBySegment: [],
     }]
 
@@ -730,46 +727,95 @@ function boundedPhysicalAwareRegionPreferences(
     ) {
       const segment = segments[segmentIndex]
       const expanded: RegionPreferenceBeamState[] = []
+
+      const appendToTrip = (
+        state: RegionPreferenceBeamState,
+        tripIndex: number,
+      ): RegionPreferenceBeamState | null => {
+        const nextServings =
+          state.tripServings[tripIndex] +
+          segment.customerIds.length
+        if (nextServings > capacity) return null
+
+        const next: RegionPreferenceBeamState = {
+          tripServings: [...state.tripServings],
+          tripRegions: state.tripRegions.map(
+            (regionIds) => [...regionIds],
+          ),
+          tripBySegment: [
+            ...state.tripBySegment,
+            tripIndex,
+          ],
+        }
+        next.tripServings[tripIndex] = nextServings
+        if (
+          !next.tripRegions[tripIndex].includes(
+            segment.regionId,
+          )
+        ) {
+          next.tripRegions[tripIndex].push(
+            segment.regionId,
+          )
+        }
+        return next
+      }
+
+      const insertNewTrip = (
+        state: RegionPreferenceBeamState,
+        insertionIndex: number,
+      ): RegionPreferenceBeamState => {
+        const tripBySegment = state.tripBySegment.map(
+          (tripIndex) =>
+            tripIndex >= insertionIndex
+              ? tripIndex + 1
+              : tripIndex,
+        )
+        return {
+          tripServings: [
+            ...state.tripServings.slice(0, insertionIndex),
+            segment.customerIds.length,
+            ...state.tripServings.slice(insertionIndex),
+          ],
+          tripRegions: [
+            ...state.tripRegions
+              .slice(0, insertionIndex)
+              .map((regionIds) => [...regionIds]),
+            [segment.regionId],
+            ...state.tripRegions
+              .slice(insertionIndex)
+              .map((regionIds) => [...regionIds]),
+          ],
+          tripBySegment: [
+            ...tripBySegment,
+            insertionIndex,
+          ],
+        }
+      }
+
       for (const state of beam) {
         for (
           let tripIndex = 0;
-          tripIndex < targetTripCount;
+          tripIndex < state.tripServings.length;
           tripIndex += 1
         ) {
-          const nextServings =
-            state.tripServings[tripIndex] +
-            segment.customerIds.length
-          if (nextServings > capacity) continue
-
-          const next: RegionPreferenceBeamState = {
-            tripServings: [...state.tripServings],
-            tripRegions: state.tripRegions.map(
-              (regionIds) => [...regionIds],
-            ),
-            tripBySegment: [
-              ...state.tripBySegment,
-              tripIndex,
-            ],
-          }
-          next.tripServings[tripIndex] = nextServings
-          if (
-            !next.tripRegions[tripIndex].includes(
-              segment.regionId,
-            )
-          ) {
-            next.tripRegions[tripIndex].push(
-              segment.regionId,
-            )
-          }
-          if (!respectsJarWindowBound(next)) continue
-
-          const remainingSegments =
-            segments.length - segmentIndex - 1
-          const emptyTrips = next.tripServings.filter(
-            (servings) => servings === 0,
-          ).length
-          if (emptyTrips > remainingSegments) continue
+          const next = appendToTrip(state, tripIndex)
+          if (!next || !respectsJarWindowBound(next)) continue
           expanded.push(next)
+        }
+
+        if (state.tripServings.length < targetTripCount) {
+          for (
+            let insertionIndex = 0;
+            insertionIndex <= state.tripServings.length;
+            insertionIndex += 1
+          ) {
+            const next = insertNewTrip(
+              state,
+              insertionIndex,
+            )
+            if (!respectsJarWindowBound(next)) continue
+            expanded.push(next)
+          }
         }
       }
 
@@ -783,20 +829,33 @@ function boundedPhysicalAwareRegionPreferences(
           aScore[3].localeCompare(bScore[3])
         )
       })
+
       const seen = new Set<string>()
       beam = expanded.filter((state) => {
-        const signature = state.tripBySegment.join(',')
+        const regionSignature = state.tripRegions
+          .map((regionIds) =>
+            [...regionIds].sort().join('+'),
+          )
+          .join('|')
+        const signature = [
+          state.tripServings.join(','),
+          regionSignature,
+          state.tripBySegment.join(','),
+        ].join('::')
         if (seen.has(signature)) return false
         seen.add(signature)
-        return true
+
+        const remainingSegments =
+          segments.length - segmentIndex - 1
+        const missingTrips =
+          targetTripCount - state.tripServings.length
+        return missingTrips <= remainingSegments
       }).slice(0, beamWidth)
       if (beam.length === 0) break
     }
 
     for (const state of beam) {
-      if (
-        state.tripServings.some((servings) => servings === 0)
-      ) {
+      if (state.tripServings.length !== targetTripCount) {
         continue
       }
       const preferenceByCustomerId: Record<string, number> = {}
