@@ -81,8 +81,8 @@ export interface EligibleOptimizationRecipe {
   candidate: RecipeCandidate
   /** Cost for one newly produced juice unit, which becomes two sellable servings. */
   juiceUnitIngredientCost: number
-  /** Existing sellable servings already available in accessible physical jars. */
-  initialFinishedServings: number
+  /** Existing sellable servings already available in accessible physical jars. Defaults to 0 for hand-built test models. */
+  initialFinishedServings?: number
   eligibleCustomerIds: string[]
   productionPath: RecipeProductionPath
 }
