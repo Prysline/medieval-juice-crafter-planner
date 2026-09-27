@@ -610,6 +610,12 @@ function App() {
     sortedCustomerResearchRows,
     customerSearchTextById,
   ])
+  const visibleCustomerIds = useMemo(
+    () => new Set(customerRows.map(({ customer }) => customer.id)),
+    [customerRows],
+  )
+  const lastVisibleCustomerId =
+    customerRows[customerRows.length - 1]?.customer.id
 
   const sortedRecipeSequenceEntries = useMemo(() => {
     const direction = recipeSortDirection === 'asc' ? 1 : -1
@@ -1079,22 +1085,31 @@ function App() {
             <span className="align-end">今日已供應</span>
           </div>
 
-          {customerRows.map(
+          {sortedCustomerResearchRows.map(
             ({ customer, matches, unlocked, recommendations }) => (
-              <MemoizedCustomerRow
+              <div
+                className={
+                  customer.id === lastVisibleCustomerId
+                    ? 'customer-row-shell last-visible'
+                    : 'customer-row-shell'
+                }
+                hidden={!visibleCustomerIds.has(customer.id)}
                 key={customer.id}
-                customer={customer}
-                matches={matches}
-                recommendations={recommendations}
-                recommendationCostMode={customerRecommendationCostMode}
-                unlocked={unlocked}
-                formal={isFormalCustomer(customer.id, formalCustomerIds)}
-                suppliedToday={suppliedCustomerIds.includes(customer.id)}
-                comparisonSelected={comparisonCustomerIds.includes(customer.id)}
-                onToggleFormal={toggleFormalCustomer}
-                onToggleSupplied={toggleSuppliedToday}
-                onToggleComparison={toggleComparisonCustomer}
-              />
+              >
+                <MemoizedCustomerRow
+                  customer={customer}
+                  matches={matches}
+                  recommendations={recommendations}
+                  recommendationCostMode={customerRecommendationCostMode}
+                  unlocked={unlocked}
+                  formal={isFormalCustomer(customer.id, formalCustomerIds)}
+                  suppliedToday={suppliedCustomerIds.includes(customer.id)}
+                  comparisonSelected={comparisonCustomerIds.includes(customer.id)}
+                  onToggleFormal={toggleFormalCustomer}
+                  onToggleSupplied={toggleSuppliedToday}
+                  onToggleComparison={toggleComparisonCustomer}
+                />
+              </div>
             ),
           )}
           </section>

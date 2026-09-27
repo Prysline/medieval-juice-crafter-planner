@@ -564,6 +564,14 @@ h1 {
   border-bottom: 0;
 }
 
+.customer-row-shell > .table-row {
+  border-bottom: 1px solid #e6dccd;
+}
+
+.customer-row-shell.last-visible > .table-row {
+  border-bottom: 0;
+}
+
 .table-row > summary {
   position: relative;
   min-height: 54px;
