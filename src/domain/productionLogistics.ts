@@ -2,6 +2,7 @@ import { ingredients } from '../data/ingredients'
 import type { InventoryState, PlannerSettings } from '../types'
 import { buildInventoryCapacitySummary } from './inventoryCapacity'
 import {
+  GENERAL_SHELF_SLOT_CAPACITY,
   PROCESSING_STACK_CAPACITY,
   WATER_STACK_CAPACITY,
 } from './inventoryRules'
@@ -61,6 +62,18 @@ export interface ProductionLogisticsAction {
   snapshot: ProductionStorageSnapshot
 }
 
+export interface PreProductionStorageSummary {
+  purchasedIngredientSlotsAdded: number
+  occupiedSlotsBeforePurchases: number
+  occupiedSlotsAfterPurchases: number
+  shelfSlotsAvailable: number
+  backpackSlotsAvailable: number
+  availableGeneralStorageSlots: number
+  missingSlots: number
+  additionalShelfCountRequired: number
+  remainingSlotsAfterRequiredShelves: number
+}
+
 export interface ProductionLogisticsPlan {
   feasible: boolean
   issues: string[]
@@ -68,6 +81,7 @@ export interface ProductionLogisticsPlan {
   actions: ProductionLogisticsAction[]
   ingredientAcquisitionActions: number
   waterFetchTrips: number
+  preProductionStorage: PreProductionStorageSummary
   initialSnapshot: ProductionStorageSnapshot
   finalSnapshot: ProductionStorageSnapshot
 }
@@ -110,6 +124,96 @@ function intermediateKey(ingredientIds: string[]): string {
 
 function stackCount(quantity: number, capacity: number): number {
   return quantity <= 0 ? 0 : Math.ceil(quantity / capacity)
+}
+
+function normalizedUnits(quantity: number | undefined): number {
+  return Math.max(0, Math.floor(quantity ?? 0))
+}
+
+export function buildPreProductionStorageSummary(
+  shortfall: PreparationShortfall,
+  inventory: InventoryState,
+  settings: PlannerSettings,
+): PreProductionStorageSummary {
+  const capacity = buildInventoryCapacitySummary(inventory, settings)
+  const purchaseByIngredient = new Map(
+    shortfall.ingredients
+      .filter((item) => item.purchaseUnits > 0)
+      .map((item) => [
+        item.ingredientId,
+        normalizedUnits(item.purchaseUnits),
+      ]),
+  )
+  const ingredientIds = new Set([
+    ...Object.keys(inventory.ingredientUnits),
+    ...purchaseByIngredient.keys(),
+  ])
+
+  let rawSlotsBefore = 0
+  let rawSlotsAfter = 0
+  for (const ingredientId of ingredientIds) {
+    const existing = normalizedUnits(
+      inventory.ingredientUnits[ingredientId],
+    )
+    const purchased = purchaseByIngredient.get(ingredientId) ?? 0
+    rawSlotsBefore += stackCount(existing, PROCESSING_STACK_CAPACITY)
+    rawSlotsAfter += stackCount(
+      existing + purchased,
+      PROCESSING_STACK_CAPACITY,
+    )
+  }
+
+  const intermediateSlots = Object.values(
+    inventory.intermediateJuiceUnits ?? {},
+  ).reduce(
+    (sum, quantity) =>
+      sum +
+      stackCount(
+        normalizedUnits(quantity),
+        PROCESSING_STACK_CAPACITY,
+      ),
+    0,
+  )
+  const waterSlots = stackCount(
+    normalizedUnits(inventory.waterUnits),
+    WATER_STACK_CAPACITY,
+  )
+  const occupiedSlotsBeforePurchases =
+    rawSlotsBefore + intermediateSlots + waterSlots
+  const occupiedSlotsAfterPurchases =
+    rawSlotsAfter + intermediateSlots + waterSlots
+  const purchasedIngredientSlotsAdded = Math.max(
+    0,
+    occupiedSlotsAfterPurchases - occupiedSlotsBeforePurchases,
+  )
+  const availableGeneralStorageSlots =
+    capacity.shelfSlotCapacity +
+    capacity.backpackSlotsRemainingAfterCarriedJars
+  const missingSlots = Math.max(
+    0,
+    occupiedSlotsAfterPurchases - availableGeneralStorageSlots,
+  )
+  const additionalShelfCountRequired =
+    missingSlots <= 0
+      ? 0
+      : Math.ceil(missingSlots / GENERAL_SHELF_SLOT_CAPACITY)
+  const remainingSlotsAfterRequiredShelves =
+    availableGeneralStorageSlots +
+    additionalShelfCountRequired * GENERAL_SHELF_SLOT_CAPACITY -
+    occupiedSlotsAfterPurchases
+
+  return {
+    purchasedIngredientSlotsAdded,
+    occupiedSlotsBeforePurchases,
+    occupiedSlotsAfterPurchases,
+    shelfSlotsAvailable: capacity.shelfSlotCapacity,
+    backpackSlotsAvailable:
+      capacity.backpackSlotsRemainingAfterCarriedJars,
+    availableGeneralStorageSlots,
+    missingSlots,
+    additionalShelfCountRequired,
+    remainingSlotsAfterRequiredShelves,
+  }
 }
 
 function equipmentSlotCapacity(kind: ProductionStepKind): number {
@@ -451,6 +555,11 @@ export function buildProductionLogisticsPlan(
     inventory,
     settings,
   )
+  const preProductionStorage = buildPreProductionStorageSummary(
+    shortfall,
+    inventory,
+    settings,
+  )
   const shelfMaterials = new Map<string, MaterialState>()
   const backpackMaterials = new Map<string, MaterialState>()
 
@@ -571,6 +680,12 @@ export function buildProductionLogisticsPlan(
   if (!storageFits(initialSnapshot)) {
     issues.push(
       '現有製作物資無法放入目前一般架與果汁罐占用／預留後的背包空間。',
+    )
+  }
+
+  if (preProductionStorage.missingSlots > 0) {
+    issues.push(
+      `開工前無法存放全部備料：採買完成後需要 ${preProductionStorage.occupiedSlotsAfterPurchases} 格，但目前一般架與可用背包合計只有 ${preProductionStorage.availableGeneralStorageSlots} 格，還缺 ${preProductionStorage.missingSlots} 格；至少需再增加 ${preProductionStorage.additionalShelfCountRequired} 座一般架。`,
     )
   }
 
@@ -966,6 +1081,50 @@ export function buildProductionLogisticsPlan(
     return false
   }
 
+  function acquireAllPurchasedIngredientsBeforeProduction(): boolean {
+    for (const item of shortfall.ingredients) {
+      let remaining = normalizedUnits(item.purchaseUnits)
+      if (remaining <= 0) continue
+
+      const key = rawKey(item.ingredientId)
+      while (remaining > 0) {
+        const current = materialQuantity(backpackMaterials, key)
+        let addCapacity = availableAdditionalQuantity(
+          current,
+          PROCESSING_STACK_CAPACITY,
+          backpackFreeSlots(currentSnapshot()),
+        )
+
+        if (addCapacity <= 0) {
+          if (!freeBackpackSlots(1, new Set())) {
+            return false
+          }
+          addCapacity = availableAdditionalQuantity(
+            materialQuantity(backpackMaterials, key),
+            PROCESSING_STACK_CAPACITY,
+            backpackFreeSlots(currentSnapshot()),
+          )
+        }
+
+        const next = Math.min(remaining, addCapacity)
+        if (next <= 0 || !acquireExternalRaw(key, next)) {
+          return false
+        }
+        remaining -= next
+
+        if (
+          remaining > 0 &&
+          backpackFreeSlots(currentSnapshot()) === 0 &&
+          !freeBackpackSlots(1, new Set())
+        ) {
+          return false
+        }
+      }
+    }
+
+    return true
+  }
+
   function tryPreloadPrimaryRequirement(
     requirement: PrimaryInputRequirement,
   ) {
@@ -1013,7 +1172,8 @@ export function buildProductionLogisticsPlan(
       return
     }
 
-    acquireExternalRaw(requirement.key, externalQuantity)
+    // 商店原料必須在第一個 machine operation 前全部取得。
+    // 製作開始後只允許在既有 shelf / backpack 之間搬運 raw。
   }
 
   function preloadPrimaryInputs(operations: PendingOperation[]) {
@@ -1022,11 +1182,17 @@ export function buildProductionLogisticsPlan(
     }
   }
 
-  // Opportunistically preload every remaining primary input that currently
-  // fits. When the backpack can hold the full production round this puts all
-  // raw ingredients and water in the backpack before the first machine run.
-  // If it cannot, later operation attempts replenish only after machine inputs
-  // have been loaded and their backpack slots have been freed.
+  if (
+    issues.length === 0 &&
+    !acquireAllPurchasedIngredientsBeforeProduction()
+  ) {
+    issues.push(
+      '開工前無法把全部商店原料取得並存入目前的一般架／背包；請先增加一般架或釋放背包一般物品空間。',
+    )
+  }
+
+  // 商店 raw 已在此之前全部取得。這裡只把目前能搬進背包的
+  // 既有／已購入 raw 與可選擇預先取得的水放到機器前置位置。
   if (issues.length === 0) {
     preloadPrimaryInputs(pending)
   }
@@ -1098,7 +1264,7 @@ export function buildProductionLogisticsPlan(
             'raw',
             PROCESSING_STACK_CAPACITY,
             protectedKeys,
-            true,
+            false,
           )
         ) {
           rollbackOperationAttempt()
@@ -1151,7 +1317,7 @@ export function buildProductionLogisticsPlan(
               'raw',
               PROCESSING_STACK_CAPACITY,
               protectedKeys,
-              true,
+              false,
               preloadedMachineSlots,
               machineSlotsAvailable,
             )
@@ -1297,6 +1463,7 @@ export function buildProductionLogisticsPlan(
     actions,
     ingredientAcquisitionActions,
     waterFetchTrips,
+    preProductionStorage,
     initialSnapshot,
     finalSnapshot,
   }
