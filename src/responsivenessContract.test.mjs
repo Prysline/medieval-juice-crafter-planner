@@ -139,6 +139,23 @@ describe('responsiveness wiring regression', () => {
     )
   })
 
+  it('keeps recipe search page reset in the query transition', () => {
+    expect(appSource).toContain(
+      "if (tab === 'recipes') setRecipePage(1)",
+    )
+    expect(appSource).toContain(
+      '{pagedRecipeRows.map((entry, slotIndex) => (',
+    )
+    expect(appSource).toContain('key={slotIndex}')
+    expect(recipeRowSource).toContain(
+      'const expanded = expandedEntryId === entry.id',
+    )
+    expect(recipeRowSource).toContain('open={expanded}')
+    expect(recipeRowSource).toContain(
+      'event.currentTarget.open ? entry.id : null',
+    )
+  })
+
   it('keeps recipe sorting and research filters off text-query keystrokes', () => {
     const sortedMemo = appSource.match(
       /const sortedRecipeSequenceEntries = useMemo\([\s\S]*?\n  \]\)\n\n  const researchFilteredRecipeEntries/,

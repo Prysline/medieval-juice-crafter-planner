@@ -1,4 +1,4 @@
-import { memo, startTransition, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { Profiler, memo, startTransition, useCallback, useDeferredValue, useEffect, useMemo, useState, type ProfilerOnRenderCallback } from 'react'
 import OptimizerTools from './OptimizerTools'
 import RecipeTools from './RecipeTools'
 import { buildCustomerGameOrder } from './data/customerGameOrder'
@@ -92,6 +92,35 @@ const ingredientNameById = new Map(
 const MemoizedOptimizerTools = memo(OptimizerTools)
 const MemoizedCustomerRow = memo(CustomerRow)
 const MemoizedRecipeRow = memo(RecipeRow)
+
+const recordResponsivenessRender: ProfilerOnRenderCallback = (
+  id,
+  phase,
+  actualDuration,
+  baseDuration,
+  startTime,
+  commitTime,
+) => {
+  const profileWindow = window as typeof window & {
+    __mjcResponsivenessRenderProfile?: Array<{
+      id: string
+      phase: string
+      actualDuration: number
+      baseDuration: number
+      startTime: number
+      commitTime: number
+    }>
+  }
+  profileWindow.__mjcResponsivenessRenderProfile ??= []
+  profileWindow.__mjcResponsivenessRenderProfile.push({
+    id,
+    phase,
+    actualDuration,
+    baseDuration,
+    startTime,
+    commitTime,
+  })
+}
 
 const scheduleLabels = {
   leave_home: '出家門',
@@ -825,6 +854,7 @@ function App() {
   }
 
   return (
+    <Profiler id="app" onRender={recordResponsivenessRender}>
     <main className="app-shell">
       <header className="hero">
         <p className="eyebrow">Medieval Juice Crafter</p>
@@ -877,7 +907,10 @@ function App() {
       {(tab === 'customers' || tab === 'recipes') && (
         <SearchPanel
           initialQuery={query}
-          onQueryChange={setQuery}
+          onQueryChange={(value) => {
+            setQuery(value)
+            if (tab === 'recipes') setRecipePage(1)
+          }}
         />
       )}
 
@@ -1322,6 +1355,7 @@ function App() {
             </p>
           </section>
 
+          <Profiler id="recipe-table" onRender={recordResponsivenessRender}>
           <section className="table-list recipe-table" aria-label="配方">
             <div className="table-head recipe-columns">
               <SortableHeader
@@ -1342,15 +1376,16 @@ function App() {
               />
             </div>
 
-            {pagedRecipeRows.map((entry) => (
+            {pagedRecipeRows.map((entry, slotIndex) => (
               <MemoizedRecipeRow
-                key={entry.id}
+                key={slotIndex}
                 entry={entry}
                 currentProgress={currentProgress}
                 satisfactionByVillage={deferredSatisfactionByVillage}
               />
             ))}
           </section>
+          </Profiler>
 
           <nav className="recipe-pagination" aria-label="配方換頁">
             <button
@@ -1439,6 +1474,7 @@ function App() {
         預測配方不自行推導售價；同分 cutoff 未確認時不宣稱完全匹配。
       </footer>
     </main>
+    </Profiler>
   )
 }
 
@@ -1964,7 +2000,8 @@ export function RecipeRow({
 }) {
   const recipe = entry.candidate
   const cost = calculateRecipeIngredientCost(recipe)
-  const [expanded, setExpanded] = useState(false)
+  const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null)
+  const expanded = expandedEntryId === entry.id
   const matchingCustomers = expanded
     ? customers
         .filter((customer) =>
@@ -1976,7 +2013,10 @@ export function RecipeRow({
   return (
     <details
       className="table-row"
-      onToggle={(event) => setExpanded(event.currentTarget.open)}
+      open={expanded}
+      onToggle={(event) =>
+        setExpandedEntryId(event.currentTarget.open ? entry.id : null)
+      }
     >
       <summary className="recipe-columns">
         <div className="primary-cell">
