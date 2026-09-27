@@ -3938,7 +3938,7 @@ function OptimizerResultPanel({
       <section className="optimizer-result-section">
         <div className="section-title">
           <strong>其他製作需求</strong>
-          <span>原料已列於上方交易預覽；此處只保留水與杯具</span>
+          <span>開工前備料容量、取水與杯具</span>
         </div>
 
         <div className="optimizer-batch-list">
