@@ -1085,21 +1085,25 @@ function App() {
 
           {sortedCustomerResearchRows.map(
             ({ customer, matches, unlocked, recommendations }) => (
-              <MemoizedCustomerRow
+              <div
+                className="customer-row-shell"
+                hidden={!visibleCustomerIds.has(customer.id)}
                 key={customer.id}
-                customer={customer}
-                searchHidden={!visibleCustomerIds.has(customer.id)}
-                matches={matches}
-                recommendations={recommendations}
-                recommendationCostMode={customerRecommendationCostMode}
-                unlocked={unlocked}
-                formal={isFormalCustomer(customer.id, formalCustomerIds)}
-                suppliedToday={suppliedCustomerIds.includes(customer.id)}
-                comparisonSelected={comparisonCustomerIds.includes(customer.id)}
-                onToggleFormal={toggleFormalCustomer}
-                onToggleSupplied={toggleSuppliedToday}
-                onToggleComparison={toggleComparisonCustomer}
-              />
+              >
+                <MemoizedCustomerRow
+                  customer={customer}
+                  matches={matches}
+                  recommendations={recommendations}
+                  recommendationCostMode={customerRecommendationCostMode}
+                  unlocked={unlocked}
+                  formal={isFormalCustomer(customer.id, formalCustomerIds)}
+                  suppliedToday={suppliedCustomerIds.includes(customer.id)}
+                  comparisonSelected={comparisonCustomerIds.includes(customer.id)}
+                  onToggleFormal={toggleFormalCustomer}
+                  onToggleSupplied={toggleSuppliedToday}
+                  onToggleComparison={toggleComparisonCustomer}
+                />
+              </div>
             ),
           )}
           </section>
@@ -1482,7 +1486,6 @@ function SortableHeader({
 
 function CustomerRow({
   customer,
-  searchHidden,
   matches,
   recommendations,
   recommendationCostMode,
@@ -1495,7 +1498,6 @@ function CustomerRow({
   onToggleComparison,
 }: {
   customer: Customer
-  searchHidden: boolean
   matches: RecipeCandidate[]
   recommendations: CustomerRecipeRecommendations
   recommendationCostMode: RecommendationCostMode
@@ -1527,7 +1529,6 @@ function CustomerRow({
   return (
     <details
       className={rowClassName}
-      hidden={searchHidden}
       onToggle={(event) => setExpanded(event.currentTarget.open)}
     >
       <summary className="customer-columns">
