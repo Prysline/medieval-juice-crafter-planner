@@ -447,8 +447,36 @@ describe('region physical sales planner', () => {
     expect([...servedCustomerIds].sort()).toEqual(
       [...expectedCustomerIds].sort(),
     )
-    expect(plan.routeCost).toBe(16)
-    expect(plan.tripCount).toBe(8)
+    if (plan.routeCost !== 16 || plan.tripCount !== 8) {
+      throw new Error(
+        JSON.stringify(
+          {
+            routeCost: plan.routeCost,
+            tripCount: plan.tripCount,
+            fragmentation: plan.serviceFragmentation,
+            trips: plan.trips.map((trip) => ({
+              tripNumber: trip.tripNumber,
+              routeCost: trip.routeCost,
+              servicedRegionIds: trip.servicedRegionIds,
+              totalServings: trip.physicalTrip.totalServings,
+              loads: trip.physicalTrip.juiceJars.map((load) => ({
+                recipeId: load.recipeId,
+                physicalJarId: load.physicalJarId,
+                servings: load.servings,
+                fillAction: load.fillAction,
+                plannedFillServings: load.plannedFillServings,
+                regions: load.customerIds.map(
+                  (customerId) =>
+                    fixture.customerRegionById[customerId],
+                ),
+              })),
+            })),
+          },
+          null,
+          2,
+        ),
+      )
+    }
     expect(
       plan.salesPlan.trips.some((trip) =>
         trip.juiceJars.some(
