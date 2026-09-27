@@ -96,7 +96,7 @@ function normalizeRecipePlans(
       productionUnitsByRecipeId[recipe.candidate.id] ?? 0
     const producedServings = juiceUnits * 2
     const finishedServingsUsed = Math.min(
-      recipe.initialFinishedServings,
+      recipe.initialFinishedServings ?? 0,
       customerIds.length,
     )
     const servingsToProduce =
