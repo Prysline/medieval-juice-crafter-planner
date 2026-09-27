@@ -186,6 +186,7 @@ function transactionDraft(): PlanApplicationTransactionDraft {
         },
       ],
       newlySuppliedCustomerIds: ['jack'],
+      newlyFormalCustomerIds: [],
     },
   }
 }
