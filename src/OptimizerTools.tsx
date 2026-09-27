@@ -1842,6 +1842,25 @@ function OptimizerTools({
         preparationDemand,
         inventoryState,
       )
+      if (runMaterialSourceMode === 'inventory-only') {
+        const inventoryShortfalls = preparationShortfall.ingredients
+          .filter((item) => item.purchaseUnits > 0)
+          .map((item) => ({
+            ingredientId: item.ingredientId,
+            units: item.purchaseUnits,
+          }))
+        if (inventoryShortfalls.length > 0) {
+          throw new PlanningUserError(
+            'optimizer-no-solution',
+            {
+              solverStatus: 'inventory-authority-mismatch',
+              materialSourceMode: 'inventory-only',
+              inventoryShortfalls,
+            },
+            'Inventory-only solver result still requires shop raw ingredients downstream',
+          )
+        }
+      }
       const selectedPolicy: UsedCupTripPolicy =
         plannerSettings.allowUsedCupDropIfFull
           ? 'allow-drop-if-full'
