@@ -610,6 +610,10 @@ function App() {
     sortedCustomerResearchRows,
     customerSearchTextById,
   ])
+  const visibleCustomerIds = useMemo(
+    () => new Set(customerRows.map(({ customer }) => customer.id)),
+    [customerRows],
+  )
 
   const sortedRecipeSequenceEntries = useMemo(() => {
     const direction = recipeSortDirection === 'asc' ? 1 : -1
@@ -1079,11 +1083,12 @@ function App() {
             <span className="align-end">今日已供應</span>
           </div>
 
-          {customerRows.map(
+          {sortedCustomerResearchRows.map(
             ({ customer, matches, unlocked, recommendations }) => (
               <MemoizedCustomerRow
                 key={customer.id}
                 customer={customer}
+                searchHidden={!visibleCustomerIds.has(customer.id)}
                 matches={matches}
                 recommendations={recommendations}
                 recommendationCostMode={customerRecommendationCostMode}
@@ -1477,6 +1482,7 @@ function SortableHeader({
 
 function CustomerRow({
   customer,
+  searchHidden,
   matches,
   recommendations,
   recommendationCostMode,
@@ -1489,6 +1495,7 @@ function CustomerRow({
   onToggleComparison,
 }: {
   customer: Customer
+  searchHidden: boolean
   matches: RecipeCandidate[]
   recommendations: CustomerRecipeRecommendations
   recommendationCostMode: RecommendationCostMode
@@ -1520,6 +1527,7 @@ function CustomerRow({
   return (
     <details
       className={rowClassName}
+      hidden={searchHidden}
       onToggle={(event) => setExpanded(event.currentTarget.open)}
     >
       <summary className="customer-columns">
