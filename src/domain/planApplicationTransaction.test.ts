@@ -483,9 +483,11 @@ describe('plan application transaction', () => {
     expect(draft.after.currentProgress).toBe(
       draft.before.currentProgress,
     )
-    expect(draft.after.formalCustomerIds).toEqual(
-      draft.before.formalCustomerIds,
-    )
+    expect(draft.after.formalCustomerIds).toEqual([
+      'customer-1',
+      'customer-2',
+      'customer-3',
+    ])
     expect(draft.after.plannerSettings).toEqual(
       draft.before.plannerSettings,
     )
@@ -543,6 +545,9 @@ describe('plan application transaction', () => {
       'customer-2',
       'customer-3',
     ])
+    expect(draft.changes.newlyFormalCustomerIds).toEqual([
+      'customer-3',
+    ])
 
     expect(Object.isFrozen(draft)).toBe(true)
     expect(Object.isFrozen(draft.before)).toBe(true)
@@ -554,7 +559,27 @@ describe('plan application transaction', () => {
   })
 
 
-  it('preserves a same-recipe terminal leftover in the transaction after snapshot', () => {
+  it('does not duplicate customers who were already formal before the plan', () => {
+    const transactionBasis = basis()
+    transactionBasis.formalCustomerIds.push('customer-3')
+
+    const draft = buildPlanApplicationTransactionDraft({
+      basis: transactionBasis,
+      result: optimizationResult(),
+      preparationShortfall: shortfall(),
+      productionLogistics: productionLogistics(),
+      salesPlan: salesPlan(),
+    })
+
+    expect(draft.after.formalCustomerIds).toEqual([
+      'customer-1',
+      'customer-2',
+      'customer-3',
+    ])
+    expect(draft.changes.newlyFormalCustomerIds).toEqual([])
+  })
+
+    it('preserves a same-recipe terminal leftover in the transaction after snapshot', () => {
     const transactionBasis = basis()
     transactionBasis.inventory.juiceJars = [
       {
