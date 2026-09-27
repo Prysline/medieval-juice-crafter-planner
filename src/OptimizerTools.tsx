@@ -2897,6 +2897,7 @@ export function CollapsibleOptimizerResultSection({
           className="optimizer-section-toggle"
           aria-expanded={expanded}
           aria-controls={bodyId}
+          aria-label={`${expanded ? '收合' : '展開'}${title}`}
           onClick={() => setExpanded((current) => !current)}
         >
           {expanded ? '收合' : '展開'}
