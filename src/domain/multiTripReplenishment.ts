@@ -722,10 +722,212 @@ function releaseMinimumRetainedQueues(
   return discarded
 }
 
+interface RecipePreferenceWindow {
+  recipeId: string
+  start: number
+  end: number
+}
+
+function recipePreferenceWindow(
+  recipe: RecipeJarDemand,
+  preferenceByCustomerId:
+    | Readonly<Record<string, number>>
+    | undefined,
+): RecipePreferenceWindow | null {
+  if (!preferenceByCustomerId) return null
+
+  const preferences = recipe.chunks
+    .flatMap((chunk) => chunk.customerIds)
+    .map((customerId) => preferenceByCustomerId[customerId])
+  if (
+    preferences.length === 0 ||
+    preferences.some((value) => !Number.isFinite(value))
+  ) {
+    return null
+  }
+
+  return {
+    recipeId: recipe.recipeId,
+    start: Math.min(...preferences),
+    end: Math.max(...preferences),
+  }
+}
+
+/**
+ * Region preferences arrive after recipe assignment, so they must never
+ * increase the exact minimum jar-switch count. When every reusable jar starts
+ * empty, however, there are many equally minimal recipe→jar queue layouts.
+ *
+ * This candidate uses the downstream preference windows only as a secondary
+ * tie-break among those exact-minimum layouts:
+ * - a recipe occupies a jar through its whole preferred service window;
+ * - recipes whose windows overlap are kept on different jars when possible;
+ * - every empty jar receives a free first recipe before any jar is reused;
+ * - terminal-leftover recipes remain the final type on distinct jars.
+ *
+ * If those conditions cannot be met without giving up an exact-minimum
+ * switch-free first use, the caller keeps the canonical sequence plan.
+ */
+function planPreferenceAwareEmptyJarSequences(
+  recipes: RecipeJarDemand[],
+  queues: JarQueue[],
+  canonicalPlan: MinimumJarSwitchSequencePlan,
+  preferenceByCustomerId:
+    | Readonly<Record<string, number>>
+    | undefined,
+): MinimumJarSwitchSequencePlan | null {
+  if (!preferenceByCustomerId) return null
+  if (
+    queues.some(
+      (queue) =>
+        queue.lockedByRetainedInitialContents ||
+        queueCurrentRecipeId(queue) !== null ||
+        queue.loads.length > 0,
+    )
+  ) {
+    return null
+  }
+
+  const windowByRecipeId = new Map<string, RecipePreferenceWindow>()
+  for (const recipe of recipes) {
+    const window = recipePreferenceWindow(
+      recipe,
+      preferenceByCustomerId,
+    )
+    if (!window) return null
+    windowByRecipeId.set(recipe.recipeId, window)
+  }
+
+  type CandidateJar = {
+    physicalJarId: string
+    recipeIds: string[]
+    availableAfter: number
+  }
+  const candidateJars: CandidateJar[] = queues
+    .map((queue) => ({
+      physicalJarId: queue.physicalJarId,
+      recipeIds: [],
+      availableAfter: Number.NEGATIVE_INFINITY,
+    }))
+    .sort((a, b) =>
+      a.physicalJarId.localeCompare(b.physicalJarId),
+    )
+
+  const terminalRecipeIds = new Set(
+    recipes
+      .filter((recipe) => recipe.leftoverServings > 0)
+      .map((recipe) => recipe.recipeId),
+  )
+  const sortByWindow = (a: RecipeJarDemand, b: RecipeJarDemand): number => {
+    const aWindow = windowByRecipeId.get(a.recipeId)
+    const bWindow = windowByRecipeId.get(b.recipeId)
+    if (!aWindow || !bWindow) return 0
+    return (
+      aWindow.start - bWindow.start ||
+      bWindow.end - aWindow.end ||
+      b.servings - a.servings ||
+      a.recipeId.localeCompare(b.recipeId)
+    )
+  }
+
+  const placeNonTerminal = (recipe: RecipeJarDemand): void => {
+    const window = windowByRecipeId.get(recipe.recipeId)
+    if (!window) return
+
+    const target = [...candidateJars].sort((a, b) => {
+      const aFits = a.availableAfter < window.start
+      const bFits = b.availableAfter < window.start
+      const aUnused = a.recipeIds.length === 0
+      const bUnused = b.recipeIds.length === 0
+      return (
+        Number(bFits) - Number(aFits) ||
+        Number(bUnused) - Number(aUnused) ||
+        (
+          aFits && bFits
+            ? b.availableAfter - a.availableAfter
+            : a.availableAfter - b.availableAfter
+        ) ||
+        a.recipeIds.length - b.recipeIds.length ||
+        a.physicalJarId.localeCompare(b.physicalJarId)
+      )
+    })[0]
+    if (!target) return
+
+    target.recipeIds.push(recipe.recipeId)
+    target.availableAfter = Math.max(
+      target.availableAfter,
+      window.end,
+    )
+  }
+
+  recipes
+    .filter((recipe) => !terminalRecipeIds.has(recipe.recipeId))
+    .sort(sortByWindow)
+    .forEach(placeNonTerminal)
+
+  const terminalTargetPool = new Set(
+    candidateJars.map((jar) => jar.physicalJarId),
+  )
+  for (const recipe of recipes
+    .filter((item) => terminalRecipeIds.has(item.recipeId))
+    .sort(sortByWindow)) {
+    const window = windowByRecipeId.get(recipe.recipeId)
+    if (!window) return null
+
+    const target = candidateJars
+      .filter(
+        (jar) =>
+          terminalTargetPool.has(jar.physicalJarId) &&
+          jar.availableAfter < window.start,
+      )
+      .sort(
+        (a, b) =>
+          Number(b.recipeIds.length === 0) -
+            Number(a.recipeIds.length === 0) ||
+          b.availableAfter - a.availableAfter ||
+          a.recipeIds.length - b.recipeIds.length ||
+          a.physicalJarId.localeCompare(b.physicalJarId),
+      )[0]
+    if (!target) return null
+
+    target.recipeIds.push(recipe.recipeId)
+    target.availableAfter = window.end
+    terminalTargetPool.delete(target.physicalJarId)
+  }
+
+  const placedRecipeIds = candidateJars.flatMap(
+    (jar) => jar.recipeIds,
+  )
+  if (
+    placedRecipeIds.length !== recipes.length ||
+    new Set(placedRecipeIds).size !== recipes.length
+  ) {
+    return null
+  }
+
+  const usedJarCount = candidateJars.filter(
+    (jar) => jar.recipeIds.length > 0,
+  ).length
+  const minimumSwitches =
+    recipes.length - usedJarCount
+  if (minimumSwitches !== canonicalPlan.minimumSwitches) {
+    return null
+  }
+
+  return {
+    minimumSwitches,
+    sequences: candidateJars.map((jar) => ({
+      physicalJarId: jar.physicalJarId,
+      recipeIds: jar.recipeIds,
+    })),
+  }
+}
+
 function buildPhysicalJarQueues(
   recipes: RecipeJarDemand[],
   queues: JarQueue[],
   allowDiscardRetainedJuice: boolean,
+  customerTripPreferenceById?: Readonly<Record<string, number>>,
 ): {
   queues: JarQueue[]
   discardedInitialJuice: MultiTripDiscardedInitialJuice[]
@@ -811,16 +1013,24 @@ function buildPhysicalJarQueues(
   const reusableQueues = queues.filter(
     (queue) => !queue.lockedByRetainedInitialContents,
   )
-  const sequencePlan = planMinimumJarTypeSwitchSequences(
-    reusableQueues.map((queue) => ({
-      physicalJarId: queue.physicalJarId,
-      currentRecipeId: queueCurrentRecipeId(queue),
-    })),
-    schedulableRecipes.map((recipe) => recipe.recipeId),
-    schedulableRecipes
-      .filter((recipe) => recipe.leftoverServings > 0)
-      .map((recipe) => recipe.recipeId),
-  )
+  const canonicalSequencePlan =
+    planMinimumJarTypeSwitchSequences(
+      reusableQueues.map((queue) => ({
+        physicalJarId: queue.physicalJarId,
+        currentRecipeId: queueCurrentRecipeId(queue),
+      })),
+      schedulableRecipes.map((recipe) => recipe.recipeId),
+      schedulableRecipes
+        .filter((recipe) => recipe.leftoverServings > 0)
+        .map((recipe) => recipe.recipeId),
+    )
+  const sequencePlan =
+    planPreferenceAwareEmptyJarSequences(
+      schedulableRecipes,
+      reusableQueues,
+      canonicalSequencePlan,
+      customerTripPreferenceById,
+    ) ?? canonicalSequencePlan
 
   const builtQueues =
     schedulableRecipes.length > reusableQueueCount
@@ -835,7 +1045,7 @@ function buildPhysicalJarQueues(
     queues: builtQueues,
     discardedInitialJuice,
     plannedNewProductionDiscards,
-    expectedMinimumSwitches: sequencePlan.minimumSwitches,
+    expectedMinimumSwitches: canonicalSequencePlan.minimumSwitches,
   }
 }
 
@@ -2137,6 +2347,7 @@ export function buildMultiTripReplenishmentPlan(
     recipes,
     initialQueues,
     allowDiscardRetainedJuice,
+    options.customerTripPreferenceById,
   )
   const queues = queueBuild.queues
   const discardedInitialJuice =
