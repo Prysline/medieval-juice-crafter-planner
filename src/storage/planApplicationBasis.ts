@@ -22,6 +22,7 @@ import {
   isProgressMilestoneId,
   legacyStageToProgress,
   normalizeSatisfactionByVillageIds,
+  readFormalCustomerIds,
   readSuppliedCustomerIds,
   STORAGE_KEYS,
   type StorageLike,
@@ -85,28 +86,6 @@ function readSatisfactionByVillageReadonly(
   )
 }
 
-function readStoredStringSet(
-  storage: StorageLike,
-  key: string,
-): string[] {
-  const raw = storage.getItem(key)
-  if (raw === null) return []
-
-  try {
-    const value = JSON.parse(raw)
-    if (!Array.isArray(value)) return []
-
-    return [
-      ...new Set(
-        value.filter(
-          (item): item is string => typeof item === 'string',
-        ),
-      ),
-    ]
-  } catch {
-    return []
-  }
-}
 
 function readPlannerSettingsReadonly(
   storage: StorageLike,
@@ -136,10 +115,7 @@ export function readPlanApplicationBasisState(
     currentProgress: readCurrentProgressReadonly(storage),
     satisfactionByVillage:
       readSatisfactionByVillageReadonly(storage),
-    formalCustomerIds: readStoredStringSet(
-      storage,
-      STORAGE_KEYS.formalCustomers,
-    ),
+    formalCustomerIds: readFormalCustomerIds(storage),
     suppliedCustomerIds: readSuppliedCustomerIds(storage),
     plannerSettings: readPlannerSettingsReadonly(
       storage,
