@@ -93,6 +93,168 @@ describe('production optimizer', () => {
     expect(result.leftoverServings).toBe(0)
   })
 
+  it('prefers sufficient existing finished stock over a cheaper recipe that requires new production', async () => {
+    const result = await optimizeBatchPlan(
+      {
+        ...request(['a']),
+        initialAvailableJuiceJars: [
+          {
+            recipeId: 'stocked-expensive',
+            servings: 1,
+          },
+        ],
+      },
+      {
+        source: {
+          customers: [customer('a', '甜味')],
+          candidates: [
+            recipe(
+              'stocked-expensive',
+              ['檸檬', '薄荷'],
+              ['甜味'],
+            ),
+            recipe(
+              'cheap-new',
+              ['檸檬', '糖'],
+              ['甜味'],
+            ),
+          ],
+        },
+      },
+    )
+
+    expect(result.assignments).toEqual([
+      { customerId: 'a', recipeId: 'stocked-expensive' },
+    ])
+    expect(result.totalIngredientCost).toBe(0)
+    expect(result.producedServings).toBe(0)
+    expect(result.assignedServings).toBe(1)
+    expect(result.leftoverServings).toBe(0)
+    expect(result.recipePlans).toEqual([
+      expect.objectContaining({
+        recipeId: 'stocked-expensive',
+        customerIds: ['a'],
+        juiceUnits: 0,
+        producedServings: 0,
+        assignedServings: 1,
+        leftoverServings: 0,
+        totalIngredientCost: 0,
+      }),
+    ])
+    expect(result.jarTypeSwitches).toBe(0)
+  })
+
+  it('only produces the serving shortfall after existing finished stock', async () => {
+    const result = await optimizeBatchPlan(
+      {
+        ...request(['a', 'b', 'c']),
+        initialAvailableJuiceJars: [
+          {
+            recipeId: 'shared',
+            servings: 1,
+          },
+        ],
+      },
+      {
+        source: {
+          customers: [
+            customer('a', '甜味'),
+            customer('b', '甜味'),
+            customer('c', '甜味'),
+          ],
+          candidates: [
+            recipe('shared', ['檸檬', '糖'], ['甜味']),
+          ],
+        },
+      },
+    )
+
+    expect(result.recipePlans).toEqual([
+      expect.objectContaining({
+        recipeId: 'shared',
+        juiceUnits: 1,
+        producedServings: 2,
+        assignedServings: 3,
+        leftoverServings: 0,
+      }),
+    ])
+    expect(result.totalIngredientCost).toBe(16)
+    expect(result.producedServings).toBe(2)
+    expect(result.assignedServings).toBe(3)
+    expect(result.leftoverServings).toBe(0)
+  })
+
+  it('rounds an odd finished-stock shortfall up to one full production unit', async () => {
+    const result = await optimizeBatchPlan(
+      {
+        ...request(['a', 'b']),
+        initialAvailableJuiceJars: [
+          {
+            recipeId: 'shared',
+            servings: 1,
+          },
+        ],
+      },
+      {
+        source: {
+          customers: [
+            customer('a', '甜味'),
+            customer('b', '甜味'),
+          ],
+          candidates: [
+            recipe('shared', ['檸檬', '糖'], ['甜味']),
+          ],
+        },
+      },
+    )
+
+    expect(result.recipePlans).toEqual([
+      expect.objectContaining({
+        recipeId: 'shared',
+        juiceUnits: 1,
+        producedServings: 2,
+        assignedServings: 2,
+        leftoverServings: 1,
+      }),
+    ])
+    expect(result.totalIngredientCost).toBe(16)
+    expect(result.leftoverServings).toBe(1)
+  })
+
+  it('aggregates multiple same-recipe finished jars before scheduling new production', async () => {
+    const result = await optimizeBatchPlan(
+      {
+        ...request(['a', 'b']),
+        initialAvailableJuiceJars: [
+          { recipeId: 'shared', servings: 1 },
+          { recipeId: 'shared', servings: 1 },
+        ],
+      },
+      {
+        source: {
+          customers: [
+            customer('a', '甜味'),
+            customer('b', '甜味'),
+          ],
+          candidates: [
+            recipe('shared', ['檸檬', '糖'], ['甜味']),
+          ],
+        },
+      },
+    )
+
+    expect(result.totalIngredientCost).toBe(0)
+    expect(result.producedServings).toBe(0)
+    expect(result.recipePlans).toEqual([
+      expect.objectContaining({
+        recipeId: 'shared',
+        juiceUnits: 0,
+        assignedServings: 2,
+        leftoverServings: 0,
+      }),
+    ])
+  })
+
   it('chooses a shared recipe when separate cheapest recipes cost more overall', async () => {
     const result = await optimizeBatchPlan(
       request(['a', 'b']),

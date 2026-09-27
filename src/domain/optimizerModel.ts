@@ -79,8 +79,10 @@ export interface OptimizationSource {
 
 export interface EligibleOptimizationRecipe {
   candidate: RecipeCandidate
-  /** Cost for one juice unit, which becomes two sellable servings. */
+  /** Cost for one newly produced juice unit, which becomes two sellable servings. */
   juiceUnitIngredientCost: number
+  /** Existing sellable servings already available in accessible physical jars. Defaults to 0 for hand-built test models. */
+  initialFinishedServings?: number
   eligibleCustomerIds: string[]
   productionPath: RecipeProductionPath
 }
@@ -157,6 +159,20 @@ export function normalizedAvailableJuiceJarCount(
   return normalizedInitialCarriedJuiceJars(request).length
 }
 
+export function initialFinishedServingsByRecipeId(
+  request: OptimizationRequest,
+): Map<string, number> {
+  const servingsByRecipeId = new Map<string, number>()
+  for (const jar of normalizedInitialCarriedJuiceJars(request)) {
+    if (!jar.recipeId || jar.servings <= 0) continue
+    servingsByRecipeId.set(
+      jar.recipeId,
+      (servingsByRecipeId.get(jar.recipeId) ?? 0) + jar.servings,
+    )
+  }
+  return servingsByRecipeId
+}
+
 export function minimumJarTypeSwitchesForRecipeIds(
   request: OptimizationRequest,
   recipeIds: string[],
@@ -210,6 +226,7 @@ function candidateIsEligible(
 function eligibleOptimizationRecipe(
   candidate: RecipeCandidate,
   request: OptimizationRequest,
+  initialFinishedServings: ReadonlyMap<string, number>,
 ): EligibleOptimizationRecipeCore | null {
   if (!candidateIsEligible(candidate, request)) return null
 
@@ -224,6 +241,8 @@ function eligibleOptimizationRecipe(
   return {
     candidate,
     juiceUnitIngredientCost: cost.batchIngredientCost,
+    initialFinishedServings:
+      initialFinishedServings.get(candidate.id) ?? 0,
     productionPath,
   }
 }
@@ -243,6 +262,8 @@ export function buildOptimizationModel(
     source.customers.map((customer) => [customer.id, customer]),
   )
   const revenueSensitive = requestUsesRevenueCriterion(request)
+  const initialFinishedServings =
+    initialFinishedServingsByRecipeId(request)
   const eligibleEntryCache = new Map<
     string,
     EligibleOptimizationRecipeCore | null
@@ -258,7 +279,11 @@ export function buildOptimizationModel(
     if (eligibleEntryCache.has(candidate.id)) {
       return eligibleEntryCache.get(candidate.id) ?? null
     }
-    const entry = eligibleOptimizationRecipe(candidate, request)
+    const entry = eligibleOptimizationRecipe(
+      candidate,
+      request,
+      initialFinishedServings,
+    )
     eligibleEntryCache.set(candidate.id, entry)
     return entry
   }
