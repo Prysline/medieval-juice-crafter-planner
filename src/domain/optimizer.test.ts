@@ -1127,7 +1127,7 @@ describe('production optimizer', () => {
     expect(inventoryOnlyShortfall.waterUnitsToFetch).toBe(1)
   })
 
-  it('does not reuse one intermediate juice stock unit across multiple production units in inventory-only mode', async () => {
+  it('does not reuse one intermediate juice stock unit when building an inventory-only partial plan', async () => {
     const source = {
       customers: [
         customer('a', '甜味'),
@@ -1139,38 +1139,41 @@ describe('production optimizer', () => {
       ],
     }
 
-    await expect(
-      optimizeBatchPlan(
-        {
-          ...request(['a', 'b', 'c']),
-          materialSourceMode: 'inventory-only',
-          materialInventory: {
-            ingredientUnits: {
-              lemon: 0,
-              sugar: 2,
-            },
-            intermediateJuiceUnits: {
-              'juice-state:v1:lemon': 1,
-            },
+    const result = await optimizeBatchPlan(
+      {
+        ...request(['a', 'b', 'c']),
+        materialSourceMode: 'inventory-only',
+        materialInventory: {
+          ingredientUnits: {
+            lemon: 0,
+            sugar: 2,
+          },
+          intermediateJuiceUnits: {
+            'juice-state:v1:lemon': 1,
           },
         },
-        { source },
-      ),
-    ).rejects.toMatchObject({
-      name: 'PlanningUserError',
-      context: {
-        materialSourceMode: 'inventory-only',
-        inventoryShortfalls: [
-          {
-            ingredientId: 'lemon',
-            units: 1,
-          },
-        ],
       },
-    })
+      { source },
+    )
+
+    expect(result.assignedServings).toBe(2)
+    expect(result.recipePlans).toEqual([
+      expect.objectContaining({
+        recipeId: 'sweet',
+        juiceUnits: 1,
+        assignedServings: 2,
+      }),
+    ])
+    expect(result.inventoryUnfulfilledCustomers).toHaveLength(1)
+    expect(
+      new Set([
+        ...result.assignments.map((assignment) => assignment.customerId),
+        ...(result.inventoryUnfulfilledCustomers ?? []),
+      ]),
+    ).toEqual(new Set(['a', 'b', 'c']))
   })
 
-  it('reports a maximum-cardinality customer diagnostic when inventory cannot serve every otherwise-serviceable customer', async () => {
+  it('returns a maximum-cardinality partial plan when inventory cannot serve every otherwise-serviceable customer', async () => {
     const source = {
       customers: [
         customer('a', '甜味'),
@@ -1182,29 +1185,63 @@ describe('production optimizer', () => {
       ],
     }
 
-    try {
-      await optimizeBatchPlan(
-        {
-          ...request(['a', 'b']),
-          materialSourceMode: 'inventory-only',
-          materialInventory: {
-            ingredientUnits: { orange: 1, lemon: 0 },
-            intermediateJuiceUnits: {},
-          },
+    const result = await optimizeBatchPlan(
+      {
+        ...request(['a', 'b']),
+        materialSourceMode: 'inventory-only',
+        materialInventory: {
+          ingredientUnits: { orange: 1, lemon: 0 },
+          intermediateJuiceUnits: {},
         },
-        { source },
-      )
-      throw new Error('Expected inventory-only planning to fail')
-    } catch (error) {
-      expect(error).toMatchObject({
-        name: 'PlanningUserError',
-        context: {
-          materialSourceMode: 'inventory-only',
-          inventorySatisfiableCustomerCount: 1,
-          inventoryUnfulfilledCustomerIds: ['b'],
-        },
-      })
+      },
+      { source },
+    )
+
+    expect(result.assignments).toEqual([
+      { customerId: 'a', recipeId: 'sweet-orange' },
+    ])
+    expect(result.assignedServings).toBe(1)
+    expect(result.unresolvedCustomers).toEqual([])
+    expect(result.inventoryUnfulfilledCustomers).toEqual(['b'])
+    expect(result.shoppingList).toEqual([
+      expect.objectContaining({
+        ingredientId: 'orange',
+        quantity: 1,
+      }),
+    ])
+  })
+
+  it('maximizes covered customers before applying the configured inventory-only objective', async () => {
+    const source = {
+      customers: [
+        customer('a', '甜味'),
+        customer('b', '清新口氣'),
+      ],
+      candidates: [
+        recipe('cheap', ['檸檬'], ['甜味']),
+        recipe('expensive', ['檸檬', '糖'], ['清新口氣']),
+      ],
     }
+
+    const result = await optimizeBatchPlan(
+      {
+        ...request(['a', 'b']),
+        materialSourceMode: 'inventory-only',
+        materialInventory: {
+          ingredientUnits: { lemon: 1, sugar: 1 },
+          intermediateJuiceUnits: {},
+        },
+        objective: 'minimum-cost',
+        priorities: ['minimum-cost'],
+      },
+      { source },
+    )
+
+    expect(result.assignedServings).toBe(1)
+    expect(result.assignments).toEqual([
+      { customerId: 'a', recipeId: 'cheap' },
+    ])
+    expect(result.inventoryUnfulfilledCustomers).toEqual(['b'])
   })
 
   it('keeps existing finished servings as optimizer capacity in inventory-only mode without raw stock', async () => {
@@ -1247,34 +1284,30 @@ describe('production optimizer', () => {
   })
 
 
-  it('does not silently drop selected unresolved customers in inventory-only mode', async () => {
-    await expect(
-      optimizeBatchPlan(
-        {
-          ...request(['a']),
-          materialSourceMode: 'inventory-only',
-          materialInventory: {
-            ingredientUnits: { lemon: 10 },
-            intermediateJuiceUnits: {},
-          },
-        },
-        {
-          source: {
-            customers: [customer('a', '甜味')],
-            candidates: [
-              recipe('not-a-match', ['檸檬'], ['酸味']),
-            ],
-          },
-        },
-      ),
-    ).rejects.toMatchObject({
-      name: 'PlanningUserError',
-      context: {
-        solverStatus: 'unresolved-customers',
+  it('returns an empty executable result plus unresolved customers when inventory-only has no full match', async () => {
+    const result = await optimizeBatchPlan(
+      {
+        ...request(['a']),
         materialSourceMode: 'inventory-only',
-        unresolvedCustomerIds: ['a'],
+        materialInventory: {
+          ingredientUnits: { lemon: 10 },
+          intermediateJuiceUnits: {},
+        },
       },
-    })
+      {
+        source: {
+          customers: [customer('a', '甜味')],
+          candidates: [
+            recipe('not-a-match', ['檸檬'], ['酸味']),
+          ],
+        },
+      },
+    )
+
+    expect(result.assignments).toEqual([])
+    expect(result.assignedServings).toBe(0)
+    expect(result.unresolvedCustomers).toEqual(['a'])
+    expect(result.inventoryUnfulfilledCustomers).toEqual([])
   })
 
 

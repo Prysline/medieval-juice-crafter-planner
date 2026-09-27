@@ -77,6 +77,7 @@ function criterionKey(
 function objectiveOrder(
   priorities: OptimizationCriterion[],
   includeInitialJarReleaseTieBreak: boolean,
+  maximizeAssignedCustomers: boolean,
 ): ObjectiveKey[] {
   const explicit = priorities.map(criterionKey)
   const fallback: ObjectiveKey[] = [
@@ -88,7 +89,15 @@ function objectiveOrder(
     'machineOperations',
     'kinds',
   ]
-  return [...new Set([...explicit, ...fallback])]
+  return [
+    ...new Set([
+      ...(maximizeAssignedCustomers
+        ? (['negativeAssignedCustomers'] as const)
+        : []),
+      ...explicit,
+      ...fallback,
+    ]),
+  ]
 }
 
 interface HighsStageOptions {
@@ -1495,9 +1504,12 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
           jar.servings > 0 &&
           eligibleRecipeIds.has(jar.recipeId ?? ''),
       )
+    const allowPartialAssignments =
+      domain.request.materialSourceMode === 'inventory-only'
     const objectives = objectiveOrder(
       priorities,
       includeInitialJarReleaseTieBreak,
+      allowPartialAssignments,
     )
     const fixes: ObjectiveFix[] = []
     let currentDomain = domain
@@ -1647,7 +1659,12 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
         }
       }
 
-      let built = buildHighsStage(stageDomain, objectiveKey, fixes)
+      let built = buildHighsStage(
+        stageDomain,
+        objectiveKey,
+        fixes,
+        { allowUnassignedCustomers: allowPartialAssignments },
+      )
       let solution = await built.model.solve()
 
       if (
@@ -1657,7 +1674,12 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
         stageDomain = domain
         continuationDomain = domain
         usingMinimumCostCertificate = false
-        built = buildHighsStage(domain, objectiveKey, fixes)
+        built = buildHighsStage(
+          domain,
+          objectiveKey,
+          fixes,
+          { allowUnassignedCustomers: allowPartialAssignments },
+        )
         solution = await built.model.solve()
       }
 
@@ -1722,7 +1744,7 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
 
     const finalStage = final
     const finalDomain = finalStage.domain
-    const assignments = finalDomain.serviceableCustomerIds.map(
+    const assignments = finalDomain.serviceableCustomerIds.flatMap(
       (customerId) => {
         const recipe = finalDomain.recipes.find((entry) => {
           const variable = finalStage.built.yByCustomerRecipe.get(
@@ -1737,15 +1759,16 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
         })
 
         if (!recipe) {
+          if (allowPartialAssignments) return []
           throw new Error(
             `HiGHS returned no assignment for ${customerId}`,
           )
         }
 
-        return {
+        return [{
           customerId,
           recipeId: recipe.candidate.id,
-        }
+        }]
       },
     )
 

@@ -559,6 +559,27 @@ describe('plan application transaction', () => {
   })
 
 
+  it('applies only assigned customers when an inventory-only plan leaves others uncovered', () => {
+    const result = optimizationResult()
+    result.inventoryUnfulfilledCustomers = ['customer-4']
+
+    const draft = buildPlanApplicationTransactionDraft({
+      basis: basis(),
+      result,
+      preparationShortfall: shortfall(),
+      productionLogistics: productionLogistics(),
+      salesPlan: salesPlan(),
+    })
+
+    expect(draft.changes.newlySuppliedCustomerIds).toEqual([
+      'customer-1',
+      'customer-2',
+      'customer-3',
+    ])
+    expect(draft.after.suppliedCustomerIds).not.toContain('customer-4')
+    expect(draft.after.formalCustomerIds).not.toContain('customer-4')
+  })
+
   it('does not duplicate customers who were already formal before the plan', () => {
     const transactionBasis = basis()
     transactionBasis.formalCustomerIds.push('customer-3')
