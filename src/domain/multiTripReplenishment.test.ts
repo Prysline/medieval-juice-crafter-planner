@@ -1598,6 +1598,27 @@ describe('multi-trip replenishment', () => {
     expectScheduleConsistency(result)
   })
 
+  it('keeps physical fill count equal to finalizing batches across jar-capacity boundaries', () => {
+    for (let servings = 1; servings <= 25; servings += 1) {
+      const result = buildPlan(
+        namedRecipes(['A'], servings),
+        'allow-drop-if-full',
+        1,
+      )
+
+      expect(result.productionJarFills).toHaveLength(
+        Math.ceil(servings / JUICE_JAR_CAPACITY),
+      )
+      expect(
+        result.productionJarFills.reduce(
+          (sum, fill) => sum + fill.servings,
+          0,
+        ),
+      ).toBe(Math.ceil(servings / 2) * 2)
+      expectScheduleConsistency(result)
+    }
+  })
+
   it('limits concurrent carried jars by backpack capacity instead of a global rack constant', () => {
     const result = buildPlan(
       namedRecipes(['A', 'B', 'C', 'D', 'E', 'F']),
