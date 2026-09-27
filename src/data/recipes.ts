@@ -1130,5 +1130,5 @@ export const recipes: Recipe[] = [
       { name: '舒緩呼吸', value: 3 },
     ],
     equipment: ['榨汁機', '調味器', '果汁調和器', '果汁成品台'],
-,
+  },
 ]
