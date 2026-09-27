@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { InventoryState, JuiceJarInventoryItem } from '../types'
 import type { PreparationDemand } from './preparationDemand'
+import { JUICE_JAR_CAPACITY } from './inventoryRules'
 import { minimumJarTypeSwitchesForInitialJars } from './jarSwitches'
 import { buildPreparationShortfall } from './preparationShortfall'
 import {
