@@ -3426,6 +3426,12 @@ footer {
   gap: 10px;
 }
 
+.optimizer-transaction-preview > .optimizer-collapsible-section-body {
+  display: grid;
+  gap: 10px;
+  margin-top: 0;
+}
+
 .optimizer-transaction-note,
 .optimizer-transaction-warning {
   margin: 0;
