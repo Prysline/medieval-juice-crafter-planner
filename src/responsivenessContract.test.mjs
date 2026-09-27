@@ -109,6 +109,10 @@ describe('responsiveness wiring regression', () => {
     expect(appSource).toContain('useDeferredValue(satisfactionByVillage)')
   })
 
+  it('defers optimizer search-index construction until the optimizer tab is active', () => {
+    expect(appSource).toContain("active={tab === 'optimizer'}")
+  })
+
   it('commits saved recipe name and note only after the local draft is finished', () => {
     expect(recipeToolsSource).toContain(
       'onChange={(event) => setDraftName(event.target.value)}',
