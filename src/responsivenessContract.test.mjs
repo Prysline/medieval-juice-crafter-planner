@@ -136,6 +136,39 @@ describe('responsiveness wiring regression', () => {
     expect(appSource).toContain('useDeferredValue(satisfactionByVillage)')
   })
 
+  it('keeps optimizer customer search query local to the target panel', () => {
+    const panelStart = optimizerToolsSource.indexOf(
+      'function OptimizerCustomerTargetPanel',
+    )
+    const optimizerStart = optimizerToolsSource.indexOf(
+      'function OptimizerTools',
+    )
+    const panelSource = optimizerToolsSource.slice(
+      panelStart,
+      optimizerStart,
+    )
+    const optimizerSource = optimizerToolsSource.slice(optimizerStart)
+
+    expect(panelStart).toBeGreaterThanOrEqual(0)
+    expect(optimizerStart).toBeGreaterThan(panelStart)
+    expect(panelSource).toContain("const [query, setQuery] = useState('')")
+    expect(panelSource).toContain('const filteredCustomers = useMemo')
+    expect(panelSource).toContain(
+      'onChange={(event) => setQuery(event.target.value)}',
+    )
+    expect(panelSource).toContain('if (!active) return null')
+    expect(optimizerSource).toContain(
+      "active={targetMode === 'customers'}",
+    )
+    expect(optimizerSource).not.toContain('customerTargetQuery')
+    expect(panelSource).toContain(
+      'onSelectedCustomerIdsChange((current) => [',
+    )
+    expect(panelSource).toContain(
+      'onSelectedCustomerIdsChange((current) =>',
+    )
+  })
+
   it('defers optimizer search-index construction until the optimizer tab is active', () => {
     expect(appSource).toContain("active={tab === 'optimizer'}")
     expect(optimizerToolsSource).toMatch(

@@ -1160,6 +1160,112 @@ function uniquePriorities(
   )
 }
 
+function OptimizerCustomerTargetPanel({
+  active,
+  targetableCustomers,
+  selectedCustomerIds,
+  selectedCustomerCount,
+  targetableCustomerCount,
+  onSelectedCustomerIdsChange,
+}: {
+  active: boolean
+  targetableCustomers: readonly (typeof customers)[number][]
+  selectedCustomerIds: string[]
+  selectedCustomerCount: number
+  targetableCustomerCount: number
+  onSelectedCustomerIdsChange: (
+    update: string[] | ((current: string[]) => string[])
+  ) => void
+}) {
+  const [query, setQuery] = useState('')
+  const filteredCustomers = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase('zh-Hant')
+    if (!normalizedQuery) return targetableCustomers
+    return targetableCustomers.filter((customer) =>
+      [
+        customer.name,
+        customer.occupation,
+        villageNames[customer.villageId],
+      ]
+        .join(' ')
+        .toLocaleLowerCase('zh-Hant')
+        .includes(normalizedQuery),
+    )
+  }, [query, targetableCustomers])
+
+  if (!active) return null
+
+  return (
+    <section
+      className="optimizer-customer-target-panel"
+      aria-label="自選規劃顧客"
+    >
+      <div className="optimizer-target-toolbar">
+        <strong>個別顧客</strong>
+        <span>
+          已選 {selectedCustomerCount} / {targetableCustomerCount} 人
+        </span>
+      </div>
+      <div className="optimizer-target-actions">
+        <input
+          type="search"
+          value={query}
+          placeholder="搜尋姓名、職業或村莊"
+          aria-label="搜尋規劃顧客"
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        <button
+          type="button"
+          onClick={() =>
+            onSelectedCustomerIdsChange((current) => [
+              ...new Set([
+                ...current,
+                ...filteredCustomers.map((customer) => customer.id),
+              ]),
+            ])
+          }
+          disabled={filteredCustomers.length === 0}
+        >
+          全選搜尋結果
+        </button>
+        <button
+          type="button"
+          onClick={() => onSelectedCustomerIdsChange([])}
+          disabled={selectedCustomerIds.length === 0}
+        >
+          清空
+        </button>
+      </div>
+      <div className="optimizer-customer-target-list">
+        {filteredCustomers.map((customer) => (
+          <label className="optimizer-target-option" key={customer.id}>
+            <input
+              type="checkbox"
+              checked={selectedCustomerIds.includes(customer.id)}
+              onChange={(event) =>
+                onSelectedCustomerIdsChange((current) =>
+                  event.target.checked
+                    ? [...current, customer.id]
+                    : current.filter((item) => item !== customer.id),
+                )
+              }
+            />
+            <span>
+              <strong>{optimizerCustomerLabel(customer)}</strong>
+              <small>{villageNames[customer.villageId]}</small>
+            </span>
+          </label>
+        ))}
+        {filteredCustomers.length === 0 && (
+          <p className="optimizer-target-empty">
+            找不到符合搜尋條件的可規劃顧客。
+          </p>
+        )}
+      </div>
+    </section>
+  )
+}
+
 function OptimizerTools({
   active,
   currentProgress,
@@ -1177,7 +1283,6 @@ function OptimizerTools({
     useState<VillageId[]>([])
   const [selectedCustomerIds, setSelectedCustomerIds] =
     useState<string[]>([])
-  const [customerTargetQuery, setCustomerTargetQuery] = useState('')
   const [candidatePolicy, setCandidatePolicy] =
     useState<OptimizationCandidatePolicy>('trusted-only')
   const [primaryCriterion, setPrimaryCriterion] =
@@ -1431,21 +1536,6 @@ function OptimizerTools({
       [...new Set(targetableCustomers.map((customer) => customer.villageId))],
     [targetableCustomers],
   )
-
-  const filteredTargetCustomers = useMemo(() => {
-    const query = customerTargetQuery.trim().toLocaleLowerCase('zh-Hant')
-    if (!query) return targetableCustomers
-    return targetableCustomers.filter((customer) =>
-      [
-        customer.name,
-        customer.occupation,
-        villageNames[customer.villageId],
-      ]
-        .join(' ')
-        .toLocaleLowerCase('zh-Hant')
-        .includes(query),
-    )
-  }, [customerTargetQuery, targetableCustomers])
 
   useEffect(() => {
     if (
@@ -2112,75 +2202,14 @@ function OptimizerTools({
           </section>
         )}
 
-        {targetMode === 'customers' && (
-          <section
-            className="optimizer-customer-target-panel"
-            aria-label="自選規劃顧客"
-          >
-            <div className="optimizer-target-toolbar">
-              <strong>個別顧客</strong>
-              <span>
-                已選 {customerIds.length} / {baseCustomerIds.length} 人
-              </span>
-            </div>
-            <div className="optimizer-target-actions">
-              <input
-                type="search"
-                value={customerTargetQuery}
-                placeholder="搜尋姓名、職業或村莊"
-                aria-label="搜尋規劃顧客"
-                onChange={(event) => setCustomerTargetQuery(event.target.value)}
-              />
-              <button
-                type="button"
-                onClick={() =>
-                  setSelectedCustomerIds((current) => [
-                    ...new Set([
-                      ...current,
-                      ...filteredTargetCustomers.map((customer) => customer.id),
-                    ]),
-                  ])
-                }
-                disabled={filteredTargetCustomers.length === 0}
-              >
-                全選搜尋結果
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedCustomerIds([])}
-                disabled={selectedCustomerIds.length === 0}
-              >
-                清空
-              </button>
-            </div>
-            <div className="optimizer-customer-target-list">
-              {filteredTargetCustomers.map((customer) => (
-                <label className="optimizer-target-option" key={customer.id}>
-                  <input
-                    type="checkbox"
-                    checked={selectedCustomerIds.includes(customer.id)}
-                    onChange={(event) =>
-                      setSelectedCustomerIds((current) =>
-                        event.target.checked
-                          ? [...current, customer.id]
-                          : current.filter((item) => item !== customer.id),
-                      )
-                    }
-                  />
-                  <span>
-                    <strong>{optimizerCustomerLabel(customer)}</strong>
-                    <small>{villageNames[customer.villageId]}</small>
-                  </span>
-                </label>
-              ))}
-              {filteredTargetCustomers.length === 0 && (
-                <p className="optimizer-target-empty">
-                  找不到符合搜尋條件的可規劃顧客。
-                </p>
-              )}
-            </div>
-          </section>
-        )}
+        <OptimizerCustomerTargetPanel
+          active={targetMode === 'customers'}
+          targetableCustomers={targetableCustomers}
+          selectedCustomerIds={selectedCustomerIds}
+          selectedCustomerCount={customerIds.length}
+          targetableCustomerCount={baseCustomerIds.length}
+          onSelectedCustomerIdsChange={setSelectedCustomerIds}
+        />
 
         <section
           className="optimizer-inventory-editor"
