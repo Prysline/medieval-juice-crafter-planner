@@ -1,4 +1,4 @@
-export type StageId = 1 | 2 | 3 | 4 | 5 | 6 | 7
+export type StageId = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10
 
 export type ProgressMilestoneId =
   | 'opening'
@@ -11,6 +11,8 @@ export type ProgressMilestoneId =
   | 'advanced-citrus-juicer-unlocked'
   | 'ibex-statue-unlocked'
   | 'sales-assistant-adam-arrived'
+  | 'advanced-juicer-unlocked'
+  | 'liquid-blender-unlocked'
 
 export type VillageId =
   | 'east-harbor'
