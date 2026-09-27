@@ -998,7 +998,7 @@ function App() {
             </p>
           </section>
 
-          <div className="customer-toolbar" aria-label="顧客顯示範圍">
+          <div className="customer-toolbar" aria-label="顧客顯示與排序">
             <button
               type="button"
               className={customerSortKey === 'gameOrder' ? 'active' : ''}
