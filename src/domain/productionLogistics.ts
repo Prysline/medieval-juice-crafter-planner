@@ -707,7 +707,7 @@ export function buildProductionLogisticsPlan(
       fill.servings % 2 !== 0
     ) {
       issues.push(
-        `成品接收罐 ${fill.physicalJarId} 的裝罐量 ${fill.servings} 份不符合果汁成品台單次 2～10 份、偶數產量的規則。`,
+        `成品接收罐 ${fill.physicalJarId} 的裝罐量 ${fill.servings} 份不符合成品裝罐單次 2～10 份、偶數產量的規則。`,
       )
     }
   }
@@ -1490,7 +1490,7 @@ export function buildProductionLogisticsPlan(
 
       issues.push(
         finalizerReadyWithoutReceiver
-          ? '果汁成品台輸出無法依販售排程指定的實體果汁罐時序完成裝罐；請檢查接收罐內容、容量與可用時點。'
+          ? '成品裝罐輸出無法依販售排程指定的實體果汁罐時序完成裝罐；請檢查接收罐內容、容量與可用時點。'
           : '目前背包／一般架容量不足，無法在不使用地面暫存的前提下完成下一個製作操作。',
       )
     }
