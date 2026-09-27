@@ -41,7 +41,7 @@ describe('recipe sequence evaluator', () => {
 
     expect(result.candidate.effects).toEqual([
       { name: '酸味', value: 4 },
-      { name: '增強免疫', value: 3 },
+      { name: '增強免疫', value: 5 },
     ])
     expect(result.effectTotals).toEqual([
       { name: '酸味', value: 4 },
@@ -249,6 +249,57 @@ describe('recipe sequence evaluator', () => {
       expect(result.availableAtCurrentProgress).toBe(true)
       expect(result.usesBlender).toBe(observation.usesBlender)
     }
+  })
+
+  it('uses the observed immunity freedom blender overlay', () => {
+    const result = evaluateRecipeSequence(
+      ['orange', 'mint', 'lemon'],
+      'juice-blender-unlocked',
+    )
+
+    expect(result.valid).toBe(true)
+    if (!result.valid) return
+
+    expect(result.candidate).toMatchObject({
+      id: 'orange-mint-lemon-blend',
+      source: 'observed',
+      observedDisplayName: '免疫 自由',
+      salePrice: 44,
+      effects: [
+        { name: '增強免疫', value: 7 },
+        { name: '酸味', value: 4 },
+        { name: '清新口氣', value: 4 },
+        { name: '舒緩腸胃', value: 3 },
+      ],
+    })
+    expect(result.availableAtCurrentProgress).toBe(true)
+    expect(result.usesBlender).toBe(true)
+  })
+
+  it('uses the observed blood sugar claw blender overlay', () => {
+    const result = evaluateRecipeSequence(
+      ['carrot', 'cinnamon', 'banana', 'lemon'],
+      'juice-blender-unlocked',
+    )
+
+    expect(result.valid).toBe(true)
+    if (!result.valid) return
+
+    expect(result.candidate).toMatchObject({
+      id: 'carrot-cinnamon-banana-lemon-blend',
+      source: 'observed',
+      observedDisplayName: '血糖平衡 利爪',
+      salePrice: 70,
+      effects: [
+        { name: '調節血糖', value: 7 },
+        { name: '酸味', value: 4 },
+        { name: '增強免疫', value: 4 },
+        { name: '補充精力', value: 4 },
+        { name: '改善視力', value: 4 },
+      ],
+    })
+    expect(result.availableAtCurrentProgress).toBe(true)
+    expect(result.usesBlender).toBe(true)
   })
 
   it('returns computed data only when no observed overlay exists', () => {

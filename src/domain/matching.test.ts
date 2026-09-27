@@ -150,8 +150,9 @@ describe('customer recipe matching', () => {
   })
   it('allows exact computed candidates to participate in full matching', () => {
     const candidates = generateRecipeCandidates('tranquil-fountain-unlocked')
-    const banana = candidates.find(
-      (candidate) => candidate.ingredients.join(' → ') === '香蕉',
+    const bananaSugar = candidates.find(
+      (candidate) =>
+        candidate.ingredients.join(' → ') === '香蕉 → 糖',
     )
     const syntheticCustomer = {
       id: 'computed-full-test',
@@ -165,9 +166,14 @@ describe('customer recipe matching', () => {
       ],
     }
 
-    expect(banana?.source).toBe('computed')
-    expect(banana?.effectAmbiguity).toBeUndefined()
-    expect(recipeCandidateMatchesCustomer(banana!, syntheticCustomer)).toBe(true)
+    expect(bananaSugar?.source).toBe('computed')
+    expect(bananaSugar?.effectAmbiguity).toBeUndefined()
+    expect(
+      recipeCandidateMatchesCustomer(
+        bananaSugar!,
+        syntheticCustomer,
+      ),
+    ).toBe(true)
   })
 
   it('never claims full match from an ambiguous computed cutoff', () => {

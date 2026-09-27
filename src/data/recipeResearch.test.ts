@@ -684,4 +684,37 @@ describe('recipe research invariants', () => {
     }
   })
 
+  it('stores the 2026-09-27 immunity freedom observed blender recipe', () => {
+    expect(recipeById('orange-mint-lemon-blend')).toMatchObject({
+      observedDisplayName: '免疫 自由',
+      unlockedAt: 'juice-blender-unlocked',
+      salePrice: 44,
+      ingredients: ['橙子', '薄荷', '檸檬'],
+      effects: [
+        { name: '增強免疫', value: 7 },
+        { name: '酸味', value: 4 },
+        { name: '清新口氣', value: 4 },
+        { name: '舒緩腸胃', value: 3 },
+      ],
+      equipment: ['柑橘榨汁機', '調味器', '果汁調和器', '果汁成品台'],
+    })
+  })
+
+  it('stores the 2026-09-28 blood sugar claw observed blender recipe', () => {
+    expect(recipeById('carrot-cinnamon-banana-lemon-blend')).toMatchObject({
+      observedDisplayName: '血糖平衡 利爪',
+      unlockedAt: 'juice-blender-unlocked',
+      salePrice: 70,
+      ingredients: ['紅蘿蔔', '肉桂', '香蕉', '檸檬'],
+      effects: [
+        { name: '調節血糖', value: 7 },
+        { name: '酸味', value: 4 },
+        { name: '增強免疫', value: 4 },
+        { name: '補充精力', value: 4 },
+        { name: '改善視力', value: 4 },
+      ],
+      equipment: ['榨汁機', '調味器', '柑橘榨汁機', '果汁調和器', '果汁成品台'],
+    })
+  })
+
 })
