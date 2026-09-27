@@ -23,6 +23,7 @@ import {
   INVENTORY_RECIPE_SEARCH_RESULT_LIMIT,
   INTERMEDIATE_JUICE_SEARCH_RESULT_LIMIT,
   JuiceJarRecipeCombobox,
+  buildInventoryRecipeSearchIndex,
   MachineBatchFlow,
   ProductionStepFinalJuiceNote,
   SeasoningStageMaterialSummary,
@@ -315,7 +316,7 @@ describe('juice jar recipe search UX', () => {
       <JuiceJarRecipeCombobox
         jarId="jar-legacy"
         recipeId="legacy:unknown-recipe"
-        entries={entries}
+        searchIndex={buildInventoryRecipeSearchIndex(entries)}
         onChange={() => {}}
       />,
     )
