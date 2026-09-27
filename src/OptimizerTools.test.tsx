@@ -31,6 +31,7 @@ import {
   OptimizerRunSummary,
   OptimizerSummaryMetrics,
   PlanApplicationPreview,
+  PreProductionStorageCard,
   PlanningErrorBlock,
   RemainingSalesTripPlanBlock,
   SalesTripPlanBlock,
@@ -1706,6 +1707,59 @@ describe('optimizer collapsible result sections', () => {
     expect(html).toContain('庫存抵扣後 12 次操作')
     expect(html).toContain('收合')
     expect(html).toContain('長內容')
+  })
+})
+
+describe('pre-production storage UI', () => {
+  it('shows the missing slots and minimum additional general shelves', () => {
+    const html = renderToStaticMarkup(
+      <PreProductionStorageCard
+        plan={{
+          preProductionStorage: {
+            purchasedIngredientSlotsAdded: 4,
+            occupiedSlotsBeforePurchases: 8,
+            occupiedSlotsAfterPurchases: 12,
+            shelfSlotsAvailable: 9,
+            backpackSlotsAvailable: 1,
+            availableGeneralStorageSlots: 10,
+            missingSlots: 2,
+            additionalShelfCountRequired: 1,
+            remainingSlotsAfterRequiredShelves: 7,
+          },
+        }}
+      />,
+    )
+
+    expect(html).toContain('開工前備料容量')
+    expect(html).toContain('本次新採買新增 4 格')
+    expect(html).toContain('開工前總占用 12 / 10 格')
+    expect(html).toContain('目前還缺 2 格')
+    expect(html).toContain('至少再買 1 座一般架')
+    expect(html).toContain('補足後剩餘 7 格')
+    expect(html).toContain('額外缺水可在製作途中再取')
+  })
+
+  it('states when the current storage is already sufficient', () => {
+    const html = renderToStaticMarkup(
+      <PreProductionStorageCard
+        plan={{
+          preProductionStorage: {
+            purchasedIngredientSlotsAdded: 1,
+            occupiedSlotsBeforePurchases: 3,
+            occupiedSlotsAfterPurchases: 4,
+            shelfSlotsAvailable: 9,
+            backpackSlotsAvailable: 6,
+            availableGeneralStorageSlots: 15,
+            missingSlots: 0,
+            additionalShelfCountRequired: 0,
+            remainingSlotsAfterRequiredShelves: 11,
+          },
+        }}
+      />,
+    )
+
+    expect(html).toContain('目前容量足夠')
+    expect(html).toContain('採買完成後剩餘 11 格')
   })
 })
 
