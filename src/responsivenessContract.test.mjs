@@ -74,10 +74,13 @@ describe('responsiveness wiring regression', () => {
       '{sortedCustomerResearchRows.map(',
     )
     expect(appSource).toContain(
-      'className="customer-row-shell"',
+      "'customer-row-shell last-visible'",
     )
     expect(appSource).toContain(
       'hidden={!visibleCustomerIds.has(customer.id)}',
+    )
+    expect(appSource).toContain(
+      'customer.id === lastVisibleCustomerId',
     )
 
     const rowStart = appSource.indexOf('<MemoizedCustomerRow')
