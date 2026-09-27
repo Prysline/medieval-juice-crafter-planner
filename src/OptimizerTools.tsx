@@ -409,43 +409,47 @@ export function recipePreparationSourceSummary(
   if (!stock) {
     return [
       `需求 ${plan.assignedServings} 杯`,
-      `製作果汁 ${plan.juiceUnits} 份 → ${plan.producedServings} 杯`,
+      '既有成品使用 0 杯',
+      `本次新製作 ${plan.producedServings} 杯（${plan.juiceUnits} 份）`,
       ...(plan.leftoverServings > 0
-        ? [`剩餘 ${plan.leftoverServings} 杯`]
+        ? [`新製作剩餘 ${plan.leftoverServings} 杯`]
         : []),
     ].join(' · ')
   }
 
-  const parts = [`需求 ${stock.assignedServings} 杯`]
-
-  if (stock.finishedServingsUsed > 0) {
-    const sources = stock.finishedStockSources
-      .filter((source) => source.servingsUsed > 0)
-      .map(
-        (source) =>
-          `${source.physicalJarId} ${source.servingsUsed} 杯`,
-      )
-
-    parts.push(
-      `使用既有成品 ${stock.finishedServingsUsed} 杯` +
-        (sources.length > 0 ? `（${sources.join('、')}）` : ''),
+  const sources = stock.finishedStockSources
+    .filter((source) => source.servingsUsed > 0)
+    .map(
+      (source) =>
+        `${source.physicalJarId} ${source.servingsUsed} 杯`,
     )
-  }
 
-  if (stock.juiceUnitsToPrepare > 0) {
+  const parts = [
+    `需求 ${stock.assignedServings} 杯`,
+    `既有成品使用 ${stock.finishedServingsUsed} 杯` +
+      (sources.length > 0 ? `（${sources.join('、')}）` : ''),
+    `本次新製作 ${stock.newlyProducedServings} 杯（${stock.juiceUnitsToPrepare} 份）`,
+  ]
+
+  if (stock.newProductionLeftoverServings > 0) {
     parts.push(
-      `新製作果汁 ${stock.juiceUnitsToPrepare} 份 → ${stock.newlyProducedServings} 杯`,
+      `新製作剩餘 ${stock.newProductionLeftoverServings} 杯`,
     )
-    if (stock.newProductionLeftoverServings > 0) {
-      parts.push(
-        `新製作剩餘 ${stock.newProductionLeftoverServings} 杯`,
-      )
-    }
-  } else {
-    parts.push('不需新增製作')
   }
 
   return parts.join(' · ')
+}
+
+export function recipeCostSummary(
+  plan: Pick<
+    RecipeProductionPlan,
+    'juiceUnitIngredientCost' | 'totalIngredientCost'
+  >,
+): string {
+  return [
+    `配方基準原料成本：${optimizerMoney(plan.juiceUnitIngredientCost)}／份`,
+    `本次新增製作原料成本：${optimizerMoney(plan.totalIngredientCost)}`,
+  ].join(' · ')
 }
 
 export const INVENTORY_RECIPE_SEARCH_RESULT_LIMIT = 8
@@ -3533,7 +3537,7 @@ export function OptimizerSummaryMetrics({
   return (
     <div className="optimizer-metrics" aria-label="最佳化摘要">
       <MetricCard
-        label="原料總成本"
+        label="本次新增製作原料成本"
         value={optimizerMoney(result.totalIngredientCost)}
       />
       <MetricCard
@@ -3565,7 +3569,7 @@ export function OptimizerSummaryMetrics({
         value={salesPlan.tripCount + ' 趟'}
       />
       <MetricCard
-        label="已分配 / 產出"
+        label="需求杯數 / 本次新製作"
         value={result.assignedServings + ' / ' + result.producedServings}
       />
       <MetricCard
@@ -4169,9 +4173,7 @@ function OptimizerResultPanel({
                     disabled={deliveryUiState.status === 'stale'}
                     onChange={onCommitDeliveryGroup}
                   />
-                  <span>
-                    配方基準原料成本：{optimizerMoney(plan.totalIngredientCost)}
-                  </span>
+                  <span>{recipeCostSummary(plan)}</span>
                 </div>
                 <div className="optimizer-delivery-customer-list">
                   {customerIdsInPlannedTripOrder(

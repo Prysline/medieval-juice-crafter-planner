@@ -37,6 +37,7 @@ import {
   customerIdsInPlannedTripOrder,
   recipePlansInPlannedTripOrder,
   recipePreparationSourceSummary,
+  recipeCostSummary,
   deliveryCanonicalSyncStatus,
   deliveryCustomerControlState,
   deliveryRecipeGroupControlState,
@@ -1029,6 +1030,12 @@ describe('optimizer summary', () => {
       />,
     )
 
+    expect(html).toContain(
+      '<span>本次新增製作原料成本</span><strong>0 金幣</strong>',
+    )
+    expect(html).toContain(
+      '<span>需求杯數 / 本次新製作</span><strong>2 / 2</strong>',
+    )
     expect(html).toContain('<span>剩餘杯</span><strong>1</strong>')
     expect(html).not.toContain('<span>剩餘杯</span><strong>0</strong>')
   })
@@ -1596,7 +1603,7 @@ describe('recipe allocation preparation source summary', () => {
         shortfall,
       ),
     ).toBe(
-      '需求 1 杯 · 使用既有成品 1 杯（jar-1 1 杯） · 不需新增製作',
+      '需求 1 杯 · 既有成品使用 1 杯（jar-1 1 杯） · 本次新製作 0 杯（0 份）',
     )
   })
 
@@ -1659,11 +1666,24 @@ describe('recipe allocation preparation source summary', () => {
         shortfall,
       ),
     ).toBe(
-      '需求 3 杯 · 使用既有成品 1 杯（jar-1 1 杯） · 新製作果汁 1 份 → 2 杯',
+      '需求 3 杯 · 既有成品使用 1 杯（jar-1 1 杯） · 本次新製作 2 杯（1 份）',
     )
   })
 })
 
+
+describe('optimizer finished-stock cost UI', () => {
+  it('separates recipe baseline cost from this run incremental production cost', () => {
+    expect(
+      recipeCostSummary({
+        juiceUnitIngredientCost: 40,
+        totalIngredientCost: 0,
+      }),
+    ).toBe(
+      '配方基準原料成本：40 金幣／份 · 本次新增製作原料成本：0 金幣',
+    )
+  })
+})
 
 describe('optimizer run timing UI', () => {
   it('formats short, minute and hour durations without fake precision', () => {
