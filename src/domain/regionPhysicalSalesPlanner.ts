@@ -320,6 +320,46 @@ function describePhysicalTrips(
   }
 }
 
+function baselineRegionOrder(
+  salesPlan: MultiTripReplenishmentPlan,
+  customerRegionById: Readonly<Record<string, RegionId>>,
+): RegionId[] {
+  const result: RegionId[] = []
+  const seen = new Set<RegionId>()
+
+  for (const trip of salesPlan.trips) {
+    for (const load of trip.juiceJars) {
+      for (const customerId of load.customerIds) {
+        const regionId = regionForCustomer(
+          customerId,
+          customerRegionById,
+        )
+        if (seen.has(regionId)) continue
+        seen.add(regionId)
+        result.push(regionId)
+      }
+    }
+  }
+
+  return result
+}
+
+function preferenceSignature(
+  servicePlan: RegionServicePlan,
+): string {
+  return servicePlan.trips
+    .map((trip) =>
+      trip.services
+        .map((service) =>
+          service.customerAssignments
+            .map((assignment) => assignment.customerId)
+            .join(','),
+        )
+        .join('+'),
+    )
+    .join('|')
+}
+
 function recipeAssignments(
   demand: PreparationDemand,
 ): Array<{ recipeId: string; customerIds: string[] }> {
@@ -363,26 +403,36 @@ export function buildRegionPhysicalSalesPlan(
     ),
   )
 
-  const regionServiceIntent = planRegionServiceTrips({
+  const sharedRegionInput = {
     activeWorkshop: input.activeWorkshop,
     topology: input.topology,
     recipeAssignments: recipeAssignments(input.demand),
     customerRegionById: input.customerRegionById,
     maxCustomerServicesPerTrip:
       abstractPhysicalCapacity,
-  })
-  const preferenceByCustomerId =
-    tripPreferenceByCustomerId(regionServiceIntent)
-  const regionOrderedDemand =
-    demandForRegionServicePlan(
-      input.demand,
-      preferenceByCustomerId,
+  }
+  const canonicalRegionServiceIntent =
+    planRegionServiceTrips(sharedRegionInput)
+  const physicalOrderRegionServiceIntent =
+    planRegionServiceTrips({
+      ...sharedRegionInput,
+      regionOrder: baselineRegionOrder(
+        baselineSalesPlan,
+        input.customerRegionById,
+      ),
+    })
+  const regionServiceIntents = [
+    canonicalRegionServiceIntent,
+    physicalOrderRegionServiceIntent,
+  ].filter((intent, index, all) => {
+    const signature = preferenceSignature(intent)
+    return (
+      all.findIndex(
+        (candidate) =>
+          preferenceSignature(candidate) === signature,
+      ) === index
     )
-  const regionSalesPlan = buildPhysicalPlan(
-    input,
-    regionOrderedDemand,
-    preferenceByCustomerId,
-  )
+  })
 
   const baseline = describePhysicalTrips(
     baselineSalesPlan,
@@ -390,30 +440,49 @@ export function buildRegionPhysicalSalesPlan(
     input.topology,
     input.customerRegionById,
   )
-  const regional = describePhysicalTrips(
-    regionSalesPlan,
-    input.activeWorkshop,
-    input.topology,
-    input.customerRegionById,
-  )
+  let selected = {
+    salesPlan: baselineSalesPlan,
+    realized: baseline,
+    regionServiceIntent: canonicalRegionServiceIntent,
+  }
 
-  const selected =
-    compareRegionServicePlanScores(
-      regional.score,
-      baseline.score,
-    ) < 0
-      ? {
-          salesPlan: regionSalesPlan,
-          realized: regional,
-        }
-      : {
-          salesPlan: baselineSalesPlan,
-          realized: baseline,
-        }
+  for (const regionServiceIntent of regionServiceIntents) {
+    const preferenceByCustomerId =
+      tripPreferenceByCustomerId(regionServiceIntent)
+    const regionOrderedDemand =
+      demandForRegionServicePlan(
+        input.demand,
+        preferenceByCustomerId,
+      )
+    const regionSalesPlan = buildPhysicalPlan(
+      input,
+      regionOrderedDemand,
+      preferenceByCustomerId,
+    )
+    const regional = describePhysicalTrips(
+      regionSalesPlan,
+      input.activeWorkshop,
+      input.topology,
+      input.customerRegionById,
+    )
+
+    if (
+      compareRegionServicePlanScores(
+        regional.score,
+        selected.realized.score,
+      ) < 0
+    ) {
+      selected = {
+        salesPlan: regionSalesPlan,
+        realized: regional,
+        regionServiceIntent,
+      }
+    }
+  }
 
   return {
     activeWorkshop: { ...input.activeWorkshop },
-    regionServiceIntent,
+    regionServiceIntent: selected.regionServiceIntent,
     requiredByRegion: requiredByRegion(
       input.demand,
       input.customerRegionById,
