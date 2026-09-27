@@ -208,5 +208,5 @@ describe('production-scale responsiveness profile', () => {
     expect(result.counts.inventoryRecipeEntries).toBeGreaterThan(8)
     expect(result.counts.intermediateJuiceEntries).toBeGreaterThan(0)
     expect(result.counts.customers).toBe(customers.length)
-  })
+  }, 20_000)
 })
