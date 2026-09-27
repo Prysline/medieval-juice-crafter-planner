@@ -3123,9 +3123,18 @@ footer {
   gap: 16px;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid #dfd2bd;
   background: #eee4d5;
   padding: 10px 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.optimizer-machine-header::-webkit-details-marker {
+  display: none;
+}
+
+.optimizer-machine-group[open] > .optimizer-machine-header {
+  border-bottom: 1px solid #dfd2bd;
 }
 
 .optimizer-machine-header > div {
@@ -3156,10 +3165,26 @@ footer {
   line-height: 1.35;
 }
 
-.optimizer-machine-header > span {
+.optimizer-machine-summary {
+  display: inline-flex;
+  gap: 9px;
+  align-items: center;
   color: #795d22;
   font-size: 0.74rem;
   font-weight: 900;
+}
+
+.optimizer-machine-toggle::after {
+  content: '展開';
+  display: inline-block;
+  min-width: 2rem;
+  color: #6d604d;
+  font-size: 0.68rem;
+  text-align: right;
+}
+
+.optimizer-machine-group[open] .optimizer-machine-toggle::after {
+  content: '收合';
 }
 
 .optimizer-machine-steps {
@@ -3647,9 +3672,14 @@ footer {
     gap: 3px;
   }
 
-  .optimizer-machine-header > span,
+  .optimizer-machine-summary,
   .optimizer-production-step-heading span {
     white-space: normal;
+  }
+
+  .optimizer-machine-summary {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .optimizer-production-checklist-toolbar,
