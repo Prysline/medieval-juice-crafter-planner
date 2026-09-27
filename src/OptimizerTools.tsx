@@ -115,6 +115,7 @@ interface OptimizerToolsProps {
   formalCustomerIds: string[]
   recipeCandidatePool: RecipeCandidatePool
   onSuppliedCustomerIdsCommitted: (customerIds: string[]) => void
+  onFormalCustomerIdsCommitted: (customerIds: string[]) => void
 }
 
 interface SalesTripPlans {
@@ -998,6 +999,7 @@ function OptimizerTools({
   formalCustomerIds,
   recipeCandidatePool,
   onSuppliedCustomerIdsCommitted,
+  onFormalCustomerIdsCommitted,
 }: OptimizerToolsProps) {
   const [scope, setScope] = useState<OptimizerCustomerScope>('all')
   const [targetMode, setTargetMode] =
@@ -1343,6 +1345,9 @@ function OptimizerTools({
     setInventoryState(result.inventory)
     onSuppliedCustomerIdsCommitted([
       ...result.suppliedCustomerIds,
+    ])
+    onFormalCustomerIdsCommitted([
+      ...result.formalCustomerIds,
     ])
     setRunState({ status: 'idle' })
     setApplicationState({ status: 'applied' })
@@ -2943,7 +2948,7 @@ export function PlanApplicationPreview({
       <p className="optimizer-transaction-note">
         以下是這份規劃的變更前 → 變更後。按下確認時會重新讀取目前 canonical
         basis；只要庫存、進度、滿意度、正式顧客、今日已供應或規劃器設定有任一項改變，
-        就會拒絕提交。驗證通過後，庫存與今日已供應狀態會以單一持久狀態一次寫入。
+        就會拒絕提交。驗證通過後，庫存、今日已供應與正式顧客狀態會以單一持久狀態一次寫入。
       </p>
 
       <button
@@ -3090,6 +3095,26 @@ export function PlanApplicationPreview({
             <p>
               新增：
               {changes.newlySuppliedCustomerIds
+                .map(customerLabel)
+                .join('、')}
+            </p>
+          )}
+        </article>
+
+        <article className="optimizer-transaction-card">
+          <div className="optimizer-transaction-card-heading">
+            <strong>正式顧客</strong>
+            <span>
+              {draft.before.formalCustomerIds.length} →{' '}
+              {draft.after.formalCustomerIds.length} 人
+            </span>
+          </div>
+          {changes.newlyFormalCustomerIds.length === 0 ? (
+            <p>本次沒有新的試喝者轉為正式顧客。</p>
+          ) : (
+            <p>
+              本次成功試喝後轉正式：
+              {changes.newlyFormalCustomerIds
                 .map(customerLabel)
                 .join('、')}
             </p>
