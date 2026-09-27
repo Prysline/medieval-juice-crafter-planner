@@ -539,7 +539,7 @@ describe('partial delivery atomic commit', () => {
       JSON.parse(
         storage.raw(PLAN_APPLICATION_STATE_STORAGE_KEY)!,
       ).schemaVersion,
-    ).toBe('plan-application-state-v2')
+    ).toBe('plan-application-state-v3')
   })
 
   it('does not partially update legacy state when the canonical write fails', () => {
