@@ -489,4 +489,199 @@ describe('recipe research invariants', () => {
       ],
     })
   })
+  it('stores the 2026-09-27 ibex-statue observed recipe batch', () => {
+    const observations = [
+      {
+        id: 'banana-clove',
+        observedDisplayName: '香蕉 - 丁香（調製飲品）',
+        salePrice: 35,
+        ingredients: ['香蕉', '丁香'],
+        effects: [
+          { name: '調節血糖', value: 4 },
+          { name: '補充精力', value: 4 },
+          { name: '辛香', value: 3 },
+        ],
+      },
+      {
+        id: 'tomato-clove',
+        observedDisplayName: '番茄 - 丁香（調製飲品）',
+        salePrice: 31,
+        ingredients: ['番茄', '丁香'],
+        effects: [
+          { name: '調節血糖', value: 4 },
+          { name: '保護心臟', value: 4 },
+          { name: '辛香', value: 3 },
+        ],
+      },
+      {
+        id: 'tomato-sugar',
+        observedDisplayName: '番茄 - 糖（調製飲品）',
+        salePrice: 23,
+        ingredients: ['番茄', '糖'],
+        effects: [
+          { name: '甜味', value: 5 },
+          { name: '保護心臟', value: 4 },
+          { name: '補充精力', value: 3 },
+        ],
+      },
+      {
+        id: 'banana-mint-cinnamon',
+        observedDisplayName: '血糖平衡 巨龍',
+        unlockedAt: 'tranquil-fountain-unlocked',
+        salePrice: 58,
+        ingredients: ['香蕉', '薄荷', '肉桂'],
+        effects: [
+          { name: '調節血糖', value: 4 },
+          { name: '清新口氣', value: 4 },
+          { name: '紓解壓力', value: 4 },
+          { name: '補充精力', value: 4 },
+        ],
+      },
+      {
+        id: 'tomato-clove-cinnamon',
+        observedDisplayName: '血糖平衡 和諧',
+        salePrice: 55,
+        ingredients: ['番茄', '丁香', '肉桂'],
+        effects: [
+          { name: '調節血糖', value: 8 },
+          { name: '保護心臟', value: 5 },
+          { name: '芳香', value: 3 },
+          { name: '辛香', value: 3 },
+        ],
+      },
+      {
+        id: 'tomato-clove-sugar',
+        observedDisplayName: '甜味 力量',
+        salePrice: 43,
+        ingredients: ['番茄', '丁香', '糖'],
+        effects: [
+          { name: '甜味', value: 5 },
+          { name: '調節血糖', value: 4 },
+          { name: '保護心臟', value: 4 },
+          { name: '補充精力', value: 3 },
+        ],
+      },
+      {
+        id: 'tomato-sugar-mint',
+        observedDisplayName: '甜味 寂靜',
+        salePrice: 43,
+        ingredients: ['番茄', '糖', '薄荷'],
+        effects: [
+          { name: '甜味', value: 5 },
+          { name: '清新口氣', value: 4 },
+          { name: '保護心臟', value: 4 },
+          { name: '舒緩腸胃', value: 3 },
+        ],
+      },
+      {
+        id: 'orange-cucumber-blend',
+        observedDisplayName: '橙子 - 黃瓜（調製飲品）',
+        salePrice: 29,
+        ingredients: ['橙子', '黃瓜'],
+        effects: [
+          { name: '補充水分', value: 4 },
+          { name: '增強免疫', value: 4 },
+          { name: '輔助瘦身', value: 2 },
+        ],
+      },
+      {
+        id: 'peach-cucumber-blend',
+        observedDisplayName: '桃子 - 黃瓜（調製飲品）',
+        salePrice: 36,
+        ingredients: ['桃子', '黃瓜'],
+        effects: [
+          { name: '促進消化', value: 5 },
+          { name: '補充水分', value: 4 },
+          { name: '輔助瘦身', value: 2 },
+        ],
+      },
+      {
+        id: 'orange-cinnamon-carrot-blend',
+        observedDisplayName: '血糖平衡 繁榮',
+        unlockedAt: 'juice-blender-unlocked',
+        salePrice: 48,
+        ingredients: ['橙子', '肉桂', '紅蘿蔔'],
+        effects: [
+          { name: '調節血糖', value: 7 },
+          { name: '增強免疫', value: 5 },
+          { name: '改善視力', value: 4 },
+          { name: '防止過食', value: 2 },
+        ],
+      },
+      {
+        id: 'tomato-peach-blend',
+        observedDisplayName: '番茄 - 桃子（調製飲品）',
+        salePrice: 35,
+        ingredients: ['番茄', '桃子'],
+        effects: [
+          { name: '保護心臟', value: 5 },
+          { name: '促進消化', value: 4 },
+          { name: '舒緩呼吸', value: 3 },
+        ],
+      },
+      {
+        id: 'tomato-peach-pear-blend',
+        observedDisplayName: '助消 勇氣',
+        salePrice: 55,
+        ingredients: ['番茄', '桃子', '梨'],
+        effects: [
+          { name: '促進消化', value: 8 },
+          { name: '保護心臟', value: 8 },
+          { name: '舒緩呼吸', value: 3 },
+          { name: '煥亮肌膚', value: 2 },
+        ],
+      },
+      {
+        id: 'cucumber-banana-mint-cinnamon-blend',
+        observedDisplayName: '血糖平衡 尖嘯',
+        salePrice: 81,
+        ingredients: ['黃瓜', '香蕉', '薄荷', '肉桂'],
+        effects: [
+          { name: '調節血糖', value: 5 },
+          { name: '輔助瘦身', value: 4 },
+          { name: '清新口氣', value: 4 },
+          { name: '紓解壓力', value: 4 },
+          { name: '補充精力', value: 4 },
+        ],
+      },
+      {
+        id: 'peach-cucumber-lemon-sugar-blend',
+        observedDisplayName: '甜味 尖嘯',
+        salePrice: 64,
+        ingredients: ['桃子', '黃瓜', '檸檬', '糖'],
+        effects: [
+          { name: '甜味', value: 5 },
+          { name: '促進消化', value: 5 },
+          { name: '酸味', value: 4 },
+          { name: '補充水分', value: 4 },
+          { name: '補充精力', value: 3 },
+        ],
+      },
+      {
+        id: 'tomato-clove-sugar-peach-blend',
+        observedDisplayName: '護心 歡愉',
+        salePrice: 70,
+        ingredients: ['番茄', '丁香', '糖', '桃子'],
+        effects: [
+          { name: '保護心臟', value: 5 },
+          { name: '甜味', value: 5 },
+          { name: '促進消化', value: 4 },
+          { name: '調節血糖', value: 4 },
+          { name: '舒緩呼吸', value: 3 },
+        ],
+      },
+    ] as const
+
+    for (const observation of observations) {
+      const expectedUnlock =
+        'unlockedAt' in observation
+          ? observation.unlockedAt
+          : 'ibex-statue-unlocked'
+      expect(recipeById(observation.id)).toMatchObject({
+        ...observation,
+        unlockedAt: expectedUnlock,
+      })
+    }
+  })
+
 })
