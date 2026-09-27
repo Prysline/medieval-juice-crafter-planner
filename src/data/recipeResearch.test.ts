@@ -527,6 +527,7 @@ describe('recipe research invariants', () => {
       {
         id: 'banana-mint-cinnamon',
         observedDisplayName: '血糖平衡 巨龍',
+        unlockedAt: 'tranquil-fountain-unlocked',
         salePrice: 58,
         ingredients: ['香蕉', '薄荷', '肉桂'],
         effects: [
@@ -597,6 +598,7 @@ describe('recipe research invariants', () => {
       {
         id: 'orange-cinnamon-carrot-blend',
         observedDisplayName: '血糖平衡 繁榮',
+        unlockedAt: 'juice-blender-unlocked',
         salePrice: 48,
         ingredients: ['橙子', '肉桂', '紅蘿蔔'],
         effects: [
@@ -671,9 +673,13 @@ describe('recipe research invariants', () => {
     ] as const
 
     for (const observation of observations) {
+      const expectedUnlock =
+        'unlockedAt' in observation
+          ? observation.unlockedAt
+          : 'ibex-statue-unlocked'
       expect(recipeById(observation.id)).toMatchObject({
         ...observation,
-        unlockedAt: 'ibex-statue-unlocked',
+        unlockedAt: expectedUnlock,
       })
     }
   })
