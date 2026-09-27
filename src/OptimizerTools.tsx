@@ -1101,7 +1101,7 @@ export function IntermediateJuiceCombobox({
   )
 }
 
-function jarFillActionLabel(
+export function jarFillActionLabel(
   load: MultiTripJuiceJarLoad,
 ): string | null {
   if (load.fillAction === 'use-existing') return '使用既有成品'
