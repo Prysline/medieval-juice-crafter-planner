@@ -269,7 +269,7 @@ describe('fixed customer trip physical realization', () => {
         { customerIds: ['a-1'] },
         { customerIds: ['b-1', 'b-2'] },
       ],
-      1,
+      2,
     )
 
     expect(
