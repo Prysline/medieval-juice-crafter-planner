@@ -29,6 +29,7 @@ import {
   SeasoningStepStageUsageNote,
   OptimizerRunStatus,
   OptimizerRunSummary,
+  PreProductionStorageCard,
   OptimizerSummaryMetrics,
   PlanApplicationPreview,
   PlanningErrorBlock,
@@ -1706,6 +1707,75 @@ describe('optimizer collapsible result sections', () => {
     expect(html).toContain('庫存抵扣後 12 次操作')
     expect(html).toContain('收合')
     expect(html).toContain('長內容')
+  })
+})
+
+describe('pre-production storage capacity UI', () => {
+  it('shows the shopping footprint and additional shelf requirement', () => {
+    const html = renderToStaticMarkup(
+      <PreProductionStorageCard
+        plan={{
+          feasible: false,
+          issues: [],
+          productionPlan: {
+            steps: [],
+            machineOperations: {
+              juicing: 0,
+              seasoning: 0,
+              blending: 0,
+              finalizing: 0,
+              total: 0,
+            },
+          },
+          actions: [],
+          ingredientAcquisitionActions: 0,
+          waterFetchTrips: 0,
+          preProductionStorage: {
+            purchasedIngredientSlotsAdded: 4,
+            occupiedSlotsBeforePurchases: 8,
+            occupiedSlotsAfterPurchases: 12,
+            shelfSlotsAvailable: 9,
+            backpackSlotsAvailable: 1,
+            availableGeneralStorageSlots: 10,
+            missingSlots: 2,
+            additionalShelfCountRequired: 1,
+            remainingSlotsAfterRequiredShelves: 7,
+          },
+          initialSnapshot: {
+            shelfSlotsUsed: 8,
+            shelfSlotsAvailable: 9,
+            backpackSlotsUsed: 0,
+            backpackSlotsAvailable: 1,
+            carriedJarSlots: 9,
+            outputJarReceiverSlots: 9,
+            carriedOutputJarSlots: 9,
+            rackOutputJarSlots: 0,
+            machineSlotsUsed: 0,
+            machineSlotsAvailable: 0,
+          },
+          finalSnapshot: {
+            shelfSlotsUsed: 8,
+            shelfSlotsAvailable: 9,
+            backpackSlotsUsed: 0,
+            backpackSlotsAvailable: 1,
+            carriedJarSlots: 9,
+            outputJarReceiverSlots: 9,
+            carriedOutputJarSlots: 9,
+            rackOutputJarSlots: 0,
+            machineSlotsUsed: 0,
+            machineSlotsAvailable: 0,
+          },
+        }}
+      />,
+    )
+
+    expect(html).toContain('開工前備料容量')
+    expect(html).toContain('本次新採買新增 4 格')
+    expect(html).toContain('開工前總占用')
+    expect(html).toContain('12')
+    expect(html).toContain('目前還缺 2 格')
+    expect(html).toContain('至少再買 1 座一般架')
+    expect(html).toContain('補足後剩餘 7 格')
   })
 })
 
