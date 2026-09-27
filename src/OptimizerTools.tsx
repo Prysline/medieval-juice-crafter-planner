@@ -684,7 +684,7 @@ function inventoryRecipeSourceLabel(
 }
 
 function normalizeRecipeSearchText(value: string): string {
-  return value.trim().toLocaleLowerCase('zh-Hant')
+  return value.trim().toLowerCase()
 }
 
 export interface InventoryRecipeSearchIndexRow {
