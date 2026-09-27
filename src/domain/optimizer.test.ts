@@ -1210,4 +1210,35 @@ describe('production optimizer', () => {
   })
 
 
+  it('does not silently drop selected unresolved customers in inventory-only mode', async () => {
+    await expect(
+      optimizeBatchPlan(
+        {
+          ...request(['a']),
+          materialSourceMode: 'inventory-only',
+          materialInventory: {
+            ingredientUnits: { lemon: 10 },
+            intermediateJuiceUnits: {},
+          },
+        },
+        {
+          source: {
+            customers: [customer('a', '甜味')],
+            candidates: [
+              recipe('not-a-match', ['檸檬'], ['酸味']),
+            ],
+          },
+        },
+      ),
+    ).rejects.toMatchObject({
+      name: 'PlanningUserError',
+      context: {
+        solverStatus: 'unresolved-customers',
+        materialSourceMode: 'inventory-only',
+        unresolvedCustomerIds: ['a'],
+      },
+    })
+  })
+
+
 })
