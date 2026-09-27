@@ -1268,6 +1268,29 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
       }
 
       if (
+        objectiveKey === 'jarFillOperations' &&
+        minimumCostCertificateApplied &&
+        machineCertificate &&
+        fixes.length === 2 &&
+        fixes[0].objective === 'cost' &&
+        fixes[1].objective === 'machineOperations' &&
+        currentDomain.recipes.length >= PRODUCTION_CERTIFICATE_RECIPE_COUNT_GATE
+      ) {
+        // The machine certificate proves the global machine optimum equals
+        // the sum of independent lower bounds for through-seasoning,
+        // blending, and finalizing. Once that total is fixed, finalizing
+        // cannot exceed its own lower bound without making another partition
+        // fall below a proven lower bound. Therefore the jar-fill optimum is
+        // already exact and does not need another production-scale MIP solve.
+        fixes.push({
+          objective: objectiveKey,
+          value: machineCertificate.lowerBounds.finalizing,
+        })
+        currentDomain = continuationDomain
+        continue
+      }
+
+      if (
         objectiveKey === 'jarSwitches' &&
         minimumCostCertificateApplied &&
         machineCertificate &&
