@@ -9,6 +9,7 @@ export type PlanningUserErrorCode =
   | 'leftover-storage'
   | 'retained-juice-conflict'
   | 'jar-schedule-inconsistency'
+  | 'fixed-trip-realization'
   | 'optimizer-no-solution'
 
 export interface PlanningUserErrorContext {
@@ -17,6 +18,7 @@ export interface PlanningUserErrorContext {
   reusableTerminalJarCount?: number
   retainedJarCount?: number
   policy?: string
+  fixedTripNumber?: number
   expectedJarTypeSwitches?: number
   actualJarTypeSwitches?: number
   expectedJarFillOperations?: number
@@ -174,6 +176,21 @@ export function presentPlanningError(
           ],
           technicalDetails: details,
         }
+      case 'fixed-trip-realization': {
+        const fixedTripNumber = error.context.fixedTripNumber
+        return {
+          title: '自訂趟次無法依指定安排實現',
+          message:
+            typeof fixedTripNumber === 'number'
+              ? `第 ${fixedTripNumber} 趟目前無法在不改動玩家分趟或順序的前提下合法實現。`
+              : '目前自訂趟次無法在不改動玩家分趟或順序的前提下合法實現。',
+          suggestions: [
+            '調整這一趟的顧客分配，或把部分顧客移到其他趟。',
+            '確認目前果汁罐、杯具與攜帶設定是否足以支援這個分趟。',
+          ],
+          technicalDetails: details,
+        }
+      }
       case 'jar-schedule-inconsistency': {
         const expected = error.context.expectedJarTypeSwitches
         const actual = error.context.actualJarTypeSwitches

@@ -110,6 +110,10 @@ export interface CupInventoryInput {
   usedCups: number
 }
 
+export interface FixedCustomerTripConstraint {
+  customerIds: readonly string[]
+}
+
 export interface MultiTripReplenishmentOptions {
   /**
    * Optional downstream grouping preference. Smaller numbers are served first
@@ -118,6 +122,15 @@ export interface MultiTripReplenishmentOptions {
    * requires that; this never changes recipe assignment.
    */
   customerTripPreferenceById?: Readonly<Record<string, number>>
+  /**
+   * Strong downstream authority used by the custom-trip editor.
+   *
+   * Every assigned customer must appear exactly once. Array order is execution
+   * order, and each entry must be realized as exactly one physical sales trip.
+   * The scheduler may choose physical jar identities and legal fill / refill /
+   * continuation details, but it must not split, merge, or reorder these trips.
+   */
+  fixedCustomerTrips?: readonly FixedCustomerTripConstraint[]
 }
 
 export interface MultiTripSalesTrip {
@@ -266,6 +279,117 @@ function splitCustomerServings(
   }
 
   return chunks
+}
+
+function fixedTripPreferenceByCustomerId(
+  demand: PreparationDemand,
+  fixedCustomerTrips:
+    | readonly FixedCustomerTripConstraint[]
+    | undefined,
+): Readonly<Record<string, number>> | undefined {
+  if (!fixedCustomerTrips) return undefined
+
+  const assignedCustomerIds = demand.recipes.flatMap(
+    (recipe) => recipe.customerIds,
+  )
+  const assigned = new Set(assignedCustomerIds)
+  if (assigned.size !== assignedCustomerIds.length) {
+    throw new Error(
+      'Fixed customer trips require unique optimizer customer assignments',
+    )
+  }
+
+  if (assigned.size === 0) {
+    if (fixedCustomerTrips.length > 0) {
+      throw new Error(
+        'Fixed customer trips cannot contain trips when sales demand is empty',
+      )
+    }
+    return {}
+  }
+  if (fixedCustomerTrips.length === 0) {
+    throw new Error(
+      'Fixed customer trips must cover non-empty sales demand',
+    )
+  }
+
+  const preferenceByCustomerId: Record<string, number> = {}
+  fixedCustomerTrips.forEach((trip, index) => {
+    if (trip.customerIds.length === 0) {
+      throw new Error(
+        `Fixed customer trip ${index + 1} cannot be empty`,
+      )
+    }
+    for (const customerId of trip.customerIds) {
+      if (!assigned.has(customerId)) {
+        throw new Error(
+          `Fixed customer trip ${index + 1} references unknown customer ${customerId}`,
+        )
+      }
+      if (preferenceByCustomerId[customerId] !== undefined) {
+        throw new Error(
+          `Fixed customer trips assign customer ${customerId} more than once`,
+        )
+      }
+      preferenceByCustomerId[customerId] = index + 1
+    }
+  })
+
+  for (const customerId of assigned) {
+    if (preferenceByCustomerId[customerId] === undefined) {
+      throw new Error(
+        `Fixed customer trips are missing assigned customer ${customerId}`,
+      )
+    }
+  }
+
+  return preferenceByCustomerId
+}
+
+function demandOrderedByTripPreference(
+  demand: PreparationDemand,
+  preferenceByCustomerId:
+    | Readonly<Record<string, number>>
+    | undefined,
+): PreparationDemand {
+  if (!preferenceByCustomerId) return demand
+
+  return {
+    ...demand,
+    recipes: demand.recipes.map((recipe) => {
+      const originalIndex = new Map(
+        recipe.customerIds.map((customerId, index) => [
+          customerId,
+          index,
+        ]),
+      )
+      return {
+        ...recipe,
+        customerIds: [...recipe.customerIds].sort(
+          (a, b) =>
+            (preferenceByCustomerId[a] ??
+              Number.MAX_SAFE_INTEGER) -
+              (preferenceByCustomerId[b] ??
+                Number.MAX_SAFE_INTEGER) ||
+            (originalIndex.get(a) ?? Number.MAX_SAFE_INTEGER) -
+              (originalIndex.get(b) ??
+                Number.MAX_SAFE_INTEGER),
+        ),
+      }
+    }),
+  }
+}
+
+function sameCustomerSet(
+  actual: readonly string[],
+  expected: readonly string[],
+): boolean {
+  if (actual.length !== expected.length) return false
+  const actualSet = new Set(actual)
+  return (
+    actualSet.size === actual.length &&
+    expected.every((customerId) => actualSet.has(customerId))
+  )
 }
 
 function recipeJarDemands(
@@ -1412,6 +1536,7 @@ function buildTrips(
   initialCupState: CupState,
   orderMode: TripCandidateOrderMode = 'baseline',
   customerTripPreferenceById?: Readonly<Record<string, number>>,
+  fixedCustomerTrips?: readonly FixedCustomerTripConstraint[],
 ): {
   trips: MutableTrip[]
   finalCupState: CupState
@@ -1514,6 +1639,21 @@ function buildTrips(
         )
       })
 
+    const fixedTripNumber = fixedCustomerTrips
+      ? trips.length + 1
+      : null
+    if (
+      fixedCustomerTrips &&
+      fixedTripNumber !== null &&
+      fixedTripNumber > fixedCustomerTrips.length
+    ) {
+      throw new PlanningUserError(
+        'fixed-trip-realization',
+        { fixedTripNumber },
+        `Physical scheduler produced an extra trip after fixed trip ${fixedCustomerTrips.length}`,
+      )
+    }
+
     const trip = {
       juiceJars: [] as MultiTripJuiceJarLoad[],
       totalServings: 0,
@@ -1606,22 +1746,49 @@ function buildTrips(
       if (cupState.cleanCups + cupState.usedCups < 1) {
         throw new PlanningUserError(
           'missing-physical-cup',
-          {},
+          {
+            fixedTripNumber:
+              fixedTripNumber ?? undefined,
+          },
           'Sales planning requires at least one physical cup',
         )
       }
       if (maxConcurrentJars < 1) {
         throw new PlanningUserError(
           'missing-jar-slot',
-          {},
+          {
+            fixedTripNumber:
+              fixedTripNumber ?? undefined,
+          },
           'Sales planning requires at least one usable juice-jar slot',
         )
       }
       throw new PlanningUserError(
         'trip-capacity',
-        { policy },
+        {
+          policy,
+          fixedTripNumber: fixedTripNumber ?? undefined,
+        },
         `No remaining sales load can fit the ${policy} trip policy with the current cups and backpack slots`,
       )
+    }
+
+    if (fixedCustomerTrips && fixedTripNumber !== null) {
+      const expected =
+        fixedCustomerTrips[fixedTripNumber - 1]?.customerIds ?? []
+      const actual = trip.juiceJars.flatMap(
+        (load) => load.customerIds,
+      )
+      if (
+        selectedTripPreference !== fixedTripNumber ||
+        !sameCustomerSet(actual, expected)
+      ) {
+        throw new PlanningUserError(
+          'fixed-trip-realization',
+          { fixedTripNumber },
+          `Fixed trip ${fixedTripNumber} could not be realized exactly: expected [${expected.join(',')}], got [${actual.join(',')}]`,
+        )
+      }
     }
 
     const juiceJarSlotsCarried = jarSlotsFor(
@@ -1681,6 +1848,22 @@ function buildTrips(
       juiceJarSlotsCarried,
       cupTransition,
     })
+  }
+
+  if (
+    fixedCustomerTrips &&
+    trips.length !== fixedCustomerTrips.length
+  ) {
+    throw new PlanningUserError(
+      'fixed-trip-realization',
+      {
+        fixedTripNumber: Math.min(
+          trips.length + 1,
+          fixedCustomerTrips.length,
+        ),
+      },
+      `Physical scheduler realized ${trips.length} trip(s), expected exactly ${fixedCustomerTrips.length}`,
+    )
   }
 
   return {
@@ -1924,6 +2107,7 @@ function selectTerminalLeftoverTimingCandidate(
   initialCupState: CupState,
   discardedJuiceServings: number,
   customerTripPreferenceById?: Readonly<Record<string, number>>,
+  fixedCustomerTrips?: readonly FixedCustomerTripConstraint[],
 ): ReturnType<typeof buildTrips> {
   try {
     const timingCandidate = buildTrips(
@@ -1933,6 +2117,7 @@ function selectTerminalLeftoverTimingCandidate(
       initialCupState,
       'terminal-leftovers-last',
       customerTripPreferenceById,
+      fixedCustomerTrips,
     )
     const baselineMetrics = terminalLeftoverScheduleMetrics(
       baselineTripBuild.trips,
@@ -2315,10 +2500,30 @@ export function buildMultiTripReplenishmentPlan(
     cleanCups: normalizedCupCount(cups.cleanCups),
     usedCups: normalizedCupCount(cups.usedCups),
   }
-  const salesRecipes = demand.recipes.filter(
+  if (
+    options.fixedCustomerTrips &&
+    options.customerTripPreferenceById
+  ) {
+    throw new Error(
+      'Fixed customer trips and soft customer trip preferences are mutually exclusive',
+    )
+  }
+  const fixedTripPreference =
+    fixedTripPreferenceByCustomerId(
+      demand,
+      options.fixedCustomerTrips,
+    )
+  const tripPreferenceByCustomerId =
+    fixedTripPreference ??
+    options.customerTripPreferenceById
+  const salesDemand = demandOrderedByTripPreference(
+    demand,
+    fixedTripPreference,
+  )
+  const salesRecipes = salesDemand.recipes.filter(
     (recipe) => recipe.assignedServings > 0,
   )
-  const recipes = recipeJarDemands(demand, shortfall)
+  const recipes = recipeJarDemands(salesDemand, shortfall)
 
   if (salesRecipes.length > 0 && normalizedJarCount < 1) {
     throw new PlanningUserError(
@@ -2339,7 +2544,7 @@ export function buildMultiTripReplenishmentPlan(
   }
 
   const initialQueues = buildInitialJarQueues(
-    demand,
+    salesDemand,
     shortfall,
     carriedJuiceJars,
   )
@@ -2347,7 +2552,7 @@ export function buildMultiTripReplenishmentPlan(
     recipes,
     initialQueues,
     allowDiscardRetainedJuice,
-    options.customerTripPreferenceById,
+    tripPreferenceByCustomerId,
   )
   const queues = queueBuild.queues
   const discardedInitialJuice =
@@ -2373,7 +2578,8 @@ export function buildMultiTripReplenishmentPlan(
     normalizedCarryPolicy,
     initialCupState,
     'baseline',
-    options.customerTripPreferenceById,
+    tripPreferenceByCustomerId,
+    options.fixedCustomerTrips,
   )
   const baselineSelectedTripBuild =
     selectTerminalLeftoverTimingCandidate(
@@ -2383,7 +2589,8 @@ export function buildMultiTripReplenishmentPlan(
       normalizedCarryPolicy,
       initialCupState,
       discardedJuiceServings,
-      options.customerTripPreferenceById,
+      tripPreferenceByCustomerId,
+      options.fixedCustomerTrips,
     )
   let selectedTripBuild = baselineSelectedTripBuild
 
@@ -2398,7 +2605,8 @@ export function buildMultiTripReplenishmentPlan(
         normalizedCarryPolicy,
         initialCupState,
         'baseline',
-        options.customerTripPreferenceById,
+        tripPreferenceByCustomerId,
+        options.fixedCustomerTrips,
       )
       const prefillSelectedTripBuild =
         selectTerminalLeftoverTimingCandidate(
@@ -2408,7 +2616,8 @@ export function buildMultiTripReplenishmentPlan(
           normalizedCarryPolicy,
           initialCupState,
           discardedJuiceServings,
-          options.customerTripPreferenceById,
+          tripPreferenceByCustomerId,
+          options.fixedCustomerTrips,
         )
 
       if (

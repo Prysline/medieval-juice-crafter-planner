@@ -5,6 +5,24 @@ import {
 } from './planningErrors'
 
 describe('planning error presentation', () => {
+  it('attributes fixed-trip realization failure to the requested trip', () => {
+    const presentation = presentPlanningError(
+      new PlanningUserError(
+        'fixed-trip-realization',
+        { fixedTripNumber: 3 },
+        'fixed trip mismatch',
+      ),
+    )
+
+    expect(presentation.title).toBe(
+      '自訂趟次無法依指定安排實現',
+    )
+    expect(presentation.message).toContain('第 3 趟')
+    expect(presentation.technicalDetails).toBe(
+      'fixed trip mismatch',
+    )
+  })
+
   it('states how many terminal jars are required and how many more are needed', () => {
     const result = presentPlanningError(
       new PlanningUserError(
