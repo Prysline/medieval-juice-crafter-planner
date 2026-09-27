@@ -164,6 +164,13 @@ export interface MultiTripReplenishmentPlan {
   totalAssignedServings: number
   totalLeftoverServings: number
   leftoverJarContents: MultiTripLeftoverJarContent[]
+  /**
+   * Actual player-facing juice-jar fill operations for newly produced juice.
+   * Each entry is one real fill action: initial fill, same-recipe refill, or
+   * filling an emptied jar with a different recipe. Existing/continued
+   * contents do not create entries here. This is distinct from
+   * `jarTypeSwitches`, which only tracks recipe-identity transitions.
+   */
   productionJarFills: MultiTripProductionJarFill[]
   /** 是否允許規劃器在確有需要時倒掉既有果汁以釋放實體罐。 */
   allowDiscardRetainedJuice: boolean
