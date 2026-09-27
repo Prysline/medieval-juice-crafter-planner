@@ -142,6 +142,7 @@ function draftFromBasis(
       juiceJars: [],
       discardedJuice: [],
       newlySuppliedCustomerIds: [],
+      newlyFormalCustomerIds: [],
     },
   }
 }

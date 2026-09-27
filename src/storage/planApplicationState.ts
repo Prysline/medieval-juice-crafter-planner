@@ -5,10 +5,14 @@ export const PLAN_APPLICATION_STATE_STORAGE_KEY =
   'mjc-plan-application-state'
 
 export const PLAN_APPLICATION_STATE_SCHEMA =
-  'plan-application-state-v2' as const
+  'plan-application-state-v3' as const
 
+const PREVIOUS_PLAN_APPLICATION_STATE_SCHEMA =
+  'plan-application-state-v2' as const
 const LEGACY_PLAN_APPLICATION_STATE_SCHEMA =
   'plan-application-state-v1' as const
+const LEGACY_FORMAL_CUSTOMERS_STORAGE_KEY =
+  'mjc-formal-customers' as const
 
 interface StorageReadWrite {
   getItem(key: string): string | null
@@ -23,6 +27,7 @@ export interface PlanApplicationStoredDeliveryExecution {
 export interface PlanApplicationStoredState {
   readonly schemaVersion: typeof PLAN_APPLICATION_STATE_SCHEMA
   readonly inventory: InventoryState
+  readonly formalCustomerIds: readonly string[]
   readonly suppliedCustomerIds: readonly string[]
   readonly deliveryExecution: PlanApplicationStoredDeliveryExecution | null
 }
@@ -35,6 +40,20 @@ function uniqueStrings(values: unknown[]): string[] {
       ),
     ),
   ]
+}
+
+function readLegacyFormalCustomerIds(
+  storage: Pick<StorageReadWrite, 'getItem'>,
+): string[] {
+  const raw = storage.getItem(LEGACY_FORMAL_CUSTOMERS_STORAGE_KEY)
+  if (raw === null) return []
+
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? uniqueStrings(parsed) : []
+  } catch {
+    return []
+  }
 }
 
 function normalizeDeliveryExecutionCursor(
@@ -102,6 +121,7 @@ export function readPlanApplicationStoredState(
     const parsed = JSON.parse(raw) as {
       schemaVersion?: unknown
       inventory?: unknown
+      formalCustomerIds?: unknown
       suppliedCustomerIds?: unknown
       deliveryExecution?: unknown
     }
@@ -109,6 +129,8 @@ export function readPlanApplicationStoredState(
     if (
       (
         parsed.schemaVersion !== PLAN_APPLICATION_STATE_SCHEMA &&
+        parsed.schemaVersion !==
+          PREVIOUS_PLAN_APPLICATION_STATE_SCHEMA &&
         parsed.schemaVersion !==
           LEGACY_PLAN_APPLICATION_STATE_SCHEMA
       ) ||
@@ -119,13 +141,15 @@ export function readPlanApplicationStoredState(
       return null
     }
 
-    const deliveryExecution =
-      parsed.schemaVersion === PLAN_APPLICATION_STATE_SCHEMA
-        ? normalizeDeliveryExecution(parsed.deliveryExecution)
-        : null
+    const hasDeliveryExecution =
+      parsed.schemaVersion === PLAN_APPLICATION_STATE_SCHEMA ||
+      parsed.schemaVersion === PREVIOUS_PLAN_APPLICATION_STATE_SCHEMA
+    const deliveryExecution = hasDeliveryExecution
+      ? normalizeDeliveryExecution(parsed.deliveryExecution)
+      : null
 
     if (
-      parsed.schemaVersion === PLAN_APPLICATION_STATE_SCHEMA &&
+      hasDeliveryExecution &&
       parsed.deliveryExecution !== null &&
       parsed.deliveryExecution !== undefined &&
       deliveryExecution === null
@@ -133,9 +157,22 @@ export function readPlanApplicationStoredState(
       return null
     }
 
+    if (
+      parsed.schemaVersion === PLAN_APPLICATION_STATE_SCHEMA &&
+      !Array.isArray(parsed.formalCustomerIds)
+    ) {
+      return null
+    }
+
+    const formalCustomerIds =
+      parsed.schemaVersion === PLAN_APPLICATION_STATE_SCHEMA
+        ? uniqueStrings(parsed.formalCustomerIds as unknown[])
+        : readLegacyFormalCustomerIds(storage)
+
     return {
       schemaVersion: PLAN_APPLICATION_STATE_SCHEMA,
       inventory: parsed.inventory as InventoryState,
+      formalCustomerIds,
       suppliedCustomerIds: uniqueStrings(
         parsed.suppliedCustomerIds,
       ),
@@ -150,6 +187,7 @@ export function writePlanApplicationStoredState(
   storage: StorageReadWrite,
   state: {
     inventory: InventoryState
+    formalCustomerIds: readonly string[]
     suppliedCustomerIds: readonly string[]
     deliveryExecution?: PlanApplicationStoredDeliveryExecution | null
   },
@@ -157,6 +195,9 @@ export function writePlanApplicationStoredState(
   const serialized = JSON.stringify({
     schemaVersion: PLAN_APPLICATION_STATE_SCHEMA,
     inventory: state.inventory,
+    formalCustomerIds: [
+      ...new Set(state.formalCustomerIds),
+    ],
     suppliedCustomerIds: [
       ...new Set(state.suppliedCustomerIds),
     ],
@@ -178,6 +219,7 @@ export function updateStoredPlanApplicationInventory(
   // execution session instead of replaying the old physical trace.
   writePlanApplicationStoredState(storage, {
     inventory,
+    formalCustomerIds: current.formalCustomerIds,
     suppliedCustomerIds: current.suppliedCustomerIds,
     deliveryExecution: null,
   })
@@ -195,7 +237,24 @@ export function updateStoredPlanApplicationSuppliedCustomers(
   // invalidates the existing delivery execution cursor.
   writePlanApplicationStoredState(storage, {
     inventory: current.inventory,
+    formalCustomerIds: current.formalCustomerIds,
     suppliedCustomerIds,
+    deliveryExecution: null,
+  })
+  return true
+}
+
+export function updateStoredPlanApplicationFormalCustomers(
+  storage: StorageReadWrite,
+  formalCustomerIds: readonly string[],
+): boolean {
+  const current = readPlanApplicationStoredState(storage)
+  if (!current) return false
+
+  writePlanApplicationStoredState(storage, {
+    inventory: current.inventory,
+    formalCustomerIds,
+    suppliedCustomerIds: current.suppliedCustomerIds,
     deliveryExecution: null,
   })
   return true

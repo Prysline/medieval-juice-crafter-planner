@@ -15,6 +15,7 @@ import {
   writePlanApplicationStoredState,
 } from './planApplicationState'
 import {
+  readFormalCustomerIds,
   readSuppliedCustomerIds,
   type StorageLike,
 } from './plannerState'
@@ -288,6 +289,7 @@ export function commitDeliveryExecutionCustomer(
     // cannot persist as three independently drifting states.
     writePlanApplicationStoredState(storage, {
       inventory: execution.inventory,
+      formalCustomerIds: readFormalCustomerIds(storage),
       suppliedCustomerIds,
       deliveryExecution: {
         canonicalBasisFingerprint: nextBasisFingerprint,

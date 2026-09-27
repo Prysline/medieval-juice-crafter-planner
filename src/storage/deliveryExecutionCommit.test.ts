@@ -18,6 +18,7 @@ import {
   readPlanApplicationStoredState,
 } from './planApplicationState'
 import {
+  readFormalCustomerIds,
   readSuppliedCustomerIds,
   STORAGE_KEYS,
   type StorageLike,
@@ -160,6 +161,9 @@ function replannedAfterCustomerB(): DeliveryExecutionPlan {
 function legacyStorage(): MemoryStorage {
   return new MemoryStorage({
     [INVENTORY_STORAGE_KEY]: JSON.stringify(initialInventory()),
+    [STORAGE_KEYS.formalCustomers]: JSON.stringify([
+      'already-formal',
+    ]),
     [STORAGE_KEYS.suppliedToday]: JSON.stringify([
       'already-supplied',
     ]),
@@ -217,6 +221,9 @@ describe('partial delivery atomic commit', () => {
       'already-supplied',
       'customer-b',
     ])
+    expect(readFormalCustomerIds(storage)).toEqual([
+      'already-formal',
+    ])
     expect(result.inventory).toMatchObject({
       cleanCups: 1,
       usedCups: 1,
@@ -231,8 +238,9 @@ describe('partial delivery atomic commit', () => {
 
     const stored = readPlanApplicationStoredState(storage)
     expect(stored?.schemaVersion).toBe(
-      'plan-application-state-v2',
+      'plan-application-state-v3',
     )
+    expect(stored?.formalCustomerIds).toEqual(['already-formal'])
     expect(stored?.deliveryExecution?.cursor).toEqual(
       result.cursor,
     )
@@ -531,7 +539,7 @@ describe('partial delivery atomic commit', () => {
       JSON.parse(
         storage.raw(PLAN_APPLICATION_STATE_STORAGE_KEY)!,
       ).schemaVersion,
-    ).toBe('plan-application-state-v2')
+    ).toBe('plan-application-state-v3')
   })
 
   it('does not partially update legacy state when the canonical write fails', () => {

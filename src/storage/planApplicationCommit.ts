@@ -20,6 +20,7 @@ export type PlanApplicationCommitResult =
   | {
       readonly status: 'applied'
       readonly inventory: InventoryState
+      readonly formalCustomerIds: readonly string[]
       readonly suppliedCustomerIds: readonly string[]
     }
   | {
@@ -85,18 +86,23 @@ export function commitPlanApplicationTransaction(
     }
 
     const inventory = inventoryFromTransaction(effectiveDraft)
+    const formalCustomerIds = [
+      ...new Set(effectiveDraft.after.formalCustomerIds),
+    ]
     const suppliedCustomerIds = [
       ...new Set(effectiveDraft.after.suppliedCustomerIds),
     ]
 
     writePlanApplicationStoredState(storage, {
       inventory,
+      formalCustomerIds,
       suppliedCustomerIds,
     })
 
     return Object.freeze({
       status: 'applied',
       inventory,
+      formalCustomerIds: Object.freeze(formalCustomerIds),
       suppliedCustomerIds: Object.freeze(suppliedCustomerIds),
     })
   } catch (error) {

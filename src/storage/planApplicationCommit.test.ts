@@ -19,9 +19,11 @@ import {
   PLANNER_SETTINGS_STORAGE_KEY,
 } from './plannerSettings'
 import {
+  readFormalCustomerIds,
   readSuppliedCustomerIds,
   STORAGE_KEYS,
   type StorageLike,
+  writeFormalCustomerIds,
   writeSuppliedCustomerIds,
 } from './plannerState'
 
@@ -144,6 +146,7 @@ function draftFromBasis(
     after: {
       ...snapshot,
       inventory: afterInventory,
+      formalCustomerIds: [...source.formalCustomerIds, 'alia'],
       suppliedCustomerIds: [...source.suppliedCustomerIds, 'alia'],
     },
     changes: {
@@ -175,6 +178,7 @@ function draftFromBasis(
       juiceJars: [],
       discardedJuice: [],
       newlySuppliedCustomerIds: ['alia'],
+      newlyFormalCustomerIds: ['alia'],
     },
   }
 }
@@ -212,6 +216,7 @@ describe('plan application commit', () => {
     expect(result).toEqual({
       status: 'applied',
       inventory: draft.after.inventory,
+      formalCustomerIds: ['jack', 'alia'],
       suppliedCustomerIds: ['ulrich', 'alia'],
     })
     expect(storage.writes).toHaveLength(1)
@@ -221,6 +226,10 @@ describe('plan application commit', () => {
     expect(readInventoryState(storage)).toEqual(draft.after.inventory)
     expect(readSuppliedCustomerIds(storage)).toEqual([
       'ulrich',
+      'alia',
+    ])
+    expect(readFormalCustomerIds(storage)).toEqual([
+      'jack',
       'alia',
     ])
 
@@ -283,6 +292,8 @@ describe('plan application commit', () => {
       'alia',
     ])
     expect(rebased?.changes.newlySuppliedCustomerIds).toEqual([])
+    expect(rebased?.after.formalCustomerIds).toEqual(['jack', 'alia'])
+    expect(rebased?.changes.newlyFormalCustomerIds).toEqual(['alia'])
   })
 
   it('applies inventory after a planned customer was manually marked supplied', () => {
@@ -297,6 +308,7 @@ describe('plan application commit', () => {
     expect(result).toEqual({
       status: 'applied',
       inventory: draft.after.inventory,
+      formalCustomerIds: ['jack', 'alia'],
       suppliedCustomerIds: ['ulrich', 'alia'],
     })
     expect(storage.writes).toHaveLength(1)
@@ -307,7 +319,24 @@ describe('plan application commit', () => {
     expect(readSuppliedCustomerIds(storage)).toEqual(['ulrich', 'alia'])
   })
 
-  it('still rejects supplied changes outside the plan application range', () => {
+  it('rejects a manual formal-customer change as stale', () => {
+    const storage = legacyStorage()
+    const draft = draftFromBasis(basis())
+
+    writeFormalCustomerIds(storage, ['jack', 'outsider'])
+    storage.writes = []
+
+    const result = commitPlanApplicationTransaction(draft, storage)
+
+    expect(result).toEqual({
+      status: 'stale',
+      mismatches: ['formal-customers'],
+    })
+    expect(storage.writes).toEqual([])
+    expect(storage.raw(PLAN_APPLICATION_STATE_STORAGE_KEY)).toBeNull()
+  })
+
+    it('still rejects supplied changes outside the plan application range', () => {
     const storage = legacyStorage()
     const draft = draftFromBasis(basis())
 
@@ -361,7 +390,7 @@ describe('plan application commit', () => {
 
     expect(second).toEqual({
       status: 'stale',
-      mismatches: ['inventory', 'supplied-customers'],
+      mismatches: ['inventory', 'formal-customers', 'supplied-customers'],
     })
     expect(storage.writes).toEqual([])
     expect(readInventoryState(storage)).toEqual(committedInventory)
@@ -404,5 +433,20 @@ describe('plan application commit', () => {
     )
     expect(readInventoryState(storage).waterUnits).toBe(9)
     expect(readSuppliedCustomerIds(storage)).toEqual(['alia'])
+    expect(readFormalCustomerIds(storage)).toEqual(['jack', 'alia'])
+
+    storage.writes = []
+    writeFormalCustomerIds(storage, ['jack', 'alia', 'new-formal'])
+    expect(storage.writes).toHaveLength(1)
+    expect(storage.writes[0]?.key).toBe(
+      PLAN_APPLICATION_STATE_STORAGE_KEY,
+    )
+    expect(readInventoryState(storage).waterUnits).toBe(9)
+    expect(readSuppliedCustomerIds(storage)).toEqual(['alia'])
+    expect(readFormalCustomerIds(storage)).toEqual([
+      'jack',
+      'alia',
+      'new-formal',
+    ])
   })
 })

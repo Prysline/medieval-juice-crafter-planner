@@ -1384,6 +1384,7 @@ function App() {
           formalCustomerIds={formalCustomerIds}
           recipeCandidatePool={recipeCandidatePool}
           onSuppliedCustomerIdsCommitted={setSuppliedCustomerIds}
+          onFormalCustomerIdsCommitted={setFormalCustomerIds}
         />
       </div>
 
