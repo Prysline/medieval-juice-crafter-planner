@@ -24,7 +24,7 @@ function serviceMaskForRecipe(
   )
 }
 
-function hasIdentitySensitiveJarConstraint(
+function hasStageOneSensitiveConstraint(
   domain: BatchOptimizationModel,
 ): boolean {
   const initialJars = normalizedInitialCarriedJuiceJars(
@@ -53,14 +53,14 @@ function hasIdentitySensitiveJarConstraint(
 
 /**
  * Stage 1 compression is only valid while minimum cost is solved without
- * recipe-identity-sensitive hard feasibility. Later stages must use the
+ * hard feasibility that depends on recipe identity or finalizing batch count. Later stages must use the
  * continuation domain so equal-cost real recipe identities are available
  * again for machine-operation, jar-fill, and physical jar objectives.
  */
 export function prepareMinimumCostStageCertificate(
   domain: BatchOptimizationModel,
 ): MinimumCostStageCertificatePlan | null {
-  if (hasIdentitySensitiveJarConstraint(domain)) return null
+  if (hasStageOneSensitiveConstraint(domain)) return null
   if (domain.recipes.some((recipe) => (recipe.initialFinishedServings ?? 0) > 0)) {
     return null
   }
