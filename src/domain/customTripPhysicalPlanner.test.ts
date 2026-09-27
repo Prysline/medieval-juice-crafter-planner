@@ -21,6 +21,7 @@ function demand(
     recipeId: string
     recipeName: string
     customerIds: string[]
+    leftoverServings?: number
   }>,
 ): PreparationDemand {
   const assignedServings = recipes.reduce(
@@ -28,24 +29,34 @@ function demand(
     0,
   )
 
+  const leftoverServings = recipes.reduce(
+    (sum, recipe) => sum + (recipe.leftoverServings ?? 0),
+    0,
+  )
+
   return {
     ingredients: [],
     productionWaterUnits: 0,
     cleanCupUses: assignedServings,
-    producedServings: assignedServings,
+    producedServings: assignedServings + leftoverServings,
     assignedServings,
-    leftoverServings: 0,
-    recipes: recipes.map((recipe) => ({
-      recipeId: recipe.recipeId,
-      recipeName: recipe.recipeName,
-      customerIds: [...recipe.customerIds],
-      ingredientIds: [],
-      productionUnits: Math.ceil(recipe.customerIds.length / 2),
-      producedServings: recipe.customerIds.length,
-      assignedServings: recipe.customerIds.length,
-      leftoverServings: 0,
-      ingredientUnitsPerJuiceUnit: [],
-    })),
+    leftoverServings,
+    recipes: recipes.map((recipe) => {
+      const recipeLeftovers = recipe.leftoverServings ?? 0
+      const producedServings =
+        recipe.customerIds.length + recipeLeftovers
+      return {
+        recipeId: recipe.recipeId,
+        recipeName: recipe.recipeName,
+        customerIds: [...recipe.customerIds],
+        ingredientIds: [],
+        productionUnits: Math.ceil(producedServings / 2),
+        producedServings,
+        assignedServings: recipe.customerIds.length,
+        leftoverServings: recipeLeftovers,
+        ingredientUnitsPerJuiceUnit: [],
+      }
+    }),
   }
 }
 
@@ -235,6 +246,47 @@ describe('fixed customer trip physical realization', () => {
       ['a-1', 'a-2'],
     ])
     expect(plan.jarTypeSwitches).toBe(1)
+  })
+
+  it('does not let terminal-leftover timing override the player-fixed trip order', () => {
+    const salesDemand = demand([
+      {
+        recipeId: 'a',
+        recipeName: 'A',
+        customerIds: ['a-1'],
+        leftoverServings: 1,
+      },
+      {
+        recipeId: 'b',
+        recipeName: 'B',
+        customerIds: ['b-1', 'b-2'],
+      },
+    ])
+
+    const plan = fixedPlan(
+      salesDemand,
+      [
+        { customerIds: ['a-1'] },
+        { customerIds: ['b-1', 'b-2'] },
+      ],
+      1,
+    )
+
+    expect(
+      plan.trips.map((trip) =>
+        trip.juiceJars.flatMap((load) => load.customerIds),
+      ),
+    ).toEqual([
+      ['a-1'],
+      ['b-1', 'b-2'],
+    ])
+    expect(plan.leftoverJarContents).toMatchObject([
+      {
+        recipeId: 'a',
+        servings: 1,
+        tripNumber: 1,
+      },
+    ])
   })
 
   it('reports the exact fixed trip when the requested group cannot fit in one physical trip', () => {
