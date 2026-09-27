@@ -943,7 +943,7 @@ export const recipes: Recipe[] = [
     id: 'banana-mint-cinnamon',
     name: '血糖平衡（香蕉 → 薄荷 → 肉桂）',
     observedDisplayName: '血糖平衡 巨龍',
-    unlockedAt: 'ibex-statue-unlocked',
+    unlockedAt: 'tranquil-fountain-unlocked',
     salePrice: 58,
     ingredients: ['香蕉', '薄荷', '肉桂'],
     effects: [
@@ -1031,7 +1031,7 @@ export const recipes: Recipe[] = [
     id: 'orange-cinnamon-carrot-blend',
     name: '血糖平衡（橙子 → 肉桂 → 紅蘿蔔）',
     observedDisplayName: '血糖平衡 繁榮',
-    unlockedAt: 'ibex-statue-unlocked',
+    unlockedAt: 'juice-blender-unlocked',
     salePrice: 48,
     ingredients: ['橙子', '肉桂', '紅蘿蔔'],
     effects: [
