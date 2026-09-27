@@ -409,9 +409,10 @@ export function recipePreparationSourceSummary(
   if (!stock) {
     return [
       `需求 ${plan.assignedServings} 杯`,
-      `製作果汁 ${plan.juiceUnits} 份 → ${plan.producedServings} 杯`,
+      '既有成品使用 0 杯',
+      `本次新製作 ${plan.producedServings} 杯（${plan.juiceUnits} 份）`,
       ...(plan.leftoverServings > 0
-        ? [`剩餘 ${plan.leftoverServings} 杯`]
+        ? [`新製作剩餘 ${plan.leftoverServings} 杯`]
         : []),
     ].join(' · ')
   }
@@ -447,7 +448,7 @@ export function recipeCostSummary(
 ): string {
   return [
     `配方基準原料成本：${optimizerMoney(plan.juiceUnitIngredientCost)}／份`,
-    `本次新增製作成本：${optimizerMoney(plan.totalIngredientCost)}`,
+    `本次新增製作原料成本：${optimizerMoney(plan.totalIngredientCost)}`,
   ].join(' · ')
 }
 
@@ -3536,7 +3537,7 @@ export function OptimizerSummaryMetrics({
   return (
     <div className="optimizer-metrics" aria-label="最佳化摘要">
       <MetricCard
-        label="本次新增製作成本"
+        label="本次新增製作原料成本"
         value={optimizerMoney(result.totalIngredientCost)}
       />
       <MetricCard
