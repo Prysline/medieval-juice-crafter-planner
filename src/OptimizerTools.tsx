@@ -202,6 +202,27 @@ export function deliveryCanonicalSyncStatus(
     : 'unexpected'
 }
 
+export function rebaseDeliveryTransactionDraft(
+  draft: PlanApplicationTransactionDraft,
+  originalSuppliedCustomerIds: readonly string[],
+  currentSuppliedCustomerIds: readonly string[],
+): {
+  transactionDraft: PlanApplicationTransactionDraft
+  invalidated: boolean
+} {
+  const rebased =
+    rebasePlanApplicationTransactionSuppliedCustomers(
+      draft,
+      currentSuppliedCustomerIds,
+      originalSuppliedCustomerIds,
+    )
+
+  return {
+    transactionDraft: rebased ?? draft,
+    invalidated: rebased === null,
+  }
+}
+
 type OptionalCriterion = OptimizationCriterion | 'none'
 
 const planApplicationMismatchLabels: Record<
@@ -1711,17 +1732,18 @@ function OptimizerTools({
 
       if (!current.transactionDraft) return current
 
-      const rebasedTransactionDraft =
-        rebasePlanApplicationTransactionSuppliedCustomers(
+      const rebasedTransaction =
+        rebaseDeliveryTransactionDraft(
           current.transactionDraft,
+          current.deliveryExpectedBasis.suppliedCustomerIds,
           committedSupplied,
         )
 
       return {
         ...current,
-        transactionDraft: rebasedTransactionDraft,
+        transactionDraft: rebasedTransaction.transactionDraft,
         transactionDraftInvalidatedByPartialDelivery:
-          rebasedTransactionDraft === null,
+          rebasedTransaction.invalidated,
       }
     })
     setApplicationState({ status: 'idle' })
@@ -4363,7 +4385,7 @@ function OptimizerResultPanel({
         </section>
       )}
 
-      {transactionDraft ? (
+      {transactionDraft && !transactionDraftInvalidatedByPartialDelivery ? (
         <PlanApplicationPreview
           draft={transactionDraft}
           productionJarFills={selectedSalesTripPlan.productionJarFills}
@@ -4386,7 +4408,7 @@ function OptimizerResultPanel({
           </div>
           <p className="optimizer-transaction-warning">
             {transactionDraftInvalidatedByPartialDelivery
-              ? '今日已供應狀態出現無法與這份規劃安全對齊的變更，因此原本的整份套用預覽已失效。只有「原本未供應、且屬於這份規劃的顧客被勾為已供應」能保留套用預覽；其他供應狀態變更請重新產生完整規劃。'
+              ? '今日已供應狀態目前無法與這份規劃安全對齊，因此暫時不能套用。規劃開始前已供應的顧客不能被取消，且不能新增這份規劃以外的已供應顧客；若只是本規劃內的交付勾選或更正，調整回相容狀態後套用預覽會恢復。'
               : '目前製作物流不可行，因此不建立交易草稿，也不會修改庫存。請先處理下方製作物流警告後重新產生規劃。'}
           </p>
         </section>

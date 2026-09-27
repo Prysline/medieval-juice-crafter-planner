@@ -739,12 +739,14 @@ function buildJarChanges(
 export function rebasePlanApplicationTransactionSuppliedCustomers(
   draft: PlanApplicationTransactionDraft,
   currentSuppliedCustomerIds: readonly string[],
+  requiredSuppliedCustomerIds: readonly string[] =
+    draft.before.suppliedCustomerIds,
 ): PlanApplicationTransactionDraft | null {
   const currentSupplied = [...new Set(currentSuppliedCustomerIds)]
-  const beforeSupplied = new Set(draft.before.suppliedCustomerIds)
+  const requiredSupplied = new Set(requiredSuppliedCustomerIds)
   const afterSupplied = new Set(draft.after.suppliedCustomerIds)
 
-  for (const customerId of beforeSupplied) {
+  for (const customerId of requiredSupplied) {
     if (!currentSupplied.includes(customerId)) return null
   }
 

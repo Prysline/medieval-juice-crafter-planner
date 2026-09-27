@@ -319,6 +319,50 @@ describe('plan application commit', () => {
     expect(readSuppliedCustomerIds(storage)).toEqual(['ulrich', 'alia'])
   })
 
+  it('rebases repeated delivery edits against the original supplied basis', () => {
+    const original = draftFromBasis(basis())
+    const originalSupplied = [...original.before.suppliedCustomerIds]
+
+    const delivered =
+      rebasePlanApplicationTransactionSuppliedCustomers(
+        original,
+        ['ulrich', 'alia'],
+        originalSupplied,
+      )
+    expect(delivered).not.toBeNull()
+
+    const corrected =
+      rebasePlanApplicationTransactionSuppliedCustomers(
+        delivered!,
+        ['ulrich'],
+        originalSupplied,
+      )
+    expect(corrected).not.toBeNull()
+    expect(corrected?.before.suppliedCustomerIds).toEqual(['ulrich'])
+    expect(corrected?.changes.newlySuppliedCustomerIds).toEqual(['alia'])
+
+    const deliveredAgain =
+      rebasePlanApplicationTransactionSuppliedCustomers(
+        corrected!,
+        ['ulrich', 'alia'],
+        originalSupplied,
+      )
+    expect(deliveredAgain).not.toBeNull()
+    expect(deliveredAgain?.changes.newlySuppliedCustomerIds).toEqual([])
+  })
+
+  it('still rejects removal of customers supplied before planning when using a stable basis', () => {
+    const draft = draftFromBasis(basis())
+
+    expect(
+      rebasePlanApplicationTransactionSuppliedCustomers(
+        draft,
+        ['alia'],
+        draft.before.suppliedCustomerIds,
+      ),
+    ).toBeNull()
+  })
+
   it('rejects a manual formal-customer change as stale', () => {
     const storage = legacyStorage()
     const draft = draftFromBasis(basis())
