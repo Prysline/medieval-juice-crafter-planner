@@ -4739,6 +4739,33 @@ function SalesTripCustomerRow({
   )
 }
 
+export function CollapsibleSalesTripCard({
+  tripNumber,
+  summary,
+  children,
+}: {
+  tripNumber: number
+  summary: ReactNode
+  children: ReactNode
+}) {
+  const [expanded, setExpanded] = useState(true)
+
+  return (
+    <details
+      className="optimizer-batch-card optimizer-sales-trip-card"
+      open={expanded}
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+      aria-label={'第 ' + tripNumber + ' 趟販售排程'}
+    >
+      <summary className="optimizer-sales-trip-header">
+        {summary}
+        <span className="optimizer-sales-trip-toggle" aria-hidden="true" />
+      </summary>
+      <div className="optimizer-sales-trip-body">{children}</div>
+    </details>
+  )
+}
+
 export function SalesTripPlanBlock({
   plan,
   regionPlan,
@@ -4914,24 +4941,28 @@ export function SalesTripPlanBlock({
         )
 
         return (
-          <article
-            className="optimizer-batch-card optimizer-sales-trip-card"
-            key={plan.policy + '-' + trip.tripNumber}
-          >
-            <header className="optimizer-sales-trip-header">
+          <CollapsibleSalesTripCard
+            tripNumber={trip.tripNumber}
+            summary={
+              <>
               <div>
                 {deliveryControls ? (
-                  <DeliveryTripGroupCheckbox
-                    tripNumber={trip.tripNumber}
-                    customerIds={tripCustomerIds}
-                    plan={deliveryControls.plan}
-                    cursor={deliveryControls.cursor}
-                    suppliedCustomerIds={
-                      deliveryControls.suppliedCustomerIds
-                    }
-                    disabled={deliveryControls.disabled}
-                    onChange={deliveryControls.onChangeGroup}
-                  />
+                  <span
+                  className="optimizer-sales-trip-delivery-control"
+                  onClick={(event) => event.stopPropagation()}
+                >
+  <DeliveryTripGroupCheckbox
+                      tripNumber={trip.tripNumber}
+                      customerIds={tripCustomerIds}
+                      plan={deliveryControls.plan}
+                      cursor={deliveryControls.cursor}
+                      suppliedCustomerIds={
+                        deliveryControls.suppliedCustomerIds
+                      }
+                      disabled={deliveryControls.disabled}
+                      onChange={deliveryControls.onChangeGroup}
+                    />
+                </span>
                 ) : (
                   <strong>第 {trip.tripNumber} 趟</strong>
                 )}
@@ -4973,7 +5004,11 @@ export function SalesTripPlanBlock({
                   ))}
                 </div>
               )}
-            </header>
+            
+              </>
+            }
+            key={plan.policy + '-' + trip.tripNumber}
+          >
 
             <section className="optimizer-sales-trip-section">
               <h4>出發前</h4>
@@ -5164,7 +5199,7 @@ export function SalesTripPlanBlock({
                 )}
               </div>
             </details>
-          </article>
+          </CollapsibleSalesTripCard>
         )
       })}
     </div>
@@ -5195,23 +5230,27 @@ export function RemainingSalesTripPlanBlock({
         )
 
         return (
-          <article
-            className="optimizer-batch-card optimizer-sales-trip-card"
-            key={'remaining-trip-' + trip.tripNumber}
-          >
-            <header className="optimizer-sales-trip-header">
+          <CollapsibleSalesTripCard
+            tripNumber={trip.tripNumber}
+            summary={
+              <>
               <div>
-                <DeliveryTripGroupCheckbox
-                  tripNumber={trip.tripNumber}
-                  customerIds={customerIds}
-                  plan={deliveryControls.plan}
-                  cursor={deliveryControls.cursor}
-                  suppliedCustomerIds={
-                    deliveryControls.suppliedCustomerIds
-                  }
-                  disabled={deliveryControls.disabled}
-                  onChange={deliveryControls.onChangeGroup}
-                />
+                <span
+                  className="optimizer-sales-trip-delivery-control"
+                  onClick={(event) => event.stopPropagation()}
+                >
+  <DeliveryTripGroupCheckbox
+                    tripNumber={trip.tripNumber}
+                    customerIds={customerIds}
+                    plan={deliveryControls.plan}
+                    cursor={deliveryControls.cursor}
+                    suppliedCustomerIds={
+                      deliveryControls.suppliedCustomerIds
+                    }
+                    disabled={deliveryControls.disabled}
+                    onChange={deliveryControls.onChangeGroup}
+                  />
+                </span>
                 <span>{customerIds.length} 人</span>
               </div>
 
@@ -5244,7 +5283,11 @@ export function RemainingSalesTripPlanBlock({
                   </span>
                 ))}
               </div>
-            </header>
+            
+              </>
+            }
+            key={'remaining-trip-' + trip.tripNumber}
+          >
 
             <section className="optimizer-sales-trip-section">
               <h4>販售</h4>
@@ -5311,7 +5354,7 @@ export function RemainingSalesTripPlanBlock({
                 ))}
               </div>
             </section>
-          </article>
+          </CollapsibleSalesTripCard>
         )
       })}
     </div>
