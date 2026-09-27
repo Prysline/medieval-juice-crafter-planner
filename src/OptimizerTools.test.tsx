@@ -2040,7 +2040,7 @@ describe('optimizer run timing UI', () => {
     )
   })
 
-  it('makes a normal-mode partial result impossible to mistake for full completion', () => {
+  it('makes any partial result impossible to mistake for full completion', () => {
     const html = renderToStaticMarkup(
       <OptimizerRunSummary
         elapsedMs={10_000}
