@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildIntermediateJuiceSearchIndex,
+  buildInventoryRecipeSearchIndex,
   intermediateJuiceInventoryEntries,
-  searchIntermediateJuiceEntries,
-  searchInventoryRecipeEntries,
+  searchIntermediateJuiceIndex,
+  searchInventoryRecipeIndex,
 } from './OptimizerTools'
 import {
   buildRecipeCandidatePool,
@@ -41,11 +43,16 @@ describe('production-scale searchable combobox responsiveness', () => {
     expect(inventoryEntries.length).toBeGreaterThan(9000)
     expect(intermediateEntries.length).toBeGreaterThan(9000)
 
+    const inventoryIndex =
+      buildInventoryRecipeSearchIndex(inventoryEntries)
+    const intermediateIndex =
+      buildIntermediateJuiceSearchIndex(intermediateEntries)
+
     const inventoryBroadMs = medianMs(() =>
-      searchInventoryRecipeEntries(inventoryEntries, '檸'),
+      searchInventoryRecipeIndex(inventoryIndex, '檸'),
     )
     const intermediateBroadMs = medianMs(() =>
-      searchIntermediateJuiceEntries(intermediateEntries, '檸'),
+      searchIntermediateJuiceIndex(intermediateIndex, '檸'),
     )
 
     console.log('[search-responsiveness-regression]', {
