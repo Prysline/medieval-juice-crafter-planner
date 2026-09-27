@@ -268,6 +268,106 @@ async function measureRecipeQuery(sessionId, value) {
   )
 }
 
+async function measurePriceFilter(sessionId, value) {
+  return executeAsync(
+    sessionId,
+    `
+      const [value] = arguments
+      const done = arguments[arguments.length - 1]
+      const label = [...document.querySelectorAll(
+        '.recipe-research-filters label',
+      )].find(
+        (item) => item.querySelector('span')?.textContent?.trim() === '售價',
+      )
+      const select = label?.querySelector('select')
+      const summary = document.querySelector('.research-filter-summary')
+      if (!(select instanceof HTMLSelectElement) || !summary) {
+        done({ error: 'recipe price filter missing' })
+        return
+      }
+      const before = summary.textContent ?? ''
+      const startedAt = performance.now()
+      let frame = 0
+      let finished = false
+      const finish = (timedOut) => {
+        if (finished) return
+        finished = true
+        clearTimeout(timeout)
+        cancelAnimationFrame(frame)
+        done({
+          before,
+          after: summary.textContent ?? '',
+          resultCommitMs: performance.now() - startedAt,
+          timedOut,
+        })
+      }
+      const check = () => {
+        if ((summary.textContent ?? '') !== before) {
+          requestAnimationFrame(() => finish(false))
+          return
+        }
+        frame = requestAnimationFrame(check)
+      }
+      const timeout = setTimeout(() => finish(true), 5000)
+      frame = requestAnimationFrame(check)
+      Object.getOwnPropertyDescriptor(
+        HTMLSelectElement.prototype,
+        'value',
+      ).set.call(select, value)
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    `,
+    [value],
+  )
+}
+
+async function measureSalePriceSort(sessionId) {
+  return executeAsync(
+    sessionId,
+    `
+      const done = arguments[arguments.length - 1]
+      const button = [...document.querySelectorAll(
+        '.recipe-table .table-head button',
+      )].find((item) =>
+        item.getAttribute('aria-label')?.startsWith('售價'),
+      )
+      const readFirst = () =>
+        document.querySelector(
+          '.recipe-table .table-row .primary-cell strong',
+        )?.textContent ?? ''
+      if (!(button instanceof HTMLButtonElement)) {
+        done({ error: 'sale-price sort missing' })
+        return
+      }
+      const before = readFirst()
+      const startedAt = performance.now()
+      let frame = 0
+      let finished = false
+      const finish = (timedOut) => {
+        if (finished) return
+        finished = true
+        clearTimeout(timeout)
+        cancelAnimationFrame(frame)
+        done({
+          before,
+          after: readFirst(),
+          resultCommitMs: performance.now() - startedAt,
+          timedOut,
+        })
+      }
+      const check = () => {
+        if (readFirst() !== before) {
+          requestAnimationFrame(() => finish(false))
+          return
+        }
+        frame = requestAnimationFrame(check)
+      }
+      const timeout = setTimeout(() => finish(true), 5000)
+      frame = requestAnimationFrame(check)
+      button.click()
+    `,
+  )
+}
+
 async function moveToRecipePage(sessionId, page) {
   await execute(
     sessionId,
@@ -382,6 +482,29 @@ describe('recipe search result-commit profile', () => {
         expect(pageTwoSet.error).toBeUndefined()
         expect(pageTwoSet.timedOut).toBe(false)
 
+        const resetAfterPageTwo = await measureRecipeQuery(sessionId, '')
+        expect(resetAfterPageTwo.error).toBeUndefined()
+        expect(resetAfterPageTwo.timedOut).toBe(false)
+
+        const priceFilter = []
+        for (let index = 0; index < 3; index += 1) {
+          priceFilter.push(await measurePriceFilter(sessionId, 'known'))
+          priceFilter.push(await measurePriceFilter(sessionId, 'all'))
+        }
+        for (const item of priceFilter) {
+          expect(item.error).toBeUndefined()
+          expect(item.timedOut).toBe(false)
+        }
+
+        const salePriceSort = []
+        for (let index = 0; index < 4; index += 1) {
+          salePriceSort.push(await measureSalePriceSort(sessionId))
+        }
+        for (const item of salePriceSort) {
+          expect(item.error).toBeUndefined()
+          expect(item.timedOut).toBe(false)
+        }
+
         const summarize = (items) => ({
           commitMedianMs: median(items.map((item) => item.resultCommitMs)),
           firstTableMutationMedianMs: median(
@@ -421,6 +544,18 @@ describe('recipe search result-commit profile', () => {
           pageOneSet: summarize(pageOneSet),
           pageOneClear: summarize(pageOneClear),
           pageTwoSet,
+          priceFilterMedianMs: median(
+            priceFilter.map((item) => item.resultCommitMs),
+          ),
+          priceFilterSamples: priceFilter.map(
+            (item) => item.resultCommitMs,
+          ),
+          salePriceSortMedianMs: median(
+            salePriceSort.map((item) => item.resultCommitMs),
+          ),
+          salePriceSortSamples: salePriceSort.map(
+            (item) => item.resultCommitMs,
+          ),
         })
 
         expect(recipeAuthorityCount).toBeGreaterThan(10_000)
