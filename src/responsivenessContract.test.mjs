@@ -76,6 +76,29 @@ describe('responsiveness wiring regression', () => {
     )
   })
 
+  it('does not mount recipe details or compute customer matches until the row is expanded', () => {
+    const recipeRowSource = appSource.slice(
+      appSource.indexOf('export function RecipeRow'),
+      appSource.indexOf('function TagGroup'),
+    )
+
+    expect(recipeRowSource).toContain(
+      'const [expanded, setExpanded] = useState(false)',
+    )
+    expect(recipeRowSource).toContain(
+      'onToggle={(event) => setExpanded(event.currentTarget.open)}',
+    )
+    expect(recipeRowSource).toMatch(
+      /const matchingCustomers = expanded\s*\?\s*customers/,
+    )
+    expect(recipeRowSource).toMatch(
+      /:\s*\[\]\s*\n\n  return/,
+    )
+    expect(recipeRowSource).toMatch(
+      /\{expanded && \(\s*<div className="row-details">/,
+    )
+  })
+
   it('narrows structured ingredient-sequence search before recipe filtering', () => {
     expect(appSource).toContain(
       'buildRecipeIngredientEntryIndex(recipeListEntries)',
