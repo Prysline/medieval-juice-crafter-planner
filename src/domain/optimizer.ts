@@ -2,7 +2,6 @@ import { customers as canonicalCustomers } from '../data/customers'
 import { ingredients } from '../data/ingredients'
 import { buildRecipeCandidatePool } from './recipeCandidatePool'
 import { highsSolverAdapter } from './optimizerHighsSolver'
-import { PlanningUserError } from './planningErrors'
 import type { BatchOptimizerSolver } from './optimizerSolver'
 import {
   buildOptimizationModel,
@@ -63,6 +62,8 @@ export interface OptimizationResult {
   availableJuiceJarCount: number
   shoppingList: IngredientPurchase[]
   unresolvedCustomers: string[]
+  /** Serviceable customers left uncovered because inventory-only material constraints were exhausted. */
+  inventoryUnfulfilledCustomers?: string[]
   totalIngredientCost: number
   knownSalesRevenue: number
   knownGrossProfit: number
@@ -173,20 +174,6 @@ export async function optimizeBatchPlan(
     candidatePool: buildRecipeCandidatePool(request.currentProgress),
   }
   const model = buildOptimizationModel(request, source)
-  if (
-    request.materialSourceMode === 'inventory-only' &&
-    model.unresolvedCustomerIds.length > 0
-  ) {
-    throw new PlanningUserError(
-      'optimizer-no-solution',
-      {
-        solverStatus: 'unresolved-customers',
-        materialSourceMode: 'inventory-only',
-        unresolvedCustomerIds: [...model.unresolvedCustomerIds],
-      },
-      'Inventory-only planning requires every selected unsupplied customer to remain serviceable',
-    )
-  }
   const solver = options.solver ?? highsSolverAdapter
   const priorities = normalizedOptimizationPriorities(request)
   const solution = await solver.solve(model, priorities)
@@ -209,6 +196,15 @@ export async function optimizeBatchPlan(
     })),
   )
   const assignedServings = solution.assignments.length
+  const assignedCustomerIds = new Set(
+    solution.assignments.map((assignment) => assignment.customerId),
+  )
+  const inventoryUnfulfilledCustomers =
+    request.materialSourceMode === 'inventory-only'
+      ? model.serviceableCustomerIds.filter(
+          (customerId) => !assignedCustomerIds.has(customerId),
+        )
+      : []
   const producedServings = recipePlans.reduce(
     (total, plan) => total + plan.producedServings,
     0,
@@ -257,6 +253,7 @@ export async function optimizeBatchPlan(
     availableJuiceJarCount: normalizedAvailableJuiceJarCount(request),
     shoppingList,
     unresolvedCustomers: model.unresolvedCustomerIds,
+    inventoryUnfulfilledCustomers,
     totalIngredientCost: solution.metrics.totalIngredientCost,
     knownSalesRevenue,
     knownGrossProfit:
