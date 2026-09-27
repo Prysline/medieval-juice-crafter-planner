@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
+import { buildCustomerGameOrder } from '../data/customerGameOrder'
 import { customers } from '../data/customers'
 import { recipes } from '../data/recipes'
 import {
+  DEFAULT_CUSTOMER_SORT_KEY,
   filterSuppliedCustomerRows,
   sortCustomerRows,
   type CustomerListMatch,
@@ -20,10 +22,39 @@ function row(
 
 describe('customer list regressions', () => {
   const recipeOrder = new Map(recipes.map((recipe, index) => [recipe.id, index]))
+  const customerGameOrder = buildCustomerGameOrder(customers)
   const lemon = recipes.find((recipe) => recipe.id === 'lemon-juice')!
   const orange = recipes.find((recipe) => recipe.id === 'orange-juice')!
 
-  it('can hide supplied customers without changing the source rows', () => {
+  it('uses observed game order as the default customer sort', () => {
+    expect(DEFAULT_CUSTOMER_SORT_KEY).toBe('gameOrder')
+
+    const rows = [
+      row('patricia'),
+      row('jack'),
+      row('galiana'),
+      row('maximus'),
+      row('nanette'),
+    ]
+
+    expect(
+      sortCustomerRows(
+        rows,
+        'gameOrder',
+        'asc',
+        recipeOrder,
+        customerGameOrder,
+      ).map(({ customer }) => customer.id),
+    ).toEqual([
+      'galiana',
+      'jack',
+      'nanette',
+      'maximus',
+      'patricia',
+    ])
+  })
+
+    it('can hide supplied customers without changing the source rows', () => {
     const rows = [row('jack', [orange]), row('nanette', [lemon])]
 
     expect(
