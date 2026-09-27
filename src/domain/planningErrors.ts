@@ -1,4 +1,3 @@
-import { customers } from '../data/customers'
 import { ingredients } from '../data/ingredients'
 
 export type PlanningUserErrorCode =
@@ -54,21 +53,6 @@ export interface PlanningErrorPresentation {
   message: string
   suggestions: string[]
   technicalDetails?: string
-}
-
-const customerById = new Map(
-  customers.map((customer) => [customer.id, customer]),
-)
-
-function customerListLabel(customerIds: readonly string[]): string {
-  return customerIds
-    .map((customerId) => {
-      const customer = customerById.get(customerId)
-      return customer
-        ? `${customer.name}（${customer.occupation}）`
-        : customerId
-    })
-    .join('、')
 }
 
 function technicalDetails(error: unknown): string | undefined {
@@ -217,54 +201,22 @@ export function presentPlanningError(
               ingredient.name,
             ]),
           )
-          const shortfalls = error.context.inventoryShortfalls ?? []
-          const unresolved = error.context.unresolvedCustomerIds ?? []
-          const inventoryUnfulfilled =
-            error.context.inventoryUnfulfilledCustomerIds ?? []
-          const satisfiableCustomerCount =
-            error.context.inventorySatisfiableCustomerCount
-          const shortfallText = shortfalls
+          const shortfallText = (error.context.inventoryShortfalls ?? [])
             .map(
               ({ ingredientId, units }) =>
                 `${ingredientNameById.get(ingredientId) ?? ingredientId} ×${units}`,
             )
             .join('、')
-          const inventoryCapacityText =
-            typeof satisfiableCustomerCount === 'number' &&
-            inventoryUnfulfilled.length > 0
-              ? `在一組「可完成顧客數最大」的診斷解中，現有庫存最多可完成 ${satisfiableCustomerCount} / ${satisfiableCustomerCount + inventoryUnfulfilled.length} 位；未被滿足：${customerListLabel(inventoryUnfulfilled)}。`
-              : ''
 
           return {
-            title:
-              unresolved.length > 0
-                ? '有選定顧客沒有可用的完整匹配配方'
-                : '現有庫存無法完成這批顧客',
-            message:
-              unresolved.length > 0
-                ? `目前選定的顧客中有 ${unresolved.length} 位在現行進度與配方政策下沒有可用的完整匹配配方：${customerListLabel(unresolved)}。這不是庫存不足造成的；一般規劃也會把這些顧客列為未納入規劃，只是仍會替其餘可匹配顧客產生部分結果。庫存模式依「不得縮減原本顧客集合」規則，因此停止而不產生可套用的部分規劃。`
-                : [
-                    inventoryCapacityText,
-                    shortfallText
-                      ? `若要求全部顧客都完成，最少仍缺少商店原料：${shortfallText}。庫存模式不會自動購買這些原料。`
-                      : '在保留全部選定顧客與目前硬限制的前提下，現有庫存找不到完整可行方案。',
-                    inventoryCapacityText
-                      ? '上述顧客名單只用於診斷；正式庫存模式仍保留完整顧客集合，不會自動把未滿足顧客刪掉後當成成功規劃。'
-                      : '',
-                  ]
-                    .filter(Boolean)
-                    .join(' '),
-            suggestions:
-              unresolved.length > 0
-                ? [
-                    '查看一般規劃結果底部的「未納入本次規劃」顧客；兩種模式的完整匹配候選判定相同。',
-                    '若希望這些顧客也被安排，調整候選配方政策、主線進度或補充可用的完整匹配配方。',
-                  ]
-                : [
-                    '先查看上方未被滿足的顧客，決定是否調整配方、補充庫存或改用一般規劃。',
-                    '確認原料、中間果汁與果汁罐內既有成品庫存是否已填寫正確。',
-                    '庫存模式不會自動刪掉未滿足顧客來假裝整批完成。',
-                  ],
+            title: '庫存模式無法安全完成這次規劃',
+            message: shortfallText
+              ? `庫存模式已允許只規劃目前庫存能涵蓋的顧客，但下游檢查仍發現需要商店原料：${shortfallText}。這代表最佳化結果與庫存／製作資料之間發生內部不一致，不是因為部分顧客未被涵蓋。`
+              : '庫存模式已允許只規劃目前庫存能涵蓋的顧客，但仍無法產生安全可執行的結果。這通常表示還有其他實體限制或內部規劃不一致。',
+            suggestions: [
+              '確認原料、中間果汁、果汁罐內容與實體限制設定是否正確。',
+              '若問題持續發生，可保留下方技術資訊作為除錯依據。',
+            ],
             technicalDetails: details,
           }
         }
