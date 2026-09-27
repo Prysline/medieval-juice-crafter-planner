@@ -324,7 +324,32 @@ describe('juice jar recipe search UX', () => {
     expect(juicer.some((entry) => entry.identity === 'juice-state:v1:banana')).toBe(false)
 
     const fountain = intermediateJuiceInventoryEntries([], 'tranquil-fountain-unlocked')
-    expect(fountain.some((entry) => entry.identity === 'juice-state:v1:banana')).toBe(true)
+    expect(fountain).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          identity: 'juice-state:v1:banana',
+          label: '香蕉汁',
+        }),
+      ]),
+    )
+
+    const ibex = intermediateJuiceInventoryEntries([], 'ibex-statue-unlocked')
+    expect(ibex).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          identity: 'juice-state:v1:tomato',
+          label: '番茄汁',
+        }),
+        expect.objectContaining({
+          identity: 'juice-state:v1:cucumber',
+          label: '黃瓜汁',
+        }),
+        expect.objectContaining({
+          identity: 'juice-state:v1:peach',
+          label: '桃汁',
+        }),
+      ]),
+    )
   })
 
   it('derives compound intermediate states without treating the final recipe as a separate stock identity', () => {
