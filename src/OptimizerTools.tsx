@@ -519,60 +519,120 @@ export function intermediateJuiceInventoryEntries(
   )
 }
 
-export function searchIntermediateJuiceEntries(
+export interface IntermediateJuiceSearchIndexRow {
+  readonly entry: IntermediateJuiceInventoryEntry
+  readonly normalizedLabel: string
+  readonly normalizedIngredientIds: string
+  readonly normalizedIngredientNames: string
+  readonly normalizedSingleIngredientName: string | null
+  readonly normalizedSingleIngredientId: string | null
+}
+
+export interface IntermediateJuiceSearchIndex {
+  readonly rows: readonly IntermediateJuiceSearchIndexRow[]
+}
+
+export function buildIntermediateJuiceSearchIndex(
   entries: readonly IntermediateJuiceInventoryEntry[],
+): IntermediateJuiceSearchIndex {
+  const rows = entries
+    .map((entry): IntermediateJuiceSearchIndexRow => {
+      const ingredientNames = entry.ingredientIds.map(ingredientLabel)
+      return {
+        entry,
+        normalizedLabel: normalizeRecipeSearchText(entry.label),
+        normalizedIngredientIds: normalizeRecipeSearchText(
+          entry.ingredientIds.join(' '),
+        ),
+        normalizedIngredientNames: normalizeRecipeSearchText(
+          ingredientNames.join(' '),
+        ),
+        normalizedSingleIngredientName:
+          entry.ingredientIds.length === 1
+            ? normalizeRecipeSearchText(ingredientNames[0] ?? '')
+            : null,
+        normalizedSingleIngredientId:
+          entry.ingredientIds.length === 1
+            ? normalizeRecipeSearchText(entry.ingredientIds[0] ?? '')
+            : null,
+      }
+    })
+    .sort(
+      (a, b) =>
+        a.entry.label.localeCompare(b.entry.label, 'zh-Hant') ||
+        a.entry.identity.localeCompare(b.entry.identity),
+    )
+
+  return { rows }
+}
+
+export function searchIntermediateJuiceIndex(
+  index: IntermediateJuiceSearchIndex,
   query: string,
   limit = INTERMEDIATE_JUICE_SEARCH_RESULT_LIMIT,
 ): IntermediateJuiceInventoryEntry[] {
   const normalized = normalizeRecipeSearchText(query)
   const boundedLimit = Math.max(0, Math.floor(limit))
-  const ranked = entries
-    .map((entry) => {
-      if (!normalized) return { entry, rank: 0 }
-      const label = normalizeRecipeSearchText(entry.label)
-      const ingredientIds = normalizeRecipeSearchText(entry.ingredientIds.join(' '))
-      const ingredientNameList = entry.ingredientIds.map((ingredientId) =>
-        normalizeRecipeSearchText(ingredientLabel(ingredientId)),
-      )
-      const ingredientIdList = entry.ingredientIds.map((ingredientId) =>
-        normalizeRecipeSearchText(ingredientId),
-      )
-      const ingredientNames = ingredientNameList.join(' ')
-      if (label === normalized) return { entry, rank: 0 }
-      if (
-        entry.ingredientIds.length === 1 &&
-        ingredientNameList[0] === normalized
-      ) {
-        return { entry, rank: 1 }
-      }
-      if (
-        entry.ingredientIds.length === 1 &&
-        ingredientIdList[0] === normalized
-      ) {
-        return { entry, rank: 2 }
-      }
-      if (label.includes(normalized)) return { entry, rank: 3 }
-      if (ingredientNames.includes(normalized)) return { entry, rank: 4 }
-      if (ingredientIds.includes(normalized)) return { entry, rank: 5 }
-      return null
-    })
-    .filter(
-      (match): match is { entry: IntermediateJuiceInventoryEntry; rank: number } =>
-        match !== null,
-    )
-
-  if (normalized) {
-    ranked.sort(
-      (a, b) =>
-        a.rank - b.rank ||
-        a.entry.label.localeCompare(b.entry.label, 'zh-Hant') ||
-        a.entry.identity.localeCompare(b.entry.identity),
-    )
+  if (boundedLimit === 0) return []
+  if (!normalized) {
+    return index.rows
+      .slice(0, boundedLimit)
+      .map(({ entry }) => entry)
   }
 
-  return ranked.slice(0, boundedLimit).map(({ entry }) => entry)
+  const buckets: IntermediateJuiceInventoryEntry[][] =
+    Array.from({ length: 6 }, () => [])
+
+  for (const row of index.rows) {
+    let rank = -1
+    if (row.normalizedLabel === normalized) {
+      rank = 0
+    } else if (
+      row.normalizedSingleIngredientName === normalized
+    ) {
+      rank = 1
+    } else if (
+      row.normalizedSingleIngredientId === normalized
+    ) {
+      rank = 2
+    } else if (row.normalizedLabel.includes(normalized)) {
+      rank = 3
+    } else if (
+      row.normalizedIngredientNames.includes(normalized)
+    ) {
+      rank = 4
+    } else if (
+      row.normalizedIngredientIds.includes(normalized)
+    ) {
+      rank = 5
+    }
+
+    if (rank >= 0 && buckets[rank].length < boundedLimit) {
+      buckets[rank].push(row.entry)
+    }
+  }
+
+  const result: IntermediateJuiceInventoryEntry[] = []
+  for (const bucket of buckets) {
+    for (const entry of bucket) {
+      result.push(entry)
+      if (result.length >= boundedLimit) return result
+    }
+  }
+  return result
 }
 
+export function searchIntermediateJuiceEntries(
+  entries: readonly IntermediateJuiceInventoryEntry[],
+  query: string,
+  limit = INTERMEDIATE_JUICE_SEARCH_RESULT_LIMIT,
+): IntermediateJuiceInventoryEntry[] {
+  return searchIntermediateJuiceIndex(
+    buildIntermediateJuiceSearchIndex(entries),
+    query,
+    limit,
+  )
+}
 
 export function optimizerInventoryIngredients(
   currentProgress: ProgressMilestoneId,
@@ -608,73 +668,134 @@ function normalizeRecipeSearchText(value: string): string {
   return value.trim().toLocaleLowerCase('zh-Hant')
 }
 
-export function searchInventoryRecipeEntries(
+export interface InventoryRecipeSearchIndexRow {
+  readonly entry: RecipeCandidatePoolEntry
+  readonly displayName: string
+  readonly normalizedName: string
+  readonly normalizedIngredientNames: string
+  readonly normalizedIngredientIds: string
+  readonly normalizedCandidateId: string
+  readonly sourceRank: number
+}
+
+export interface InventoryRecipeSearchIndex {
+  readonly rows: readonly InventoryRecipeSearchIndexRow[]
+  readonly byCandidateId: ReadonlyMap<string, RecipeCandidatePoolEntry>
+}
+
+export function buildInventoryRecipeSearchIndex(
   entries: readonly RecipeCandidatePoolEntry[],
+): InventoryRecipeSearchIndex {
+  const rows = entries
+    .map((entry): InventoryRecipeSearchIndexRow => {
+      const displayName = formatRecipeDisplayName(entry.candidate.name)
+      return {
+        entry,
+        displayName,
+        normalizedName: normalizeRecipeSearchText(displayName),
+        normalizedIngredientNames: normalizeRecipeSearchText(
+          entry.candidate.ingredients.join(' '),
+        ),
+        normalizedIngredientIds: normalizeRecipeSearchText(
+          entry.ingredientIds.join(' '),
+        ),
+        normalizedCandidateId: normalizeRecipeSearchText(
+          entry.candidate.id,
+        ),
+        sourceRank: entry.sources.includes('observed')
+          ? 0
+          : entry.sources.includes('saved')
+            ? 1
+            : 2,
+      }
+    })
+    .sort(
+      (left, right) =>
+        left.sourceRank - right.sourceRank ||
+        left.displayName.localeCompare(right.displayName, 'zh-Hant') ||
+        left.entry.candidate.id.localeCompare(
+          right.entry.candidate.id,
+        ),
+    )
+
+  return {
+    rows,
+    byCandidateId: new Map(
+      rows.map(({ entry }) => [entry.candidate.id, entry]),
+    ),
+  }
+}
+
+export function searchInventoryRecipeIndex(
+  index: InventoryRecipeSearchIndex,
   query: string,
   limit = INVENTORY_RECIPE_SEARCH_RESULT_LIMIT,
 ): RecipeCandidatePoolEntry[] {
   const normalizedQuery = normalizeRecipeSearchText(query)
   const boundedLimit = Math.max(0, Math.floor(limit))
   if (boundedLimit === 0) return []
+  if (!normalizedQuery) {
+    return index.rows
+      .slice(0, boundedLimit)
+      .map(({ entry }) => entry)
+  }
 
-  return entries
-    .flatMap((entry) => {
-      const displayName = formatRecipeDisplayName(entry.candidate.name)
-      const normalizedName = normalizeRecipeSearchText(displayName)
-      const ingredientNames = normalizeRecipeSearchText(
-        entry.candidate.ingredients.join(' '),
-      )
-      const ingredientIds = normalizeRecipeSearchText(
-        entry.ingredientIds.join(' '),
-      )
-      const candidateId = normalizeRecipeSearchText(entry.candidate.id)
+  const buckets: RecipeCandidatePoolEntry[][] =
+    Array.from({ length: 5 }, () => [])
 
-      let score = 0
-      if (normalizedQuery) {
-        if (
-          normalizedName === normalizedQuery ||
-          ingredientNames === normalizedQuery ||
-          ingredientIds === normalizedQuery ||
-          candidateId === normalizedQuery
-        ) {
-          score = 0
-        } else if (
-          normalizedName.startsWith(normalizedQuery) ||
-          ingredientNames.startsWith(normalizedQuery) ||
-          ingredientIds.startsWith(normalizedQuery)
-        ) {
-          score = 1
-        } else if (normalizedName.includes(normalizedQuery)) {
-          score = 2
-        } else if (ingredientNames.includes(normalizedQuery)) {
-          score = 3
-        } else if (
-          ingredientIds.includes(normalizedQuery) ||
-          candidateId.includes(normalizedQuery)
-        ) {
-          score = 4
-        } else {
-          return []
-        }
-      }
+  for (const row of index.rows) {
+    let score = -1
+    if (
+      row.normalizedName === normalizedQuery ||
+      row.normalizedIngredientNames === normalizedQuery ||
+      row.normalizedIngredientIds === normalizedQuery ||
+      row.normalizedCandidateId === normalizedQuery
+    ) {
+      score = 0
+    } else if (
+      row.normalizedName.startsWith(normalizedQuery) ||
+      row.normalizedIngredientNames.startsWith(normalizedQuery) ||
+      row.normalizedIngredientIds.startsWith(normalizedQuery)
+    ) {
+      score = 1
+    } else if (row.normalizedName.includes(normalizedQuery)) {
+      score = 2
+    } else if (
+      row.normalizedIngredientNames.includes(normalizedQuery)
+    ) {
+      score = 3
+    } else if (
+      row.normalizedIngredientIds.includes(normalizedQuery) ||
+      row.normalizedCandidateId.includes(normalizedQuery)
+    ) {
+      score = 4
+    }
 
-      const sourceRank = entry.sources.includes('observed')
-        ? 0
-        : entry.sources.includes('saved')
-          ? 1
-          : 2
+    if (score >= 0 && buckets[score].length < boundedLimit) {
+      buckets[score].push(row.entry)
+    }
+  }
 
-      return [{ entry, score, sourceRank, displayName }]
-    })
-    .sort(
-      (left, right) =>
-        left.score - right.score ||
-        left.sourceRank - right.sourceRank ||
-        left.displayName.localeCompare(right.displayName, 'zh-Hant') ||
-        left.entry.candidate.id.localeCompare(right.entry.candidate.id),
-    )
-    .slice(0, boundedLimit)
-    .map(({ entry }) => entry)
+  const result: RecipeCandidatePoolEntry[] = []
+  for (const bucket of buckets) {
+    for (const entry of bucket) {
+      result.push(entry)
+      if (result.length >= boundedLimit) return result
+    }
+  }
+  return result
+}
+
+export function searchInventoryRecipeEntries(
+  entries: readonly RecipeCandidatePoolEntry[],
+  query: string,
+  limit = INVENTORY_RECIPE_SEARCH_RESULT_LIMIT,
+): RecipeCandidatePoolEntry[] {
+  return searchInventoryRecipeIndex(
+    buildInventoryRecipeSearchIndex(entries),
+    query,
+    limit,
+  )
 }
 
 export function moveInventoryRecipeSearchIndex(
@@ -692,17 +813,17 @@ export function moveInventoryRecipeSearchIndex(
 export function JuiceJarRecipeCombobox({
   jarId,
   recipeId,
-  entries,
+  searchIndex,
   onChange,
 }: {
   jarId: string
   recipeId: string | null
-  entries: readonly RecipeCandidatePoolEntry[]
+  searchIndex: InventoryRecipeSearchIndex
   onChange: (recipeId: string) => void
 }) {
   const listboxId = useId()
   const selectedEntry = recipeId
-    ? entries.find((entry) => entry.candidate.id === recipeId)
+    ? searchIndex.byCandidateId.get(recipeId)
     : undefined
   const selectedLabel = selectedEntry
     ? formatRecipeDisplayName(selectedEntry.candidate.name)
@@ -717,9 +838,9 @@ export function JuiceJarRecipeCombobox({
   const results = useMemo(
     () =>
       open
-        ? searchInventoryRecipeEntries(entries, query)
+        ? searchInventoryRecipeIndex(searchIndex, query)
         : [],
-    [entries, open, query],
+    [open, query, searchIndex],
   )
 
   useEffect(() => {
@@ -884,18 +1005,18 @@ export function JuiceJarRecipeCombobox({
 }
 
 export function IntermediateJuiceCombobox({
-  entries,
+  searchIndex,
   onChoose,
 }: {
-  entries: readonly IntermediateJuiceInventoryEntry[]
+  searchIndex: IntermediateJuiceSearchIndex
   onChoose: (entry: IntermediateJuiceInventoryEntry) => void
 }) {
   const listboxId = useId()
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const results = useMemo(
-    () => (open ? searchIntermediateJuiceEntries(entries, query) : []),
-    [entries, open, query],
+    () => (open ? searchIntermediateJuiceIndex(searchIndex, query) : []),
+    [open, query, searchIndex],
   )
   return (
     <div className="optimizer-recipe-combobox" onBlur={(event) => {
@@ -1063,9 +1184,33 @@ function OptimizerTools({
     [recipeCandidatePool],
   )
 
+  const inventoryRecipeSearchIndex = useMemo(
+    () => buildInventoryRecipeSearchIndex(inventoryRecipeEntries),
+    [inventoryRecipeEntries],
+  )
+
   const intermediateInventoryEntries = useMemo(
     () => intermediateJuiceInventoryEntries(inventoryRecipeEntries, currentProgress),
     [inventoryRecipeEntries, currentProgress],
+  )
+
+  const availableIntermediateInventoryEntries = useMemo(() => {
+    const existing = new Set(
+      Object.keys(inventoryState.intermediateJuiceUnits ?? {}),
+    )
+    return intermediateInventoryEntries.filter(
+      (entry) => !existing.has(entry.identity),
+    )
+  }, [
+    intermediateInventoryEntries,
+    inventoryState.intermediateJuiceUnits,
+  ])
+
+  const intermediateJuiceSearchIndex = useMemo(
+    () => buildIntermediateJuiceSearchIndex(
+      availableIntermediateInventoryEntries,
+    ),
+    [availableIntermediateInventoryEntries],
   )
 
   const accessibleJuiceJars = useMemo(
@@ -2167,9 +2312,7 @@ function OptimizerTools({
               <span>以果汁單位計；只記錄尚未加水成為販售成品的階段</span>
             </div>
             <IntermediateJuiceCombobox
-              entries={intermediateInventoryEntries.filter(
-                (entry) => !(entry.identity in (inventoryState.intermediateJuiceUnits ?? {})),
-              )}
+              searchIndex={intermediateJuiceSearchIndex}
               onChoose={(entry) => setIntermediateJuiceInventory(entry.identity, 1)}
             />
             {Object.keys(inventoryState.intermediateJuiceUnits ?? {}).length === 0 ? (
@@ -2291,7 +2434,7 @@ function OptimizerTools({
                       <JuiceJarRecipeCombobox
                         jarId={jar.id}
                         recipeId={jar.recipeId}
-                        entries={inventoryRecipeEntries}
+                        searchIndex={inventoryRecipeSearchIndex}
                         onChange={(recipeId) =>
                           setJuiceJarRecipe(jar.id, recipeId)
                         }
