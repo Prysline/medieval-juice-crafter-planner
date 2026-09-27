@@ -674,7 +674,7 @@ describe('production optimizer', () => {
     expect(fewerOperations.machineOperations.total).toBe(4)
   })
 
-  it('enforces the maximum jar-switch constraint against recipe variety', async () => {
+  it('enforces the maximum jar-fill-operation constraint against recipe variety', async () => {
     const source = {
       customers: [
         customer('a', '酸味'),
@@ -702,19 +702,19 @@ describe('production optimizer', () => {
       {
         ...request(['a', 'b']),
         availableJuiceJarCount: 1,
-        constraints: { maxJarTypeSwitches: 0 },
+        constraints: { maxJarFillOperations: 1 },
       },
       { source },
     )
 
     expect(unconstrained.totalIngredientCost).toBe(20)
     expect(unconstrained.recipePlans).toHaveLength(2)
-    expect(unconstrained.jarTypeSwitches).toBe(1)
+    expect(unconstrained.machineOperations.finalizing).toBe(2)
 
     expect(constrained.totalIngredientCost).toBe(30)
     expect(constrained.recipePlans).toHaveLength(1)
     expect(constrained.recipePlans[0].recipeId).toBe('shared')
-    expect(constrained.jarTypeSwitches).toBe(0)
+    expect(constrained.machineOperations.finalizing).toBe(1)
   })
 
   it('uses initial jar recipe types when calculating zero-switch coverage', async () => {
@@ -736,7 +736,7 @@ describe('production optimizer', () => {
           { recipeId: 'a-only', servings: 1 },
           { recipeId: null, servings: 0 },
         ],
-        priorities: ['minimum-cost', 'minimum-jar-switches'],
+        priorities: ['minimum-cost'],
       },
       { source },
     )
@@ -798,7 +798,7 @@ describe('production optimizer', () => {
           initialCarriedJuiceJars: [
             { recipeId: 'a-only', servings: 2 },
           ],
-          priorities: ['minimum-cost', 'minimum-jar-switches'],
+          priorities: ['minimum-cost'],
         },
         { source },
       ),
@@ -823,7 +823,7 @@ describe('production optimizer', () => {
         initialCarriedJuiceJars: [
           { recipeId: 'a-only', servings: 1 },
         ],
-        priorities: ['minimum-cost', 'minimum-jar-switches'],
+        priorities: ['minimum-cost'],
       },
       { source },
     )
