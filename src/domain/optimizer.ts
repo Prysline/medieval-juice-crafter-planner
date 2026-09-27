@@ -89,12 +89,18 @@ function normalizeRecipePlans(
   }
 
   return model.recipes.flatMap((recipe) => {
+    const customerIds = assignedByRecipe.get(recipe.candidate.id) ?? []
+    if (customerIds.length === 0) return []
+
     const juiceUnits =
       productionUnitsByRecipeId[recipe.candidate.id] ?? 0
-    if (juiceUnits <= 0) return []
-
-    const customerIds = assignedByRecipe.get(recipe.candidate.id) ?? []
     const producedServings = juiceUnits * 2
+    const finishedServingsUsed = Math.min(
+      recipe.initialFinishedServings,
+      customerIds.length,
+    )
+    const servingsToProduce =
+      customerIds.length - finishedServingsUsed
 
     return [{
       recipeId: recipe.candidate.id,
@@ -103,7 +109,8 @@ function normalizeRecipePlans(
       juiceUnits,
       producedServings,
       assignedServings: customerIds.length,
-      leftoverServings: producedServings - customerIds.length,
+      leftoverServings:
+        producedServings - servingsToProduce,
       ingredientIds: recipe.productionPath.ingredientIds,
       juiceUnitIngredientCost: recipe.juiceUnitIngredientCost,
       totalIngredientCost:
