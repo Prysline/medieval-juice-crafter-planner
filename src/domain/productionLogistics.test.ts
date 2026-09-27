@@ -138,26 +138,7 @@ function receiverTimeline(
 describe('production logistics', () => {
   it('counts pre-production storage per material stack and reuses same-ingredient partial stacks', () => {
     const summary = buildPreProductionStorageSummary(
-      shortfall([], 0, {
-        ingredients: [
-          {
-            ingredientId: 'lemon',
-            name: 'lemon',
-            requiredUnits: 5,
-            inventoryUnitsAvailable: 4,
-            inventoryUnitsUsed: 4,
-            purchaseUnits: 1,
-          },
-          {
-            ingredientId: 'sugar',
-            name: 'sugar',
-            requiredUnits: 1,
-            inventoryUnitsAvailable: 0,
-            inventoryUnitsUsed: 0,
-            purchaseUnits: 1,
-          },
-        ],
-      }),
+      shortfall(['lemon', 'sugar'], 5),
       inventory({
         ingredientUnits: { lemon: 4 },
         juiceJars: [],
@@ -201,18 +182,8 @@ describe('production logistics', () => {
   })
 
   it('reports missing slots and minimum additional shelf count before shopping', () => {
-    const purchaseIngredients = Array.from({ length: 12 }, (_, index) => ({
-      ingredientId: `ingredient-${index + 1}`,
-      name: `ingredient-${index + 1}`,
-      requiredUnits: 1,
-      inventoryUnitsAvailable: 0,
-      inventoryUnitsUsed: 0,
-      purchaseUnits: 1,
-    }))
     const summary = buildPreProductionStorageSummary(
-      shortfall([], 0, {
-        ingredients: purchaseIngredients,
-      }),
+      shortfall(['lemon'], 60),
       inventory({
         juiceJars: [],
         shelfCount: 0,
