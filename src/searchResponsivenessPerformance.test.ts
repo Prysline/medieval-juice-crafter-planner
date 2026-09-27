@@ -43,10 +43,17 @@ describe('production-scale searchable combobox responsiveness', () => {
     expect(inventoryEntries.length).toBeGreaterThan(9000)
     expect(intermediateEntries.length).toBeGreaterThan(9000)
 
+    const inventoryIndexStartedAt = performance.now()
     const inventoryIndex =
       buildInventoryRecipeSearchIndex(inventoryEntries)
+    const inventoryIndexBuildMs =
+      performance.now() - inventoryIndexStartedAt
+
+    const intermediateIndexStartedAt = performance.now()
     const intermediateIndex =
       buildIntermediateJuiceSearchIndex(intermediateEntries)
+    const intermediateIndexBuildMs =
+      performance.now() - intermediateIndexStartedAt
 
     const inventoryBroadMs = medianMs(() =>
       searchInventoryRecipeIndex(inventoryIndex, '檸'),
@@ -58,6 +65,8 @@ describe('production-scale searchable combobox responsiveness', () => {
     console.log('[search-responsiveness-regression]', {
       inventoryEntries: inventoryEntries.length,
       intermediateEntries: intermediateEntries.length,
+      inventoryIndexBuildMs,
+      intermediateIndexBuildMs,
       inventoryBroadMs,
       intermediateBroadMs,
     })
