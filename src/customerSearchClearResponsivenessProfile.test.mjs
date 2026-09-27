@@ -340,7 +340,7 @@ describe('customer search clear responsiveness profile', () => {
           `
             const table = document.querySelector('.customer-table')
             const count = table?.querySelectorAll(
-              ':scope > .table-row',
+              ':scope > .customer-row-shell > .table-row',
             ).length ?? 0
             return count > 50 ? count : 0
           `,
