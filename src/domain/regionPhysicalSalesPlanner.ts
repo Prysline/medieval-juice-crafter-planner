@@ -440,11 +440,6 @@ interface RegionPreferenceSegment {
   customerIds: string[]
 }
 
-interface RegionPreferenceBeamState {
-  tripServings: number[]
-  tripRegions: RegionId[][]
-  tripBySegment: number[]
-}
 
 function buildRegionServiceIntentFromPreference(
   input: BuildRegionPhysicalSalesPlanInput,
@@ -558,358 +553,360 @@ function boundedPhysicalAwareRegionPreferences(
   const allReusableJarsStartEmpty =
     jarCount > 0 &&
     input.availableJuiceJarInventory.every(
-      (jar) =>
-        (jar.recipeId === null || jar.servings <= 0) &&
-        jar.servings <= 0,
+      (jar) => jar.servings <= 0,
     )
   if (!allReusableJarsStartEmpty) return []
 
-  const segments: RegionPreferenceSegment[] = []
+  const segmentsByRegion = new Map<
+    RegionId,
+    RegionPreferenceSegment[]
+  >()
+  const segmentCountByRecipe = new Map<string, number>()
+  const terminalRecipeIds = new Set(
+    input.demand.recipes
+      .filter((recipe) => recipe.leftoverServings > 0)
+      .map((recipe) => recipe.recipeId),
+  )
+
   for (const recipe of input.demand.recipes) {
-    const byRegion = new Map<RegionId, string[]>()
+    const customerIdsByRegion = new Map<RegionId, string[]>()
     for (const customerId of recipe.customerIds) {
       const regionId = regionForCustomer(
         customerId,
         input.customerRegionById,
       )
-      const current = byRegion.get(regionId) ?? []
+      const current = customerIdsByRegion.get(regionId) ?? []
       current.push(customerId)
-      byRegion.set(regionId, current)
+      customerIdsByRegion.set(regionId, current)
     }
 
-    for (const [regionId, customerIds] of byRegion) {
+    for (const [regionId, customerIds] of customerIdsByRegion) {
       for (
         let offset = 0;
         offset < customerIds.length;
         offset += capacity
       ) {
-        segments.push({
+        const segment: RegionPreferenceSegment = {
           recipeId: recipe.recipeId,
           regionId,
           customerIds: customerIds.slice(
             offset,
             offset + capacity,
           ),
-        })
+        }
+        const regionSegments =
+          segmentsByRegion.get(regionId) ?? []
+        regionSegments.push(segment)
+        segmentsByRegion.set(regionId, regionSegments)
+        segmentCountByRecipe.set(
+          recipe.recipeId,
+          (segmentCountByRecipe.get(recipe.recipeId) ?? 0) + 1,
+        )
       }
     }
   }
 
-  const uniqueRegionCount = new Set(
-    segments.map((segment) => segment.regionId),
-  ).size
+  const regions = [...segmentsByRegion.keys()].sort()
+  const totalSegmentCount = [...segmentsByRegion.values()]
+    .reduce((sum, segments) => sum + segments.length, 0)
+  const stateSpaceUpperBound = regions.reduce(
+    (product, regionId) =>
+      product *
+      ((segmentsByRegion.get(regionId)?.length ?? 0) + 1),
+    1,
+  )
   if (
-    segments.length === 0 ||
-    segments.length > 64 ||
-    uniqueRegionCount > 6 ||
-    jarCount > 8
+    totalSegmentCount === 0 ||
+    totalSegmentCount > 64 ||
+    regions.length > 6 ||
+    jarCount > 8 ||
+    stateSpaceUpperBound > 50_000
   ) {
     return []
   }
 
-  const baselineTripCount = Math.max(
-    1,
-    baselineSalesPlan.trips.length,
-  )
-  const maxTripCount = Math.min(
-    segments.length,
-    baselineTripCount + Math.min(3, uniqueRegionCount),
-  )
-  const beamWidth = 512
-  const finalCandidateLimit = 64
-  const recipeIds = [
-    ...new Set(segments.map((segment) => segment.recipeId)),
-  ]
-
-  const scoreState = (
-    state: RegionPreferenceBeamState,
-  ): [number, number, number, string] => {
-    const routeCost = state.tripRegions.reduce(
-      (sum, regionIds) =>
-        regionIds.length === 0
-          ? sum
-          : sum +
-            buildRegionRouteFootprint({
-              activeWorkshop: input.activeWorkshop,
-              topology: input.topology,
-              servicedRegionIds: regionIds,
-            }).routeCost,
-      0,
-    )
-    const bounds = new Map<
-      string,
-      { start: number; end: number }
-    >()
-    state.tripBySegment.forEach((tripIndex, segmentIndex) => {
-      const recipeId = segments[segmentIndex]?.recipeId
-      if (!recipeId) return
-      const current = bounds.get(recipeId)
-      if (!current) {
-        bounds.set(recipeId, {
-          start: tripIndex,
-          end: tripIndex,
-        })
-      } else {
-        current.start = Math.min(current.start, tripIndex)
-        current.end = Math.max(current.end, tripIndex)
-      }
-    })
-    const windowSpan = [...bounds.values()].reduce(
-      (sum, bound) => sum + bound.end - bound.start,
-      0,
-    )
-    const usedTrips = state.tripServings.filter(
-      (servings) => servings > 0,
-    ).length
-    return [
-      routeCost,
-      windowSpan,
-      -usedTrips,
-      state.tripBySegment.join(','),
-    ]
+  type CandidateAction = {
+    servings: number
+    regionIds: RegionId[]
+    segments: RegionPreferenceSegment[]
+    nextCursors: number[]
+    signature: string
+  }
+  type CandidatePlan = {
+    score: RegionServicePlanScore
+    actions: CandidateAction[]
+    signature: string
   }
 
-  const respectsJarWindowBound = (
-    state: RegionPreferenceBeamState,
-  ): boolean => {
-    const bounds = new Map<
-      string,
-      { start: number; end: number }
-    >()
-    state.tripBySegment.forEach((tripIndex, segmentIndex) => {
-      const recipeId = segments[segmentIndex]?.recipeId
-      if (!recipeId) return
-      const current = bounds.get(recipeId)
-      if (!current) {
-        bounds.set(recipeId, {
-          start: tripIndex,
-          end: tripIndex,
-        })
-      } else {
-        current.start = Math.min(current.start, tripIndex)
-        current.end = Math.max(current.end, tripIndex)
-      }
-    })
-    for (let tripIndex = 0; tripIndex < maxTripCount; tripIndex += 1) {
-      const overlappingRecipes = recipeIds.filter((recipeId) => {
-        const bound = bounds.get(recipeId)
-        return (
-          bound !== undefined &&
-          bound.start <= tripIndex &&
-          tripIndex <= bound.end
-        )
-      }).length
-      if (overlappingRecipes > jarCount) return false
-    }
-    return true
-  }
-
-  const candidates: Array<{
-    regionServiceIntent: RegionServicePlan
-    preferenceByCustomerId: Record<string, number>
-  }> = []
-
-  for (
-    let targetTripCount = baselineTripCount;
-    targetTripCount <= maxTripCount;
-    targetTripCount += 1
-  ) {
-    let beam: RegionPreferenceBeamState[] = [{
-      tripServings: [],
-      tripRegions: [],
-      tripBySegment: [],
-    }]
-
-    for (
-      let segmentIndex = 0;
-      segmentIndex < segments.length;
-      segmentIndex += 1
-    ) {
-      const segment = segments[segmentIndex]
-      const expanded: RegionPreferenceBeamState[] = []
-
-      const appendToTrip = (
-        state: RegionPreferenceBeamState,
-        tripIndex: number,
-      ): RegionPreferenceBeamState | null => {
-        const nextServings =
-          state.tripServings[tripIndex] +
-          segment.customerIds.length
-        if (nextServings > capacity) return null
-
-        const next: RegionPreferenceBeamState = {
-          tripServings: [...state.tripServings],
-          tripRegions: state.tripRegions.map(
-            (regionIds) => [...regionIds],
-          ),
-          tripBySegment: [
-            ...state.tripBySegment,
-            tripIndex,
-          ],
-        }
-        next.tripServings[tripIndex] = nextServings
-        if (
-          !next.tripRegions[tripIndex].includes(
-            segment.regionId,
-          )
-        ) {
-          next.tripRegions[tripIndex].push(
-            segment.regionId,
-          )
-        }
-        return next
-      }
-
-      const insertNewTrip = (
-        state: RegionPreferenceBeamState,
-        insertionIndex: number,
-      ): RegionPreferenceBeamState => {
-        const tripBySegment = state.tripBySegment.map(
-          (tripIndex) =>
-            tripIndex >= insertionIndex
-              ? tripIndex + 1
-              : tripIndex,
-        )
-        return {
-          tripServings: [
-            ...state.tripServings.slice(0, insertionIndex),
-            segment.customerIds.length,
-            ...state.tripServings.slice(insertionIndex),
-          ],
-          tripRegions: [
-            ...state.tripRegions
-              .slice(0, insertionIndex)
-              .map((regionIds) => [...regionIds]),
-            [segment.regionId],
-            ...state.tripRegions
-              .slice(insertionIndex)
-              .map((regionIds) => [...regionIds]),
-          ],
-          tripBySegment: [
-            ...tripBySegment,
-            insertionIndex,
-          ],
-        }
-      }
-
-      for (const state of beam) {
-        for (
-          let tripIndex = 0;
-          tripIndex < state.tripServings.length;
-          tripIndex += 1
-        ) {
-          const next = appendToTrip(state, tripIndex)
-          if (!next || !respectsJarWindowBound(next)) continue
-          expanded.push(next)
-        }
-
-        if (state.tripServings.length < targetTripCount) {
-          for (
-            let insertionIndex = 0;
-            insertionIndex <= state.tripServings.length;
-            insertionIndex += 1
-          ) {
-            const next = insertNewTrip(
-              state,
-              insertionIndex,
-            )
-            if (!respectsJarWindowBound(next)) continue
-            expanded.push(next)
-          }
-        }
-      }
-
-      expanded.sort((a, b) => {
-        const aScore = scoreState(a)
-        const bScore = scoreState(b)
-        return (
-          aScore[0] - bScore[0] ||
-          aScore[1] - bScore[1] ||
-          aScore[2] - bScore[2] ||
-          aScore[3].localeCompare(bScore[3])
-        )
-      })
-
-      const seen = new Set<string>()
-      beam = expanded.filter((state) => {
-        const regionSignature = state.tripRegions
-          .map((regionIds) =>
-            [...regionIds].sort().join('+'),
-          )
-          .join('|')
-        const signature = [
-          state.tripServings.join(','),
-          regionSignature,
-          state.tripBySegment.join(','),
-        ].join('::')
-        if (seen.has(signature)) return false
-        seen.add(signature)
-
-        const remainingSegments =
-          segments.length - segmentIndex - 1
-        const missingTrips =
-          targetTripCount - state.tripServings.length
-        return missingTrips <= remainingSegments
-      }).slice(0, beamWidth)
-      if (beam.length === 0) break
-    }
-
-    for (const state of beam) {
-      if (state.tripServings.length !== targetTripCount) {
-        continue
-      }
-      const preferenceByCustomerId: Record<string, number> = {}
-      state.tripBySegment.forEach((tripIndex, segmentIndex) => {
-        for (const customerId of (
-          segments[segmentIndex]?.customerIds ?? []
-        )) {
-          preferenceByCustomerId[customerId] =
-            tripIndex + 1
-        }
-      })
-      if (
-        Object.keys(preferenceByCustomerId).length !==
-        input.demand.assignedServings
+  const consumedSegmentCountByRecipe = (
+    cursors: readonly number[],
+  ): Map<string, number> => {
+    const result = new Map<string, number>()
+    regions.forEach((regionId, regionIndex) => {
+      const segments = segmentsByRegion.get(regionId) ?? []
+      for (
+        let index = 0;
+        index < (cursors[regionIndex] ?? 0);
+        index += 1
       ) {
-        continue
+        const recipeId = segments[index]?.recipeId
+        if (!recipeId) continue
+        result.set(
+          recipeId,
+          (result.get(recipeId) ?? 0) + 1,
+        )
       }
-      candidates.push({
-        regionServiceIntent:
-          buildRegionServiceIntentFromPreference(
-            input,
-            preferenceByCustomerId,
-          ),
-        preferenceByCustomerId,
-      })
-    }
+    })
+    return result
   }
 
-  candidates.sort((a, b) => {
-    const scoreComparison = compareRegionServicePlanScores(
-      a.regionServiceIntent,
-      b.regionServiceIntent,
-    )
-    return (
-      scoreComparison ||
-      customerPreferenceSignature(
-        a.preferenceByCustomerId,
-      ).localeCompare(
-        customerPreferenceSignature(
-          b.preferenceByCustomerId,
-        ),
-      )
-    )
-  })
+  const occupiedRecipeIds = (
+    cursors: readonly number[],
+  ): Set<string> => {
+    const consumed = consumedSegmentCountByRecipe(cursors)
+    const occupied = new Set<string>()
+    for (const [recipeId, consumedCount] of consumed) {
+      const totalCount =
+        segmentCountByRecipe.get(recipeId) ?? 0
+      if (
+        consumedCount < totalCount ||
+        terminalRecipeIds.has(recipeId)
+      ) {
+        occupied.add(recipeId)
+      }
+    }
+    return occupied
+  }
 
-  const seen = new Set<string>()
-  return candidates.filter((candidate) => {
-    const signature = customerPreferenceSignature(
-      candidate.preferenceByCustomerId,
+  const enumerateActions = (
+    cursors: readonly number[],
+  ): CandidateAction[] => {
+    const actions: CandidateAction[] = []
+    const occupiedBefore = occupiedRecipeIds(cursors)
+
+    const visit = (
+      regionIndex: number,
+      servings: number,
+      selectedSegments: RegionPreferenceSegment[],
+      selectedRegionIds: RegionId[],
+      nextCursors: number[],
+    ): void => {
+      if (regionIndex === regions.length) {
+        if (selectedSegments.length === 0) return
+
+        const recipesDuringTrip = new Set(occupiedBefore)
+        selectedSegments.forEach((segment) =>
+          recipesDuringTrip.add(segment.recipeId),
+        )
+        if (recipesDuringTrip.size > jarCount) return
+
+        const occupiedAfter = occupiedRecipeIds(nextCursors)
+        if (occupiedAfter.size > jarCount) return
+
+        actions.push({
+          servings,
+          regionIds: selectedRegionIds,
+          segments: selectedSegments,
+          nextCursors,
+          signature: selectedSegments
+            .map((segment) =>
+              `${segment.recipeId}@${segment.regionId}`,
+            )
+            .join('+'),
+        })
+        return
+      }
+
+      const regionId = regions[regionIndex]
+      const regionSegments =
+        segmentsByRegion.get(regionId) ?? []
+      const cursor = cursors[regionIndex] ?? 0
+
+      visit(
+        regionIndex + 1,
+        servings,
+        selectedSegments,
+        selectedRegionIds,
+        nextCursors,
+      )
+
+      let nextServings = servings
+      const prefix: RegionPreferenceSegment[] = []
+      for (
+        let takeCount = 1;
+        cursor + takeCount <= regionSegments.length;
+        takeCount += 1
+      ) {
+        const segment =
+          regionSegments[cursor + takeCount - 1]
+        if (!segment) break
+        nextServings += segment.customerIds.length
+        if (nextServings > capacity) break
+        prefix.push(segment)
+
+        const candidateSegments = [
+          ...selectedSegments,
+          ...prefix,
+        ]
+        const recipesDuringTrip = new Set(occupiedBefore)
+        candidateSegments.forEach((item) =>
+          recipesDuringTrip.add(item.recipeId),
+        )
+        if (recipesDuringTrip.size > jarCount) break
+
+        const candidateCursors = [...nextCursors]
+        candidateCursors[regionIndex] =
+          cursor + takeCount
+        visit(
+          regionIndex + 1,
+          nextServings,
+          candidateSegments,
+          [
+            ...selectedRegionIds,
+            regionId,
+          ],
+          candidateCursors,
+        )
+      }
+    }
+
+    visit(
+      0,
+      0,
+      [],
+      [],
+      [...cursors],
     )
-    if (seen.has(signature)) return false
-    seen.add(signature)
-    return true
-  }).slice(0, finalCandidateLimit)
+    return actions
+  }
+
+  const memo = new Map<string, CandidatePlan | null>()
+  let visitedStateCount = 0
+
+  const solve = (cursors: readonly number[]): CandidatePlan | null => {
+    const key = cursors.join(',')
+    if (memo.has(key)) return memo.get(key) ?? null
+    visitedStateCount += 1
+    if (visitedStateCount > 50_000) {
+      memo.set(key, null)
+      return null
+    }
+
+    const complete = regions.every(
+      (regionId, regionIndex) =>
+        (cursors[regionIndex] ?? 0) ===
+        (segmentsByRegion.get(regionId)?.length ?? 0),
+    )
+    if (complete) {
+      const result: CandidatePlan = {
+        score: {
+          routeCost: 0,
+          tripCount: 0,
+          serviceFragmentation: 0,
+        },
+        actions: [],
+        signature: '',
+      }
+      memo.set(key, result)
+      return result
+    }
+
+    let best: CandidatePlan | null = null
+    for (const action of enumerateActions(cursors)) {
+      const rest = solve(action.nextCursors)
+      if (!rest) continue
+
+      const footprint = buildRegionRouteFootprint({
+        activeWorkshop: input.activeWorkshop,
+        topology: input.topology,
+        servicedRegionIds: action.regionIds,
+      })
+      const fragmentationIncrement =
+        action.regionIds.reduce(
+          (sum, regionId) => {
+            const regionIndex = regions.indexOf(regionId)
+            return (
+              sum +
+              ((cursors[regionIndex] ?? 0) > 0 ? 1 : 0)
+            )
+          },
+          0,
+        )
+      const signature = rest.signature
+        ? `${action.signature}|${rest.signature}`
+        : action.signature
+      const candidate: CandidatePlan = {
+        score: {
+          routeCost:
+            footprint.routeCost + rest.score.routeCost,
+          tripCount: 1 + rest.score.tripCount,
+          serviceFragmentation:
+            fragmentationIncrement +
+            rest.score.serviceFragmentation,
+        },
+        actions: [action, ...rest.actions],
+        signature,
+      }
+
+      if (
+        best === null ||
+        compareRegionServicePlanScores(
+          candidate.score,
+          best.score,
+        ) < 0 ||
+        (
+          compareRegionServicePlanScores(
+            candidate.score,
+            best.score,
+          ) === 0 &&
+          candidate.signature.localeCompare(best.signature) < 0
+        )
+      ) {
+        best = candidate
+      }
+    }
+
+    memo.set(key, best)
+    return best
+  }
+
+  const initialCursors = new Array<number>(
+    regions.length,
+  ).fill(0)
+  const best = solve(initialCursors)
+  if (!best) return []
+
+  const preferenceByCustomerId: Record<string, number> = {}
+  best.actions.forEach((action, tripIndex) => {
+    action.segments.forEach((segment) => {
+      segment.customerIds.forEach((customerId) => {
+        preferenceByCustomerId[customerId] = tripIndex + 1
+      })
+    })
+  })
+  if (
+    Object.keys(preferenceByCustomerId).length !==
+    input.demand.assignedServings
+  ) {
+    return []
+  }
+
+  const regionServiceIntent =
+    buildRegionServiceIntentFromPreference(
+      input,
+      preferenceByCustomerId,
+    )
+  if (
+    regionServiceIntent.tripCount >
+    baselineSalesPlan.trips.length + regions.length
+  ) {
+    return []
+  }
+
+  return [{
+    regionServiceIntent,
+    preferenceByCustomerId,
+  }]
 }
 
 function recipeAssignments(
