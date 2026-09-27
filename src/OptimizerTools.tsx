@@ -1,4 +1,4 @@
-import { memo, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { customers } from './data/customers'
 import { villageNames } from './data/villages'
 import { ingredients } from './data/ingredients'
@@ -2859,6 +2859,62 @@ function transactionFillActionLabel(
   return '換裝'
 }
 
+export function CollapsibleOptimizerResultSection({
+  title,
+  summary,
+  children,
+  className = '',
+  ariaLabel,
+}: {
+  title: string
+  summary: ReactNode
+  children: ReactNode
+  className?: string
+  ariaLabel?: string
+}) {
+  const [expanded, setExpanded] = useState(true)
+  const bodyId = useId()
+  const sectionClassName = [
+    'optimizer-result-section',
+    'optimizer-collapsible-result-section',
+    className,
+  ]
+    .filter(Boolean)
+    .join(' ')
+
+  return (
+    <section
+      className={sectionClassName}
+      aria-label={ariaLabel ?? title}
+    >
+      <div className="section-title optimizer-collapsible-section-header">
+        <div className="optimizer-collapsible-section-copy">
+          <strong>{title}</strong>
+          <span>{summary}</span>
+        </div>
+        <button
+          type="button"
+          className="optimizer-section-toggle"
+          aria-expanded={expanded}
+          aria-controls={bodyId}
+          aria-label={`${expanded ? '收合' : '展開'}${title}`}
+          onClick={() => setExpanded((current) => !current)}
+        >
+          {expanded ? '收合' : '展開'}
+        </button>
+      </div>
+      {expanded && (
+        <div
+          className="optimizer-collapsible-section-body"
+          id={bodyId}
+        >
+          {children}
+        </div>
+      )}
+    </section>
+  )
+}
+
 export function PlanApplicationPreview({
   draft,
   productionJarFills,
@@ -2878,14 +2934,11 @@ export function PlanApplicationPreview({
   )
 
   return (
-    <section
-      className="optimizer-result-section optimizer-transaction-preview"
-      aria-label="套用規劃預覽"
+    <CollapsibleOptimizerResultSection
+      title="套用規劃預覽"
+      summary="確認後才會寫入"
+      className="optimizer-transaction-preview"
     >
-      <div className="section-title">
-        <strong>套用規劃預覽</strong>
-        <span>確認後才會寫入</span>
-      </div>
 
       <p className="optimizer-transaction-note">
         以下是這份規劃的變更前 → 變更後。按下確認時會重新讀取目前 canonical
@@ -3147,7 +3200,7 @@ export function PlanApplicationPreview({
           </div>
         )}
       </article>
-    </section>
+    </CollapsibleOptimizerResultSection>
   )
 }
 
@@ -3897,13 +3950,10 @@ function OptimizerResultPanel({
         </small>
       </section>
 
-      <section className="optimizer-result-section">
-        <div className="section-title">
-          <strong>製作步驟</strong>
-          <span>
-            庫存抵扣後 {productionLogistics.productionPlan.machineOperations.total} 次操作
-          </span>
-        </div>
+      <CollapsibleOptimizerResultSection
+        title="製作步驟"
+        summary={`庫存抵扣後 ${productionLogistics.productionPlan.machineOperations.total} 次操作`}
+      >
 
         {productionLogistics.productionPlan.machineOperations.total > 0 && (
           <div className="optimizer-production-checklist-toolbar">
@@ -4112,12 +4162,13 @@ function OptimizerResultPanel({
             </div>
           </details>
         )}
-      </section>
+      </CollapsibleOptimizerResultSection>
 
-      <section className="optimizer-result-section">
-        <div className="section-title">
-          <strong>果汁分配</strong>
-          <span>
+      <CollapsibleOptimizerResultSection
+        title="果汁分配"
+        summary={
+          <>
+
             {result.recipePlans.length} 種 ·{' '}
             {
               result.recipePlans
@@ -4138,8 +4189,9 @@ function OptimizerResultPanel({
               0,
             )}
             {' 人已交付'}
-          </span>
-        </div>
+          </>
+        }
+      >
 
         <div className="optimizer-delivery-toolbar">
           <span>
@@ -4203,13 +4255,12 @@ function OptimizerResultPanel({
             ))}
           </div>
         )}
-      </section>
+      </CollapsibleOptimizerResultSection>
 
-      <section className="optimizer-result-section">
-        <div className="section-title">
-          <strong>販售排程</strong>
-          <span>目前策略：{tripPolicyLabel(selectedSalesTripPlan)}</span>
-        </div>
+      <CollapsibleOptimizerResultSection
+        title="販售排程"
+        summary={`目前策略：${tripPolicyLabel(selectedSalesTripPlan)}`}
+      >
 
         <SalesTripPlanBlock
           plan={selectedSalesTripPlan}
@@ -4247,7 +4298,7 @@ function OptimizerResultPanel({
         <small className="optimizer-boundary-note">
           兩種 policy 都使用實際持有杯數與逐杯 clean → used stack transition 驗證可行性；回工作間清洗會計入杯數與用水，掉落只代表 NPC 回傳時背包無空位。區域層只比較已確認的 Region edge footprint；不推導村內顧客順序、住處導航或到達時間。
         </small>
-      </section>
+      </CollapsibleOptimizerResultSection>
 
       <section className="optimizer-result-section">
         <div className="section-title">

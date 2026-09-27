@@ -19,6 +19,7 @@ import {
   DeliveryCustomerCheckbox,
   DeliveryRecipeGroupCheckbox,
   DeliveryTripGroupCheckbox,
+  CollapsibleOptimizerResultSection,
   INVENTORY_RECIPE_SEARCH_RESULT_LIMIT,
   INTERMEDIATE_JUICE_SEARCH_RESULT_LIMIT,
   JuiceJarRecipeCombobox,
@@ -1519,6 +1520,8 @@ describe('plan application preview', () => {
 
     expect(html).toContain('套用規劃預覽')
     expect(html).toContain('確認後才會寫入')
+    expect(html).toContain('aria-expanded="true"')
+    expect(html).toContain('aria-label="收合套用規劃預覽"')
     expect(html).toContain('確認套用這份規劃')
     expect(html).toContain('檸檬')
     expect(html).toContain('庫存水量')
@@ -1682,6 +1685,27 @@ describe('optimizer finished-stock cost UI', () => {
     ).toBe(
       '配方基準原料成本：40 金幣／份 · 本次新增製作原料成本：0 金幣',
     )
+  })
+})
+
+describe('optimizer collapsible result sections', () => {
+  it('renders long result sections expanded by default with a labeled collapse control', () => {
+    const html = renderToStaticMarkup(
+      <CollapsibleOptimizerResultSection
+        title="製作步驟"
+        summary="庫存抵扣後 12 次操作"
+      >
+        <p>長內容</p>
+      </CollapsibleOptimizerResultSection>,
+    )
+
+    expect(html).toContain('aria-label="製作步驟"')
+    expect(html).toContain('aria-expanded="true"')
+    expect(html).toContain('aria-controls=')
+    expect(html).toContain('製作步驟')
+    expect(html).toContain('庫存抵扣後 12 次操作')
+    expect(html).toContain('收合')
+    expect(html).toContain('長內容')
   })
 })
 
