@@ -178,6 +178,58 @@ function regionPhasePreferenceByCustomerId(
   )
 }
 
+function segmentPreferenceByCustomerId(
+  servicePlan: RegionServicePlan,
+  direction: 'earliest' | 'latest',
+): Record<string, number> {
+  const rawPreference =
+    tripPreferenceByCustomerId(servicePlan)
+  const assignmentsBySegment = new Map<
+    string,
+    RegionServicePlan['customerAssignments']
+  >()
+
+  for (const assignment of servicePlan.customerAssignments) {
+    const key =
+      `${assignment.recipeId}\u001f${assignment.regionId}`
+    const current = assignmentsBySegment.get(key) ?? []
+    current.push(assignment)
+    assignmentsBySegment.set(key, current)
+  }
+
+  const preferenceByCustomerId: Record<string, number> = {}
+  for (const assignments of assignmentsBySegment.values()) {
+    const preferences = assignments
+      .map(
+        (assignment) =>
+          rawPreference[assignment.customerId],
+      )
+      .filter((value) => Number.isFinite(value))
+    const preference =
+      direction === 'earliest'
+        ? Math.min(...preferences)
+        : Math.max(...preferences)
+
+    for (const assignment of assignments) {
+      preferenceByCustomerId[assignment.customerId] =
+        preference
+    }
+  }
+
+  return preferenceByCustomerId
+}
+
+function customerPreferenceSignature(
+  preferenceByCustomerId: Readonly<Record<string, number>>,
+): string {
+  return Object.entries(preferenceByCustomerId)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([customerId, preference]) =>
+      `${customerId}:${preference}`,
+    )
+    .join('|')
+}
+
 function reorderRecipeCustomers(
   recipe: PreparationRecipeDemand,
   preferenceByCustomerId: Readonly<Record<string, number>>,
@@ -454,22 +506,51 @@ export function buildRegionPhysicalSalesPlan(
       ) === index
     )
   })
-  const regionPreferenceCandidates = regionServiceIntents.flatMap(
-    (regionServiceIntent) => [
-      {
-        regionServiceIntent,
-        preferenceByCustomerId:
-          tripPreferenceByCustomerId(regionServiceIntent),
-      },
-      {
-        regionServiceIntent,
-        preferenceByCustomerId:
-          regionPhasePreferenceByCustomerId(
-            regionServiceIntent,
-          ),
-      },
-    ],
-  )
+  const regionPreferenceCandidates =
+    regionServiceIntents
+      .flatMap((regionServiceIntent) => [
+        {
+          regionServiceIntent,
+          preferenceByCustomerId:
+            tripPreferenceByCustomerId(regionServiceIntent),
+        },
+        {
+          regionServiceIntent,
+          preferenceByCustomerId:
+            segmentPreferenceByCustomerId(
+              regionServiceIntent,
+              'earliest',
+            ),
+        },
+        {
+          regionServiceIntent,
+          preferenceByCustomerId:
+            segmentPreferenceByCustomerId(
+              regionServiceIntent,
+              'latest',
+            ),
+        },
+        {
+          regionServiceIntent,
+          preferenceByCustomerId:
+            regionPhasePreferenceByCustomerId(
+              regionServiceIntent,
+            ),
+        },
+      ])
+      .filter((candidate, index, all) => {
+        const signature = customerPreferenceSignature(
+          candidate.preferenceByCustomerId,
+        )
+        return (
+          all.findIndex(
+            (other) =>
+              customerPreferenceSignature(
+                other.preferenceByCustomerId,
+              ) === signature,
+          ) === index
+        )
+      })
 
   const baseline = describePhysicalTrips(
     baselineSalesPlan,
