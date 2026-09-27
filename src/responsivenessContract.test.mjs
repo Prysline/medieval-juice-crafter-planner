@@ -6,6 +6,10 @@ const recipeToolsSource = readFileSync(
   new URL('./RecipeTools.tsx', import.meta.url),
   'utf8',
 )
+const optimizerToolsSource = readFileSync(
+  new URL('./OptimizerTools.tsx', import.meta.url),
+  'utf8',
+)
 
 describe('responsiveness wiring regression', () => {
   it('keeps bounded customer recipe search independent from query keystrokes', () => {
@@ -107,6 +111,16 @@ describe('responsiveness wiring regression', () => {
     expect(appSource).toContain('startTransition(() => {')
     expect(appSource).toContain('setInputValue(value)')
     expect(appSource).toContain('useDeferredValue(satisfactionByVillage)')
+  })
+
+  it('defers optimizer search-index construction until the optimizer tab is active', () => {
+    expect(appSource).toContain("active={tab === 'optimizer'}")
+    expect(optimizerToolsSource).toMatch(
+      /active\s*\?\s*buildInventoryRecipeSearchIndex\(inventoryRecipeEntries\)\s*:\s*EMPTY_INVENTORY_RECIPE_SEARCH_INDEX/,
+    )
+    expect(optimizerToolsSource).toMatch(
+      /active\s*\?\s*buildIntermediateJuiceSearchIndex\([\s\S]*?intermediateInventoryEntries[\s\S]*?\)\s*:\s*EMPTY_INTERMEDIATE_JUICE_SEARCH_INDEX/,
+    )
   })
 
   it('commits saved recipe name and note only after the local draft is finished', () => {

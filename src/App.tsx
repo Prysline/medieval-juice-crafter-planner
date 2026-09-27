@@ -1378,6 +1378,7 @@ function App() {
 
       <div hidden={tab !== 'optimizer'}>
         <MemoizedOptimizerTools
+          active={tab === 'optimizer'}
           currentProgress={currentProgress}
           satisfactionByVillage={deferredSatisfactionByVillage}
           suppliedCustomerIds={suppliedCustomerIds}
