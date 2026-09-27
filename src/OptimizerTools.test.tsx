@@ -1520,6 +1520,8 @@ describe('plan application preview', () => {
 
     expect(html).toContain('套用規劃預覽')
     expect(html).toContain('確認後才會寫入')
+    expect(html).toContain('aria-expanded="true"')
+    expect(html).toContain('aria-label="收合套用規劃預覽"')
     expect(html).toContain('確認套用這份規劃')
     expect(html).toContain('檸檬')
     expect(html).toContain('庫存水量')
