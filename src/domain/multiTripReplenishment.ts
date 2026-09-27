@@ -1643,6 +1643,7 @@ function buildTrips(
       ? trips.length + 1
       : null
     if (
+      fixedCustomerTrips &&
       fixedTripNumber !== null &&
       fixedTripNumber > fixedCustomerTrips.length
     ) {
@@ -1745,14 +1746,20 @@ function buildTrips(
       if (cupState.cleanCups + cupState.usedCups < 1) {
         throw new PlanningUserError(
           'missing-physical-cup',
-          {},
+          {
+            fixedTripNumber:
+              fixedTripNumber ?? undefined,
+          },
           'Sales planning requires at least one physical cup',
         )
       }
       if (maxConcurrentJars < 1) {
         throw new PlanningUserError(
           'missing-jar-slot',
-          {},
+          {
+            fixedTripNumber:
+              fixedTripNumber ?? undefined,
+          },
           'Sales planning requires at least one usable juice-jar slot',
         )
       }
@@ -1766,7 +1773,7 @@ function buildTrips(
       )
     }
 
-    if (fixedTripNumber !== null) {
+    if (fixedCustomerTrips && fixedTripNumber !== null) {
       const expected =
         fixedCustomerTrips[fixedTripNumber - 1]?.customerIds ?? []
       const actual = trip.juiceJars.flatMap(
