@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import type { Customer, RecipeCandidate } from '../types'
+import type { Customer, InventoryState, RecipeCandidate } from '../types'
 import { customers as canonicalCustomers } from '../data/customers'
 import { optimizeBatchPlan } from './optimizer'
+import { buildPreparationDemand } from './preparationDemand'
+import { buildPreparationShortfall } from './preparationShortfall'
 import type { OptimizationRequest } from './optimizerModel'
 
 function customer(
@@ -253,6 +255,191 @@ describe('production optimizer', () => {
         leftoverServings: 0,
       }),
     ])
+  })
+
+  it('prefers emptying more initial finished-stock jars after explicit objectives and incremental cost tie', async () => {
+    const result = await optimizeBatchPlan(
+      {
+        ...request(['a', 'b']),
+        initialAvailableJuiceJars: [
+          { recipeId: 'small-a', servings: 1 },
+          { recipeId: 'small-b', servings: 1 },
+          { recipeId: 'large-shared', servings: 5 },
+        ],
+      },
+      {
+        source: {
+          customers: [
+            customer('a', '甜味'),
+            customer('b', '清新口氣'),
+          ],
+          candidates: [
+            recipe(
+              'large-shared',
+              ['檸檬', '糖', '薄荷'],
+              ['甜味', '清新口氣'],
+            ),
+            recipe('small-a', ['檸檬', '糖'], ['甜味']),
+            recipe('small-b', ['檸檬', '薄荷'], ['清新口氣']),
+          ],
+        },
+      },
+    )
+
+    expect(result.totalIngredientCost).toBe(0)
+    expect(result.producedServings).toBe(0)
+    expect(result.assignments).toEqual(
+      expect.arrayContaining([
+        { customerId: 'a', recipeId: 'small-a' },
+        { customerId: 'b', recipeId: 'small-b' },
+      ]),
+    )
+    expect(result.recipePlans.map((plan) => plan.recipeId).sort()).toEqual([
+      'small-a',
+      'small-b',
+    ])
+
+    const demand = buildPreparationDemand(result)
+    const inventory: InventoryState = {
+      ingredientUnits: {},
+      waterUnits: 0,
+      cleanCups: 2,
+      usedCups: 0,
+      juiceJars: [
+        { id: 'jar-small-a', recipeId: 'small-a', servings: 1 },
+        { id: 'jar-small-b', recipeId: 'small-b', servings: 1 },
+        {
+          id: 'jar-large-shared',
+          recipeId: 'large-shared',
+          servings: 5,
+        },
+      ],
+      shelfCount: 0,
+      jarRackCount: 0,
+    }
+    const shortfall = buildPreparationShortfall(demand, inventory)
+
+    expect(
+      shortfall.recipes.flatMap((plan) => plan.finishedStockSources),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          physicalJarId: 'jar-small-a',
+          servingsUsed: 1,
+          servingsRemaining: 0,
+        }),
+        expect.objectContaining({
+          physicalJarId: 'jar-small-b',
+          servingsUsed: 1,
+          servingsRemaining: 0,
+        }),
+      ]),
+    )
+  })
+
+  it('counts cumulative same-recipe jar thresholds instead of only consumed servings', async () => {
+    const result = await optimizeBatchPlan(
+      {
+        ...request(['a', 'b', 'c']),
+        initialAvailableJuiceJars: [
+          { recipeId: 'tiered', servings: 1 },
+          { recipeId: 'tiered', servings: 2 },
+          { recipeId: 'single-large', servings: 4 },
+        ],
+      },
+      {
+        source: {
+          customers: [
+            customer('a', '甜味'),
+            customer('b', '甜味'),
+            customer('c', '甜味'),
+          ],
+          candidates: [
+            recipe('single-large', ['檸檬', '糖'], ['甜味']),
+            recipe('tiered', ['檸檬', '薄荷'], ['甜味']),
+          ],
+        },
+      },
+    )
+
+    expect(result.assignments).toEqual([
+      { customerId: 'a', recipeId: 'tiered' },
+      { customerId: 'b', recipeId: 'tiered' },
+      { customerId: 'c', recipeId: 'tiered' },
+    ])
+    expect(result.totalIngredientCost).toBe(0)
+    expect(result.producedServings).toBe(0)
+  })
+
+  it('uses a free finished-stock serving without increasing the minimum incremental cost', async () => {
+    const result = await optimizeBatchPlan(
+      {
+        ...request(['a', 'b']),
+        initialAvailableJuiceJars: [
+          { recipeId: 'stocked-expensive', servings: 1 },
+        ],
+      },
+      {
+        source: {
+          customers: [
+            customer('a', '甜味'),
+            customer('b', '甜味'),
+          ],
+          candidates: [
+            recipe(
+              'stocked-expensive',
+              ['檸檬', '薄荷'],
+              ['甜味'],
+            ),
+            recipe('cheap-new', ['檸檬', '糖'], ['甜味']),
+          ],
+        },
+      },
+    )
+
+    expect(result.assignments).toEqual([
+      { customerId: 'a', recipeId: 'stocked-expensive' },
+      { customerId: 'b', recipeId: 'cheap-new' },
+    ])
+    expect(result.totalIngredientCost).toBe(16)
+    expect(result.producedServings).toBe(2)
+  })
+
+  it('keeps an explicit revenue objective ahead of the initial-jar release tie-break', async () => {
+    const result = await optimizeBatchPlan(
+      {
+        ...request(['a'], 'maximum-known-revenue'),
+        initialAvailableJuiceJars: [
+          { recipeId: 'small-low-revenue', servings: 1 },
+          { recipeId: 'large-high-revenue', servings: 5 },
+        ],
+      },
+      {
+        source: {
+          customers: [customer('a', '甜味')],
+          candidates: [
+            recipe(
+              'small-low-revenue',
+              ['檸檬', '糖'],
+              ['甜味'],
+              10,
+            ),
+            recipe(
+              'large-high-revenue',
+              ['檸檬', '薄荷'],
+              ['甜味'],
+              20,
+            ),
+          ],
+        },
+      },
+    )
+
+    expect(result.assignments).toEqual([
+      { customerId: 'a', recipeId: 'large-high-revenue' },
+    ])
+    expect(result.totalIngredientCost).toBe(0)
+    expect(result.knownSalesRevenue).toBe(20)
   })
 
   it('chooses a shared recipe when separate cheapest recipes cost more overall', async () => {
