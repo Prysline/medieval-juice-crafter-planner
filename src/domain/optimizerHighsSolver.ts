@@ -282,7 +282,7 @@ function buildHighsStage(
         return x ? [x.times(2)] : []
       })
       const finishedServings = group.recipes.reduce(
-        (sum, recipe) => sum + recipe.initialFinishedServings,
+        (sum, recipe) => sum + (recipe.initialFinishedServings ?? 0),
         0,
       )
 
@@ -337,7 +337,7 @@ function buildHighsStage(
       model.addConstraint(
         assignedServings
           .minus(x.times(2))
-          .leq(recipe.initialFinishedServings),
+          .leq((recipe.initialFinishedServings ?? 0)),
         `capacity_${recipeIndex}`,
       )
 
