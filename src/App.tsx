@@ -1357,9 +1357,9 @@ function App() {
               />
             </div>
 
-            {pagedRecipeRows.map((entry) => (
+            {pagedRecipeRows.map((entry, slotIndex) => (
               <MemoizedRecipeRow
-                key={entry.id}
+                key={slotIndex}
                 entry={entry}
                 currentProgress={currentProgress}
                 satisfactionByVillage={deferredSatisfactionByVillage}
@@ -1981,7 +1981,8 @@ export function RecipeRow({
 }) {
   const recipe = entry.candidate
   const cost = calculateRecipeIngredientCost(recipe)
-  const [expanded, setExpanded] = useState(false)
+  const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null)
+  const expanded = expandedEntryId === entry.id
   const matchingCustomers = expanded
     ? customers
         .filter((customer) =>
@@ -1993,7 +1994,10 @@ export function RecipeRow({
   return (
     <details
       className="table-row"
-      onToggle={(event) => setExpanded(event.currentTarget.open)}
+      open={expanded}
+      onToggle={(event) =>
+        setExpandedEntryId(event.currentTarget.open ? entry.id : null)
+      }
     >
       <summary className="recipe-columns">
         <div className="primary-cell">
