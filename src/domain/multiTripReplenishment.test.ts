@@ -1392,6 +1392,7 @@ describe('multi-trip replenishment', () => {
     expect(result.physicalJarsUsed).toBe(1)
     expect(result.maxJuiceJarSlotsCarried).toBe(1)
     expect(result.jarTypeSwitches).toBe(3)
+    expect(result.productionJarFills).toHaveLength(4)
     expect(
       result.trips.flatMap((trip) =>
         trip.juiceJars.map(
@@ -1579,6 +1580,7 @@ describe('multi-trip replenishment', () => {
 
     expect(result.tripCount).toBe(2)
     expect(result.jarTypeSwitches).toBe(0)
+    expect(result.productionJarFills).toHaveLength(2)
     expect(result.trips[0].juiceJars[0]).toMatchObject({
       physicalJarId: 'jar-1',
       servings: 10,
