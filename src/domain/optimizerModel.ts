@@ -31,9 +31,15 @@ export type OptimizationObjective =
 export type OptimizationCriterion =
   | OptimizationObjective
   | 'minimum-machine-operations'
-  | 'minimum-jar-switches'
+  | 'minimum-jar-fill-operations'
 
 export interface OptimizationConstraints {
+  /** Player-facing hard limit on actual final-juice jar fill operations. */
+  maxJarFillOperations?: number
+  /**
+   * Internal physical type-transition limit retained for diagnostics and
+   * low-level correctness probes. This is not a player operation-cost metric.
+   */
   maxJarTypeSwitches?: number
 }
 

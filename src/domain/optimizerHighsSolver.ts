@@ -29,6 +29,7 @@ type ObjectiveKey =
   | 'negativeKnownRevenue'
   | 'negativeKnownGrossProfit'
   | 'machineOperations'
+  | 'jarFillOperations'
   | 'jarSwitches'
   | 'negativeEmptiedInitialJars'
 
@@ -67,7 +68,7 @@ function criterionKey(
   if (criterion === 'minimum-machine-operations') {
     return 'machineOperations'
   }
-  return 'jarSwitches'
+  return 'jarFillOperations'
 }
 
 function objectiveOrder(
@@ -147,6 +148,7 @@ function buildHighsStage(
   const zByRecipeId = new Map<string, BoolVariable>()
   const yByCustomerRecipe = new Map<string, BoolVariable>()
   const operationByEdgeKey = new Map<string, IntVariable>()
+  const operationKindByEdgeKey = new Map<string, ProductionStepKind>()
   const neededObjectiveKeys = new Set<ObjectiveKey>([
     objective,
     ...fixes.map((fix) => fix.objective),
@@ -164,18 +166,24 @@ function buildHighsStage(
   ).length
   const maxJarTypeSwitches =
     domain.request.constraints?.maxJarTypeSwitches
+  const maxJarFillOperations =
+    domain.request.constraints?.maxJarFillOperations
   const hasJarHardConstraint =
     emptyJarCount === 0 ||
     (
       typeof maxJarTypeSwitches === 'number' &&
       Number.isFinite(maxJarTypeSwitches)
     )
+  const hasJarFillHardConstraint =
+    typeof maxJarFillOperations === 'number' &&
+    Number.isFinite(maxJarFillOperations)
   const needsJarStructure =
     needsAnyObjective('jarSwitches') || hasJarHardConstraint
   const needsRecipeUsageStructure =
     needsAnyObjective('kinds') || needsJarStructure
   const needsProductionOperations =
-    needsAnyObjective('machineOperations')
+    needsAnyObjective('machineOperations', 'jarFillOperations') ||
+    hasJarFillHardConstraint
   const needsRecipeSpecificAssignments = needsAnyObjective(
     'negativeAssignedIngredientCost',
     'negativeKnownRevenue',
@@ -415,6 +423,13 @@ function buildHighsStage(
         ) {
           continue
         }
+        const existingKind = operationKindByEdgeKey.get(edge.key)
+        if (existingKind && existingKind !== edge.kind) {
+          throw new Error(
+            `Production edge ${edge.key} changed kind from ${existingKind} to ${edge.kind}`,
+          )
+        }
+        operationKindByEdgeKey.set(edge.key, edge.kind)
         multiplicityByEdgeKey.set(
           edge.key,
           (multiplicityByEdgeKey.get(edge.key) ?? 0) + 1,
@@ -519,6 +534,27 @@ function buildHighsStage(
   const machineOperationsExpression = needsAnyObjective('machineOperations')
     ? sum(...operationByEdgeKey.values())
     : undefined
+
+  const jarFillOperationsExpression =
+    needsAnyObjective('jarFillOperations') || hasJarFillHardConstraint
+      ? sum(
+          ...[...operationByEdgeKey.entries()].flatMap(
+            ([edgeKey, operation]) =>
+              operationKindByEdgeKey.get(edgeKey) === 'finalizing'
+                ? [operation]
+                : [],
+          ),
+        )
+      : undefined
+
+  if (jarFillOperationsExpression && hasJarFillHardConstraint) {
+    model.addConstraint(
+      jarFillOperationsExpression.leq(
+        Math.max(0, Math.floor(maxJarFillOperations!)),
+      ),
+      'jar_fill_operation_hard_limit',
+    )
+  }
 
   const assignedIngredientCostExpression = needsAnyObjective(
     'negativeAssignedIngredientCost',
@@ -703,6 +739,7 @@ function buildHighsStage(
         ? costExpression.minus(knownRevenueExpression)
         : undefined,
     machineOperations: machineOperationsExpression,
+    jarFillOperations: jarFillOperationsExpression,
     jarSwitches,
     negativeEmptiedInitialJars:
       negativeEmptiedInitialJarsExpression,
@@ -795,6 +832,15 @@ async function tryMachineOperationCertificate(
   domain: BatchOptimizationModel,
   fixedMinimumCost: number,
 ): Promise<InternalMachineOperationCertificate | null> {
+  const maxJarFillOperations =
+    domain.request.constraints?.maxJarFillOperations
+  if (
+    typeof maxJarFillOperations === 'number' &&
+    Number.isFinite(maxJarFillOperations)
+  ) {
+    return null
+  }
+
   const fixes: ObjectiveFix[] = [
     {
       objective: 'cost',
@@ -1203,12 +1249,18 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
         }
       }
 
+      const nextObjectiveKey = objectives[objectiveIndex + 1]
+      const shouldTryMachineCertificate =
+        currentDomain.recipes.length >=
+          PRODUCTION_CERTIFICATE_RECIPE_COUNT_GATE ||
+        nextObjectiveKey === 'jarFillOperations'
+
       if (
         objectiveKey === 'machineOperations' &&
         minimumCostCertificateApplied &&
         fixes.length === 1 &&
         fixes[0].objective === 'cost' &&
-        currentDomain.recipes.length >= PRODUCTION_CERTIFICATE_RECIPE_COUNT_GATE
+        shouldTryMachineCertificate
       ) {
         const certificate = await tryMachineOperationCertificate(
           currentDomain,
@@ -1228,6 +1280,42 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
           currentDomain = continuationDomain
           continue
         }
+      }
+
+      if (
+        objectiveKey === 'jarFillOperations' &&
+        minimumCostCertificateApplied &&
+        machineCertificate &&
+        fixes.length === 2 &&
+        fixes[0].objective === 'cost' &&
+        fixes[1].objective === 'machineOperations' &&
+        currentDomain.recipes.length >= PRODUCTION_CERTIFICATE_RECIPE_COUNT_GATE
+      ) {
+        // The machine certificate proves the global machine optimum equals
+        // the sum of independent lower bounds for through-seasoning,
+        // blending, and finalizing. Once that total is fixed, finalizing
+        // cannot exceed its own lower bound without making another partition
+        // fall below a proven lower bound. Therefore the jar-fill optimum is
+        // already exact and does not need another production-scale MIP solve.
+        fixes.push({
+          objective: objectiveKey,
+          value: machineCertificate.lowerBounds.finalizing,
+        })
+        currentDomain = continuationDomain
+
+        const remainingObjectives = objectives.slice(
+          objectiveIndex + 1,
+        )
+        if (
+          remainingObjectives.every(
+            (remainingObjective) =>
+              remainingObjective === 'productionUnits' ||
+              remainingObjective === 'kinds',
+          )
+        ) {
+          break
+        }
+        continue
       }
 
       if (

@@ -114,6 +114,22 @@ describe('minimum-cost stage certificate preparation', () => {
     expect(certificate).toBeNull()
   })
 
+  it('falls back when a finite jar-fill hard limit makes finalizing batches part of Stage 1 feasibility', () => {
+    const certificate = prepareMinimumCostStageCertificate(
+      model(
+        [recipe('shared', 4, ['a', 'b'])],
+        {
+          ...baseRequest,
+          constraints: {
+            maxJarFillOperations: 1,
+          },
+        },
+      ),
+    )
+
+    expect(certificate).toBeNull()
+  })
+
   it('falls back when every initial jar is occupied and reuse feasibility depends on assignment identity', () => {
     const certificate = prepareMinimumCostStageCertificate(
       model(

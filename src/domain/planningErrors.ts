@@ -17,6 +17,8 @@ export interface PlanningUserErrorContext {
   policy?: string
   expectedJarTypeSwitches?: number
   actualJarTypeSwitches?: number
+  expectedJarFillOperations?: number
+  actualJarFillOperations?: number
   solverStatus?: string
 }
 
@@ -121,7 +123,7 @@ export function presentPlanningError(
             : undefined
         const retainedDetail =
           typeof retained === 'number' && retained > 0
-            ? `另有 ${retained} 個果汁罐因既有內容必須保留，不能拿來換裝其他配方。`
+            ? `另有 ${retained} 個果汁罐因既有內容必須保留，不能拿來改裝其他配方。`
             : ''
         const additionalDetail =
           typeof additional === 'number' && additional > 0
@@ -152,7 +154,7 @@ export function presentPlanningError(
       }
       case 'retained-juice-conflict':
         return {
-          title: '現有果汁內容阻止了換裝',
+          title: '現有果汁內容阻止了改裝',
           message:
             '目前需要保留的既有果汁尚未喝完，不能為了安排其他配方而自動倒掉或跨罐轉移。',
           suggestions: [
@@ -187,7 +189,7 @@ export function presentPlanningError(
           message:
             '求解器無法在目前的顧客、候選配方與限制條件下找到完整可行方案。',
           suggestions: [
-            '放寬最大果汁罐換裝次數等限制。',
+            '放寬最大裝罐操作次數等限制。',
             '確認目前主線進度、候選配方政策與庫存設定是否符合實際狀態。',
           ],
           technicalDetails: details,

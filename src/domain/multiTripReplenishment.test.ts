@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { InventoryState, JuiceJarInventoryItem } from '../types'
 import type { PreparationDemand } from './preparationDemand'
+import { JUICE_JAR_CAPACITY } from './inventoryRules'
 import { minimumJarTypeSwitchesForInitialJars } from './jarSwitches'
 import { buildPreparationShortfall } from './preparationShortfall'
 import {
@@ -249,6 +250,7 @@ describe('multi-trip replenishment', () => {
         initialServings: 1,
       },
     ])
+    expect(result.productionJarFills).toHaveLength(0)
     expect(result.trips).toHaveLength(1)
     expect(result.trips[0].juiceJars[0]).toMatchObject({
       physicalJarId: 'owned-a',
@@ -309,6 +311,14 @@ describe('multi-trip replenishment', () => {
       ),
     ).toBe(2)
     expect(result.jarTypeSwitches).toBe(2)
+    expect(result.productionJarFills).toHaveLength(3)
+    expect(
+      result.productionJarFills.map((fill) => fill.fillAction),
+    ).toEqual([
+      'refill-same-type',
+      'type-switch',
+      'type-switch',
+    ])
     expect(
       result.trips.flatMap((trip) =>
         trip.juiceJars
@@ -422,6 +432,27 @@ describe('multi-trip replenishment', () => {
     )
 
     expect(result.tripCount).toBe(1)
+    expect(result.productionJarFills).toHaveLength(2)
+    expect(
+      result.productionJarFills.map((fill) => ({
+        physicalJarId: fill.physicalJarId,
+        fillAction: fill.fillAction,
+        beforeTripNumber: fill.beforeTripNumber,
+      })),
+    ).toEqual(
+      expect.arrayContaining([
+        {
+          physicalJarId: 'jar-1',
+          fillAction: 'refill-same-type',
+          beforeTripNumber: 1,
+        },
+        {
+          physicalJarId: 'jar-2',
+          fillAction: 'initial-fill',
+          beforeTripNumber: 1,
+        },
+      ]),
+    )
     expect(result.trips[0]?.totalServings).toBe(10)
     expect(result.trips[0]?.juiceJars).toEqual(
       expect.arrayContaining([
@@ -1392,6 +1423,7 @@ describe('multi-trip replenishment', () => {
     expect(result.physicalJarsUsed).toBe(1)
     expect(result.maxJuiceJarSlotsCarried).toBe(1)
     expect(result.jarTypeSwitches).toBe(3)
+    expect(result.productionJarFills).toHaveLength(4)
     expect(
       result.trips.flatMap((trip) =>
         trip.juiceJars.map(
@@ -1579,6 +1611,7 @@ describe('multi-trip replenishment', () => {
 
     expect(result.tripCount).toBe(2)
     expect(result.jarTypeSwitches).toBe(0)
+    expect(result.productionJarFills).toHaveLength(2)
     expect(result.trips[0].juiceJars[0]).toMatchObject({
       physicalJarId: 'jar-1',
       servings: 10,
@@ -1594,6 +1627,27 @@ describe('multi-trip replenishment', () => {
       result.productionJarFills.map((fill) => fill.fillAction),
     ).toEqual(['initial-fill', 'refill-same-type'])
     expectScheduleConsistency(result)
+  })
+
+  it('keeps physical fill count equal to finalizing batches across jar-capacity boundaries', () => {
+    for (let servings = 1; servings <= 25; servings += 1) {
+      const result = buildPlan(
+        namedRecipes(['A'], servings),
+        'allow-drop-if-full',
+        1,
+      )
+
+      expect(result.productionJarFills).toHaveLength(
+        Math.ceil(servings / JUICE_JAR_CAPACITY),
+      )
+      expect(
+        result.productionJarFills.reduce(
+          (sum, fill) => sum + fill.servings,
+          0,
+        ),
+      ).toBe(Math.ceil(servings / 2) * 2)
+      expectScheduleConsistency(result)
+    }
   })
 
   it('limits concurrent carried jars by backpack capacity instead of a global rack constant', () => {

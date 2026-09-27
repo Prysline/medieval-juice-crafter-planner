@@ -100,7 +100,7 @@ function fallbackRecipe(
 }
 
 describe('Debug-D Production P4 ordering and fallback', () => {
-  it('honors jar-switch-first ordering instead of forcing minimum cost first', async () => {
+  it('honors jar-fill-first ordering instead of forcing minimum cost first', async () => {
     const customers = [
       customer('a', '酸味'),
       customer('b', '清新口氣'),
@@ -119,7 +119,7 @@ describe('Debug-D Production P4 ordering and fallback', () => {
       {
         ...baseRequest(['a', 'b']),
         availableJuiceJarCount: 1,
-        priorities: ['minimum-cost', 'minimum-jar-switches'],
+        priorities: ['minimum-cost', 'minimum-jar-fill-operations'],
       },
       { source: { customers, candidates } },
     )
@@ -127,17 +127,17 @@ describe('Debug-D Production P4 ordering and fallback', () => {
       {
         ...baseRequest(['a', 'b']),
         availableJuiceJarCount: 1,
-        priorities: ['minimum-jar-switches', 'minimum-cost'],
+        priorities: ['minimum-jar-fill-operations', 'minimum-cost'],
       },
       { source: { customers, candidates } },
     )
 
     expect(costFirst.totalIngredientCost).toBe(20)
-    expect(costFirst.jarTypeSwitches).toBe(1)
+    expect(costFirst.machineOperations.finalizing).toBe(2)
     expect(costFirst.recipePlans).toHaveLength(2)
 
     expect(jarFirst.totalIngredientCost).toBe(30)
-    expect(jarFirst.jarTypeSwitches).toBe(0)
+    expect(jarFirst.machineOperations.finalizing).toBe(1)
     expect(jarFirst.recipePlans).toHaveLength(1)
     expect(jarFirst.recipePlans[0].recipeId).toBe('shared')
   })
@@ -201,7 +201,7 @@ describe('Debug-D Production P4 production-scale benchmark', () => {
       priorities: [
         'minimum-cost',
         'minimum-machine-operations',
-        'minimum-jar-switches',
+        'minimum-jar-fill-operations',
       ],
       availableJuiceJarCount: 2,
     }
@@ -216,7 +216,7 @@ describe('Debug-D Production P4 production-scale benchmark', () => {
 
     expect(result.totalIngredientCost).toBe(604)
     expect(result.machineOperations.total).toBe(54)
-    expect(result.jarTypeSwitches).toBe(20)
+    expect(result.machineOperations.finalizing).toBeGreaterThan(0)
     expect(result.assignments).toHaveLength(49)
     expect(result.unresolvedCustomers).toHaveLength(3)
   }, 150000)
