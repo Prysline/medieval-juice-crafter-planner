@@ -2029,6 +2029,8 @@ describe('optimizer run timing UI', () => {
         elapsedMs={222_000}
         candidatePolicy="allow-unambiguous-computed"
         customerCount={49}
+        assignedCustomerCount={49}
+        unresolvedCustomerCount={0}
       />,
     )
 
@@ -2036,5 +2038,20 @@ describe('optimizer run timing UI', () => {
     expect(html).toContain(
       '正式實測＋已確認個人配方＋無歧義預測 · 49 位顧客',
     )
+  })
+
+  it('makes a normal-mode partial result impossible to mistake for full completion', () => {
+    const html = renderToStaticMarkup(
+      <OptimizerRunSummary
+        elapsedMs={10_000}
+        candidatePolicy="allow-unambiguous-computed"
+        customerCount={49}
+        assignedCustomerCount={42}
+        unresolvedCustomerCount={7}
+      />,
+    )
+
+    expect(html).toContain('部分規劃完成')
+    expect(html).toContain('已安排 42 / 49 位待規劃顧客')
   })
 })

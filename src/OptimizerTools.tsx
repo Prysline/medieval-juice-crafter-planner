@@ -385,16 +385,29 @@ export function OptimizerRunSummary({
   elapsedMs,
   candidatePolicy,
   customerCount,
+  assignedCustomerCount,
+  unresolvedCustomerCount,
 }: {
   elapsedMs: number
   candidatePolicy: OptimizationCandidatePolicy
   customerCount: number
+  assignedCustomerCount: number
+  unresolvedCustomerCount: number
 }) {
+  const plannedDemandCount =
+    assignedCustomerCount + unresolvedCustomerCount
+  const partial = unresolvedCustomerCount > 0
+  const customerSummary = partial
+    ? `已安排 ${assignedCustomerCount} / ${plannedDemandCount} 位待規劃顧客`
+    : `${customerCount} 位顧客`
+
   return (
     <div className="optimizer-run-summary" role="status">
-      <strong>規劃完成 · {formatOptimizerDuration(elapsedMs)}</strong>
+      <strong>
+        {partial ? '部分規劃完成' : '規劃完成'} · {formatOptimizerDuration(elapsedMs)}
+      </strong>
       <span>
-        {optimizerCandidatePolicyLabel(candidatePolicy)} · {customerCount} 位顧客
+        {optimizerCandidatePolicyLabel(candidatePolicy)} · {customerSummary}
       </span>
     </div>
   )
@@ -2770,6 +2783,8 @@ function OptimizerTools({
             elapsedMs={runState.elapsedMs}
             candidatePolicy={runState.candidatePolicy}
             customerCount={runState.customerCount}
+            assignedCustomerCount={runState.result.assignedServings}
+            unresolvedCustomerCount={runState.result.unresolvedCustomers.length}
           />
           <OptimizerResultPanel
           result={runState.result}
@@ -4840,9 +4855,12 @@ function OptimizerResultPanel({
       {result.unresolvedCustomers.length > 0 && (
         <section className="optimizer-unresolved">
           <strong>
-            目前沒有可靠 full match：{result.unresolvedCustomers.length} 人
+            未納入本次規劃：{result.unresolvedCustomers.length} 人沒有可靠 full match
           </strong>
           <p>{result.unresolvedCustomers.map(customerLabel).join('、')}</p>
+          <small>
+            一般規劃仍會替其餘有可靠 full match 的顧客產生結果；上方的採買、庫存與販售摘要只涵蓋已安排顧客，不能解讀成全部選定顧客都已完成。
+          </small>
         </section>
       )}
     </div>

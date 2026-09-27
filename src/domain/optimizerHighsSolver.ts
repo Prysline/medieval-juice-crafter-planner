@@ -33,6 +33,7 @@ type ObjectiveKey =
   | 'jarFillOperations'
   | 'jarSwitches'
   | 'negativeEmptiedInitialJars'
+  | 'negativeAssignedCustomers'
   | 'inventoryShortfall'
 
 type IntVariable = ReturnType<Model['intVar']>
@@ -98,6 +99,7 @@ interface HighsStageOptions {
   machineOperationKinds?: Set<ProductionStepKind>
   fixedRecipeUnits?: Map<string, number>
   productionUnitsLowerBound?: number
+  allowUnassignedCustomers?: boolean
 }
 
 function initialFinishedJarEmptyingThresholds(
@@ -498,8 +500,11 @@ function buildHighsStage(
           assignmentVars.push(y)
         })
 
+        const assignedCustomer = sum(...assignmentVars)
         model.addConstraint(
-          sum(...assignmentVars).eq(1),
+          options.allowUnassignedCustomers
+            ? assignedCustomer.leq(1)
+            : assignedCustomer.eq(1),
           `customer_${customerIndex}`,
         )
       },
@@ -550,8 +555,11 @@ function buildHighsStage(
           assignmentVars.push(y)
         })
 
+        const assignedCustomer = sum(...assignmentVars)
         model.addConstraint(
-          sum(...assignmentVars).eq(1),
+          options.allowUnassignedCustomers
+            ? assignedCustomer.leq(1)
+            : assignedCustomer.eq(1),
           `customer_${customerIndex}`,
         )
       },
@@ -921,6 +929,11 @@ function buildHighsStage(
     }
   }
 
+  const assignedCustomerCountExpression =
+    needsAnyObjective('negativeAssignedCustomers')
+      ? sum(...yByCustomerRecipe.values())
+      : undefined
+
   const expressions = {
     cost: costExpression,
     productionUnits: productionUnitsExpression,
@@ -937,6 +950,8 @@ function buildHighsStage(
     jarSwitches,
     negativeEmptiedInitialJars:
       negativeEmptiedInitialJarsExpression,
+    negativeAssignedCustomers:
+      assignedCustomerCountExpression?.times(-1),
     inventoryShortfall:
       objective === 'inventoryShortfall'
         ? sum(...inventoryShortfallByIngredientId.values())
@@ -1407,6 +1422,50 @@ async function diagnoseInventoryOnlyRawShortfall(
     .sort((a, b) => a.ingredientId.localeCompare(b.ingredientId))
 }
 
+async function diagnoseInventoryOnlyCustomerCapacity(
+  domain: BatchOptimizationModel,
+): Promise<{
+  satisfiableCustomerCount: number
+  unfulfilledCustomerIds: string[]
+} | null> {
+  if (domain.request.materialSourceMode !== 'inventory-only') {
+    return null
+  }
+
+  const built = buildHighsStage(
+    domain,
+    'negativeAssignedCustomers',
+    [],
+    { allowUnassignedCustomers: true },
+  )
+  const solution = await built.model.solve()
+  if (solution.status !== 'optimal') return null
+
+  const satisfiableCustomerIds =
+    domain.serviceableCustomerIds.filter((customerId) =>
+      domain.recipes.some((recipe) => {
+        const variable = built.yByCustomerRecipe.get(
+          `${customerId}\u001f${recipe.candidate.id}`,
+        )
+        return variable
+          ? requiredFiniteNumber(
+              solution.getValue(variable),
+              `inventory diagnostic assignment ${customerId}/${recipe.candidate.id}`,
+            ) > 0.5
+          : false
+      }),
+    )
+  const satisfiable = new Set(satisfiableCustomerIds)
+
+  return {
+    satisfiableCustomerCount: satisfiableCustomerIds.length,
+    unfulfilledCustomerIds:
+      domain.serviceableCustomerIds.filter(
+        (customerId) => !satisfiable.has(customerId),
+      ),
+  }
+}
+
 export const highsSolverAdapter: BatchOptimizerSolver = {
   async solve(
     domain: BatchOptimizationModel,
@@ -1603,10 +1662,16 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
       }
 
       if (solution.status !== 'optimal') {
-        const inventoryShortfalls =
+        const [
+          inventoryShortfalls,
+          inventoryCustomerCapacity,
+        ] =
           objectiveIndex === 0
-            ? await diagnoseInventoryOnlyRawShortfall(domain)
-            : null
+            ? await Promise.all([
+                diagnoseInventoryOnlyRawShortfall(domain),
+                diagnoseInventoryOnlyCustomerCapacity(domain),
+              ])
+            : [null, null]
         throw new PlanningUserError(
           'optimizer-no-solution',
           {
@@ -1616,6 +1681,14 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
                   materialSourceMode: 'inventory-only' as const,
                   ...(inventoryShortfalls
                     ? { inventoryShortfalls }
+                    : {}),
+                  ...(inventoryCustomerCapacity
+                    ? {
+                        inventorySatisfiableCustomerCount:
+                          inventoryCustomerCapacity.satisfiableCustomerCount,
+                        inventoryUnfulfilledCustomerIds:
+                          inventoryCustomerCapacity.unfulfilledCustomerIds,
+                      }
                     : {}),
                 }
               : {}),
