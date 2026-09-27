@@ -232,16 +232,9 @@ function buildHighsStage(
     }
 
     if (needsRecipeUsageStructure) {
-      const z = model.boolVar(`z_${recipeIndex}`)
-      zByRecipeId.set(recipe.candidate.id, z)
-
-      model.addConstraint(
-        x.minus(z.times(Math.max(1, recipeUpperBound))).leq(0),
-        `usage_upper_${recipeIndex}`,
-      )
-      model.addConstraint(
-        z.minus(x).leq(0),
-        `usage_lower_${recipeIndex}`,
+      zByRecipeId.set(
+        recipe.candidate.id,
+        model.boolVar(`z_${recipeIndex}`),
       )
     }
   })
@@ -288,11 +281,15 @@ function buildHighsStage(
         const x = xByRecipeId.get(recipe.candidate.id)
         return x ? [x.times(2)] : []
       })
+      const finishedServings = group.recipes.reduce(
+        (sum, recipe) => sum + recipe.initialFinishedServings,
+        0,
+      )
 
       model.addConstraint(
         sum(...assignmentVars)
           .minus(sum(...capacityTerms))
-          .leq(0),
+          .leq(finishedServings),
         `capacity_${groupIndex}`,
       )
     })
@@ -336,10 +333,31 @@ function buildHighsStage(
         },
       )
 
+      const assignedServings = sum(...assignmentVars)
       model.addConstraint(
-        sum(...assignmentVars).minus(x.times(2)).leq(0),
+        assignedServings
+          .minus(x.times(2))
+          .leq(recipe.initialFinishedServings),
         `capacity_${recipeIndex}`,
       )
+
+      const z = zByRecipeId.get(recipe.candidate.id)
+      if (z) {
+        const assignmentUpperBound = Math.max(
+          1,
+          recipe.eligibleCustomerIds.length,
+        )
+        model.addConstraint(
+          assignedServings
+            .minus(z.times(assignmentUpperBound))
+            .leq(0),
+          `usage_upper_${recipeIndex}`,
+        )
+        model.addConstraint(
+          z.minus(assignedServings).leq(0),
+          `usage_lower_${recipeIndex}`,
+        )
+      }
     })
   }
 
@@ -1262,7 +1280,10 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
           recipe.juiceUnitIngredientCost,
       0,
     )
-    const recipeKinds = Object.keys(productionUnitsByRecipeId).length
+    const assignedRecipeIds = [...new Set(
+      assignments.map((assignment) => assignment.recipeId),
+    )]
+    const recipeKinds = assignedRecipeIds.length
     const machineOperations = [...finalStage.built.operationByEdgeKey.values()]
       .reduce(
         (total, variable) =>
@@ -1277,7 +1298,7 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
       )
     const jarTypeSwitches = minimumJarTypeSwitchesForRecipeIds(
       domain.request,
-      Object.keys(productionUnitsByRecipeId),
+      assignedRecipeIds,
     )
 
     return {
