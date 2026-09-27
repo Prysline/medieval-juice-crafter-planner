@@ -13,13 +13,20 @@ import {
 
 describe('Stage 8 progress milestone', () => {
   it('is a selectable progression point after the Stage 7 ibex milestone', () => {
-    expect(progressMilestoneIds.at(-1)).toBe(
-      'sales-assistant-adam-arrived',
-    )
     expect(
       progressMilestoneIndex.get('sales-assistant-adam-arrived'),
     ).toBeGreaterThan(
       progressMilestoneIndex.get('ibex-statue-unlocked')!,
+    )
+    expect(
+      progressMilestoneIndex.get('advanced-juicer-unlocked'),
+    ).toBeGreaterThan(
+      progressMilestoneIndex.get('sales-assistant-adam-arrived')!,
+    )
+    expect(
+      progressMilestoneIndex.get('liquid-blender-unlocked'),
+    ).toBeGreaterThan(
+      progressMilestoneIndex.get('advanced-juicer-unlocked')!,
     )
     expect(
       progressMilestoneLabels['sales-assistant-adam-arrived'],

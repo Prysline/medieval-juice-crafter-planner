@@ -81,4 +81,41 @@ export const stages: StageDefinition[] = [
       '玩家推測若寄信時間太晚，可能要等隔天才能取信；目前尚缺直接跨日邊界實測。',
     ],
   },
+  {
+    id: 8,
+    label: '階段八',
+    summary: '爺爺回信告知已找到售飲助手 Adam；Adam 於該回信後隔日抵達。',
+    progressionNotes: [
+      '目前只確認 Adam 的主線抵達節點；不由此推導自動販售效率、每日上限或 optimizer 行為。',
+    ],
+  },
+  {
+    id: 9,
+    label: '階段九',
+    summary: '羱羊雕像滿意度 50、正式顧客 7 人後寄信給爺爺；收到回信後解鎖高級榨汁機。',
+    unlockRequirement: {
+      satisfactionByVillageRequired: {
+        'ibex-statue': 50,
+      },
+      formalCustomersByVillageRequired: {
+        'ibex-statue': 7,
+      },
+      action: '寄信給爺爺',
+      timing: '收到回信後解鎖；等待時間未確認',
+    },
+  },
+  {
+    id: 10,
+    label: '階段十',
+    summary: '東港村滿意度 1000、靜謐噴泉滿意度 450、羱羊雕像滿意度 130 後寄信給爺爺；收到回信後解鎖液料調和器。',
+    unlockRequirement: {
+      satisfactionByVillageRequired: {
+        'east-harbor': 1000,
+        'tranquil-fountain': 450,
+        'ibex-statue': 130,
+      },
+      action: '寄信給爺爺',
+      timing: '收到回信後解鎖；等待時間未確認',
+    },
+  },
 ]

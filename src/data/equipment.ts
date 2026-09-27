@@ -73,4 +73,18 @@ export const equipment: Equipment[] = [
     seller: '木匠',
     note: '階段七：東港村顧客 29、靜謐噴泉顧客 15 後寄信給爺爺；收到回信後解鎖購買。信件只確認可節省柑橘榨汁時間，實際每批容量、處理時間與效率倍率尚未確認。',
   },
+  {
+    id: 'advanced-juicer',
+    name: '高級榨汁機',
+    unlockedAt: 'advanced-juicer-unlocked',
+    buyPrice: 1400,
+    note: '階段九：羱羊雕像滿意度 50、正式顧客 7 人後寄信給爺爺；收到回信後解鎖購買。店面截圖確認售價 1400；實際批次容量、處理時間與效率尚未確認。',
+  },
+  {
+    id: 'liquid-blender',
+    name: '液料調和器',
+    unlockedAt: 'liquid-blender-unlocked',
+    buyPrice: 1500,
+    note: '階段十：東港村滿意度 1000、靜謐噴泉滿意度 450、羱羊雕像滿意度 130 後寄信給爺爺；收到回信後解鎖購買。機器介面直接顯示可投入「果汁」與「牛奶、優格、蜂蜜」類液料並產出成品；比例、產量、處理時間與具體配方規則尚未確認。',
+  },
 ]
