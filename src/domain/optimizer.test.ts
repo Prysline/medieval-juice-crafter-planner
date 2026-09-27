@@ -337,6 +337,73 @@ describe('production optimizer', () => {
     )
   })
 
+  it('counts cumulative same-recipe jar thresholds instead of only consumed servings', async () => {
+    const result = await optimizeBatchPlan(
+      {
+        ...request(['a', 'b', 'c']),
+        initialAvailableJuiceJars: [
+          { recipeId: 'tiered', servings: 1 },
+          { recipeId: 'tiered', servings: 2 },
+          { recipeId: 'single-large', servings: 4 },
+        ],
+      },
+      {
+        source: {
+          customers: [
+            customer('a', '甜味'),
+            customer('b', '甜味'),
+            customer('c', '甜味'),
+          ],
+          candidates: [
+            recipe('single-large', ['檸檬', '糖'], ['甜味']),
+            recipe('tiered', ['檸檬', '薄荷'], ['甜味']),
+          ],
+        },
+      },
+    )
+
+    expect(result.assignments).toEqual([
+      { customerId: 'a', recipeId: 'tiered' },
+      { customerId: 'b', recipeId: 'tiered' },
+      { customerId: 'c', recipeId: 'tiered' },
+    ])
+    expect(result.totalIngredientCost).toBe(0)
+    expect(result.producedServings).toBe(0)
+  })
+
+  it('does not pay a higher incremental cost merely to empty an initial jar', async () => {
+    const result = await optimizeBatchPlan(
+      {
+        ...request(['a', 'b']),
+        initialAvailableJuiceJars: [
+          { recipeId: 'stocked-expensive', servings: 1 },
+        ],
+      },
+      {
+        source: {
+          customers: [
+            customer('a', '甜味'),
+            customer('b', '甜味'),
+          ],
+          candidates: [
+            recipe(
+              'stocked-expensive',
+              ['檸檬', '薄荷'],
+              ['甜味'],
+            ),
+            recipe('cheap-new', ['檸檬', '糖'], ['甜味']),
+          ],
+        },
+      },
+    )
+
+    expect(result.assignments).toEqual([
+      { customerId: 'a', recipeId: 'cheap-new' },
+      { customerId: 'b', recipeId: 'cheap-new' },
+    ])
+    expect(result.totalIngredientCost).toBe(16)
+  })
+
   it('keeps an explicit revenue objective ahead of the initial-jar release tie-break', async () => {
     const result = await optimizeBatchPlan(
       {
