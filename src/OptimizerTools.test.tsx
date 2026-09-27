@@ -1031,7 +1031,7 @@ describe('optimizer summary', () => {
     )
 
     expect(html).toContain(
-      '<span>本次新增製作成本</span><strong>0 金幣</strong>',
+      '<span>本次新增製作原料成本</span><strong>0 金幣</strong>',
     )
     expect(html).toContain(
       '<span>需求杯數 / 本次新製作</span><strong>2 / 2</strong>',
@@ -1680,7 +1680,7 @@ describe('optimizer finished-stock cost UI', () => {
         totalIngredientCost: 0,
       }),
     ).toBe(
-      '配方基準原料成本：40 金幣／份 · 本次新增製作成本：0 金幣',
+      '配方基準原料成本：40 金幣／份 · 本次新增製作原料成本：0 金幣',
     )
   })
 })
