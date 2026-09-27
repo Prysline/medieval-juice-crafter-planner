@@ -169,8 +169,8 @@ export function presentPlanningError(
         const actual = error.context.actualJarTypeSwitches
         const detail =
           typeof expected === 'number' && typeof actual === 'number'
-            ? `最佳化預期 ${expected} 次換裝，但實體排程產生 ${actual} 次。`
-            : '最佳化結果與實體果汁罐排程的換裝次數不一致。'
+            ? `最佳化預期 ${expected} 次內容種類切換，但實體排程產生 ${actual} 次。`
+            : '最佳化結果與實體果汁罐排程的內容種類切換次數不一致。'
 
         return {
           title: '果汁罐排程發生內部不一致',

@@ -30,7 +30,7 @@ describe('planning error presentation', () => {
     )
   })
 
-  it('presents jar schedule mismatch as an internal planning error', () => {
+  it('presents jar type-transition mismatch as an internal planning error', () => {
     const result = presentPlanningError(
       new PlanningUserError(
         'jar-schedule-inconsistency',
@@ -43,7 +43,7 @@ describe('planning error presentation', () => {
     )
 
     expect(result.title).toBe('果汁罐排程發生內部不一致')
-    expect(result.message).toContain('最佳化預期 1 次換裝')
+    expect(result.message).toContain('最佳化預期 1 次內容種類切換')
     expect(result.message).toContain('實體排程產生 2 次')
     expect(result.message).toContain('網站內部規劃錯誤')
     expect(result.suggestions.join(' ')).not.toContain(
