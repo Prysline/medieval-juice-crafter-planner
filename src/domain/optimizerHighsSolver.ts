@@ -832,6 +832,15 @@ async function tryMachineOperationCertificate(
   domain: BatchOptimizationModel,
   fixedMinimumCost: number,
 ): Promise<InternalMachineOperationCertificate | null> {
+  const maxJarFillOperations =
+    domain.request.constraints?.maxJarFillOperations
+  if (
+    typeof maxJarFillOperations === 'number' &&
+    Number.isFinite(maxJarFillOperations)
+  ) {
+    return null
+  }
+
   const fixes: ObjectiveFix[] = [
     {
       objective: 'cost',
