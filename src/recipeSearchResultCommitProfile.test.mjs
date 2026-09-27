@@ -136,6 +136,7 @@ async function measureRecipeQuery(sessionId, value) {
       const beforeSummary = summary.textContent ?? ''
       const beforePage = pageInput.value
       const beforeElements = elementCount()
+      window.__mjcResponsivenessRenderProfile = []
       const startedAt = performance.now()
       let firstTableMutationMs = null
       let firstSummaryMutationMs = null
@@ -219,6 +220,8 @@ async function measureRecipeQuery(sessionId, value) {
           afterSummary: summary.textContent ?? '',
           beforePage,
           afterPage: pageInput.value,
+          renderProfile:
+            window.__mjcResponsivenessRenderProfile ?? [],
           resultCommitMs: performance.now() - startedAt,
           timedOut,
         })
@@ -536,6 +539,12 @@ describe('recipe search result-commit profile', () => {
             childListRecords: item.childListRecords,
             beforePage: item.beforePage,
             afterPage: item.afterPage,
+            appRenderDurations: item.renderProfile
+              .filter((entry) => entry.id === 'app')
+              .map((entry) => entry.actualDuration),
+            recipeTableRenderDurations: item.renderProfile
+              .filter((entry) => entry.id === 'recipe-table')
+              .map((entry) => entry.actualDuration),
           })),
         })
 
