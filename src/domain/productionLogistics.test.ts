@@ -6,6 +6,7 @@ import { juiceStateIdentity } from './juiceStateIdentity'
 import { buildStockOffsetProductionPlan } from './productionPlan'
 import {
   buildNetProductionPlan,
+  buildPreProductionStorageSummary,
   buildProductionLogisticsPlan,
 } from './productionLogistics'
 
@@ -602,5 +603,197 @@ describe('production logistics', () => {
     expect(result.issues.join(' ')).toContain(
       '現有製作物資無法放入目前一般架',
     )
+  })
+
+  it('counts purchased raw stacks per ingredient instead of pooling different materials', () => {
+    const summary = buildPreProductionStorageSummary(
+      shortfall(['lemon', 'sugar'], 1),
+      inventory({
+        juiceJars: [],
+        shelfCount: 0,
+      }),
+      settings(),
+    )
+
+    expect(summary).toMatchObject({
+      purchasedIngredientSlotsAdded: 2,
+      occupiedSlotsBeforePurchases: 0,
+      occupiedSlotsAfterPurchases: 2,
+      availableGeneralStorageSlots: 10,
+      missingSlots: 0,
+      additionalShelfCountRequired: 0,
+      remainingSlotsAfterRequiredShelves: 8,
+    })
+  })
+
+  it('lets purchased units continue an existing partial stack of the same ingredient', () => {
+    const base = shortfall(['lemon'], 5)
+    const summary = buildPreProductionStorageSummary(
+      {
+        ...base,
+        ingredients: [
+          {
+            ingredientId: 'lemon',
+            name: '檸檬',
+            requiredUnits: 5,
+            inventoryUnitsAvailable: 4,
+            inventoryUnitsUsed: 4,
+            purchaseUnits: 1,
+          },
+        ],
+      },
+      inventory({
+        ingredientUnits: { lemon: 4 },
+        juiceJars: [],
+        shelfCount: 0,
+      }),
+      settings(),
+    )
+
+    expect(summary.purchasedIngredientSlotsAdded).toBe(0)
+    expect(summary.occupiedSlotsBeforePurchases).toBe(1)
+    expect(summary.occupiedSlotsAfterPurchases).toBe(1)
+  })
+
+  it('counts all existing raw, intermediate juice, and water in the pre-production footprint', () => {
+    const identity = juiceStateIdentity(['lemon'])
+    const base = shortfall(['sugar'], 1)
+    const summary = buildPreProductionStorageSummary(
+      {
+        ...base,
+        ingredients: [
+          {
+            ingredientId: 'sugar',
+            name: '糖',
+            requiredUnits: 1,
+            inventoryUnitsAvailable: 0,
+            inventoryUnitsUsed: 0,
+            purchaseUnits: 1,
+          },
+        ],
+        waterUnitsToFetch: 40,
+      },
+      inventory({
+        ingredientUnits: { lemon: 4 },
+        intermediateJuiceUnits: { [identity]: 6 },
+        waterUnits: 11,
+        juiceJars: [],
+        shelfCount: 0,
+      }),
+      settings(),
+    )
+
+    expect(summary).toMatchObject({
+      occupiedSlotsBeforePurchases: 5,
+      occupiedSlotsAfterPurchases: 6,
+      purchasedIngredientSlotsAdded: 1,
+    })
+  })
+
+  it('does not reserve storage for water that can be fetched after production begins', () => {
+    const base = shortfall(['lemon'], 1)
+    const summary = buildPreProductionStorageSummary(
+      {
+        ...base,
+        waterUnitsToFetch: 50,
+      },
+      inventory({
+        juiceJars: [],
+        shelfCount: 0,
+        waterUnits: 0,
+      }),
+      settings(),
+    )
+
+    expect(summary.occupiedSlotsAfterPurchases).toBe(1)
+  })
+
+  it('rejects a plan that only fits by buying later raw ingredients after production starts', () => {
+    const jars = Array.from({ length: 9 }, (_, index) => ({
+      id: `jar-${index + 1}`,
+      recipeId: null,
+      servings: 0,
+    }))
+    const result = buildProductionLogisticsPlan(
+      shortfall(['lemon', 'sugar'], 1, {
+        waterUnitsAvailable: 1,
+        waterUnitsUsed: 1,
+        waterUnitsToFetch: 0,
+      }),
+      inventory({
+        waterUnits: 1,
+        shelfCount: 0,
+        juiceJars: jars,
+      }),
+      settings({
+        juiceJarCarryMode: 'fixed-slots',
+        reservedJuiceJarSlots: 9,
+      }),
+      receiverTimeline(1),
+    )
+
+    expect(result.feasible).toBe(false)
+    expect(result.preProductionStorage).toMatchObject({
+      occupiedSlotsAfterPurchases: 3,
+      availableGeneralStorageSlots: 1,
+      missingSlots: 2,
+      additionalShelfCountRequired: 1,
+      remainingSlotsAfterRequiredShelves: 7,
+    })
+    expect(result.issues.join(' ')).toContain('開工前無法存放全部備料')
+    expect(
+      result.actions.some(
+        (action) =>
+          action.kind === 'load-machine' ||
+          action.kind === 'run-machine',
+      ),
+    ).toBe(false)
+  })
+
+  it('acquires every merchant raw ingredient before the first machine operation when storage is sufficient', () => {
+    const jars = Array.from({ length: 9 }, (_, index) => ({
+      id: `jar-${index + 1}`,
+      recipeId: null,
+      servings: 0,
+    }))
+    const result = buildProductionLogisticsPlan(
+      shortfall(['lemon', 'sugar'], 1, {
+        waterUnitsAvailable: 1,
+        waterUnitsUsed: 1,
+        waterUnitsToFetch: 0,
+      }),
+      inventory({
+        waterUnits: 1,
+        shelfCount: 1,
+        juiceJars: jars,
+      }),
+      settings({
+        juiceJarCarryMode: 'fixed-slots',
+        reservedJuiceJarSlots: 9,
+      }),
+      receiverTimeline(1),
+    )
+
+    expect(result.feasible).toBe(true)
+    expect(result.preProductionStorage.missingSlots).toBe(0)
+
+    const firstMachineIndex = result.actions.findIndex(
+      (action) =>
+        action.kind === 'load-machine' ||
+        action.kind === 'run-machine',
+    )
+    const acquisitionIndexes = result.actions
+      .map((action, index) => ({ action, index }))
+      .filter(({ action }) => action.kind === 'acquire-ingredient')
+
+    expect(acquisitionIndexes).toHaveLength(2)
+    expect(
+      acquisitionIndexes.every(({ index }) => index < firstMachineIndex),
+    ).toBe(true)
+    expect(
+      result.actions
+        .slice(firstMachineIndex)
+        .some((action) => action.kind === 'acquire-ingredient'),
+    ).toBe(false)
   })
 })
