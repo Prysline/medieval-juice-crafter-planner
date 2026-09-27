@@ -9,6 +9,8 @@ import {
   buildRegionPhysicalSalesPlan,
   type RegionPhysicalSalesPlan,
 } from './regionPhysicalSalesPlanner'
+import { buildMultiTripReplenishmentPlan } from './multiTripReplenishment'
+import { buildRegionRouteFootprint } from './regionServicePlanner'
 
 function demand(
   recipes: Array<{
@@ -381,6 +383,161 @@ describe('region physical sales planner', () => {
         tripNumber: 2,
       },
     ])
+  })
+
+
+
+  it('can physically realize the player 8-trip preference without changing jar authority', () => {
+    const fixture = playerRegionRegressionDemand()
+    const jars: JuiceJarInventoryItem[] = Array.from(
+      { length: 4 },
+      (_, index) => ({
+        id: `jar-${index + 1}`,
+        recipeId: null,
+        servings: 0,
+      }),
+    )
+    const stock = inventory(jars, 20)
+    const shortfall = buildPreparationShortfall(
+      fixture.demand,
+      stock,
+      { finishedJuiceJarIds: jars.map((jar) => jar.id) },
+    )
+    const preferenceByCustomerId: Record<string, number> = {}
+
+    const assignPreference = (
+      recipeId: string,
+      regionId: string,
+      tripNumber: number,
+    ): void => {
+      for (const customerId of Object.keys(
+        fixture.customerRegionById,
+      )) {
+        if (
+          customerId.startsWith(`${recipeId}-`) &&
+          fixture.customerRegionById[customerId] === regionId
+        ) {
+          preferenceByCustomerId[customerId] = tripNumber
+        }
+      }
+    }
+
+    const groups: Array<
+      [recipeId: string, regionId: string, tripNumber: number]
+    > = [
+      ['load-01', 'east-harbor', 1],
+      ['load-02', 'east-harbor', 1],
+      ['load-02', 'tranquil-fountain', 3],
+      ['load-03', 'east-harbor', 2],
+      ['load-03', 'tranquil-fountain', 3],
+      ['load-04', 'east-harbor', 2],
+      ['load-04', 'tranquil-fountain', 3],
+      ['load-05', 'east-harbor', 2],
+      ['load-06', 'east-harbor', 3],
+      ['load-06', 'tranquil-fountain', 3],
+      ['load-07', 'tranquil-fountain', 5],
+      ['load-08', 'east-harbor', 4],
+      ['load-09', 'east-harbor', 4],
+      ['load-09', 'tranquil-fountain', 5],
+      ['load-10', 'east-harbor', 4],
+      ['load-11', 'east-harbor', 4],
+      ['load-11', 'tranquil-fountain', 5],
+      ['load-12', 'tranquil-fountain', 5],
+      ['load-13', 'case-c', 6],
+      ['load-14', 'tranquil-fountain', 6],
+      ['load-14', 'case-c', 6],
+      ['load-15', 'case-c', 6],
+      ['load-16', 'case-c', 6],
+      ['load-17', 'tranquil-fountain', 7],
+      ['load-17', 'case-c', 7],
+      ['load-18', 'tranquil-fountain', 7],
+      ['load-19', 'case-c', 7],
+      ['load-20', 'tranquil-fountain', 7],
+      ['load-21', 'case-c', 8],
+      ['load-22', 'east-harbor', 8],
+      ['load-23', 'case-c', 8],
+      ['load-24', 'case-c', 8],
+    ]
+    groups.forEach(([recipeId, regionId, tripNumber]) =>
+      assignPreference(recipeId, regionId, tripNumber),
+    )
+
+    expect(Object.keys(preferenceByCustomerId)).toHaveLength(64)
+
+    const salesPlan = buildMultiTripReplenishmentPlan(
+      fixture.demand,
+      'retain-and-wash',
+      jars,
+      { cleanCups: 20, usedCups: 0 },
+      shortfall,
+      {
+        mode: 'auto',
+        reservedSlots: 0,
+        minimumCarriedSlots: 0,
+      },
+      false,
+      { customerTripPreferenceById: preferenceByCustomerId },
+    )
+    const realized = salesPlan.trips.map((trip) => {
+      const servicedRegionIds = [
+        ...new Set(
+          trip.juiceJars.flatMap((load) =>
+            load.customerIds.map(
+              (customerId) =>
+                fixture.customerRegionById[customerId],
+            ),
+          ),
+        ),
+      ]
+      const footprint = buildRegionRouteFootprint({
+        activeWorkshop: {
+          id: 'workshop:east-harbor',
+          regionId: 'east-harbor',
+        },
+        topology: {
+          edges: [
+            {
+              from: 'east-harbor',
+              to: 'tranquil-fountain',
+              cost: 1,
+            },
+            {
+              from: 'tranquil-fountain',
+              to: 'case-c',
+              cost: 1,
+            },
+          ],
+        },
+        servicedRegionIds,
+      })
+      return {
+        routeCost: footprint.routeCost,
+        totalServings: trip.totalServings,
+        servicedRegionIds,
+      }
+    })
+
+    expect(salesPlan.trips).toHaveLength(8)
+    expect(
+      realized.reduce((sum, trip) => sum + trip.routeCost, 0),
+    ).toBe(16)
+    expect(realized.map((trip) => trip.totalServings)).toEqual([
+      13, 8, 11, 6, 6, 8, 8, 4,
+    ])
+    expect(
+      salesPlan.trips.some((trip) =>
+        trip.juiceJars.some(
+          (load) =>
+            load.fillAction === 'continue-loaded' &&
+            load.plannedFillServings === 0,
+        ),
+      ),
+    ).toBe(true)
+    expect(
+      salesPlan.leftoverJarContents
+        .map((leftover) => leftover.servings)
+        .sort((a, b) => a - b),
+    ).toEqual([1, 1, 1, 1])
   })
 
 
