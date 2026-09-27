@@ -434,8 +434,25 @@ describe('multi-trip replenishment', () => {
     expect(result.tripCount).toBe(1)
     expect(result.productionJarFills).toHaveLength(2)
     expect(
-      result.productionJarFills.map((fill) => fill.fillAction),
-    ).toEqual(['refill-same-type', 'initial-fill'])
+      result.productionJarFills.map((fill) => ({
+        physicalJarId: fill.physicalJarId,
+        fillAction: fill.fillAction,
+        beforeTripNumber: fill.beforeTripNumber,
+      })),
+    ).toEqual(
+      expect.arrayContaining([
+        {
+          physicalJarId: 'jar-1',
+          fillAction: 'refill-same-type',
+          beforeTripNumber: 1,
+        },
+        {
+          physicalJarId: 'jar-2',
+          fillAction: 'initial-fill',
+          beforeTripNumber: 1,
+        },
+      ]),
+    )
     expect(result.trips[0]?.totalServings).toBe(10)
     expect(result.trips[0]?.juiceJars).toEqual(
       expect.arrayContaining([
