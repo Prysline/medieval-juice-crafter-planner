@@ -7,15 +7,21 @@ const optimizerToolsSource = readFileSync(
 )
 
 describe('delivery checkbox and whole-plan application contract', () => {
-  it('rebases compatible supplied checks instead of discarding the transaction draft', () => {
+  it('rebases delivery edits against the original supplied basis without discarding the last valid draft', () => {
     expect(optimizerToolsSource).toContain(
-      'rebasePlanApplicationTransactionSuppliedCustomers(',
+      'rebaseDeliveryTransactionDraft(',
     )
     expect(optimizerToolsSource).toContain(
-      'transactionDraft: rebasedTransactionDraft',
+      'current.deliveryExpectedBasis.suppliedCustomerIds',
     )
     expect(optimizerToolsSource).toContain(
-      'transactionDraftInvalidatedByPartialDelivery:\n          rebasedTransactionDraft === null',
+      'transactionDraft: rebased ?? draft',
+    )
+    expect(optimizerToolsSource).toContain(
+      'transactionDraft: rebasedTransaction.transactionDraft',
+    )
+    expect(optimizerToolsSource).toContain(
+      'transactionDraftInvalidatedByPartialDelivery:\n          rebasedTransaction.invalidated',
     )
     expect(optimizerToolsSource).not.toContain(
       'transactionDraft: null,\n            transactionDraftInvalidatedByPartialDelivery: true',

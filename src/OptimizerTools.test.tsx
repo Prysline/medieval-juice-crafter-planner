@@ -46,6 +46,7 @@ import {
   recipePreparationSourceSummary,
   recipeCostSummary,
   deliveryCanonicalSyncStatus,
+  rebaseDeliveryTransactionDraft,
   deliveryCustomerControlState,
   deliveryRecipeGroupControlState,
   formatOptimizerDuration,
@@ -213,6 +214,61 @@ const fills: MultiTripProductionJarFill[] = [
     receiver: 'carried-jar',
   },
 ]
+
+describe('whole-plan delivery rebase', () => {
+  it('keeps the last valid draft while an incompatible delivery edit is corrected', () => {
+    const draft = transactionDraft()
+
+    const invalid = rebaseDeliveryTransactionDraft(
+      draft,
+      [],
+      ['outsider'],
+    )
+    expect(invalid.invalidated).toBe(true)
+    expect(invalid.transactionDraft).toBe(draft)
+
+    const recovered = rebaseDeliveryTransactionDraft(
+      invalid.transactionDraft,
+      [],
+      ['jack'],
+    )
+    expect(recovered.invalidated).toBe(false)
+    expect(recovered.transactionDraft.before.suppliedCustomerIds).toEqual([
+      'jack',
+    ])
+  })
+
+  it('allows planned delivery to be checked, corrected, and checked again', () => {
+    const draft = transactionDraft()
+
+    const delivered = rebaseDeliveryTransactionDraft(
+      draft,
+      [],
+      ['jack'],
+    )
+    expect(delivered.invalidated).toBe(false)
+
+    const corrected = rebaseDeliveryTransactionDraft(
+      delivered.transactionDraft,
+      [],
+      [],
+    )
+    expect(corrected.invalidated).toBe(false)
+    expect(
+      corrected.transactionDraft.changes.newlySuppliedCustomerIds,
+    ).toEqual(['jack', 'nanette'])
+
+    const deliveredAgain = rebaseDeliveryTransactionDraft(
+      corrected.transactionDraft,
+      [],
+      ['jack', 'nanette'],
+    )
+    expect(deliveredAgain.invalidated).toBe(false)
+    expect(
+      deliveredAgain.transactionDraft.changes.newlySuppliedCustomerIds,
+    ).toEqual([])
+  })
+})
 
 describe('juice jar recipe search UX', () => {
   it('searches observed, saved-safe scope and safe computed recipes while bounding rendered results', () => {
