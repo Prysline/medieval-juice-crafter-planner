@@ -2154,7 +2154,7 @@ function OptimizerTools({
               </button>
             </div>
             <small>
-              庫存模式會把商店 raw ingredient 的新增取得量固定為 0；水仍可由水井補取。
+              庫存模式會把商店原料的新增取得量固定為 0；水仍可由水井補取。
             </small>
           </fieldset>
 
@@ -4236,7 +4236,7 @@ function OptimizerResultPanel({
         </strong>
         <span>
           {materialSourceMode === 'inventory-only'
-            ? '商店 raw ingredient 新增取得量固定為 0；水井取水仍允許。'
+            ? '商店原料新增取得量固定為 0；水井取水仍允許。'
             : '缺少的商店原料可列入採買需求。'}
         </span>
         <strong>
@@ -4288,7 +4288,7 @@ function OptimizerResultPanel({
           <div className="optimizer-batch-list">
             <article className="optimizer-batch-card">
               <div>
-                <strong>raw ingredients</strong>
+                <strong>原料</strong>
                 <span>只計實際庫存消耗</span>
               </div>
               <p>
@@ -4298,13 +4298,13 @@ function OptimizerResultPanel({
                     (item) =>
                       `${item.name} ×${item.inventoryUnitsUsed}`,
                   )
-                  .join('、') || '本次未使用現有 raw ingredient'}
+                  .join('、') || '本次未使用現有原料'}
               </p>
             </article>
             <article className="optimizer-batch-card">
               <div>
                 <strong>中間果汁</strong>
-                <span>共用 stock-offset authority</span>
+                <span>沿用既有中間果汁抵扣</span>
               </div>
               <p>
                 {(preparationShortfall.intermediateStockUsage ?? [])
