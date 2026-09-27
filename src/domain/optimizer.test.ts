@@ -1170,6 +1170,43 @@ describe('production optimizer', () => {
     })
   })
 
+  it('reports a maximum-cardinality customer diagnostic when inventory cannot serve every otherwise-serviceable customer', async () => {
+    const source = {
+      customers: [
+        customer('a', '甜味'),
+        customer('b', '清新口氣'),
+      ],
+      candidates: [
+        recipe('sweet-orange', ['橙子'], ['甜味']),
+        recipe('fresh-lemon', ['檸檬'], ['清新口氣']),
+      ],
+    }
+
+    try {
+      await optimizeBatchPlan(
+        {
+          ...request(['a', 'b']),
+          materialSourceMode: 'inventory-only',
+          materialInventory: {
+            ingredientUnits: { orange: 1, lemon: 0 },
+            intermediateJuiceUnits: {},
+          },
+        },
+        { source },
+      )
+      throw new Error('Expected inventory-only planning to fail')
+    } catch (error) {
+      expect(error).toMatchObject({
+        name: 'PlanningUserError',
+        context: {
+          materialSourceMode: 'inventory-only',
+          inventorySatisfiableCustomerCount: 1,
+          inventoryUnfulfilledCustomerIds: ['b'],
+        },
+      })
+    }
+  })
+
   it('keeps existing finished servings as optimizer capacity in inventory-only mode without raw stock', async () => {
     const result = await optimizeBatchPlan(
       {
