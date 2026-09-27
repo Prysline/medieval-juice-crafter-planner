@@ -2791,6 +2791,52 @@ function PrioritySelect({
 type ProductionStep =
   ProductionLogisticsPlan['productionPlan']['steps'][number]
 
+export function CollapsibleProductionMachineGroup({
+  equipment,
+  steps,
+  headerDetails,
+  children,
+}: {
+  equipment: string
+  steps: readonly ProductionStep[]
+  headerDetails?: ReactNode
+  children: ReactNode
+}) {
+  const [expanded, setExpanded] = useState(true)
+  const finalizingOnly =
+    steps.length > 0 && steps.every((step) => step.kind === 'finalizing')
+  const title = finalizingOnly ? '成品裝罐' : equipment
+  const batchCount = steps.reduce(
+    (sum, step) => sum + step.operationCount,
+    0,
+  )
+  const batchSummary = finalizingOnly
+    ? `${batchCount} 批 · 每批 2～10 杯成品`
+    : `${batchCount} 批 · 每批 1～5 份`
+
+  return (
+    <details
+      className="optimizer-machine-group"
+      open={expanded}
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+      aria-label={title + ' 製作步驟'}
+    >
+      <summary className="optimizer-machine-header">
+        <div>
+          <span>{finalizingOnly ? '最後步驟' : '機器'}</span>
+          <strong>{title}</strong>
+          {headerDetails}
+        </div>
+        <span className="optimizer-machine-summary">
+          <span>{batchSummary}</span>
+          <span className="optimizer-machine-toggle" aria-hidden="true" />
+        </span>
+      </summary>
+      <div className="optimizer-machine-steps">{children}</div>
+    </details>
+  )
+}
+
 function MachineSlotPill({
   role,
   label,
@@ -2822,7 +2868,7 @@ export function ProductionStepFinalJuiceNote({
 
   return (
     <p className="optimizer-final-juice-note">
-      其中 {readyForFinalizingUnits} 份為最終果汁（下一步進果汁成品台）
+      其中 {readyForFinalizingUnits} 份為最終果汁（下一步進行成品裝罐）
     </p>
   )
 }
@@ -4120,7 +4166,7 @@ function OptimizerResultPanel({
         <span>
           最佳化 gross 操作：榨汁 {result.machineOperations.juicing} 次 · 調味{' '}
           {result.machineOperations.seasoning} 次 · 調和{' '}
-          {result.machineOperations.blending} 次 · 成品台{' '}
+          {result.machineOperations.blending} 次 · 裝罐{' '}
           {result.machineOperations.finalizing} 次
         </span>
         <span>
@@ -4128,14 +4174,14 @@ function OptimizerResultPanel({
           {productionLogistics.productionPlan.machineOperations.total} 次操作
           （榨汁 {productionLogistics.productionPlan.machineOperations.juicing} · 調味{' '}
           {productionLogistics.productionPlan.machineOperations.seasoning} · 調和{' '}
-          {productionLogistics.productionPlan.machineOperations.blending} · 成品台{' '}
+          {productionLogistics.productionPlan.machineOperations.blending} · 裝罐{' '}
           {productionLogistics.productionPlan.machineOperations.finalizing}）
         </span>
         <span>
           本日可用實體果汁罐 {result.availableJuiceJarCount} 個；有果汁罐架時可跨趟換罐，同罐改裝成另一種果汁才計入換裝。
         </span>
         <span>
-          販售摘要採「{tripPolicyLabel(selectedSalesTripPlan)}」；杯具依實際持有量與 clean → used stack transition 計算，果汁成品台接收罐也依這份販售排程的 physical jar 時序安排；替代 policy 可在販售排程展開比較。
+          販售摘要採「{tripPolicyLabel(selectedSalesTripPlan)}」；杯具依實際持有量與 clean → used stack transition 計算，成品裝罐接收罐也依這份販售排程的 physical jar 時序安排；替代 policy 可在販售排程展開比較。
         </span>
         {(result.potentialTrialCount > 0 ||
           result.unknownFormalSalePriceCount > 0) && (
@@ -4264,38 +4310,25 @@ function OptimizerResultPanel({
         ) : (
           Object.entries(productionStepsByEquipment).map(
             ([equipment, steps]) => (
-              <section
-                className="optimizer-machine-group"
+              <CollapsibleProductionMachineGroup
+                equipment={equipment}
+                steps={steps}
+                headerDetails={
+                  equipment === '調味器' ? (
+                    <SeasoningStageMaterialSummary
+                      ingredientUnits={
+                        productionLogistics.productionPlan
+                          .seasoningIngredientUnits ?? {}
+                      }
+                      baseJuiceUnits={
+                        productionLogistics.productionPlan
+                          .seasoningBaseJuiceUnits ?? {}
+                      }
+                    />
+                  ) : null
+                }
                 key={equipment}
-                aria-label={equipment + ' 製作步驟'}
               >
-                <header className="optimizer-machine-header">
-                  <div>
-                    <span>機器</span>
-                    <strong>{equipment}</strong>
-                    {equipment === '調味器' && (
-                      <SeasoningStageMaterialSummary
-                        ingredientUnits={
-                          productionLogistics.productionPlan
-                            .seasoningIngredientUnits ?? {}
-                        }
-                        baseJuiceUnits={
-                          productionLogistics.productionPlan
-                            .seasoningBaseJuiceUnits ?? {}
-                        }
-                      />
-                    )}
-                  </div>
-                  <span>
-                    {steps.reduce(
-                      (sum, step) => sum + step.operationCount,
-                      0,
-                    )}{' '}
-                    批 · 每批 1～5 份
-                  </span>
-                </header>
-
-                <div className="optimizer-machine-steps">
                   {steps.map((step) => {
                     const readyForFinalizingUnits =
                       productionLogistics.productionPlan
@@ -4359,14 +4392,13 @@ function OptimizerResultPanel({
                       </article>
                     )
                   })}
-                </div>
-              </section>
+              </CollapsibleProductionMachineGroup>
             ),
           )
         )}
 
         <small className="optimizer-boundary-note">
-          ▸ 表示配方內部原料順序；→ 只表示實際加工或狀態轉換。此區顯示庫存抵扣後真正需要執行的製作量；每個膠囊代表一個機器 slot 內的原料、果汁、水或輸出。「可先放架上」只表示調味器階段不再使用，後續果汁調和器或果汁成品台仍可能需要。勾選狀態綁定目前 net production plan；重新產生相同規劃可恢復，規劃內容不同時不會套用舊進度。
+          ▸ 表示配方內部原料順序；→ 只表示實際加工或狀態轉換。此區顯示庫存抵扣後真正需要執行的製作量；每個膠囊代表一個機器 slot 內的原料、果汁、水或輸出。「可先放架上」只表示調味器階段不再使用，後續果汁調和器或成品裝罐仍可能需要。勾選狀態綁定目前 net production plan；重新產生相同規劃可恢復，規劃內容不同時不會套用舊進度。
         </small>
 
         <div className="optimizer-logistics-summary">
