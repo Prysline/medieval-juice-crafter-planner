@@ -92,6 +92,11 @@ function assertRecipeAuthority(
         `Custom trip recipe drifted for customer ${customerId}: expected ${demandRecipeId}, got ${customer.recipeId}`,
       )
     }
+    if (customer.servings !== 1) {
+      throw new Error(
+        `Custom trip servings drifted for customer ${customerId}: current production authority requires exactly one serving`,
+      )
+    }
   }
 }
 
