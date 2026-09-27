@@ -1,14 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { villages } from '../data/villages'
+import { PLAN_APPLICATION_STATE_STORAGE_KEY } from './planApplicationState'
 import {
   readCurrentProgress,
   normalizeSatisfactionByVillageIds,
   readFormalCustomerIds,
   readSatisfactionByVillage,
+  readSuppliedCustomerIds,
   STORAGE_KEYS,
   writeCurrentProgress,
   writeFormalCustomerIds,
   writeSatisfactionByVillage,
+  writeSuppliedCustomerIds,
 } from './plannerState'
 
 class MemoryStorage {
@@ -231,6 +234,55 @@ describe('planner state migration', () => {
       ]),
     })
 
+    expect(readFormalCustomerIds(storage)).toEqual(['jack', 'nanette'])
+  })
+
+  it('hydrates formal customers from the legacy key when reading a v2 plan envelope', () => {
+    const storage = new MemoryStorage({
+      [STORAGE_KEYS.formalCustomers]: JSON.stringify(['jack', 'nanette']),
+      [PLAN_APPLICATION_STATE_STORAGE_KEY]: JSON.stringify({
+        schemaVersion: 'plan-application-state-v2',
+        inventory: {
+          ingredientUnits: {},
+          intermediateJuiceUnits: {},
+          waterUnits: 0,
+          cleanCups: 0,
+          usedCups: 0,
+          juiceJars: [],
+          shelfCount: 0,
+          jarRackCount: 0,
+        },
+        suppliedCustomerIds: ['jack'],
+        deliveryExecution: null,
+      }),
+    })
+
+    expect(readFormalCustomerIds(storage)).toEqual(['jack', 'nanette'])
+  })
+
+  it('keeps formal customers when today supply is reset after adopting the plan envelope', () => {
+    const storage = new MemoryStorage({
+      [PLAN_APPLICATION_STATE_STORAGE_KEY]: JSON.stringify({
+        schemaVersion: 'plan-application-state-v3',
+        inventory: {
+          ingredientUnits: {},
+          intermediateJuiceUnits: {},
+          waterUnits: 0,
+          cleanCups: 0,
+          usedCups: 0,
+          juiceJars: [],
+          shelfCount: 0,
+          jarRackCount: 0,
+        },
+        formalCustomerIds: ['jack', 'nanette'],
+        suppliedCustomerIds: ['jack', 'nanette'],
+        deliveryExecution: null,
+      }),
+    })
+
+    writeSuppliedCustomerIds(storage, [])
+
+    expect(readSuppliedCustomerIds(storage)).toEqual([])
     expect(readFormalCustomerIds(storage)).toEqual(['jack', 'nanette'])
   })
 })
