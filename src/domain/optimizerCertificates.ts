@@ -55,7 +55,7 @@ export function prepareMinimumCostStageCertificate(
   domain: BatchOptimizationModel,
 ): MinimumCostStageCertificatePlan | null {
   if (hasIdentitySensitiveJarConstraint(domain)) return null
-  if (domain.recipes.some((recipe) => recipe.initialFinishedServings > 0)) {
+  if (domain.recipes.some((recipe) => (recipe.initialFinishedServings ?? 0) > 0)) {
     return null
   }
 
