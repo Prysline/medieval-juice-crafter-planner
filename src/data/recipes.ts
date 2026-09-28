@@ -1594,4 +1594,34 @@ export const recipes: Recipe[] = [
     ],
     equipment: ['榨汁機', '調味器', '果汁調和器', '果汁成品台'],
   },
+
+  {
+    id: 'tomato-pear-blend',
+    name: '番茄 - 梨（調製飲品）',
+    observedDisplayName: '番茄 - 梨（調製飲品）',
+    unlockedAt: 'ibex-statue-unlocked',
+    salePrice: 30,
+    ingredients: ['番茄', '梨'],
+    effects: [
+      { name: '保護心臟', value: 7 },
+      { name: '促進消化', value: 4 },
+      { name: '煥亮肌膚', value: 2 },
+    ],
+    equipment: ['榨汁機', '果汁調和器', '果汁成品台'],
+  },
+  {
+    id: 'tomato-pear-peach-blend',
+    name: '助消（番茄 → 梨 → 桃子）',
+    observedDisplayName: '助消 繁榮',
+    unlockedAt: 'ibex-statue-unlocked',
+    salePrice: 55,
+    ingredients: ['番茄', '梨', '桃子'],
+    effects: [
+      { name: '促進消化', value: 8 },
+      { name: '保護心臟', value: 8 },
+      { name: '舒緩呼吸', value: 3 },
+      { name: '煥亮肌膚', value: 2 },
+    ],
+    equipment: ['榨汁機', '果汁調和器', '果汁成品台'],
+  },
 ]
