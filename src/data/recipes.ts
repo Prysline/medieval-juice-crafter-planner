@@ -1308,4 +1308,34 @@ export const recipes: Recipe[] = [
     ],
     equipment: ['榨汁機', '液料調和器', '果汁調和器', '果汁成品台'],
   },
+
+  {
+    id: 'lemon-milk',
+    name: '檸檬 - 牛奶（調製飲品）',
+    observedDisplayName: '檸檬 - 牛奶（調製飲品）',
+    unlockedAt: 'liquid-blender-unlocked',
+    salePrice: 28,
+    ingredients: ['檸檬', '牛奶'],
+    effects: [
+      { name: '奶香', value: 6 },
+      { name: '酸味', value: 4 },
+      { name: '強健骨骼', value: 3 },
+    ],
+    equipment: ['柑橘榨汁機', '液料調和器', '果汁成品台'],
+  },
+  {
+    id: 'lemon-milk-sugar',
+    name: '奶香（檸檬 → 牛奶 → 糖）',
+    observedDisplayName: '奶香 豐饒',
+    unlockedAt: 'liquid-blender-unlocked',
+    salePrice: 39,
+    ingredients: ['檸檬', '牛奶', '糖'],
+    effects: [
+      { name: '奶香', value: 6 },
+      { name: '甜味', value: 5 },
+      { name: '酸味', value: 4 },
+      { name: '補充精力', value: 3 },
+    ],
+    equipment: ['柑橘榨汁機', '液料調和器', '調味器', '果汁成品台'],
+  },
 ]
