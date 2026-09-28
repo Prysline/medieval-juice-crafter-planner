@@ -164,6 +164,33 @@ describe('custom sales trip editor UI', () => {
     expect(html).toContain('正式販售排程仍維持自動方案')
   })
 
+  it('starts later edits from the applied custom plan and exposes completion only when integration supplies an accept action', () => {
+    const applied = moveCustomTripCustomers(
+      baseline(),
+      ['east-b'],
+      'auto-trip-2',
+    )
+    const html = renderToStaticMarkup(
+      <CustomSalesTripEditor
+        autoBaseline={baseline()}
+        appliedPlan={applied}
+        validateDraft={() => ({
+          status: 'valid',
+          salesPlan: {} as never,
+          issues: [],
+        })}
+        customerLabel={(customerId) => customerId}
+        recipeLabel={(recipeId) => recipeId}
+        regionLabel={(regionId) => regionId}
+        onAcceptValidatedDraft={() => {}}
+      />,
+    )
+
+    expect(html).toContain('目前使用自訂方案')
+    expect(html).toContain('編輯自訂趟次')
+    expect(html).not.toContain('開始自訂趟次')
+  })
+
   it('keeps the entry collapsed until the player chooses to edit', () => {
     const html = renderToStaticMarkup(
       <CustomSalesTripEditor
