@@ -3064,25 +3064,43 @@ footer {
   margin-top: 2px;
 }
 
-.optimizer-remaining-sales-customer {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: center;
+.optimizer-remaining-recipe-list {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 7px !important;
 }
 
-.optimizer-remaining-sales-customer > small {
+.optimizer-remaining-recipe-card {
+  display: grid;
+  gap: 6px;
   border: 1px solid #ddd1bf;
-  border-radius: 999px;
-  background: #fbf7ef;
-  padding: 3px 7px;
-  color: #6d604d;
-  max-width: min(46%, 18rem);
-  font-size: 0.67rem;
+  border-radius: 9px;
+  background: #fffaf1;
+  padding: 8px;
+}
+
+.optimizer-remaining-recipe-card > header {
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  align-items: start;
+}
+
+.optimizer-remaining-recipe-card > header > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.optimizer-remaining-recipe-card > header strong {
+  color: #38502f;
+  font-size: 0.76rem;
+}
+
+.optimizer-remaining-recipe-card > header span {
+  color: #795d22;
+  font-size: 0.69rem;
   font-weight: 800;
-  line-height: 1.35;
-  text-align: right;
-  overflow-wrap: anywhere;
 }
 
 .optimizer-sales-warning {

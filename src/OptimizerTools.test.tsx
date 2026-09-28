@@ -38,6 +38,7 @@ import {
   OptimizerSummaryMetrics,
   PlanApplicationPreview,
   PlanningErrorBlock,
+  RemainingSalesRecipeDemandBlock,
   RemainingSalesTripPlanBlock,
   SalesTripPlanBlock,
   criterionLabel,
@@ -1617,6 +1618,11 @@ describe('remaining sales trip replan UI', () => {
       },
     })
 
+    const demandHtml = renderToStaticMarkup(
+      <RemainingSalesRecipeDemandBlock
+        recipes={remainingPlan.recipes}
+      />,
+    )
     const html = renderToStaticMarkup(
       <RemainingSalesTripPlanBlock
         plan={remainingPlan}
@@ -1630,14 +1636,20 @@ describe('remaining sales trip replan UI', () => {
       />,
     )
 
+    expect(demandHtml).toContain('aria-label="剩餘配方 A"')
+    expect(demandHtml).toContain('尚待 1 杯 · 1 人')
+    expect(demandHtml).not.toContain('傑克')
+    expect(demandHtml).toContain('萊蒂西亞')
+    expect(demandHtml).toContain('弗洛莉婭')
     expect(html).toContain('aria-label="第 1 趟販售排程"')
     expect(html).toContain('optimizer-sales-trip-toggle')
     expect(html).toContain('optimizer-sales-trip-delivery-control')
     expect(html).not.toContain('傑克')
     expect(html).toContain('萊蒂西亞')
     expect(html).toContain('弗洛莉婭')
-    expect(html).toContain('A')
-    expect(html).toContain('B')
+    expect(html).toContain('aria-label="第 1 趟配方 A"')
+    expect(html).toContain('aria-label="第 1 趟配方 B"')
+    expect(html).toContain('本趟 1 杯')
     expect(html).toContain('東港村')
     expect(html).toContain('靜謐噴泉')
     expect(html).toContain('第 1 趟全部交付完成')
