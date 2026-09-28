@@ -28,6 +28,27 @@ describe('optimizer preferences wiring regression', () => {
     )
   })
 
+  it('distinguishes saved target selections from current eligibility', () => {
+    expect(optimizerToolsSource).toContain(
+      '已選擇 {selectedCustomerIds.length} 人 · 本次可規劃',
+    )
+    expect(optimizerToolsSource).toContain(
+      '{effectiveSelectedCustomerCount} / {targetableCustomerCount} 人',
+    )
+    expect(optimizerToolsSource).toContain(
+      '位目前不符合主線、滿意度、顧客身分或今日已供應條件；選擇會保留',
+    )
+    expect(optimizerToolsSource).toContain(
+      '已選擇 {selectedVillageIds.length} 個村莊 · 本次可規劃',
+    )
+    expect(optimizerToolsSource).toContain(
+      '{effectiveSelectedVillageIds.length} / {targetableVillageIds.length}',
+    )
+    expect(optimizerToolsSource).toContain(
+      '個已選擇村莊目前沒有符合條件的可規劃顧客；選擇會保留',
+    )
+  })
+
   it('writes only player-authored optimizer inputs when controls change', () => {
     const writeStart = optimizerToolsSource.indexOf(
       'writeOptimizerPreferences(window.localStorage, {',
