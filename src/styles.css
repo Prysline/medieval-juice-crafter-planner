@@ -2908,6 +2908,8 @@ footer {
 .optimizer-sales-trip-card > .optimizer-sales-trip-body {
   display: grid;
   gap: 10px;
+  justify-content: stretch;
+  align-items: stretch;
 }
 
 .optimizer-sales-trip-toggle {
