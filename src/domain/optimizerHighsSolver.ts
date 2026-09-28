@@ -111,6 +111,33 @@ interface HighsStageOptions {
   allowUnassignedCustomers?: boolean
 }
 
+export function minimumWasteEquivalentAssignmentGroupingIsSafe(
+  domain: BatchOptimizationModel,
+): boolean {
+  if (domain.request.materialSourceMode === 'inventory-only') {
+    return false
+  }
+
+  const initialJars = normalizedInitialCarriedJuiceJars(
+    domain.request,
+  )
+  const emptyJarCount = initialJars.filter(
+    (jar) => !jar.recipeId || jar.servings <= 0,
+  ).length
+  if (emptyJarCount === 0) return false
+
+  const maxJarTypeSwitches =
+    domain.request.constraints?.maxJarTypeSwitches
+  if (
+    typeof maxJarTypeSwitches === 'number' &&
+    Number.isFinite(maxJarTypeSwitches)
+  ) {
+    return false
+  }
+
+  return true
+}
+
 function initialFinishedJarEmptyingThresholds(
   jars: readonly { recipeId: string | null; servings: number }[],
 ): Map<string, number[]> {
@@ -1659,13 +1686,39 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
         }
       }
 
+      let usingMinimumWasteGrouping =
+        objectiveIndex === 0 &&
+        objectiveKey === 'productionUnits' &&
+        fixes.length === 0 &&
+        minimumWasteEquivalentAssignmentGroupingIsSafe(stageDomain)
+
       let built = buildHighsStage(
         stageDomain,
         objectiveKey,
         fixes,
-        { allowUnassignedCustomers: allowPartialAssignments },
+        {
+          allowUnassignedCustomers: allowPartialAssignments,
+          aggregateEquivalentAssignments:
+            usingMinimumWasteGrouping,
+        },
       )
       let solution = await built.model.solve()
+
+      if (
+        usingMinimumWasteGrouping &&
+        solution.status !== 'optimal'
+      ) {
+        usingMinimumWasteGrouping = false
+        built = buildHighsStage(
+          stageDomain,
+          objectiveKey,
+          fixes,
+          {
+            allowUnassignedCustomers: allowPartialAssignments,
+          },
+        )
+        solution = await built.model.solve()
+      }
 
       if (
         usingMinimumCostCertificate &&
