@@ -107,6 +107,51 @@ describe('custom sales trip editor grouping', () => {
     ])
   })
 
+  it('orders same-recipe same-residence customers by canonical game order without changing the trip assignment', () => {
+    const plan = buildCustomSalesTripBaseline({
+      recipeAssignments: [
+        {
+          recipeId: 'recipe-a',
+          customerIds: ['zenobia', 'harry', 'lizzie'],
+        },
+      ],
+      physicalTrips: [
+        {
+          tripNumber: 1,
+          juiceJars: [
+            {
+              recipeId: 'recipe-a',
+              customerIds: ['zenobia', 'harry', 'lizzie'],
+            },
+          ],
+        },
+      ],
+      customerRegionById: {
+        zenobia: 'east-harbor',
+        harry: 'east-harbor',
+        lizzie: 'east-harbor',
+      },
+      customerResidenceById: {
+        zenobia: 'east-harbor-residence-8',
+        harry: 'east-harbor-residence-8',
+        lizzie: 'east-harbor-residence-8',
+      },
+    })
+
+    const groups = buildCustomTripEditorGroups(plan)
+
+    expect(groups[0]?.recipes[0]?.regions[0]?.customerIds).toEqual([
+      'harry',
+      'lizzie',
+      'zenobia',
+    ])
+    expect(plan.tripByCustomerId).toEqual({
+      zenobia: 'auto-trip-1',
+      harry: 'auto-trip-1',
+      lizzie: 'auto-trip-1',
+    })
+  })
+
   it('changes the draft fingerprint when customer → trip assignment changes', () => {
     const initial = baseline()
     const moved = moveCustomTripCustomers(
