@@ -1489,6 +1489,10 @@ describe('sales trip interactive checklist UI', () => {
     expect(interactiveHtml).toContain('aria-checked="mixed"')
     expect(interactiveHtml).toContain('完成 1 / 2')
     expect(interactiveHtml).toContain('東港村')
+    expect(interactiveHtml).toContain('東港村 · 住處 7')
+    expect(interactiveHtml).toContain(
+      'aria-label="東港村 住處 7"',
+    )
     expect(interactiveHtml).toContain('class="optimizer-sales-trip-body"')
     const departureIndex = interactiveHtml.indexOf('<h4>出發前</h4>')
     const salesIndex = interactiveHtml.indexOf('<h4>販售</h4>')
@@ -1500,6 +1504,79 @@ describe('sales trip interactive checklist UI', () => {
     expect(interactiveHtml).toContain('容量／路線細節')
     expect(readOnlyHtml).not.toContain('第 1 趟全部交付完成')
     expect(readOnlyHtml).not.toContain('type="checkbox"')
+  })
+})
+
+describe('sales trip residence grouping UI', () => {
+  it('shows a same-recipe residence group and identifies every trip when capacity legally splits it', () => {
+    const salesDemand: PreparationDemand = {
+      ingredients: [],
+      productionWaterUnits: 2,
+      cleanCupUses: 3,
+      producedServings: 4,
+      assignedServings: 3,
+      leftoverServings: 1,
+      recipes: [
+        {
+          recipeId: 'recipe-a',
+          recipeName: 'A',
+          customerIds: ['zenobia', 'harry', 'lizzie'],
+          ingredientIds: [],
+          productionUnits: 2,
+          producedServings: 4,
+          assignedServings: 3,
+          leftoverServings: 1,
+          ingredientUnitsPerJuiceUnit: [],
+        },
+      ],
+    }
+    const inventory: InventoryState = {
+      ingredientUnits: {},
+      intermediateJuiceUnits: {},
+      waterUnits: 0,
+      cleanCups: 2,
+      usedCups: 0,
+      juiceJars: [
+        { id: 'jar-a', recipeId: null, servings: 0 },
+      ],
+      shelfCount: 0,
+      jarRackCount: 0,
+    }
+    const shortfall = buildPreparationShortfall(
+      salesDemand,
+      inventory,
+    )
+    const plan = buildMultiTripReplenishmentPlan(
+      salesDemand,
+      'retain-and-wash',
+      inventory.juiceJars,
+      {
+        cleanCups: inventory.cleanCups,
+        usedCups: inventory.usedCups,
+      },
+      shortfall,
+      {
+        mode: 'fixed-slots',
+        reservedSlots: 1,
+        minimumCarriedSlots: 0,
+      },
+      false,
+    )
+
+    expect(plan.tripCount).toBe(2)
+
+    const html = renderToStaticMarkup(
+      <SalesTripPlanBlock plan={plan} />,
+    )
+
+    expect(html).toContain('東港村 · 住處 8')
+    expect(html).toContain('本組 3 位')
+    expect(html).toContain(
+      '同配方同住處分散於第 1、2 趟',
+    )
+    expect(html.indexOf('哈利')).toBeLessThan(
+      html.indexOf('莉琪'),
+    )
   })
 })
 
