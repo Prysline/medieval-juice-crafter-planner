@@ -215,6 +215,68 @@ const fills: MultiTripProductionJarFill[] = [
   },
 ]
 
+describe('juice jar presentation order', () => {
+  it('renders numeric jar identifiers in natural order without changing transaction state', () => {
+    const base = transactionDraft()
+    const jar10 = {
+      physicalJarId: 'jar-10',
+      before: {
+        id: 'jar-10',
+        recipeId: 'lemon-juice',
+        servings: 2,
+      },
+      after: {
+        id: 'jar-10',
+        recipeId: 'orange-juice',
+        servings: 1,
+      },
+    }
+    const jar2 = {
+      physicalJarId: 'jar-2',
+      before: {
+        id: 'jar-2',
+        recipeId: 'lemon-juice',
+        servings: 2,
+      },
+      after: {
+        id: 'jar-2',
+        recipeId: 'orange-juice',
+        servings: 1,
+      },
+    }
+    const draft: PlanApplicationTransactionDraft = {
+      ...base,
+      after: {
+        ...base.after,
+        inventory: {
+          ...base.after.inventory,
+          juiceJars: [jar10.after, jar2.after],
+        },
+      },
+      changes: {
+        ...base.changes,
+        juiceJars: [jar10, jar2],
+      },
+    }
+
+    const html = renderToStaticMarkup(
+      <PlanApplicationPreview
+        draft={draft}
+        productionJarFills={[]}
+        onApply={() => {}}
+      />,
+    )
+
+    expect(html.indexOf('<strong>果汁罐 jar-2</strong>')).toBeLessThan(
+      html.indexOf('<strong>果汁罐 jar-10</strong>'),
+    )
+    expect(draft.changes.juiceJars.map((change) => change.physicalJarId)).toEqual([
+      'jar-10',
+      'jar-2',
+    ])
+  })
+})
+
 describe('whole-plan delivery rebase', () => {
   it('keeps the last valid draft while an incompatible delivery edit is corrected', () => {
     const draft = transactionDraft()
@@ -568,6 +630,13 @@ describe('delivery checklist UI', () => {
         plan,
       ),
     ).toEqual(['jack', 'florida', 'unplanned'])
+
+    expect(
+      customerIdsInPlannedTripOrder(
+        ['zenobia', 'eric', 'lizzie', 'harry'],
+        null,
+      ),
+    ).toEqual(['harry', 'eric', 'lizzie', 'zenobia'])
   })
 
   it('orders recipe groups by their earliest planned trip while preserving stable ties and unplanned groups last', () => {
