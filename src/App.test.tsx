@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { customers } from './data/customers'
 import {
   ComparisonDock,
+  CustomerVillageFilterOptions,
   FormalCustomerStats,
   SatisfactionFields,
   withSatisfactionUpdate,
@@ -30,6 +31,54 @@ describe('shared customer comparison dock', () => {
     expect(html).toContain('傑克（帽匠） ×')
     expect(html).toContain('前往配方工具比較')
     expect(html).toContain('全部清除')
+  })
+})
+
+describe('data-driven customer village filter options', () => {
+  it('includes every canonical village unlocked at the current progress', () => {
+    const beforeIbex = renderToStaticMarkup(
+      <select>
+        <CustomerVillageFilterOptions
+          villageDefinitions={villages}
+          currentProgress="advanced-citrus-juicer-unlocked"
+        />
+      </select>,
+    )
+    const atIbex = renderToStaticMarkup(
+      <select>
+        <CustomerVillageFilterOptions
+          villageDefinitions={villages}
+          currentProgress="ibex-statue-unlocked"
+        />
+      </select>,
+    )
+
+    expect(beforeIbex).toContain('東港村')
+    expect(beforeIbex).toContain('靜謐噴泉')
+    expect(beforeIbex).not.toContain('羱羊雕像')
+    expect(atIbex).toContain('<option value="ibex-statue">羱羊雕像</option>')
+  })
+
+  it('renders an arbitrary future canonical village without another hardcoded option', () => {
+    const villageDefinitions = [
+      { id: 'starter', name: '起始地區', unlockedAt: 'opening' },
+      {
+        id: 'future-region',
+        name: '未來地區',
+        unlockedAt: 'juice-blender-unlocked',
+      },
+    ] as const
+
+    const html = renderToStaticMarkup(
+      <select>
+        <CustomerVillageFilterOptions
+          villageDefinitions={villageDefinitions}
+          currentProgress="juice-blender-unlocked"
+        />
+      </select>,
+    )
+
+    expect(html).toContain('<option value="future-region">未來地區</option>')
   })
 })
 
