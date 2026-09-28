@@ -879,20 +879,21 @@ function recipePreferenceWindow(
 
 /**
  * Region preferences arrive after recipe assignment, so they must never
- * increase the exact minimum jar-switch count. When every reusable jar starts
- * empty, however, there are many equally minimal recipe→jar queue layouts.
+ * increase the exact minimum jar-switch count.
  *
- * This candidate uses the downstream preference windows only as a secondary
- * tie-break among those exact-minimum layouts:
+ * This candidate uses downstream preference windows only as a secondary
+ * tie-break among exact-minimum recipe→jar queue layouts:
  * - a recipe occupies a jar through its whole preferred service window;
  * - recipes whose windows overlap are kept on different jars when possible;
- * - every empty jar receives a free first recipe before any jar is reused;
+ * - an empty jar or matching current type can provide a switch-free first use;
+ * - initial non-empty loads keep their physical jar unavailable for a
+ *   different recipe until their preferred service window is finished;
  * - terminal-leftover recipes remain the final type on distinct jars.
  *
- * If those conditions cannot be met without giving up an exact-minimum
- * switch-free first use, the caller keeps the canonical sequence plan.
+ * If those conditions cannot be met while preserving the canonical exact
+ * minimum switch count, the caller keeps the canonical sequence plan.
  */
-function planPreferenceAwareEmptyJarSequences(
+function planPreferenceAwareJarSequences(
   recipes: RecipeJarDemand[],
   queues: JarQueue[],
   canonicalPlan: MinimumJarSwitchSequencePlan,
@@ -902,12 +903,7 @@ function planPreferenceAwareEmptyJarSequences(
 ): MinimumJarSwitchSequencePlan | null {
   if (!preferenceByCustomerId) return null
   if (
-    queues.some(
-      (queue) =>
-        queue.lockedByRetainedInitialContents ||
-        queueCurrentRecipeId(queue) !== null ||
-        queue.loads.length > 0,
-    )
+    queues.some((queue) => queue.lockedByRetainedInitialContents)
   ) {
     return null
   }
@@ -924,18 +920,41 @@ function planPreferenceAwareEmptyJarSequences(
 
   type CandidateJar = {
     physicalJarId: string
+    initialRecipeId: string | null
     recipeIds: string[]
     availableAfter: number
   }
-  const candidateJars: CandidateJar[] = queues
-    .map((queue) => ({
+
+  const candidateJars: CandidateJar[] = []
+  for (const queue of queues) {
+    const currentRecipeId = queueCurrentRecipeId(queue)
+    const existingPreferences = queue.loads
+      .flatMap((load) => load.customerIds)
+      .map(
+        (customerId) => preferenceByCustomerId[customerId],
+      )
+
+    if (
+      existingPreferences.some(
+        (value) => !Number.isFinite(value),
+      )
+    ) {
+      return null
+    }
+
+    candidateJars.push({
       physicalJarId: queue.physicalJarId,
+      initialRecipeId: currentRecipeId,
       recipeIds: [],
-      availableAfter: Number.NEGATIVE_INFINITY,
-    }))
-    .sort((a, b) =>
-      a.physicalJarId.localeCompare(b.physicalJarId),
-    )
+      availableAfter:
+        existingPreferences.length > 0
+          ? Math.max(...existingPreferences)
+          : Number.NEGATIVE_INFINITY,
+    })
+  }
+  candidateJars.sort((a, b) =>
+    a.physicalJarId.localeCompare(b.physicalJarId),
+  )
 
   const terminalRecipeIds = new Set(
     recipes
@@ -954,20 +973,54 @@ function planPreferenceAwareEmptyJarSequences(
     )
   }
 
+  const placementState = (
+    jar: CandidateJar,
+    recipeId: string,
+    window: RecipePreferenceWindow,
+  ): {
+    fits: boolean
+    switchFreeFirst: boolean
+  } => {
+    const isFirstProducedRecipe = jar.recipeIds.length === 0
+    const switchFreeFirst =
+      isFirstProducedRecipe &&
+      (
+        jar.initialRecipeId === null ||
+        jar.initialRecipeId === recipeId
+      )
+    const continuesInitialRecipe =
+      isFirstProducedRecipe &&
+      jar.initialRecipeId === recipeId
+
+    return {
+      fits:
+        continuesInitialRecipe ||
+        jar.availableAfter < window.start,
+      switchFreeFirst,
+    }
+  }
+
   const placeNonTerminal = (recipe: RecipeJarDemand): void => {
     const window = windowByRecipeId.get(recipe.recipeId)
     if (!window) return
 
     const target = [...candidateJars].sort((a, b) => {
-      const aFits = a.availableAfter < window.start
-      const bFits = b.availableAfter < window.start
-      const aUnused = a.recipeIds.length === 0
-      const bUnused = b.recipeIds.length === 0
+      const aState = placementState(
+        a,
+        recipe.recipeId,
+        window,
+      )
+      const bState = placementState(
+        b,
+        recipe.recipeId,
+        window,
+      )
       return (
-        Number(bFits) - Number(aFits) ||
-        Number(bUnused) - Number(aUnused) ||
+        Number(bState.fits) - Number(aState.fits) ||
+        Number(bState.switchFreeFirst) -
+          Number(aState.switchFreeFirst) ||
         (
-          aFits && bFits
+          aState.fits && bState.fits
             ? b.availableAfter - a.availableAfter
             : a.availableAfter - b.availableAfter
         ) ||
@@ -976,6 +1029,13 @@ function planPreferenceAwareEmptyJarSequences(
       )
     })[0]
     if (!target) return
+
+    const state = placementState(
+      target,
+      recipe.recipeId,
+      window,
+    )
+    if (!state.fits) return
 
     target.recipeIds.push(recipe.recipeId)
     target.availableAfter = Math.max(
@@ -999,23 +1059,42 @@ function planPreferenceAwareEmptyJarSequences(
     if (!window) return null
 
     const target = candidateJars
-      .filter(
-        (jar) =>
-          terminalTargetPool.has(jar.physicalJarId) &&
-          jar.availableAfter < window.start,
-      )
-      .sort(
-        (a, b) =>
-          Number(b.recipeIds.length === 0) -
-            Number(a.recipeIds.length === 0) ||
+      .filter((jar) => {
+        if (!terminalTargetPool.has(jar.physicalJarId)) {
+          return false
+        }
+        return placementState(
+          jar,
+          recipe.recipeId,
+          window,
+        ).fits
+      })
+      .sort((a, b) => {
+        const aState = placementState(
+          a,
+          recipe.recipeId,
+          window,
+        )
+        const bState = placementState(
+          b,
+          recipe.recipeId,
+          window,
+        )
+        return (
+          Number(bState.switchFreeFirst) -
+            Number(aState.switchFreeFirst) ||
           b.availableAfter - a.availableAfter ||
           a.recipeIds.length - b.recipeIds.length ||
-          a.physicalJarId.localeCompare(b.physicalJarId),
-      )[0]
+          a.physicalJarId.localeCompare(b.physicalJarId)
+        )
+      })[0]
     if (!target) return null
 
     target.recipeIds.push(recipe.recipeId)
-    target.availableAfter = window.end
+    target.availableAfter = Math.max(
+      target.availableAfter,
+      window.end,
+    )
     terminalTargetPool.delete(target.physicalJarId)
   }
 
@@ -1029,11 +1108,23 @@ function planPreferenceAwareEmptyJarSequences(
     return null
   }
 
-  const usedJarCount = candidateJars.filter(
-    (jar) => jar.recipeIds.length > 0,
-  ).length
-  const minimumSwitches =
-    recipes.length - usedJarCount
+  const minimumSwitches = candidateJars.reduce(
+    (total, jar) => {
+      let currentRecipeId = jar.initialRecipeId
+      let switches = 0
+      for (const recipeId of jar.recipeIds) {
+        if (
+          currentRecipeId !== null &&
+          currentRecipeId !== recipeId
+        ) {
+          switches += 1
+        }
+        currentRecipeId = recipeId
+      }
+      return total + switches
+    },
+    0,
+  )
   if (minimumSwitches !== canonicalPlan.minimumSwitches) {
     return null
   }
@@ -1149,7 +1240,7 @@ function buildPhysicalJarQueues(
         .map((recipe) => recipe.recipeId),
     )
   const sequencePlan =
-    planPreferenceAwareEmptyJarSequences(
+    planPreferenceAwareJarSequences(
       schedulableRecipes,
       reusableQueues,
       canonicalSequencePlan,
