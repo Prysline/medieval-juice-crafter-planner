@@ -49,7 +49,7 @@ describe('ibex statue customers', () => {
     ])
   })
 
-  it('keeps the two directly observed unknown preference sets unknown', () => {
+  it('keeps Thorsten unknown while Savius now has direct preference evidence', () => {
     expect(customers.find((customer) => customer.id === 'thorsten')).toMatchObject({
       name: '托爾斯滕',
       satisfactionRequired: 350,
@@ -58,7 +58,11 @@ describe('ibex statue customers', () => {
     expect(customers.find((customer) => customer.id === 'savius')).toMatchObject({
       name: '薩維烏斯',
       satisfactionRequired: 250,
-      preferences: null,
+      preferences: [
+        { kind: 'ingredient', value: '檸檬' },
+        { kind: 'effect', value: '強健骨骼' },
+        { kind: 'effect', value: '舒緩腸胃' },
+      ],
     })
   })
 

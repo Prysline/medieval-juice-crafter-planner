@@ -11,4 +11,14 @@ describe('observed customer preferences', () => {
       { kind: 'effect', value: '煥亮肌膚' },
     ])
   })
+  it('records Savius preferences from the direct screenshot', () => {
+    const savius = customers.find((customer) => customer.id === 'savius')
+
+    expect(savius?.preferences).toEqual([
+      { kind: 'ingredient', value: '檸檬' },
+      { kind: 'effect', value: '強健骨骼' },
+      { kind: 'effect', value: '舒緩腸胃' },
+    ])
+  })
+
 })

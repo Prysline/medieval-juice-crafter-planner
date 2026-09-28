@@ -107,6 +107,6 @@ export const customers: Customer[] = [
   { id: 'nantelma', name: '南特爾瑪', occupation: '貴婦', villageId: 'ibex-statue', satisfactionRequired: 0, preferences: [ingredient('葡萄柚'), effect('煥亮肌膚'), effect('保護心臟')] },
   { id: 'milon', name: '米隆', occupation: '書商', villageId: 'ibex-statue', satisfactionRequired: 0, preferences: [effect('改善視力'), effect('調節血糖')] },
   { id: 'thorsten', name: '托爾斯滕', occupation: '領主', villageId: 'ibex-statue', satisfactionRequired: 350, preferences: null },
-  { id: 'savius', name: '薩維烏斯', occupation: '領主', villageId: 'ibex-statue', satisfactionRequired: 250, preferences: null },
+  { id: 'savius', name: '薩維烏斯', occupation: '領主', villageId: 'ibex-statue', satisfactionRequired: 250, preferences: [ingredient('檸檬'), effect('強健骨骼'), effect('舒緩腸胃')] },
 
 ]
