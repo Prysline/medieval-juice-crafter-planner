@@ -36,7 +36,7 @@ function productionScaleRequest(
     },
     formalCustomerIds: customerIds,
     candidatePolicy: 'allow-unambiguous-computed',
-    objective: priorities[0] ?? 'minimum-waste',
+    objective: 'minimum-waste',
     priorities,
     availableJuiceJarCount: 5,
   }
@@ -196,6 +196,50 @@ it(
         baselineStage.objectiveValue,
       )
     }
+
+    if (
+      groupedStage.status === 'optimal' &&
+      groupedStage.objectiveValue !== null
+    ) {
+      const stageTwoRequest = productionScaleRequest([
+        'minimum-waste',
+        'maximum-ingredient-cost',
+      ])
+      const stageTwoModelStartedAt = performance.now()
+      const stageTwoModel = buildOptimizationModel(
+        stageTwoRequest,
+        {
+          customers: canonicalCustomers,
+          candidatePool,
+        },
+      )
+      const stageTwoModelBuildMs =
+        performance.now() - stageTwoModelStartedAt
+      const stageTwoProfile = await profileOptimizerSolveStages(
+        stageTwoModel,
+        ['maximum-ingredient-cost'],
+        {
+          stageTimeLimitSeconds: STAGE_TIME_LIMIT_SECONDS,
+          maxStages: 1,
+          initialProductionUnitsFix:
+            groupedStage.objectiveValue,
+        },
+      )
+
+      console.info(
+        '[optimizer-solve-profile]',
+        JSON.stringify(
+          compactProfile(
+            'fixed minimum-waste optimum -> maximum-ingredient-cost Stage 2 probe',
+            stageTwoModelBuildMs,
+            stageTwoModel.recipes.length,
+            stageTwoProfile,
+          ),
+        ),
+      )
+
+      expect(stageTwoProfile.stages).toHaveLength(1)
+    }
   },
-  220000,
+  240000,
 )
