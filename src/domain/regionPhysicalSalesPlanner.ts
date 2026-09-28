@@ -393,6 +393,104 @@ function describePhysicalTrips(
   }
 }
 
+
+export interface DescribeRealizedRegionPhysicalSalesPlanInput {
+  demand: PreparationDemand
+  salesPlan: MultiTripReplenishmentPlan
+  activeWorkshop: ActiveWorkshop
+  topology: {
+    edges: readonly RegionTopologyEdge[]
+  }
+  customerRegionById: Readonly<Record<string, RegionId>>
+}
+
+/**
+ * Describes an already-realized physical plan without running Region
+ * candidate search or changing customer → trip assignments.
+ *
+ * Custom-trip execution uses this after strict fixed-trip realization so the
+ * existing Region UI can reflect the player's exact plan without handing it
+ * back to the auto Region optimizer.
+ */
+export function describeRealizedRegionPhysicalSalesPlan(
+  input: DescribeRealizedRegionPhysicalSalesPlanInput,
+): RegionPhysicalSalesPlan {
+  const realized = describePhysicalTrips(
+    input.salesPlan,
+    input.activeWorkshop,
+    input.topology,
+    input.customerRegionById,
+  )
+  const customerAssignments =
+    input.demand.recipes.flatMap((recipe) =>
+      recipe.customerIds.map((customerId) => ({
+        customerId,
+        recipeId: recipe.recipeId,
+        regionId: regionForCustomer(
+          customerId,
+          input.customerRegionById,
+        ),
+      })),
+    )
+  const assignmentByCustomerId = new Map(
+    customerAssignments.map((assignment) => [
+      assignment.customerId,
+      assignment,
+    ]),
+  )
+
+  const regionServiceIntent: RegionServicePlan = {
+    activeWorkshop: { ...input.activeWorkshop },
+    customerAssignments,
+    trips: realized.trips.map((trip) => ({
+      tripNumber: trip.tripNumber,
+      services: trip.services.map((service) => ({
+        regionId: service.regionId,
+        role: service.role,
+        customerAssignments: service.customerIds.map(
+          (customerId) => {
+            const assignment =
+              assignmentByCustomerId.get(customerId)
+            if (!assignment) {
+              throw new Error(
+                `Realized Region trip references unknown customer ${customerId}`,
+              )
+            }
+            return assignment
+          },
+        ),
+      })),
+      servicedRegionIds: [...trip.servicedRegionIds],
+      primaryRegionIds: [...trip.primaryRegionIds],
+      sideRegionIds: [...trip.sideRegionIds],
+      transitRegionIds: [...trip.transitRegionIds],
+      routeFootprint: trip.routeFootprint.map((edge) => ({
+        ...edge,
+      })),
+      routeCost: trip.routeCost,
+    })),
+    routeCost: realized.score.routeCost,
+    tripCount: realized.score.tripCount,
+    serviceFragmentation:
+      realized.score.serviceFragmentation,
+  }
+
+  return {
+    activeWorkshop: { ...input.activeWorkshop },
+    regionServiceIntent,
+    requiredByRegion: requiredByRegion(
+      input.demand,
+      input.customerRegionById,
+    ),
+    salesPlan: input.salesPlan,
+    trips: realized.trips,
+    routeCost: realized.score.routeCost,
+    tripCount: realized.score.tripCount,
+    serviceFragmentation:
+      realized.score.serviceFragmentation,
+  }
+}
+
 function baselineRegionOrder(
   salesPlan: MultiTripReplenishmentPlan,
   customerRegionById: Readonly<Record<string, RegionId>>,
