@@ -1574,8 +1574,11 @@ describe('sales trip residence grouping UI', () => {
     expect(html).toContain(
       '同配方同住處分散於第 1、2 趟',
     )
-    expect(html.indexOf('哈利')).toBeLessThan(
-      html.indexOf('莉琪'),
+    expect(html.indexOf('哈里')).toBeLessThan(
+      html.indexOf('莉婭'),
+    )
+    expect(html.indexOf('莉婭')).toBeLessThan(
+      html.indexOf('澤諾比婭'),
     )
   })
 })
