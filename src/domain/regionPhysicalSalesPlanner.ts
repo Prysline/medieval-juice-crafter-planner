@@ -4,6 +4,7 @@ import type {
   PreparationRecipeDemand,
 } from './preparationDemand'
 import type { PreparationShortfall } from './preparationShortfall'
+import { PlanningUserError } from './planningErrors'
 import {
   buildMultiTripReplenishmentPlan,
   type CupInventoryInput,
@@ -648,12 +649,7 @@ function boundedPhysicalAwareRegionPreferences(
   preferenceByCustomerId: Record<string, number>
 }> {
   const jarCount = input.availableJuiceJarInventory.length
-  const allReusableJarsStartEmpty =
-    jarCount > 0 &&
-    input.availableJuiceJarInventory.every(
-      (jar) => jar.servings <= 0,
-    )
-  if (!allReusableJarsStartEmpty) return []
+  if (jarCount < 1) return []
 
   const segmentsByRegion = new Map<
     RegionId,
@@ -663,6 +659,15 @@ function boundedPhysicalAwareRegionPreferences(
   const terminalRecipeIds = new Set(
     input.demand.recipes
       .filter((recipe) => recipe.leftoverServings > 0)
+      .map((recipe) => recipe.recipeId),
+  )
+  const initiallyOccupiedRecipeIds = new Set(
+    input.shortfall.recipes
+      .filter((recipe) =>
+        recipe.finishedStockSources.some(
+          (source) => source.servingsUsed > 0,
+        ),
+      )
       .map((recipe) => recipe.recipeId),
   )
 
@@ -763,12 +768,17 @@ function boundedPhysicalAwareRegionPreferences(
   ): Set<string> => {
     const consumed = consumedSegmentCountByRecipe(cursors)
     const occupied = new Set<string>()
-    for (const [recipeId, consumedCount] of consumed) {
-      const totalCount =
-        segmentCountByRecipe.get(recipeId) ?? 0
+    for (const [recipeId, totalCount] of segmentCountByRecipe) {
+      const consumedCount = consumed.get(recipeId) ?? 0
+      const hasStarted =
+        consumedCount > 0 ||
+        initiallyOccupiedRecipeIds.has(recipeId)
       if (
-        consumedCount < totalCount ||
-        terminalRecipeIds.has(recipeId)
+        hasStarted &&
+        (
+          consumedCount < totalCount ||
+          terminalRecipeIds.has(recipeId)
+        )
       ) {
         occupied.add(recipeId)
       }
@@ -1166,11 +1176,19 @@ export function buildRegionPhysicalSalesPlan(
         input.demand,
         preferenceByCustomerId,
       )
-    const regionSalesPlan = buildPhysicalPlan(
-      input,
-      regionOrderedDemand,
-      preferenceByCustomerId,
-    )
+    let regionSalesPlan: MultiTripReplenishmentPlan
+    try {
+      regionSalesPlan = buildPhysicalPlan(
+        input,
+        regionOrderedDemand,
+        preferenceByCustomerId,
+      )
+    } catch (error) {
+      if (error instanceof PlanningUserError) {
+        continue
+      }
+      throw error
+    }
     const regional = describePhysicalTrips(
       regionSalesPlan,
       input.activeWorkshop,
