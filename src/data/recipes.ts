@@ -1578,4 +1578,20 @@ export const recipes: Recipe[] = [
     ],
     equipment: ['榨汁機', '調味器', '果汁調和器', '果汁成品台'],
   },
+  {
+    id: 'cucumber-mint-banana-cinnamon-blend',
+    name: '血糖平衡（黃瓜 → 薄荷 → 香蕉 → 肉桂）',
+    observedDisplayName: '血糖平衡 舞韻',
+    unlockedAt: 'ibex-statue-unlocked',
+    salePrice: 81,
+    ingredients: ['黃瓜', '薄荷', '香蕉', '肉桂'],
+    effects: [
+      { name: '調節血糖', value: 5 },
+      { name: '輔助瘦身', value: 4 },
+      { name: '補充精力', value: 4 },
+      { name: '紓解壓力', value: 4 },
+      { name: '清新口氣', value: 4 },
+    ],
+    equipment: ['榨汁機', '調味器', '果汁調和器', '果汁成品台'],
+  },
 ]
