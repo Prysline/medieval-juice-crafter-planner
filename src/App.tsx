@@ -148,6 +148,28 @@ export function withSatisfactionUpdate<TVillageId extends string>(
   }
 }
 
+export function CustomerVillageFilterOptions<TVillageId extends string>({
+  villageDefinitions,
+  currentProgress,
+}: {
+  villageDefinitions: readonly SatisfactionVillageDefinition<TVillageId>[]
+  currentProgress: ProgressMilestoneId
+}) {
+  return (
+    <>
+      {villageDefinitions
+        .filter((village) =>
+          isAvailableAtProgress(village.unlockedAt, currentProgress),
+        )
+        .map((village) => (
+          <option value={village.id} key={village.id}>
+            {village.name}
+          </option>
+        ))}
+    </>
+  )
+}
+
 export function SatisfactionFields<TVillageId extends string>({
   villageDefinitions,
   currentProgress,
@@ -946,8 +968,10 @@ function App() {
                   }
                 >
                   <option value="">全部村落</option>
-                  <option value="east-harbor">東港村</option>
-                  <option value="tranquil-fountain">靜謐噴泉</option>
+                  <CustomerVillageFilterOptions
+                    villageDefinitions={villages}
+                    currentProgress={currentProgress}
+                  />
                 </select>
               </label>
               <label>
