@@ -79,6 +79,10 @@ import {
   writePlannerSettings,
 } from './storage/plannerSettings'
 import {
+  readOptimizerPreferences,
+  writeOptimizerPreferences,
+} from './storage/optimizerPreferences'
+import {
   productionOperationId,
   productionPlanFingerprint,
   readProductionChecklist,
@@ -1311,32 +1315,59 @@ function OptimizerTools({
   onSuppliedCustomerIdsCommitted,
   onFormalCustomerIdsCommitted,
 }: OptimizerToolsProps) {
-  const [scope, setScope] = useState<OptimizerCustomerScope>('all')
+  const [initialOptimizerPreferences] = useState(() =>
+    readOptimizerPreferences(window.localStorage),
+  )
+  const [scope, setScope] = useState<OptimizerCustomerScope>(
+    initialOptimizerPreferences.scope,
+  )
   const [targetMode, setTargetMode] =
-    useState<OptimizerCustomerTarget['mode']>('all')
+    useState<OptimizerCustomerTarget['mode']>(
+      initialOptimizerPreferences.targetMode,
+    )
   const [selectedVillageIds, setSelectedVillageIds] =
-    useState<VillageId[]>([])
+    useState<VillageId[]>(
+      initialOptimizerPreferences.selectedVillageIds,
+    )
   const [selectedCustomerIds, setSelectedCustomerIds] =
-    useState<string[]>([])
+    useState<string[]>(
+      initialOptimizerPreferences.selectedCustomerIds,
+    )
   const [candidatePolicy, setCandidatePolicy] =
-    useState<OptimizationCandidatePolicy>('trusted-only')
+    useState<OptimizationCandidatePolicy>(
+      initialOptimizerPreferences.candidatePolicy,
+    )
   const [materialSourceMode, setMaterialSourceMode] =
-    useState<OptimizationMaterialSourceMode>('normal')
+    useState<OptimizationMaterialSourceMode>(
+      initialOptimizerPreferences.materialSourceMode,
+    )
   const [primaryCriterion, setPrimaryCriterion] =
-    useState<OptimizationCriterion>('minimum-cost')
+    useState<OptimizationCriterion>(
+      initialOptimizerPreferences.primaryCriterion,
+    )
   const [secondaryOne, setSecondaryOne] =
-    useState<OptionalCriterion>('none')
+    useState<OptionalCriterion>(
+      initialOptimizerPreferences.secondaryOne,
+    )
   const [secondaryTwo, setSecondaryTwo] =
-    useState<OptionalCriterion>('none')
+    useState<OptionalCriterion>(
+      initialOptimizerPreferences.secondaryTwo,
+    )
   const [inventoryState, setInventoryState] = useState<InventoryState>(() =>
     readInventoryState(window.localStorage),
   )
   const [plannerSettings, setPlannerSettings] = useState<PlannerSettings>(() =>
     readPlannerSettings(window.localStorage, inventoryState),
   )
-  const [maxJarFillOperations, setMaxJarFillOperations] = useState('')
+  const [maxJarFillOperations, setMaxJarFillOperations] = useState(
+    initialOptimizerPreferences.maxJarFillOperations === null
+      ? ''
+      : String(initialOptimizerPreferences.maxJarFillOperations),
+  )
   const [activeWorkshopRegionId, setActiveWorkshopRegionId] =
-    useState<VillageId>('east-harbor')
+    useState<VillageId>(
+      initialOptimizerPreferences.activeWorkshopRegionId,
+    )
   const [runState, setRunState] = useState<OptimizerRunState>({
     status: 'idle',
   })
@@ -1348,6 +1379,43 @@ function OptimizerTools({
     useRef<DeliveryCanonicalSyncGuard | null>(null)
   const optimizerAbortControllerRef =
     useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    const parsedMaxJarFillOperations = Number(maxJarFillOperations)
+    const persistedMaxJarFillOperations =
+      maxJarFillOperations.trim() === '' ||
+      !Number.isFinite(parsedMaxJarFillOperations) ||
+      parsedMaxJarFillOperations < 0
+        ? null
+        : Math.floor(parsedMaxJarFillOperations)
+
+    writeOptimizerPreferences(window.localStorage, {
+      schemaVersion: 1,
+      scope,
+      targetMode,
+      selectedVillageIds,
+      selectedCustomerIds,
+      candidatePolicy,
+      materialSourceMode,
+      primaryCriterion,
+      secondaryOne,
+      secondaryTwo,
+      maxJarFillOperations: persistedMaxJarFillOperations,
+      activeWorkshopRegionId,
+    })
+  }, [
+    scope,
+    targetMode,
+    selectedVillageIds,
+    selectedCustomerIds,
+    candidatePolicy,
+    materialSourceMode,
+    primaryCriterion,
+    secondaryOne,
+    secondaryTwo,
+    maxJarFillOperations,
+    activeWorkshopRegionId,
+  ])
 
   const priorities = useMemo(
     () => uniquePriorities(primaryCriterion, secondaryOne, secondaryTwo),
