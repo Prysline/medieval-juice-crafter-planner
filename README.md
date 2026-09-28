@@ -9,6 +9,7 @@
 - 搜尋顧客、職業、喜好、配方、原料與特性。
 - 顧客只把「全部喜好都滿足」視為完全匹配。
 - 顧客列表預設使用直接截圖確認的遊戲排列順序；目前東港村 29 人、靜謐噴泉 23 人、羱羊雕像 21 人都已有完整 observed order。仍可切換依姓名、最佳完全匹配、最高售價排序，並可用「遊戲順序」回到預設排列。
+- 顧客研究篩選的「村落」下拉由 canonical `villages` 與目前主線進度產生，只列已解鎖地區；新增 Region 時不另維護硬編碼選項。喜好原料／喜好特性選項則由 canonical 顧客資料動態整理。
 - 正式顧客狀態與「今日已供應」分開保存；東港村會顯示 14 / 17 名主線進度。
 - 顧客頁的「最佳完全匹配」可切換**最低成本／最高成本**；最高成本模式會優先只比較**不重複原料**的完整匹配，只有沒有任何不重複配方能滿足該顧客時才回退到重複原料候選。完整匹配清單套用相同規則並依所選原料成本方向排序，預設只顯示前 8 筆，其餘可展開，並分開顯示已實測與允許無歧義預測的最佳解。
 - 配方列表可反查目前已解鎖、且滿意度門檻已達的顧客。
@@ -60,6 +61,7 @@ opening
 src/
   data/
     customers.ts       # 顧客、喜好、分村滿意度門檻、作息觀察
+    customerResidences.ts # 已直接確認的 home residence／送貨停靠 identity；stable ID 帶 Region namespace，不代表距離或 NPC 當下位置
     ingredients.ts     # 原料價格、效果與 unlockedAt
     equipment.ts       # 設備、價格與 unlockedAt
     progress.ts        # canonical 主線進度節點與順序
@@ -106,7 +108,7 @@ src/
     multiTripReplenishment.ts # 持久果汁罐 ID、初始內容、多趟販售、實際裝罐時序、leftover / discard 與杯具 policy；P1-C 可接 generic customer-trip preference，但 physical feasibility / fill lifecycle 仍由本模組決定
     regionServicePlanner.ts # P1-B 純 Region route / service core；recipe assignment immutable，route cost → trip count → fragmentation
     regionPhysicalSalesPlanner.ts # P1-C：Region service intent → physical scheduler preference → realized Region trip annotation / comparator
-    regionProductionAdapter.ts # P1-D：目前 production Region 工作間、confirmed Region topology、customer.villageId → Region adapter
+    regionProductionAdapter.ts # P1-D + residence 1A：production Region 工作間／topology、customer.villageId → Region，以及 confirmed customer → residence adapter
     deliveryExecution.ts # Workflow-3A：physical sales plan → partial execution trace；Inventory I3 依既有 per-unit provenance 在實際 preparation 時消耗 planned intermediate stock，同一 prepared trip 不重複扣除
     scheduleRouteReadiness.ts # 作息觀察 normalization 與 route-data blockers
   storage/
