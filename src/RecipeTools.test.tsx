@@ -104,6 +104,21 @@ describe('recipe simulator UX', () => {
     expect(html).toContain('液料調和器')
     expect(html).toContain('奶香')
     expect(html).not.toContain('目前序列無法評估')
+
+    const toolsHtml = renderToStaticMarkup(
+      <RecipeTools
+        currentProgress="liquid-blender-unlocked"
+        satisfactionByVillage={satisfaction}
+        savedRecipes={[]}
+        comparisonCustomerIds={[]}
+        onAddComparisonCustomer={() => {}}
+        onRemoveComparisonCustomer={() => {}}
+        onClearComparisonCustomers={() => {}}
+        onSavedRecipesChange={() => {}}
+      />,
+    )
+    expect(toolsHtml).toContain('<strong>牛奶</strong>')
+    expect(toolsHtml).toContain('液料追加')
   })
 
   it('shows concrete saved-recipe effects and keeps ambiguous effects visibly separate', () => {
