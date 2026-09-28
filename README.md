@@ -364,6 +364,8 @@ Phase 4 已完成：
 
 80. PR #260 對應 **2026-09-28 late-game 直接實測配方批次**：一次同步 17 筆 canonical observed ordered recipe（前一組 11 張＋續批 6 張），保存截圖直接確認的完整原料順序、售價、final effects、`observedDisplayName`、解鎖 milestone 與設備需求。杯中圖示讀序持續使用既有 evidence contract：單一直排由下往上；多欄從最底層開始，每列由右往左，再逐列往上。特別鎖定多欄 ordered identity，包含 `黃瓜 → 薄荷 → 香蕉 → 肉桂`；它與既有 `黃瓜 → 香蕉 → 薄荷 → 肉桂` 使用相同原料 multiset、售價同為 81，但直接實測顯示名與同值次級特性順序不同，因此不得合併成 unordered recipe。含兩個以上 juice-base 的配方依 production authority 使用果汁調和器；牛奶仍是液料調和器追加型原料。本批只增加 individual observed evidence，不外推果汁調和器／液料調和器通用售價公式。
 
+81. PR #262 對應 **2026-09-29 番茄＋梨 ordered recipe 直接實測**：新增 `番茄 → 梨`（30，「番茄 - 梨（調製飲品）」）與 `番茄 → 梨 → 桃子`（55，「助消 繁榮」）兩筆 canonical observed recipe；兩者皆為多 juice-base，因此使用果汁調和器並最早於 `ibex-statue-unlocked` 可製作。後者與既有 observed `番茄 → 桃子 → 梨`（55，「助消 勇氣」）具有相同原料 multiset、相同 sale price 與相同 final effects，但遊戲顯示名不同，再次直接確認 ordered sequence 本身是 recipe identity，不能只依原料集合或最終效果合併。本批只記錄 individual observed evidence，不外推通用售價或命名公式。
+
 
 
 **Inventory-Intermediate I1～I3、P0｜新地區／主線 progression runtime 同步與 Planner P1-A～P1-D 均已完成。** PR #149 已同步階段七後半羱羊雕像 Region 與桃子／黃瓜／番茄／丁香；後續小切片再補 `sales-assistant-adam-arrived`，讓「目前主線進度」可保存階段八，但不實作 Adam 功能。P1-C/P1-D / PR #157 已把 Region service intent 接到 existing physical scheduler，並完成 production workshop/topology adapter 與第一版 Region-aware 販售 UI。2026-09-26 source audit 已確認 whole-plan transaction / stale validation / single-write commit 是既有 production 能力，因此不再把舊「D2 尚未開始 → Candidate-3」順序當 current authority；目前未完成工作的優先度以 Active TODO 為準。PR #88 維持 Draft prototype-only；PR #137 只保留 Region planner prototype／regression evidence，不直接復活。
