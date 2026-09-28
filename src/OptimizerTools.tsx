@@ -1,4 +1,5 @@
 import { memo, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { CustomSalesTripEditor } from './CustomSalesTripEditor'
 import { customers } from './data/customers'
 import { villageNames } from './data/villages'
 import { ingredients } from './data/ingredients'
@@ -11,6 +12,8 @@ import {
   productionRegionRoutingInput,
 } from './domain/regionProductionAdapter'
 import type { RegionPhysicalSalesPlan } from './domain/regionPhysicalSalesPlanner'
+import type { CustomSalesTripPlan } from './domain/customSalesTripPlan'
+import type { CustomTripPhysicalValidationResult } from './domain/customTripPhysicalPlanner'
 import {
   buildRemainingSalesTripPlan,
   type RemainingSalesTripPlan,
@@ -163,6 +166,10 @@ type OptimizerRunState =
       preparationShortfall: PreparationShortfall
       productionLogistics: ProductionLogisticsPlan
       salesTripPlans: SalesTripPlans
+      customTripAutoBaseline: CustomSalesTripPlan
+      validateCustomTripDraft: (
+        draft: CustomSalesTripPlan,
+      ) => CustomTripPhysicalValidationResult
       transactionDraft: PlanApplicationTransactionDraft | null
       transactionDraftInvalidatedByPartialDelivery: boolean
       deliveryExecutionPlan: DeliveryExecutionPlan | null
@@ -1874,12 +1881,16 @@ function OptimizerTools({
         { buildProductionLogisticsPlan },
         { buildRegionPhysicalSalesPlan },
         { buildPlanApplicationTransactionDraft },
+        { buildCustomSalesTripBaseline },
+        { validateCustomTripPhysicalPlan },
       ] = await Promise.all([
         import('./domain/preparationDemand'),
         import('./domain/preparationShortfall'),
         import('./domain/productionLogistics'),
         import('./domain/regionPhysicalSalesPlanner'),
         import('./domain/planApplicationTransaction'),
+        import('./domain/customSalesTripPlan'),
+        import('./domain/customTripPhysicalPlanner'),
       ])
       const parsedMaxFillOperations =
         maxJarFillOperations.trim() === ''
@@ -2095,6 +2106,44 @@ function OptimizerTools({
         alternatePolicy,
         alternateError,
       }
+      const customTripAutoBaseline =
+        buildCustomSalesTripBaseline({
+          recipeAssignments: result.recipePlans.map((plan) => ({
+            recipeId: plan.recipeId,
+            customerIds: plan.customerIds,
+          })),
+          physicalTrips: selectedSalesTripPlan.trips.map((trip) => ({
+            tripNumber: trip.tripNumber,
+            juiceJars: trip.juiceJars.map((load) => ({
+              recipeId: load.recipeId,
+              customerIds: load.customerIds,
+            })),
+          })),
+          customerRegionById,
+        })
+      const validateCustomTripDraft = (
+        customPlan: CustomSalesTripPlan,
+      ): CustomTripPhysicalValidationResult =>
+        validateCustomTripPhysicalPlan({
+          customPlan,
+          demand: preparationDemand,
+          shortfall: preparationShortfall,
+          policy: selectedPolicy,
+          availableJuiceJarInventory: accessibleJuiceJars,
+          cups: {
+            cleanCups: inventoryState.cleanCups,
+            usedCups: inventoryState.usedCups,
+          },
+          carryPolicy: {
+            mode: plannerSettings.juiceJarCarryMode,
+            reservedSlots: plannerSettings.reservedJuiceJarSlots,
+            minimumCarriedSlots:
+              capacitySummary.minimumCarriedJuiceJarSlots,
+          },
+          allowDiscardRetainedJuice:
+            plannerSettings.allowDiscardRetainedJuice,
+        })
+
       const transactionDraft = productionLogistics.feasible
         ? buildPlanApplicationTransactionDraft({
             basis: {
@@ -2131,6 +2180,8 @@ function OptimizerTools({
         preparationShortfall,
         productionLogistics,
         salesTripPlans,
+        customTripAutoBaseline,
+        validateCustomTripDraft,
         transactionDraft,
         transactionDraftInvalidatedByPartialDelivery: false,
         deliveryExecutionPlan,
@@ -2915,6 +2966,8 @@ function OptimizerTools({
           productionLogistics={runState.productionLogistics}
           priorities={priorities}
           salesTripPlans={runState.salesTripPlans}
+          customTripAutoBaseline={runState.customTripAutoBaseline}
+          validateCustomTripDraft={runState.validateCustomTripDraft}
           transactionDraft={runState.transactionDraft}
           transactionDraftInvalidatedByPartialDelivery={
             runState.transactionDraftInvalidatedByPartialDelivery
@@ -4176,6 +4229,8 @@ function OptimizerResultPanel({
   productionLogistics,
   priorities,
   salesTripPlans,
+  customTripAutoBaseline,
+  validateCustomTripDraft,
   transactionDraft,
   transactionDraftInvalidatedByPartialDelivery,
   deliveryExecutionPlan,
@@ -4194,6 +4249,10 @@ function OptimizerResultPanel({
   productionLogistics: ProductionLogisticsPlan
   priorities: OptimizationCriterion[]
   salesTripPlans: SalesTripPlans
+  customTripAutoBaseline: CustomSalesTripPlan
+  validateCustomTripDraft: (
+    draft: CustomSalesTripPlan,
+  ) => CustomTripPhysicalValidationResult
   transactionDraft: PlanApplicationTransactionDraft | null
   transactionDraftInvalidatedByPartialDelivery: boolean
   deliveryExecutionPlan: DeliveryExecutionPlan | null
@@ -4855,6 +4914,18 @@ function OptimizerResultPanel({
           </div>
         )}
       </CollapsibleOptimizerResultSection>
+
+      <CustomSalesTripEditor
+        autoBaseline={customTripAutoBaseline}
+        validateDraft={validateCustomTripDraft}
+        customerLabel={customerLabel}
+        recipeLabel={(recipeId) =>
+          formatRecipeDisplayName(
+            recipeNameById.get(recipeId) ?? recipeId,
+          )
+        }
+        regionLabel={regionDisplayName}
+      />
 
       <CollapsibleOptimizerResultSection
         title="販售排程"
