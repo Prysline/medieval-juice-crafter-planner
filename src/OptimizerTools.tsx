@@ -1203,14 +1203,14 @@ function OptimizerCustomerTargetPanel({
   active,
   targetableCustomers,
   selectedCustomerIds,
-  selectedCustomerCount,
+  effectiveSelectedCustomerCount,
   targetableCustomerCount,
   onSelectedCustomerIdsChange,
 }: {
   active: boolean
   targetableCustomers: readonly (typeof customers)[number][]
   selectedCustomerIds: string[]
-  selectedCustomerCount: number
+  effectiveSelectedCustomerCount: number
   targetableCustomerCount: number
   onSelectedCustomerIdsChange: (
     update: string[] | ((current: string[]) => string[])
@@ -1234,6 +1234,11 @@ function OptimizerCustomerTargetPanel({
 
   if (!active) return null
 
+  const unavailableSelectedCustomerCount = Math.max(
+    0,
+    selectedCustomerIds.length - effectiveSelectedCustomerCount,
+  )
+
   return (
     <section
       className="optimizer-customer-target-panel"
@@ -1242,9 +1247,16 @@ function OptimizerCustomerTargetPanel({
       <div className="optimizer-target-toolbar">
         <strong>個別顧客</strong>
         <span>
-          已選 {selectedCustomerCount} / {targetableCustomerCount} 人
+          已選擇 {selectedCustomerIds.length} 人 · 本次可規劃{' '}
+          {effectiveSelectedCustomerCount} / {targetableCustomerCount} 人
         </span>
       </div>
+      {unavailableSelectedCustomerCount > 0 && (
+        <p className="optimizer-target-empty">
+          其中 {unavailableSelectedCustomerCount}{' '}
+          位目前不符合主線、滿意度、顧客身分或今日已供應條件；選擇會保留，條件符合後可再次使用。
+        </p>
+      )}
       <div className="optimizer-target-actions">
         <input
           type="search"
@@ -1641,6 +1653,13 @@ function OptimizerTools({
       [...new Set(targetableCustomers.map((customer) => customer.villageId))],
     [targetableCustomers],
   )
+
+  const effectiveSelectedVillageIds = useMemo(() => {
+    const targetableVillageIdSet = new Set(targetableVillageIds)
+    return selectedVillageIds.filter((villageId) =>
+      targetableVillageIdSet.has(villageId),
+    )
+  }, [selectedVillageIds, targetableVillageIds])
 
   useEffect(() => {
     if (
@@ -2339,12 +2358,20 @@ function OptimizerTools({
             <div className="optimizer-target-toolbar">
               <strong>規劃村莊</strong>
               <span>
-                已選 {selectedVillageIds.filter((villageId) =>
-                  targetableVillageIds.includes(villageId),
-                ).length}{' '}
-                / {targetableVillageIds.length} 個村莊 · 本次 {customerIds.length} 人
+                已選擇 {selectedVillageIds.length} 個村莊 · 本次可規劃{' '}
+                {effectiveSelectedVillageIds.length} / {targetableVillageIds.length}{' '}
+                個村莊 · {customerIds.length} 人
               </span>
             </div>
+            {selectedVillageIds.length >
+              effectiveSelectedVillageIds.length && (
+              <p className="optimizer-target-empty">
+                其中{' '}
+                {selectedVillageIds.length -
+                  effectiveSelectedVillageIds.length}{' '}
+                個已選擇村莊目前沒有符合條件的可規劃顧客；選擇會保留，條件符合後可再次使用。
+              </p>
+            )}
             <div className="optimizer-target-options">
               {targetableVillageIds.map((villageId) => (
                 <label className="optimizer-target-option" key={villageId}>
@@ -2375,7 +2402,7 @@ function OptimizerTools({
           active={targetMode === 'customers'}
           targetableCustomers={targetableCustomers}
           selectedCustomerIds={selectedCustomerIds}
-          selectedCustomerCount={customerIds.length}
+          effectiveSelectedCustomerCount={customerIds.length}
           targetableCustomerCount={baseCustomerIds.length}
           onSelectedCustomerIdsChange={setSelectedCustomerIds}
         />
