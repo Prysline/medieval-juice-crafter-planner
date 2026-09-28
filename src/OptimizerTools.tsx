@@ -14,6 +14,10 @@ import {
 import type { RegionPhysicalSalesPlan } from './domain/regionPhysicalSalesPlanner'
 import type { CustomSalesTripPlan } from './domain/customSalesTripPlan'
 import type { CustomTripPhysicalValidationResult } from './domain/customTripPhysicalPlanner'
+import type {
+  AppliedCustomSalesTripPlan,
+  BuildAppliedCustomSalesTripResult,
+} from './domain/appliedCustomSalesTrip'
 import {
   buildRemainingSalesTripPlan,
   type RemainingSalesTripPlan,
@@ -167,9 +171,16 @@ type OptimizerRunState =
       productionLogistics: ProductionLogisticsPlan
       salesTripPlans: SalesTripPlans
       customTripAutoBaseline: CustomSalesTripPlan
+      appliedCustomPlan: AppliedCustomSalesTripPlan | null
+      customTripApplyError: string | null
       validateCustomTripDraft: (
         draft: CustomSalesTripPlan,
       ) => CustomTripPhysicalValidationResult
+      buildAppliedCustomTrip: (
+        draft: CustomSalesTripPlan,
+        salesPlan: MultiTripReplenishmentPlan,
+        currentSuppliedCustomerIds: readonly string[],
+      ) => BuildAppliedCustomSalesTripResult
       transactionDraft: PlanApplicationTransactionDraft | null
       transactionDraftInvalidatedByPartialDelivery: boolean
       deliveryExecutionPlan: DeliveryExecutionPlan | null
@@ -1390,6 +1401,8 @@ function OptimizerTools({
   const [runState, setRunState] = useState<OptimizerRunState>({
     status: 'idle',
   })
+  const [customTripDraftDirty, setCustomTripDraftDirty] =
+    useState(false)
   const [applicationState, setApplicationState] =
     useState<PlanApplicationUiState>({ status: 'idle' })
   const [deliveryUiState, setDeliveryUiState] =
@@ -1854,7 +1867,56 @@ function OptimizerTools({
     commitDeliveryCustomers([customerId], supplied)
   }
 
+  function commitCustomTripPlan(
+    draft: CustomSalesTripPlan,
+    validation: Extract<
+      CustomTripPhysicalValidationResult,
+      { status: 'valid' }
+    >,
+  ) {
+    setRunState((current) => {
+      if (current.status !== 'success') return current
+
+      const built = current.buildAppliedCustomTrip(
+        draft,
+        validation.salesPlan,
+        suppliedCustomerIds,
+      )
+      if (built.status === 'invalid') {
+        return {
+          ...current,
+          customTripApplyError: built.message,
+        }
+      }
+
+      return {
+        ...current,
+        appliedCustomPlan: built.downstream.appliedPlan,
+        customTripApplyError: null,
+        productionLogistics:
+          built.downstream.productionLogistics,
+        transactionDraft:
+          built.downstream.transactionDraft,
+        transactionDraftInvalidatedByPartialDelivery: false,
+        deliveryExecutionPlan:
+          built.downstream.deliveryExecutionPlan,
+        deliveryCursor: built.downstream.deliveryCursor,
+      }
+    })
+    setApplicationState({ status: 'idle' })
+    setDeliveryUiState({ status: 'idle' })
+  }
+
   async function runOptimizer() {
+    if (
+      customTripDraftDirty &&
+      !window.confirm(
+        '目前有尚未完成的自訂趟次草稿。重新產生最佳化規劃會建立新的自動方案，這份草稿不會自動搬到新方案。仍要繼續嗎？',
+      )
+    ) {
+      return
+    }
+    setCustomTripDraftDirty(false)
     optimizerAbortControllerRef.current?.abort()
     const optimizerAbortController = new AbortController()
     optimizerAbortControllerRef.current = optimizerAbortController
@@ -1883,6 +1945,7 @@ function OptimizerTools({
         { buildPlanApplicationTransactionDraft },
         { buildCustomSalesTripBaseline },
         { validateCustomTripPhysicalPlan },
+        { buildAppliedCustomSalesTrip },
       ] = await Promise.all([
         import('./domain/preparationDemand'),
         import('./domain/preparationShortfall'),
@@ -1891,6 +1954,7 @@ function OptimizerTools({
         import('./domain/planApplicationTransaction'),
         import('./domain/customSalesTripPlan'),
         import('./domain/customTripPhysicalPlanner'),
+        import('./domain/appliedCustomSalesTrip'),
       ])
       const parsedMaxFillOperations =
         maxJarFillOperations.trim() === ''
@@ -2123,8 +2187,8 @@ function OptimizerTools({
         })
       const validateCustomTripDraft = (
         customPlan: CustomSalesTripPlan,
-      ): CustomTripPhysicalValidationResult =>
-        validateCustomTripPhysicalPlan({
+      ): CustomTripPhysicalValidationResult => {
+        const physical = validateCustomTripPhysicalPlan({
           customPlan,
           demand: preparationDemand,
           shortfall: preparationShortfall,
@@ -2142,6 +2206,80 @@ function OptimizerTools({
           },
           allowDiscardRetainedJuice:
             plannerSettings.allowDiscardRetainedJuice,
+        })
+        if (physical.status === 'invalid') return physical
+
+        if (
+          parsedMaxFillOperations !== undefined &&
+          Number.isFinite(parsedMaxFillOperations) &&
+          physical.salesPlan.productionJarFills.length >
+            parsedMaxFillOperations
+        ) {
+          return {
+            status: 'invalid',
+            salesPlan: null,
+            issues: [{
+              category: 'physical-realization',
+              message:
+                `這份自訂趟次需要 ${physical.salesPlan.productionJarFills.length} 次裝罐操作，超過目前設定的上限 ${parsedMaxFillOperations} 次。`,
+              suggestions: [
+                '調整趟次分組，或修改「最大裝罐操作次數」後重新規劃。',
+              ],
+            }],
+          }
+        }
+
+        const candidateProductionLogistics =
+          buildProductionLogisticsPlan(
+            preparationShortfall,
+            inventoryState,
+            plannerSettings,
+            physical.salesPlan.productionJarFills,
+          )
+        if (!candidateProductionLogistics.feasible) {
+          return {
+            status: 'invalid',
+            salesPlan: null,
+            issues: [{
+              category: 'physical-realization',
+              message:
+                '自訂趟次的製作物流目前不可行：' +
+                (candidateProductionLogistics.issues.join('；') ||
+                  '請調整趟次後重新驗證。'),
+              suggestions: [
+                '調整前面趟次的分組或順序後再試。',
+              ],
+            }],
+          }
+        }
+
+        return physical
+      }
+      const buildAppliedCustomTrip = (
+        planningPlan: CustomSalesTripPlan,
+        salesPlan: MultiTripReplenishmentPlan,
+        currentSuppliedCustomerIds: readonly string[],
+      ): BuildAppliedCustomSalesTripResult =>
+        buildAppliedCustomSalesTrip({
+          planningPlan,
+          salesPlan,
+          demand: preparationDemand,
+          result,
+          shortfall: preparationShortfall,
+          basis: {
+            inventory: inventoryState,
+            currentProgress,
+            satisfactionByVillage,
+            formalCustomerIds,
+            originalSuppliedCustomerIds: suppliedCustomerIds,
+            currentSuppliedCustomerIds,
+            plannerSettings,
+          },
+          region: {
+            activeWorkshop: regionRouting.activeWorkshop,
+            topology: regionRouting.topology,
+            customerRegionById,
+          },
         })
 
       const transactionDraft = productionLogistics.feasible
@@ -2181,7 +2319,10 @@ function OptimizerTools({
         productionLogistics,
         salesTripPlans,
         customTripAutoBaseline,
+        appliedCustomPlan: null,
+        customTripApplyError: null,
         validateCustomTripDraft,
+        buildAppliedCustomTrip,
         transactionDraft,
         transactionDraftInvalidatedByPartialDelivery: false,
         deliveryExecutionPlan,
@@ -2967,7 +3108,11 @@ function OptimizerTools({
           priorities={priorities}
           salesTripPlans={runState.salesTripPlans}
           customTripAutoBaseline={runState.customTripAutoBaseline}
+          appliedCustomPlan={runState.appliedCustomPlan}
+          customTripApplyError={runState.customTripApplyError}
           validateCustomTripDraft={runState.validateCustomTripDraft}
+          onCustomTripDraftDirtyChange={setCustomTripDraftDirty}
+          onAcceptCustomTripPlan={commitCustomTripPlan}
           transactionDraft={runState.transactionDraft}
           transactionDraftInvalidatedByPartialDelivery={
             runState.transactionDraftInvalidatedByPartialDelivery
@@ -4230,7 +4375,11 @@ function OptimizerResultPanel({
   priorities,
   salesTripPlans,
   customTripAutoBaseline,
+  appliedCustomPlan,
+  customTripApplyError,
   validateCustomTripDraft,
+  onCustomTripDraftDirtyChange,
+  onAcceptCustomTripPlan,
   transactionDraft,
   transactionDraftInvalidatedByPartialDelivery,
   deliveryExecutionPlan,
@@ -4250,9 +4399,19 @@ function OptimizerResultPanel({
   priorities: OptimizationCriterion[]
   salesTripPlans: SalesTripPlans
   customTripAutoBaseline: CustomSalesTripPlan
+  appliedCustomPlan: AppliedCustomSalesTripPlan | null
+  customTripApplyError: string | null
   validateCustomTripDraft: (
     draft: CustomSalesTripPlan,
   ) => CustomTripPhysicalValidationResult
+  onCustomTripDraftDirtyChange: (dirty: boolean) => void
+  onAcceptCustomTripPlan: (
+    draft: CustomSalesTripPlan,
+    validation: Extract<
+      CustomTripPhysicalValidationResult,
+      { status: 'valid' }
+    >,
+  ) => void
   transactionDraft: PlanApplicationTransactionDraft | null
   transactionDraftInvalidatedByPartialDelivery: boolean
   deliveryExecutionPlan: DeliveryExecutionPlan | null
@@ -4263,7 +4422,10 @@ function OptimizerResultPanel({
   onCommitDelivery: (customerId: string, supplied: boolean) => void
   onCommitDeliveryGroup: (customerIds: readonly string[], supplied: boolean) => void
 }) {
-  const selectedSalesTripPlan = salesTripPlans.selected
+  const selectedSalesTripPlan =
+    appliedCustomPlan?.salesPlan ?? salesTripPlans.selected
+  const selectedRegionSalesPlan =
+    appliedCustomPlan?.regionPlan ?? salesTripPlans.selectedRegion
   const alternateSalesTripPlan = salesTripPlans.alternate
   const [showRemainingSalesPlan, setShowRemainingSalesPlan] = useState(false)
   const remainingSalesTripPlan = useMemo(() => {
@@ -4917,7 +5079,11 @@ function OptimizerResultPanel({
 
       <CustomSalesTripEditor
         autoBaseline={customTripAutoBaseline}
+        appliedPlan={appliedCustomPlan?.planningPlan ?? null}
         validateDraft={validateCustomTripDraft}
+        applyError={customTripApplyError}
+        onDraftDirtyChange={onCustomTripDraftDirtyChange}
+        onAcceptValidatedDraft={onAcceptCustomTripPlan}
         customerLabel={customerLabel}
         recipeLabel={(recipeId) =>
           formatRecipeDisplayName(
@@ -4929,12 +5095,12 @@ function OptimizerResultPanel({
 
       <CollapsibleOptimizerResultSection
         title="販售排程"
-        summary={`目前策略：${tripPolicyLabel(selectedSalesTripPlan)}`}
+        summary={`${appliedCustomPlan ? '自訂趟次 · ' : ''}目前策略：${tripPolicyLabel(selectedSalesTripPlan)}`}
       >
 
         <SalesTripPlanBlock
           plan={selectedSalesTripPlan}
-          regionPlan={salesTripPlans.selectedRegion}
+          regionPlan={selectedRegionSalesPlan}
           deliveryControls={{
             plan: deliveryExecutionPlan,
             cursor: deliveryCursor,
@@ -4945,6 +5111,13 @@ function OptimizerResultPanel({
           }}
         />
 
+        {appliedCustomPlan && (
+          <p className="optimizer-boundary-note">
+            目前販售排程使用玩家已完成的自訂趟次；自動方案與替代杯具策略仍保留作基準，但不會覆寫這份安排。
+          </p>
+        )}
+
+        {!appliedCustomPlan && (
         <details className="optimizer-policy-comparison">
           <summary>
             比較替代策略：{usedCupPolicyLabel(salesTripPlans.alternatePolicy)}
@@ -4964,6 +5137,7 @@ function OptimizerResultPanel({
             </p>
           )}
         </details>
+        )}
 
         <small className="optimizer-boundary-note">
           兩種 policy 都使用實際持有杯數與逐杯 clean → used stack transition 驗證可行性；回工作間清洗會計入杯數與用水，掉落只代表 NPC 回傳時背包無空位。區域層只比較已確認的 Region edge footprint；不推導村內顧客順序、住處導航或到達時間。

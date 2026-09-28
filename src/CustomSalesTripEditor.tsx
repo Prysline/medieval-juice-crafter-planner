@@ -200,6 +200,7 @@ type ValidationState =
 
 export interface CustomSalesTripEditorProps {
   autoBaseline: CustomSalesTripPlan
+  appliedPlan?: CustomSalesTripPlan | null
   validateDraft: (
     draft: CustomSalesTripPlan,
   ) => CustomTripPhysicalValidationResult
@@ -207,6 +208,8 @@ export interface CustomSalesTripEditorProps {
   recipeLabel: (recipeId: string) => string
   regionLabel: (regionId: string) => string
   defaultOpen?: boolean
+  applyError?: string | null
+  onDraftDirtyChange?: (dirty: boolean) => void
   onAcceptValidatedDraft?: (
     draft: CustomSalesTripPlan,
     validation: Extract<
@@ -218,20 +221,24 @@ export interface CustomSalesTripEditorProps {
 
 export function CustomSalesTripEditor({
   autoBaseline,
+  appliedPlan = null,
   validateDraft,
   customerLabel,
   recipeLabel,
   regionLabel,
   defaultOpen = false,
+  applyError = null,
+  onDraftDirtyChange,
   onAcceptValidatedDraft,
 }: CustomSalesTripEditorProps) {
-  const baselineFingerprint = useMemo(
-    () => customTripPlanFingerprint(autoBaseline),
-    [autoBaseline],
+  const editingStartPlan = appliedPlan ?? autoBaseline
+  const editingStartFingerprint = useMemo(
+    () => customTripPlanFingerprint(editingStartPlan),
+    [editingStartPlan],
   )
   const [open, setOpen] = useState(defaultOpen)
   const [draft, setDraft] = useState(() =>
-    cloneCustomSalesTripPlan(autoBaseline),
+    cloneCustomSalesTripPlan(editingStartPlan),
   )
   const [revision, setRevision] = useState(0)
   const revisionRef = useRef(0)
@@ -254,14 +261,30 @@ export function CustomSalesTripEditor({
   const nextTripSequenceRef = useRef(1)
 
   useEffect(() => {
-    setDraft(cloneCustomSalesTripPlan(autoBaseline))
+    setDraft(cloneCustomSalesTripPlan(editingStartPlan))
     setRevision(0)
     setValidation({ status: 'idle', revision: 0 })
     setSelectedCustomerIds(new Set())
-    setMoveTargetTripId(autoBaseline.tripOrder[0] ?? '')
-    setInsertAfterTripId(autoBaseline.tripOrder[0] ?? '')
+    setMoveTargetTripId(editingStartPlan.tripOrder[0] ?? '')
+    setInsertAfterTripId(editingStartPlan.tripOrder[0] ?? '')
     nextTripSequenceRef.current = 1
-  }, [baselineFingerprint, autoBaseline])
+  }, [editingStartFingerprint, editingStartPlan])
+
+  const draftFingerprint = useMemo(
+    () => customTripPlanFingerprint(draft),
+    [draft],
+  )
+  const draftDirty =
+    draftFingerprint !== editingStartFingerprint
+
+  useEffect(() => {
+    onDraftDirtyChange?.(draftDirty)
+  }, [draftDirty, onDraftDirtyChange])
+
+  useEffect(
+    () => () => onDraftDirtyChange?.(false),
+    [onDraftDirtyChange],
+  )
 
   useEffect(() => {
     if (!draft.tripOrder.includes(moveTargetTripId)) {
@@ -394,7 +417,9 @@ export function CustomSalesTripEditor({
         <span>
           {open
             ? '調整草稿 · 不改配方'
-            : '以目前自動方案開始'}
+            : appliedPlan
+              ? '目前使用自訂方案'
+              : '以目前自動方案開始'}
         </span>
       </div>
 
@@ -407,7 +432,7 @@ export function CustomSalesTripEditor({
             type="button"
             onClick={() => setOpen(true)}
           >
-            開始自訂趟次
+            {appliedPlan ? '編輯自訂趟次' : '開始自訂趟次'}
           </button>
         </>
       ) : (
@@ -444,6 +469,7 @@ export function CustomSalesTripEditor({
             </strong>
             <span>
               草稿版本 {revision + 1}
+              {draftDirty ? ' · 尚未完成自訂' : ' · 已與目前方案一致'}
               {currentValidation?.status === 'valid'
                 ? ' · 實體排程 ' +
                   currentValidation.salesPlan.tripCount +
@@ -781,6 +807,12 @@ export function CustomSalesTripEditor({
               )
             })}
           </div>
+
+          {applyError && (
+            <p className="optimizer-transaction-warning" role="alert">
+              完成自訂失敗：{applyError}
+            </p>
+          )}
 
           {onAcceptValidatedDraft && (
             <button
