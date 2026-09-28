@@ -1,5 +1,9 @@
 import { memo, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { CustomSalesTripEditor } from './CustomSalesTripEditor'
+import {
+  customerIdsInCanonicalResidenceOrder,
+  sortedByNaturalPresentationId,
+} from './presentationOrder'
 import { customers } from './data/customers'
 import { villageNames } from './data/villages'
 import { ingredients } from './data/ingredients'
@@ -2936,7 +2940,10 @@ function OptimizerTools({
               </p>
             ) : (
               <div className="optimizer-jar-inventory">
-                {inventoryState.juiceJars.map((jar) => (
+                {sortedByNaturalPresentationId(
+                  inventoryState.juiceJars,
+                  (jar) => jar.id,
+                ).map((jar) => (
                   <article className="optimizer-jar-card" key={jar.id}>
                     <div className="optimizer-jar-heading">
                       <strong>{jar.id}</strong>
@@ -3648,8 +3655,11 @@ export function PlanApplicationPreview({
   onApply: (draft: PlanApplicationTransactionDraft) => void
 }) {
   const changes = draft.changes
-  const terminalJuiceJars = draft.after.inventory.juiceJars.filter(
-    (jar) => jar.servings > 0,
+  const terminalJuiceJars = sortedByNaturalPresentationId(
+    draft.after.inventory.juiceJars.filter(
+      (jar) => jar.servings > 0,
+    ),
+    (jar) => jar.id,
   )
 
   return (
@@ -3880,7 +3890,10 @@ export function PlanApplicationPreview({
           <p>期末沒有果汁罐內容淨變更。</p>
         ) : (
           <div className="optimizer-transaction-list">
-            {changes.juiceJars.map((change) => (
+            {sortedByNaturalPresentationId(
+              changes.juiceJars,
+              (change) => change.physicalJarId,
+            ).map((change) => (
               <div
                 className="optimizer-transaction-row"
                 key={change.physicalJarId}
@@ -4005,7 +4018,7 @@ export function customerIdsInPlannedTripOrder(
     ),
   )
 
-  return customerIds
+  const ordered = customerIds
     .map((customerId, originalIndex) => ({
       customerId,
       originalIndex,
@@ -4017,7 +4030,29 @@ export function customerIdsInPlannedTripOrder(
         left.tripNumber - right.tripNumber ||
         left.originalIndex - right.originalIndex,
     )
-    .map(({ customerId }) => customerId)
+
+  const result: string[] = []
+  let start = 0
+  while (start < ordered.length) {
+    const tripNumber = ordered[start]!.tripNumber
+    let end = start + 1
+    while (
+      end < ordered.length &&
+      ordered[end]!.tripNumber === tripNumber
+    ) {
+      end += 1
+    }
+    result.push(
+      ...customerIdsInCanonicalResidenceOrder(
+        ordered
+          .slice(start, end)
+          .map(({ customerId }) => customerId),
+      ),
+    )
+    start = end
+  }
+
+  return result
 }
 
 
@@ -5460,7 +5495,10 @@ export function SalesTripPlanBlock({
             )}
             <p>
               本日可用實體罐：{' '}
-              {plan.carriedJuiceJars
+              {sortedByNaturalPresentationId(
+                plan.carriedJuiceJars,
+                (jar) => jar.physicalJarId,
+              )
                 .map((jar) => {
                   const initial =
                     jar.initialRecipeId && jar.initialServings > 0
@@ -5488,7 +5526,10 @@ export function SalesTripPlanBlock({
                 ? ' · 掉落 ' + plan.droppedUsedCups
                 : ''}
             </p>
-            {plan.leftoverJarContents.map((leftover) => {
+            {sortedByNaturalPresentationId(
+              plan.leftoverJarContents,
+              (leftover) => leftover.physicalJarId,
+            ).map((leftover) => {
               const carriedOnLaterTrip = plan.trips.some(
                 (trip) =>
                   trip.tripNumber > leftover.tripNumber &&
@@ -5527,8 +5568,11 @@ export function SalesTripPlanBlock({
         const regionTrip = regionPlan?.trips.find(
           (item) => item.tripNumber === trip.tripNumber,
         )
-        const fillsBeforeTrip = plan.productionJarFills.filter(
-          (fill) => fill.beforeTripNumber === trip.tripNumber,
+        const fillsBeforeTrip = sortedByNaturalPresentationId(
+          plan.productionJarFills.filter(
+            (fill) => fill.beforeTripNumber === trip.tripNumber,
+          ),
+          (fill) => fill.physicalJarId,
         )
         const tripCustomerIds = trip.juiceJars.flatMap(
           (load) => load.customerIds,
@@ -5617,7 +5661,10 @@ export function SalesTripPlanBlock({
                 </p>
                 <p>
                   帶果汁罐：
-                  {trip.carriedPhysicalJarIds.join('、')}
+                  {sortedByNaturalPresentationId(
+                    trip.carriedPhysicalJarIds,
+                    (physicalJarId) => physicalJarId,
+                  ).join('、')}
                 </p>
               </div>
 
@@ -5648,7 +5695,10 @@ export function SalesTripPlanBlock({
             <section className="optimizer-sales-trip-section">
               <h4>販售</h4>
               <div className="optimizer-sales-jar-list">
-                {trip.juiceJars.map((load) => (
+                {sortedByNaturalPresentationId(
+                  trip.juiceJars,
+                  (load) => load.physicalJarId,
+                ).map((load) => (
                   <article
                     className="optimizer-sales-jar-manifest"
                     key={
@@ -5684,7 +5734,9 @@ export function SalesTripPlanBlock({
                     )}
 
                     <div className="optimizer-delivery-customer-list">
-                      {load.customerIds.map((customerId) =>
+                      {customerIdsInCanonicalResidenceOrder(
+                        load.customerIds,
+                      ).map((customerId) =>
                         deliveryControls ? (
                           <DeliveryCustomerCheckbox
                             key={customerId}
@@ -5725,11 +5777,12 @@ export function SalesTripPlanBlock({
                     本趟掉落 {trip.droppedUsedCups} 個 used cup
                   </p>
                 )}
-                {trip.juiceJars
-                  .filter(
+                {sortedByNaturalPresentationId(
+                  trip.juiceJars.filter(
                     (load) => load.retainedLeftoverServings > 0,
-                  )
-                  .map((load) => {
+                  ),
+                  (load) => load.physicalJarId,
+                ).map((load) => {
                     const laterTrip = plan.trips.find(
                       (candidate) =>
                         candidate.tripNumber > trip.tripNumber &&
