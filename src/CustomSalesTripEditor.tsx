@@ -17,6 +17,7 @@ import type {
   CustomTripPhysicalIssue,
   CustomTripPhysicalValidationResult,
 } from './domain/customTripPhysicalPlanner'
+import { customerIdsInCanonicalResidenceOrder } from './presentationOrder'
 
 interface CustomTripRegionGroup {
   regionId: string
@@ -39,6 +40,13 @@ export interface CustomTripEditorTripGroup {
 export function buildCustomTripEditorGroups(
   plan: CustomSalesTripPlan,
 ): CustomTripEditorTripGroup[] {
+  const residenceByCustomerId = Object.fromEntries(
+    Object.entries(plan.customersById).map(([customerId, customer]) => [
+      customerId,
+      customer.residenceId ?? null,
+    ]),
+  )
+
   return plan.tripOrder.map((tripId, tripIndex) => {
     const customerIds = customerIdsForCustomTrip(plan, tripId)
     const recipeMap = new Map<string, string[]>()
@@ -68,7 +76,10 @@ export function buildCustomTripEditorGroups(
           regions: [...regionMap.entries()].map(
             ([regionId, regionCustomerIds]) => ({
               regionId,
-              customerIds: regionCustomerIds,
+              customerIds: customerIdsInCanonicalResidenceOrder(
+                regionCustomerIds,
+                residenceByCustomerId,
+              ),
             }),
           ),
         }
