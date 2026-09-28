@@ -196,12 +196,12 @@ function equipmentForSequence(
     }
   }
 
-  if (
-    capabilities.some((capability) =>
-      capability.roles.includes('seasoning'),
-    )
-  ) {
-    result.push('調味器')
+  for (const capability of capabilities) {
+    if (!capability.roles.includes('seasoning')) continue
+    const equipment = capability.additiveEquipment ?? '調味器'
+    if (!result.includes(equipment)) {
+      result.push(equipment)
+    }
   }
 
   result.push('果汁成品台')

@@ -72,7 +72,11 @@ function ingredientRoleLabel(ingredientId: string): string {
   const capability = capabilityByIngredientId.get(ingredientId)
   if (!capability) return ''
   if (capability.roles.includes('juice-base')) return '果汁'
-  if (capability.roles.includes('seasoning')) return '調味'
+  if (capability.roles.includes('seasoning')) {
+    return capability.additiveEquipment === '液料調和器'
+      ? '液料追加'
+      : '調味'
+  }
   return ''
 }
 

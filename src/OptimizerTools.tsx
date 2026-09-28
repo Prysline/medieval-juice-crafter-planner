@@ -3450,7 +3450,7 @@ export function MachineBatchFlow({
 
         {step.kind === 'seasoning' && (
           <MachineSlotPill
-            role="調味 input"
+            role={step.equipment === '液料調和器' ? '液料 input' : '調味 input'}
             label={
               ingredientLabel(step.addedIngredientId ?? '') +
               ' ×' +
@@ -4641,16 +4641,16 @@ function OptimizerResultPanel({
           最佳化順序：{priorities.map(criterionLabel).join(' → ')}
         </strong>
         <span>
-          最佳化 gross 操作：榨汁 {result.machineOperations.juicing} 次 · 調味{' '}
-          {result.machineOperations.seasoning} 次 · 調和{' '}
+          最佳化 gross 操作：榨汁 {result.machineOperations.juicing} 次 · 追加加工（調味／液料）{' '}
+          {result.machineOperations.seasoning} 次 · 果汁調和{' '}
           {result.machineOperations.blending} 次 · 裝罐{' '}
           {result.machineOperations.finalizing} 次
         </span>
         <span>
           庫存抵扣後實際需製作：
           {productionLogistics.productionPlan.machineOperations.total} 次操作
-          （榨汁 {productionLogistics.productionPlan.machineOperations.juicing} · 調味{' '}
-          {productionLogistics.productionPlan.machineOperations.seasoning} · 調和{' '}
+          （榨汁 {productionLogistics.productionPlan.machineOperations.juicing} · 追加加工（調味／液料）{' '}
+          {productionLogistics.productionPlan.machineOperations.seasoning} · 果汁調和{' '}
           {productionLogistics.productionPlan.machineOperations.blending} · 裝罐{' '}
           {productionLogistics.productionPlan.machineOperations.finalizing}）
         </span>
@@ -4893,6 +4893,7 @@ function OptimizerResultPanel({
                           readyForFinalizingUnits={readyForFinalizingUnits}
                         />
                         {step.kind === 'seasoning' &&
+                          step.equipment === '調味器' &&
                           productionLogistics.productionPlan
                             .seasoningStageReuseUnitsByStepKey && (
                             <SeasoningStepStageUsageNote

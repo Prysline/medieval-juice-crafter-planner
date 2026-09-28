@@ -63,6 +63,64 @@ describe('recipe simulator UX', () => {
     expect(html).toContain('不代表每項都會出現在最終成品欄位')
   })
 
+  it('evaluates milk as a liquid-blender additive after Stage 10 unlock', () => {
+    const before = evaluateRecipeSequence(
+      ['lemon', 'milk'],
+      'advanced-juicer-unlocked',
+    )
+    expect(before.valid).toBe(true)
+    if (!before.valid) return
+    expect(before.availableAtCurrentProgress).toBe(false)
+
+    const evaluation = evaluateRecipeSequence(
+      ['lemon', 'milk'],
+      'liquid-blender-unlocked',
+    )
+    expect(evaluation.valid).toBe(true)
+    if (!evaluation.valid) return
+
+    expect(evaluation.availableAtCurrentProgress).toBe(true)
+    expect(evaluation.candidate.equipment).toEqual(
+      expect.arrayContaining([
+        '柑橘榨汁機',
+        '液料調和器',
+        '果汁成品台',
+      ]),
+    )
+    expect(evaluation.candidate.equipment).not.toContain('調味器')
+    expect(evaluation.effectTotals).toEqual(
+      expect.arrayContaining([
+        { name: '奶香', value: 6 },
+        { name: '強健骨骼', value: 3 },
+      ]),
+    )
+
+    const html = renderToStaticMarkup(
+      <EvaluationPanel
+        evaluation={evaluation}
+        matchingCustomers={[]}
+      />,
+    )
+    expect(html).toContain('液料調和器')
+    expect(html).toContain('奶香')
+    expect(html).not.toContain('目前序列無法評估')
+
+    const toolsHtml = renderToStaticMarkup(
+      <RecipeTools
+        currentProgress="liquid-blender-unlocked"
+        satisfactionByVillage={satisfaction}
+        savedRecipes={[]}
+        comparisonCustomerIds={[]}
+        onAddComparisonCustomer={() => {}}
+        onRemoveComparisonCustomer={() => {}}
+        onClearComparisonCustomers={() => {}}
+        onSavedRecipesChange={() => {}}
+      />,
+    )
+    expect(toolsHtml).toContain('<strong>牛奶</strong>')
+    expect(toolsHtml).toContain('液料追加')
+  })
+
   it('shows concrete saved-recipe effects and keeps ambiguous effects visibly separate', () => {
     const html = renderToStaticMarkup(
       <RecipeTools

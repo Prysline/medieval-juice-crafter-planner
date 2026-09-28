@@ -20,6 +20,7 @@ export interface ProductionPathEdge {
     | '柑橘榨汁機'
     | '榨汁機'
     | '調味器'
+    | '液料調和器'
     | '果汁調和器'
     | '果汁成品台'
   fromIngredientIds: string[]
@@ -127,7 +128,11 @@ function seasoningIngredientUnitsForSteps(
   const units: Record<string, number> = {}
 
   for (const step of steps) {
-    if (step.kind !== 'seasoning' || !step.addedIngredientId) continue
+    if (
+      step.kind !== 'seasoning' ||
+      step.equipment !== '調味器' ||
+      !step.addedIngredientId
+    ) continue
     units[step.addedIngredientId] =
       (units[step.addedIngredientId] ?? 0) + step.quantity
   }
@@ -143,6 +148,7 @@ function seasoningBaseJuiceUnitsForSteps(
   for (const step of steps) {
     if (
       step.kind !== 'seasoning' ||
+      step.equipment !== '調味器' ||
       step.fromIngredientIds.length !== 1
     ) {
       continue
@@ -168,11 +174,18 @@ function seasoningStageReuseUnitsForFullPlan(
 
   const result: Record<string, number> = {}
   for (const consumer of steps) {
-    if (consumer.kind !== 'seasoning') continue
+    if (
+      consumer.kind !== 'seasoning' ||
+      consumer.equipment !== '調味器'
+    ) continue
     const producer = producerByNode.get(
       sequenceKey(consumer.fromIngredientIds),
     )
-    if (!producer || producer.kind !== 'seasoning') continue
+    if (
+      !producer ||
+      producer.kind !== 'seasoning' ||
+      producer.equipment !== '調味器'
+    ) continue
     result[producer.key] =
       (result[producer.key] ?? 0) + consumer.quantity
   }
@@ -256,16 +269,22 @@ export function productionPathForIngredientIds(
     })
 
     const prefix = [baseId]
-    for (const seasoningId of segment.slice(1)) {
+    for (const additiveId of segment.slice(1)) {
+      const additiveCapability = capabilityByIngredientId.get(additiveId)
+      if (!additiveCapability?.roles.includes('seasoning')) return null
+      const equipment = additiveCapability.additiveEquipment ?? '調味器'
       const fromIngredientIds = [...prefix]
-      prefix.push(seasoningId)
+      prefix.push(additiveId)
       edges.push({
-        key: `season:${sequenceKey(prefix)}`,
+        key:
+          equipment === '調味器'
+            ? `season:${sequenceKey(prefix)}`
+            : `liquid:${sequenceKey(prefix)}`,
         kind: 'seasoning',
-        equipment: '調味器',
+        equipment,
         fromIngredientIds,
         toIngredientIds: [...prefix],
-        addedIngredientId: seasoningId,
+        addedIngredientId: additiveId,
       })
     }
   }
