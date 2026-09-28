@@ -131,11 +131,10 @@ function normalizeOptionalCriterion(
   value: unknown,
 ): OptimizerOptionalCriterion {
   if (value === 'none') return 'none'
-  return normalizeEnum(
-    value,
-    criteria,
-    'none' as OptimizerOptionalCriterion,
-  )
+  return typeof value === 'string' &&
+    criteria.has(value as OptimizationCriterion)
+    ? value as OptimizationCriterion
+    : 'none'
 }
 
 function normalizeMaxJarFillOperations(
