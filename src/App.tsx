@@ -709,7 +709,6 @@ function App() {
     setRecipePage(1)
   }, [
     currentProgress,
-    normalizedRecipeQuery,
     recipeIngredientCountFilter,
     recipeIngredientSequenceFilter,
     recipeConfirmedEffectFilter,
@@ -723,6 +722,11 @@ function App() {
       setRecipePage(recipePageCount)
     }
   }, [recipePage, recipePageCount])
+
+  function updateQuery(value: string) {
+    setQuery(value)
+    setRecipePage(1)
+  }
 
   function updateProgress(value: ProgressMilestoneId) {
     setCurrentProgress(value)
@@ -877,7 +881,7 @@ function App() {
       {(tab === 'customers' || tab === 'recipes') && (
         <SearchPanel
           initialQuery={query}
-          onQueryChange={setQuery}
+          onQueryChange={updateQuery}
         />
       )}
 
