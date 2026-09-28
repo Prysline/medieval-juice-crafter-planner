@@ -187,6 +187,7 @@ function buildHighsStage(
   const recipeUpperBoundById = new Map<string, number>()
   const zByRecipeId = new Map<string, BoolVariable>()
   const yByCustomerRecipe = new Map<string, BoolVariable>()
+  const assignedIngredientCostByAssignmentKey = new Map<string, number>()
   const operationByEdgeKey = new Map<string, IntVariable>()
   const operationKindByEdgeKey = new Map<string, ProductionStepKind>()
   const materialFlowByEdgeKey = new Map<string, IntVariable>()
@@ -584,10 +585,15 @@ function buildHighsStage(
           const y = model.boolVar(
             `y_${customerIndex}_${recipeIndex}`,
           )
-          yByCustomerRecipe.set(
-            `${customerId}\u001f${recipe.candidate.id}`,
-            y,
-          )
+          const assignmentKey =
+            `${customerId}\u001f${recipe.candidate.id}`
+          yByCustomerRecipe.set(assignmentKey, y)
+          if (needsAnyObjective('negativeAssignedIngredientCost')) {
+            assignedIngredientCostByAssignmentKey.set(
+              assignmentKey,
+              recipe.juiceUnitIngredientCost,
+            )
+          }
           assignmentVars.push(y)
         })
 
@@ -798,13 +804,14 @@ function buildHighsStage(
     'negativeAssignedIngredientCost',
   )
     ? sum(
-        ...domain.serviceableCustomerIds.flatMap((customerId) =>
-          domain.recipes.flatMap((recipe) => {
-            const y = yByCustomerRecipe.get(
-              `${customerId}\u001f${recipe.candidate.id}`,
-            )
-            return y ? [y.times(recipe.juiceUnitIngredientCost)] : []
-          }),
+        ...[...yByCustomerRecipe.entries()].flatMap(
+          ([assignmentKey, y]) => {
+            const ingredientCost =
+              assignedIngredientCostByAssignmentKey.get(assignmentKey)
+            return ingredientCost === undefined
+              ? []
+              : [y.times(ingredientCost)]
+          },
         ),
       )
     : undefined
