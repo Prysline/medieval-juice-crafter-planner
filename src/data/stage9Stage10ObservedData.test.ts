@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { equipment } from './equipment'
+import { ingredients } from './ingredients'
+import { recipeIngredientCapabilities } from './recipeIngredientCapabilities'
 import {
   progressMilestoneIndex,
   progressMilestoneLabels,
@@ -67,6 +69,26 @@ describe('Stage 9 and 10 observed progression', () => {
     ).toBeGreaterThan(
       progressMilestoneIndex.get('advanced-juicer-unlocked')!,
     )
+  })
+
+  it('records milk as Stage 10 inventory data without inventing a recipe capability', () => {
+    const milk = ingredients.find((item) => item.id === 'milk')
+
+    expect(milk).toMatchObject({
+      name: '牛奶',
+      unlockedAt: 'liquid-blender-unlocked',
+      buyPrice: 14,
+      seller: '牛奶商人',
+      effects: [
+        { name: '奶香', value: 6 },
+        { name: '強健骨骼', value: 3 },
+      ],
+    })
+    expect(
+      recipeIngredientCapabilities.some(
+        (capability) => capability.ingredientId === 'milk',
+      ),
+    ).toBe(false)
   })
 
   it('records the liquid blender price and only the directly observed input categories', () => {

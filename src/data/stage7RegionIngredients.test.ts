@@ -63,7 +63,11 @@ describe('Stage 7 ibex statue runtime data', () => {
       expect(after).toContain(ingredientId)
     }
 
-    expect(ingredients.find((ingredient) => ingredient.id === 'milk')).toBeUndefined()
+    const milk = ingredients.find((ingredient) => ingredient.id === 'milk')
+    expect(milk).toMatchObject({
+      unlockedAt: 'liquid-blender-unlocked',
+    })
+    expect(after).not.toContain('milk')
   })
 
   it('keeps the synced ingredient facts exact', () => {

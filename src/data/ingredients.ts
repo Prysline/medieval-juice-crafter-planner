@@ -158,4 +158,15 @@ export const ingredients: Ingredient[] = [
       { name: '舒緩腸胃', value: 1 },
     ],
   },
+  {
+    id: 'milk',
+    name: '牛奶',
+    unlockedAt: 'liquid-blender-unlocked',
+    buyPrice: 14,
+    seller: '牛奶商人',
+    effects: [
+      { name: '奶香', value: 6 },
+      { name: '強健骨骼', value: 3 },
+    ],
+  },
 ]

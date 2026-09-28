@@ -1187,6 +1187,18 @@ describe('optimizer inventory availability', () => {
     ).toEqual(expect.arrayContaining(['cinnamon', 'banana']))
   })
 
+  it('unlocks milk in inventory only at the liquid-blender milestone', () => {
+    const before = optimizerInventoryIngredients(
+      'advanced-juicer-unlocked',
+    ).map((ingredient) => ingredient.id)
+    const after = optimizerInventoryIngredients(
+      'liquid-blender-unlocked',
+    ).map((ingredient) => ingredient.id)
+
+    expect(before).not.toContain('milk')
+    expect(after).toContain('milk')
+  })
+
   it('exposes the confirmed ibex-statue ingredient catalog only after the region milestone', () => {
     const before = optimizerInventoryIngredients(
       'advanced-citrus-juicer-unlocked',
