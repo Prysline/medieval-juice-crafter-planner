@@ -2905,7 +2905,7 @@ footer {
   padding-bottom: 8px;
 }
 
-.optimizer-sales-trip-body {
+.optimizer-sales-trip-card > .optimizer-sales-trip-body {
   display: grid;
   gap: 10px;
 }
@@ -2963,6 +2963,7 @@ footer {
 
 .optimizer-sales-jar-list {
   display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 7px !important;
 }
 
@@ -3736,6 +3737,10 @@ footer {
 
   .optimizer-sales-overview-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .optimizer-sales-jar-list {
+    grid-template-columns: 1fr;
   }
 
   .optimizer-operation-flow {
