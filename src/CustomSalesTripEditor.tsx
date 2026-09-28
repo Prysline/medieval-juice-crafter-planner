@@ -17,11 +17,21 @@ import type {
   CustomTripPhysicalIssue,
   CustomTripPhysicalValidationResult,
 } from './domain/customTripPhysicalPlanner'
-import { customerIdsInCanonicalResidenceOrder } from './presentationOrder'
+import {
+  customerIdsInCanonicalResidenceOrder,
+  customerResidencePresentationGroups,
+  customerResidencePresentationLabel,
+} from './presentationOrder'
+
+interface CustomTripResidenceGroup {
+  residenceId: string | null
+  customerIds: string[]
+}
 
 interface CustomTripRegionGroup {
   regionId: string
   customerIds: string[]
+  residences: CustomTripResidenceGroup[]
 }
 
 interface CustomTripRecipeGroup {
@@ -74,13 +84,22 @@ export function buildCustomTripEditorGroups(
           recipeId,
           customerIds: recipeCustomerIds,
           regions: [...regionMap.entries()].map(
-            ([regionId, regionCustomerIds]) => ({
-              regionId,
-              customerIds: customerIdsInCanonicalResidenceOrder(
-                regionCustomerIds,
-                residenceByCustomerId,
-              ),
-            }),
+            ([regionId, regionCustomerIds]) => {
+              const orderedCustomerIds =
+                customerIdsInCanonicalResidenceOrder(
+                  regionCustomerIds,
+                  residenceByCustomerId,
+                )
+
+              return {
+                regionId,
+                customerIds: orderedCustomerIds,
+                residences: customerResidencePresentationGroups(
+                  orderedCustomerIds,
+                  residenceByCustomerId,
+                ),
+              }
+            },
           ),
         }
       },
@@ -110,6 +129,19 @@ export function customTripPlanFingerprint(
       routeNodeId: customer.routeNodeId ?? null,
     })),
   })
+}
+
+export function updatedCustomTripSelection(
+  current: ReadonlySet<string>,
+  customerIds: readonly string[],
+  checked: boolean,
+): Set<string> {
+  const next = new Set(current)
+  for (const customerId of customerIds) {
+    if (checked) next.add(customerId)
+    else next.delete(customerId)
+  }
+  return next
 }
 
 function moveTripBefore(
@@ -362,14 +394,9 @@ export function CustomSalesTripEditor({
     customerIds: readonly string[],
     checked: boolean,
   ) {
-    setSelectedCustomerIds((current) => {
-      const next = new Set(current)
-      for (const customerId of customerIds) {
-        if (checked) next.add(customerId)
-        else next.delete(customerId)
-      }
-      return next
-    })
+    setSelectedCustomerIds((current) =>
+      updatedCustomTripSelection(current, customerIds, checked),
+    )
   }
 
   function moveSelectedToExistingTrip() {
@@ -418,6 +445,43 @@ export function CustomSalesTripEditor({
     setDraft(cloneCustomSalesTripPlan(autoBaseline))
     setRevision((current) => current + 1)
     setSelectedCustomerIds(new Set())
+  }
+
+  function renderCustomerRow(customerId: string) {
+    return (
+      <label
+        className="optimizer-transaction-row"
+        key={customerId}
+        draggable
+        onDragStart={(event) => {
+          const ids = selectedCustomerIds.has(customerId)
+            ? selectedIds
+            : [customerId]
+          draggedCustomerIdsRef.current = ids
+          draggedTripIdRef.current = null
+          event.dataTransfer.effectAllowed = 'move'
+        }}
+        onDragEnd={() => {
+          draggedCustomerIdsRef.current = []
+        }}
+      >
+        <input
+          type="checkbox"
+          checked={selectedCustomerIds.has(customerId)}
+          aria-label={customerLabel(customerId) + '單人選取'}
+          onChange={(event) =>
+            toggleSelection(
+              [customerId],
+              event.target.checked,
+            )
+          }
+        />
+        <strong>{customerLabel(customerId)}</strong>
+        <span>
+          {draft.customersById[customerId]?.servings} 杯
+        </span>
+      </label>
+    )
   }
 
   return (
@@ -774,51 +838,77 @@ export function CustomSalesTripEditor({
                                 </span>
                               </label>
 
-                              {region.customerIds.map(
-                                (customerId) => (
-                                  <label
-                                    className="optimizer-transaction-row"
-                                    key={customerId}
-                                    draggable
-                                    onDragStart={(event) => {
-                                      const ids =
-                                        selectedCustomerIds.has(
-                                          customerId,
-                                        )
-                                          ? selectedIds
-                                          : [customerId]
-                                      draggedCustomerIdsRef.current = ids
-                                      draggedTripIdRef.current = null
-                                      event.dataTransfer.effectAllowed =
-                                        'move'
-                                    }}
-                                    onDragEnd={() => {
-                                      draggedCustomerIdsRef.current = []
-                                    }}
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={selectedCustomerIds.has(
-                                        customerId,
-                                      )}
-                                      onChange={(event) =>
-                                        toggleSelection(
-                                          [customerId],
-                                          event.target.checked,
-                                        )
+                              {region.residences.map(
+                                (residence, residenceIndex) => {
+                                  const residenceLabel =
+                                    customerResidencePresentationLabel(
+                                      residence.residenceId,
+                                    )
+                                  if (!residenceLabel) {
+                                    return residence.customerIds.map(
+                                      renderCustomerRow,
+                                    )
+                                  }
+
+                                  const residenceState = selectionState(
+                                    selectedCustomerIds,
+                                    residence.customerIds,
+                                  )
+
+                                  return (
+                                    <details
+                                      className="optimizer-custom-residence-group"
+                                      open
+                                      key={
+                                        region.regionId +
+                                        '-' +
+                                        (residence.residenceId ??
+                                          residenceIndex)
                                       }
-                                    />
-                                    <strong>
-                                      {customerLabel(customerId)}
-                                    </strong>
-                                    <span>
-                                      {
-                                        draft.customersById[customerId]
-                                          ?.servings
-                                      } 杯
-                                    </span>
-                                  </label>
-                                ),
+                                    >
+                                      <summary>
+                                        <label
+                                          onClick={(event) =>
+                                            event.stopPropagation()
+                                          }
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={
+                                              residenceState.checked
+                                            }
+                                            aria-checked={
+                                              residenceState.partial
+                                                ? 'mixed'
+                                                : residenceState.checked
+                                            }
+                                            aria-label={
+                                              residenceLabel +
+                                              '整組選取'
+                                            }
+                                            onChange={(event) =>
+                                              toggleSelection(
+                                                residence.customerIds,
+                                                event.target.checked,
+                                              )
+                                            }
+                                          />
+                                          <strong>
+                                            {residenceLabel}
+                                          </strong>
+                                        </label>
+                                        <span>
+                                          {residence.customerIds.length} 位
+                                        </span>
+                                      </summary>
+                                      <div className="optimizer-custom-residence-members">
+                                        {residence.customerIds.map(
+                                          renderCustomerRow,
+                                        )}
+                                      </div>
+                                    </details>
+                                  )
+                                },
                               )}
                             </div>
                           )

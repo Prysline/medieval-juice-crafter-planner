@@ -3018,6 +3018,48 @@ footer {
   font-size: 0.76rem;
 }
 
+.optimizer-sales-residence-group {
+  display: grid;
+  gap: 5px;
+  border: 1px solid #e7ddce;
+  border-radius: 8px;
+  background: #fbf7ef;
+  padding: 6px;
+}
+
+.optimizer-sales-residence-heading {
+  display: flex !important;
+  gap: 8px !important;
+  justify-content: space-between !important;
+  align-items: baseline !important;
+}
+
+.optimizer-sales-residence-heading strong {
+  color: #4f6744;
+  font-size: 0.72rem;
+}
+
+.optimizer-sales-residence-heading span,
+.optimizer-sales-residence-split {
+  color: #776a58;
+  font-size: 0.66rem;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.optimizer-sales-residence-heading span {
+  text-align: right;
+}
+
+.optimizer-sales-residence-split {
+  display: block;
+}
+
+.optimizer-sales-residence-members {
+  display: grid !important;
+  gap: 5px !important;
+}
+
 .optimizer-remaining-sales-plan {
   margin-top: 2px;
 }
@@ -3564,6 +3606,59 @@ footer {
 .optimizer-transaction-list {
   display: grid;
   gap: 6px;
+}
+
+.optimizer-custom-residence-group {
+  overflow: hidden;
+  border: 1px solid #e3d7c5;
+  border-radius: 8px;
+  background: #fffdf8;
+}
+
+.optimizer-custom-residence-group > summary {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  list-style: none;
+  padding: 6px 7px;
+}
+
+.optimizer-custom-residence-group > summary::-webkit-details-marker {
+  display: none;
+}
+
+.optimizer-custom-residence-group > summary > label {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  min-width: 0;
+}
+
+.optimizer-custom-residence-group > summary input {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.optimizer-custom-residence-group > summary strong {
+  color: #4f6744;
+  font-size: 0.76rem;
+}
+
+.optimizer-custom-residence-group > summary span {
+  color: #795d22;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.optimizer-custom-residence-members {
+  display: grid;
+  gap: 5px;
+  border-top: 1px dashed #e3d7c5;
+  padding: 6px 7px 7px;
 }
 
 .optimizer-transaction-row {

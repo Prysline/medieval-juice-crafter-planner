@@ -4,6 +4,7 @@ import {
   CustomSalesTripEditor,
   buildCustomTripEditorGroups,
   customTripPlanFingerprint,
+  updatedCustomTripSelection,
 } from './CustomSalesTripEditor'
 import {
   buildCustomSalesTripBaseline,
@@ -52,6 +53,12 @@ function baseline() {
       'fountain-a': 'tranquil-fountain',
       'ibex-a': 'ibex-statue',
     },
+    customerResidenceById: {
+      'east-a': 'east-harbor-residence-1',
+      'east-b': 'east-harbor-residence-1',
+      'fountain-a': 'tranquil-fountain-residence-1',
+      'ibex-a': 'ibex-statue-residence-1',
+    },
   })
 }
 
@@ -72,6 +79,12 @@ describe('custom sales trip editor grouping', () => {
               {
                 regionId: 'east-harbor',
                 customerIds: ['east-a', 'east-b'],
+                residences: [
+                  {
+                    residenceId: 'east-harbor-residence-1',
+                    customerIds: ['east-a', 'east-b'],
+                  },
+                ],
               },
             ],
           },
@@ -89,6 +102,12 @@ describe('custom sales trip editor grouping', () => {
               {
                 regionId: 'tranquil-fountain',
                 customerIds: ['fountain-a'],
+                residences: [
+                  {
+                    residenceId: 'tranquil-fountain-residence-1',
+                    customerIds: ['fountain-a'],
+                  },
+                ],
               },
             ],
           },
@@ -99,6 +118,12 @@ describe('custom sales trip editor grouping', () => {
               {
                 regionId: 'ibex-statue',
                 customerIds: ['ibex-a'],
+                residences: [
+                  {
+                    residenceId: 'ibex-statue-residence-1',
+                    customerIds: ['ibex-a'],
+                  },
+                ],
               },
             ],
           },
@@ -140,16 +165,103 @@ describe('custom sales trip editor grouping', () => {
 
     const groups = buildCustomTripEditorGroups(plan)
 
-    expect(groups[0]?.recipes[0]?.regions[0]?.customerIds).toEqual([
-      'harry',
-      'lizzie',
-      'zenobia',
-    ])
+    expect(groups[0]?.recipes[0]?.regions[0]).toMatchObject({
+      customerIds: ['harry', 'lizzie', 'zenobia'],
+      residences: [
+        {
+          residenceId: 'east-harbor-residence-8',
+          customerIds: ['harry', 'lizzie', 'zenobia'],
+        },
+      ],
+    })
     expect(plan.tripByCustomerId).toEqual({
       zenobia: 'auto-trip-1',
       harry: 'auto-trip-1',
       lizzie: 'auto-trip-1',
     })
+  })
+
+  it('keeps recipe and residence boundaries separate while exposing exact group membership', () => {
+    const plan = buildCustomSalesTripBaseline({
+      recipeAssignments: [
+        {
+          recipeId: 'recipe-a',
+          customerIds: ['harry', 'lizzie', 'betsy'],
+        },
+        {
+          recipeId: 'recipe-b',
+          customerIds: ['zenobia'],
+        },
+      ],
+      physicalTrips: [
+        {
+          tripNumber: 1,
+          juiceJars: [
+            {
+              recipeId: 'recipe-a',
+              customerIds: ['harry', 'lizzie', 'betsy'],
+            },
+            {
+              recipeId: 'recipe-b',
+              customerIds: ['zenobia'],
+            },
+          ],
+        },
+      ],
+      customerRegionById: {
+        harry: 'east-harbor',
+        lizzie: 'east-harbor',
+        betsy: 'east-harbor',
+        zenobia: 'east-harbor',
+      },
+      customerResidenceById: {
+        harry: 'east-harbor-residence-8',
+        lizzie: 'east-harbor-residence-8',
+        betsy: 'east-harbor-residence-9',
+        zenobia: 'east-harbor-residence-8',
+      },
+    })
+
+    const recipes = buildCustomTripEditorGroups(plan)[0]!.recipes
+
+    expect(recipes[0]!.regions[0]!.residences).toEqual([
+      {
+        residenceId: 'east-harbor-residence-8',
+        customerIds: ['harry', 'lizzie'],
+      },
+      {
+        residenceId: 'east-harbor-residence-9',
+        customerIds: ['betsy'],
+      },
+    ])
+    expect(recipes[1]!.regions[0]!.residences).toEqual([
+      {
+        residenceId: 'east-harbor-residence-8',
+        customerIds: ['zenobia'],
+      },
+    ])
+  })
+
+  it('selects only the requested residence group or individual customer', () => {
+    const residenceCustomerIds =
+      buildCustomTripEditorGroups(baseline())[0]!
+        .recipes[0]!.regions[0]!.residences[0]!.customerIds
+
+    const groupSelection = updatedCustomTripSelection(
+      new Set<string>(),
+      residenceCustomerIds,
+      true,
+    )
+    expect([...groupSelection]).toEqual(['east-a', 'east-b'])
+    expect(groupSelection.has('fountain-a')).toBe(false)
+
+    const individualSelection = updatedCustomTripSelection(
+      groupSelection,
+      ['east-a'],
+      false,
+    )
+    expect(individualSelection.has('east-a')).toBe(false)
+    expect(individualSelection.has('east-b')).toBe(true)
   })
 
   it('changes the draft fingerprint when customer → trip assignment changes', () => {
@@ -203,6 +315,10 @@ describe('custom sales trip editor UI', () => {
     expect(html).toContain('拖曳調整趟次順序')
     expect(html).toContain('配方 recipe-a')
     expect(html).toContain('地區 east-harbor')
+    expect(html).toContain('住處 1')
+    expect(html).toContain('aria-label="住處 1整組選取"')
+    expect(html).toContain('aria-label="顧客 east-a單人選取"')
+    expect(html).toContain('class="optimizer-custom-residence-group"')
     expect(html).toContain('顧客 east-a')
     expect(html).toContain('draggable="true"')
     expect(html).not.toContain('完成自訂')

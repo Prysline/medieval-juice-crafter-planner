@@ -2,6 +2,8 @@ import { memo, useEffect, useId, useMemo, useRef, useState, type ReactNode } fro
 import { CustomSalesTripEditor } from './CustomSalesTripEditor'
 import {
   customerIdsInCanonicalResidenceOrder,
+  customerResidencePresentationGroups,
+  customerResidencePresentationLabel,
   sortedByNaturalPresentationId,
 } from './presentationOrder'
 import { customers } from './data/customers'
@@ -5337,6 +5339,95 @@ function regionDisplayName(regionId: string): string {
   return villageNames[regionId as VillageId] ?? regionId
 }
 
+interface SalesCustomerResidenceRegionGroup {
+  regionId: string
+  residences: ReturnType<typeof customerResidencePresentationGroups>
+}
+
+function salesCustomerResidenceRegionGroups(
+  customerIds: readonly string[],
+): SalesCustomerResidenceRegionGroup[] {
+  const customerIdsByRegion = new Map<string, string[]>()
+
+  for (const customerId of customerIds) {
+    const regionId = customerById.get(customerId)?.villageId ?? ''
+    const regionCustomerIds = customerIdsByRegion.get(regionId) ?? []
+    regionCustomerIds.push(customerId)
+    customerIdsByRegion.set(regionId, regionCustomerIds)
+  }
+
+  return [...customerIdsByRegion.entries()].map(
+    ([regionId, regionCustomerIds]) => ({
+      regionId,
+      residences:
+        customerResidencePresentationGroups(regionCustomerIds),
+    }),
+  )
+}
+
+interface SalesResidenceGroupSummary {
+  tripNumbers: number[]
+  totalCustomerCount: number
+}
+
+function salesResidenceGroupSummaryKey(
+  recipeId: string,
+  regionId: string,
+  residenceId: string,
+): string {
+  return [recipeId, regionId, residenceId].join('\u001f')
+}
+
+function buildSalesResidenceGroupSummaries(
+  plan: MultiTripReplenishmentPlan,
+): ReadonlyMap<string, SalesResidenceGroupSummary> {
+  const mutable = new Map<
+    string,
+    {
+      tripNumbers: Set<number>
+      customerIds: Set<string>
+    }
+  >()
+
+  for (const trip of plan.trips) {
+    for (const load of trip.juiceJars) {
+      for (const region of salesCustomerResidenceRegionGroups(
+        load.customerIds,
+      )) {
+        for (const residence of region.residences) {
+          if (!residence.residenceId) continue
+          const key = salesResidenceGroupSummaryKey(
+            load.recipeId,
+            region.regionId,
+            residence.residenceId,
+          )
+          const summary = mutable.get(key) ?? {
+            tripNumbers: new Set<number>(),
+            customerIds: new Set<string>(),
+          }
+          summary.tripNumbers.add(trip.tripNumber)
+          for (const customerId of residence.customerIds) {
+            summary.customerIds.add(customerId)
+          }
+          mutable.set(key, summary)
+        }
+      }
+    }
+  }
+
+  return new Map(
+    [...mutable.entries()].map(([key, summary]) => [
+      key,
+      {
+        tripNumbers: [...summary.tripNumbers].sort(
+          (left, right) => left - right,
+        ),
+        totalCustomerCount: summary.customerIds.size,
+      },
+    ]),
+  )
+}
+
 interface SalesTripDeliveryControls {
   plan: DeliveryExecutionPlan | null
   cursor: DeliveryExecutionCursor | null
@@ -5363,6 +5454,115 @@ function SalesTripCustomerRow({
         <span className="optimizer-customer-region-badge">
           {regionLabel}
         </span>
+      )}
+    </div>
+  )
+}
+
+function SalesTripJarCustomerGroups({
+  recipeId,
+  customerIds,
+  tripNumber,
+  residenceGroupSummaries,
+  deliveryControls,
+}: {
+  recipeId: string
+  customerIds: readonly string[]
+  tripNumber: number
+  residenceGroupSummaries: ReadonlyMap<
+    string,
+    SalesResidenceGroupSummary
+  >
+  deliveryControls?: SalesTripDeliveryControls
+}) {
+  const renderCustomer = (customerId: string) =>
+    deliveryControls ? (
+      <DeliveryCustomerCheckbox
+        key={customerId}
+        customerId={customerId}
+        plan={deliveryControls.plan}
+        cursor={deliveryControls.cursor}
+        suppliedCustomerIds={deliveryControls.suppliedCustomerIds}
+        disabled={deliveryControls.disabled}
+        showPlanningDetail={false}
+        onChange={deliveryControls.onChangeCustomer}
+      />
+    ) : (
+      <SalesTripCustomerRow
+        key={customerId}
+        customerId={customerId}
+      />
+    )
+
+  return (
+    <div className="optimizer-delivery-customer-list">
+      {salesCustomerResidenceRegionGroups(customerIds).map(
+        (region) =>
+          region.residences.map((residence, residenceIndex) => {
+            const residenceLabel =
+              customerResidencePresentationLabel(
+                residence.residenceId,
+              )
+            if (!residenceLabel || !residence.residenceId) {
+              return residence.customerIds.map(renderCustomer)
+            }
+
+            const summary = residenceGroupSummaries.get(
+              salesResidenceGroupSummaryKey(
+                recipeId,
+                region.regionId,
+                residence.residenceId,
+              ),
+            )
+            const tripNumbers = summary?.tripNumbers ?? [tripNumber]
+            const totalCustomerCount =
+              summary?.totalCustomerCount ??
+              residence.customerIds.length
+            const partialGroup =
+              totalCustomerCount > residence.customerIds.length
+
+            return (
+              <section
+                className="optimizer-sales-residence-group"
+                aria-label={
+                  regionDisplayName(region.regionId) +
+                  ' ' +
+                  residenceLabel
+                }
+                key={
+                  region.regionId +
+                  '-' +
+                  residence.residenceId +
+                  '-' +
+                  residenceIndex
+                }
+              >
+                <div className="optimizer-sales-residence-heading">
+                  <strong>
+                    {regionDisplayName(region.regionId)} ·{' '}
+                    {residenceLabel}
+                  </strong>
+                  <span>
+                    {partialGroup
+                      ? '本罐 ' +
+                        residence.customerIds.length +
+                        ' / 本組 ' +
+                        totalCustomerCount +
+                        ' 位'
+                      : residence.customerIds.length + ' 位'}
+                  </span>
+                </div>
+                {tripNumbers.length > 1 && (
+                  <small className="optimizer-sales-residence-split">
+                    同配方同住處分散於第 {tripNumbers.join('、')} 趟
+                  </small>
+                )}
+                <div className="optimizer-sales-residence-members">
+                  {residence.customerIds.map(renderCustomer)}
+                </div>
+              </section>
+            )
+          }),
       )}
     </div>
   )
@@ -5408,6 +5608,8 @@ export function SalesTripPlanBlock({
     (sum, trip) => sum + trip.totalServings,
     0,
   )
+  const residenceGroupSummaries =
+    buildSalesResidenceGroupSummaries(plan)
 
   return (
     <div className="optimizer-batch-list optimizer-sales-plan">
@@ -5733,33 +5935,15 @@ export function SalesTripPlanBlock({
                       </div>
                     )}
 
-                    <div className="optimizer-delivery-customer-list">
-                      {customerIdsInCanonicalResidenceOrder(
-                        load.customerIds,
-                      ).map((customerId) =>
-                        deliveryControls ? (
-                          <DeliveryCustomerCheckbox
-                            key={customerId}
-                            customerId={customerId}
-                            plan={deliveryControls.plan}
-                            cursor={deliveryControls.cursor}
-                            suppliedCustomerIds={
-                              deliveryControls.suppliedCustomerIds
-                            }
-                            disabled={deliveryControls.disabled}
-                            showPlanningDetail={false}
-                            onChange={
-                              deliveryControls.onChangeCustomer
-                            }
-                          />
-                        ) : (
-                          <SalesTripCustomerRow
-                            key={customerId}
-                            customerId={customerId}
-                          />
-                        ),
-                      )}
-                    </div>
+                    <SalesTripJarCustomerGroups
+                      recipeId={load.recipeId}
+                      customerIds={load.customerIds}
+                      tripNumber={trip.tripNumber}
+                      residenceGroupSummaries={
+                        residenceGroupSummaries
+                      }
+                      deliveryControls={deliveryControls}
+                    />
                   </article>
                 ))}
               </div>
