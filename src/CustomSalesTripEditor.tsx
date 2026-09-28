@@ -210,6 +210,7 @@ export interface CustomSalesTripEditorProps {
   defaultOpen?: boolean
   applyError?: string | null
   onDraftDirtyChange?: (dirty: boolean) => void
+  onRestoreAutoPlan?: () => void
   onAcceptValidatedDraft?: (
     draft: CustomSalesTripPlan,
     validation: Extract<
@@ -229,6 +230,7 @@ export function CustomSalesTripEditor({
   defaultOpen = false,
   applyError = null,
   onDraftDirtyChange,
+  onRestoreAutoPlan,
   onAcceptValidatedDraft,
 }: CustomSalesTripEditorProps) {
   const editingStartPlan = appliedPlan ?? autoBaseline
@@ -438,7 +440,9 @@ export function CustomSalesTripEditor({
       ) : (
         <>
           <p className="optimizer-boundary-note">
-            這裡只編輯自訂草稿並檢查實體果汁罐、杯具與補裝是否可行；目前正式販售排程仍維持自動方案。
+            {appliedPlan
+              ? '目前已完成的自訂方案仍維持生效；此處修改的是新草稿，只有再次按「完成自訂」後才會替換目前方案。'
+              : '這裡只編輯自訂草稿並檢查實體果汁罐、杯具與補裝是否可行；目前正式販售排程仍維持自動方案。'}
           </p>
 
           <div className="optimizer-run-actions">
@@ -446,8 +450,16 @@ export function CustomSalesTripEditor({
               type="button"
               onClick={resetToAutoBaseline}
             >
-              還原自動方案
+              將草稿還原為自動方案
             </button>
+            {appliedPlan && onRestoreAutoPlan && (
+              <button
+                type="button"
+                onClick={onRestoreAutoPlan}
+              >
+                改回自動方案
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
@@ -810,7 +822,7 @@ export function CustomSalesTripEditor({
 
           {applyError && (
             <p className="optimizer-transaction-warning" role="alert">
-              完成自訂失敗：{applyError}
+              自訂趟次操作失敗：{applyError}
             </p>
           )}
 
