@@ -4893,6 +4893,7 @@ function OptimizerResultPanel({
                           readyForFinalizingUnits={readyForFinalizingUnits}
                         />
                         {step.kind === 'seasoning' &&
+                          step.equipment === '調味器' &&
                           productionLogistics.productionPlan
                             .seasoningStageReuseUnitsByStepKey && (
                             <SeasoningStepStageUsageNote
