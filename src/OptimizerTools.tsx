@@ -9,6 +9,7 @@ import { ingredientIsAvailable } from './domain/availability'
 import {
   availableProductionWorkshopRegions,
   productionCustomerRegionById,
+  productionCustomerResidenceById,
   productionRegionRoutingInput,
 } from './domain/regionProductionAdapter'
 import type { RegionPhysicalSalesPlan } from './domain/regionPhysicalSalesPlanner'
@@ -2109,12 +2110,14 @@ function OptimizerTools({
         currentProgress,
         activeWorkshopRegionId,
       )
-      const customerRegionById =
-        productionCustomerRegionById(
-          preparationDemand.recipes.flatMap(
-            (recipe) => recipe.customerIds,
-          ),
+      const plannedCustomerIds =
+        preparationDemand.recipes.flatMap(
+          (recipe) => recipe.customerIds,
         )
+      const customerRegionById =
+        productionCustomerRegionById(plannedCustomerIds)
+      const customerResidenceById =
+        productionCustomerResidenceById(plannedCustomerIds)
 
       const buildCheckedSalesTripPlan = (
         policy: UsedCupTripPolicy,
@@ -2223,6 +2226,7 @@ function OptimizerTools({
             })),
           })),
           customerRegionById,
+          customerResidenceById,
         })
       const validateCustomTripDraft = (
         customPlan: CustomSalesTripPlan,

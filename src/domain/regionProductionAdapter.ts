@@ -1,4 +1,5 @@
 import { customers } from '../data/customers'
+import { customerResidenceByCustomerId } from '../data/customerResidences'
 import { villages } from '../data/villages'
 import type {
   ProgressMilestoneId,
@@ -107,4 +108,21 @@ export function productionCustomerRegionById(
       return [customerId, customer.villageId]
     }),
   ) as Record<string, VillageId>
+}
+
+export function productionCustomerResidenceById(
+  customerIds: readonly string[],
+): Record<string, string> {
+  return Object.fromEntries(
+    customerIds.map((customerId) => {
+      const residenceId =
+        customerResidenceByCustomerId[customerId]
+      if (!residenceId) {
+        throw new Error(
+          `Missing residence identity for production customer ${customerId}`,
+        )
+      }
+      return [customerId, residenceId]
+    }),
+  )
 }
