@@ -1,6 +1,7 @@
 import { memo, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { CustomSalesTripEditor } from './CustomSalesTripEditor'
 import {
+  customerIdsInCanonicalResidenceOrder,
   customerResidencePresentationGroups,
   customerResidencePresentationLabel,
   sortedByNaturalPresentationId,
