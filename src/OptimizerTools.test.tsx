@@ -1644,6 +1644,72 @@ describe('remaining sales trip replan UI', () => {
     expect(html).not.toContain('果汁罐')
     expect(html).not.toContain('clean cup')
   })
+
+  it('shows service counts before route roles when a busy along-route Region precedes a smaller endpoint', () => {
+    const tranquilCustomerIds = Array.from(
+      { length: 10 },
+      (_, index) => 'tranquil-' + (index + 1),
+    )
+    const remainingPlan = buildRemainingSalesTripPlan({
+      recipeAssignments: [
+        {
+          recipeId: 'recipe-a',
+          recipeName: 'A',
+          customerIds: [
+            ...tranquilCustomerIds,
+            'ibex-endpoint',
+          ],
+        },
+      ],
+      suppliedCustomerIds: [],
+      originalTripServingCounts: [11],
+      activeWorkshop: {
+        id: 'workshop:east-harbor',
+        regionId: 'east-harbor',
+      },
+      topology: {
+        edges: [
+          {
+            from: 'east-harbor',
+            to: 'tranquil-fountain',
+            cost: 1,
+          },
+          {
+            from: 'tranquil-fountain',
+            to: 'ibex-statue',
+            cost: 1,
+          },
+        ],
+      },
+      customerRegionById: {
+        ...Object.fromEntries(
+          tranquilCustomerIds.map((customerId) => [
+            customerId,
+            'tranquil-fountain',
+          ] as const),
+        ),
+        'ibex-endpoint': 'ibex-statue',
+      },
+    })
+
+    const html = renderToStaticMarkup(
+      <RemainingSalesTripPlanBlock
+        plan={remainingPlan}
+        deliveryControls={{
+          plan: null,
+          cursor: null,
+          suppliedCustomerIds: [],
+          onChangeCustomer: () => {},
+          onChangeGroup: () => {},
+        }}
+      />,
+    )
+
+    expect(html).toContain('靜謐噴泉 · 10 人 · 沿途停靠')
+    expect(html).toContain('羱羊雕像 · 1 人 · 路線端點')
+    expect(html).not.toContain('主要 ·')
+    expect(html).not.toContain('順帶 ·')
+  })
 })
 
 describe('sales trip terminal leftover UI', () => {
@@ -1859,9 +1925,11 @@ describe('sales trip terminal leftover UI', () => {
 
     expect(html).toContain('工作間')
     expect(html).toContain('羱羊雕像')
-    expect(html).toContain('主要 · 東港村')
-    expect(html).toContain('主要 · 羱羊雕像')
-    expect(html).toContain('途經 · 靜謐噴泉')
+    expect(html).toContain('東港村 · 2 人 · 路線端點')
+    expect(html).toContain('羱羊雕像 · 2 人 · 路線端點')
+    expect(html).toContain('靜謐噴泉 · 途經')
+    expect(html).not.toContain('主要 ·')
+    expect(html).not.toContain('順帶 ·')
     expect(html).toContain('跨區路線邊')
     expect(html).toContain('裝罐')
     expect(html).toContain('沿用罐內成品')

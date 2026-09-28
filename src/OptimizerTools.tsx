@@ -5823,7 +5823,11 @@ export function SalesTripPlanBlock({
                         className="optimizer-sales-region-chip primary"
                         key={'primary-' + regionId}
                       >
-                        主要 · {regionDisplayName(regionId)}
+                        {regionDisplayName(regionId)} ·{' '}
+                        {regionTrip.services.find(
+                          (service) => service.regionId === regionId,
+                        )?.customerIds.length ?? 0}{' '}
+                        人 · 路線端點
                       </span>
                     ))}
                     {regionTrip.sideRegionIds.map((regionId) => (
@@ -5831,7 +5835,11 @@ export function SalesTripPlanBlock({
                         className="optimizer-sales-region-chip side"
                         key={'side-' + regionId}
                       >
-                        順帶 · {regionDisplayName(regionId)}
+                        {regionDisplayName(regionId)} ·{' '}
+                        {regionTrip.services.find(
+                          (service) => service.regionId === regionId,
+                        )?.customerIds.length ?? 0}{' '}
+                        人 · 沿途停靠
                       </span>
                     ))}
                     {regionTrip.transitRegionIds.map((regionId) => (
@@ -5839,7 +5847,7 @@ export function SalesTripPlanBlock({
                         className="optimizer-sales-region-chip transit"
                         key={'transit-' + regionId}
                       >
-                        途經 · {regionDisplayName(regionId)}
+                        {regionDisplayName(regionId)} · 途經
                       </span>
                     ))}
                   </span>
@@ -6098,7 +6106,11 @@ export function RemainingSalesTripPlanBlock({
                       className="optimizer-sales-region-chip primary"
                       key={'remaining-primary-' + regionId}
                     >
-                      主要 · {regionDisplayName(regionId)}
+                      {regionDisplayName(regionId)} ·{' '}
+                      {trip.services.find(
+                        (service) => service.regionId === regionId,
+                      )?.customerAssignments.length ?? 0}{' '}
+                      人 · 路線端點
                     </span>
                   ))}
                   {trip.sideRegionIds.map((regionId) => (
@@ -6106,7 +6118,11 @@ export function RemainingSalesTripPlanBlock({
                       className="optimizer-sales-region-chip side"
                       key={'remaining-side-' + regionId}
                     >
-                      順帶 · {regionDisplayName(regionId)}
+                      {regionDisplayName(regionId)} ·{' '}
+                      {trip.services.find(
+                        (service) => service.regionId === regionId,
+                      )?.customerAssignments.length ?? 0}{' '}
+                      人 · 沿途停靠
                     </span>
                   ))}
                   {trip.transitRegionIds.map((regionId) => (
@@ -6114,7 +6130,7 @@ export function RemainingSalesTripPlanBlock({
                       className="optimizer-sales-region-chip transit"
                       key={'remaining-transit-' + regionId}
                     >
-                      途經 · {regionDisplayName(regionId)}
+                      {regionDisplayName(regionId)} · 途經
                     </span>
                   ))}
                 </span>
@@ -6139,14 +6155,12 @@ export function RemainingSalesTripPlanBlock({
                     <header>
                       <div>
                         <strong>
+                          {regionDisplayName(service.regionId)} ·{' '}
+                          {service.customerAssignments.length} 人 ·{' '}
                           {service.role === 'primary'
-                            ? '主要'
-                            : '順帶'}{' '}
-                          · {regionDisplayName(service.regionId)}
+                            ? '路線端點'
+                            : '沿途停靠'}
                         </strong>
-                        <span>
-                          {service.customerAssignments.length} 人
-                        </span>
                       </div>
                     </header>
 
