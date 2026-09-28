@@ -148,7 +148,7 @@ describe('custom sales trip editor UI', () => {
     )
 
     expect(html).toContain('自訂販售趟次')
-    expect(html).toContain('還原自動方案')
+    expect(html).toContain('將草稿還原為自動方案')
     expect(html).toContain('移到既有趟次')
     expect(html).toContain('移到新趟')
     expect(html).toContain('上移')
@@ -189,6 +189,36 @@ describe('custom sales trip editor UI', () => {
     expect(html).toContain('目前使用自訂方案')
     expect(html).toContain('編輯自訂趟次')
     expect(html).not.toContain('開始自訂趟次')
+  })
+
+  it('keeps an applied custom plan active while editing and exposes an explicit auto-plan restore action', () => {
+    const applied = moveCustomTripCustomers(
+      baseline(),
+      ['east-b'],
+      'auto-trip-2',
+    )
+    const html = renderToStaticMarkup(
+      <CustomSalesTripEditor
+        autoBaseline={baseline()}
+        appliedPlan={applied}
+        validateDraft={() => ({
+          status: 'valid',
+          salesPlan: {} as never,
+          issues: [],
+        })}
+        customerLabel={(customerId) => customerId}
+        recipeLabel={(recipeId) => recipeId}
+        regionLabel={(regionId) => regionId}
+        defaultOpen
+        onRestoreAutoPlan={() => {}}
+        onAcceptValidatedDraft={() => {}}
+      />,
+    )
+
+    expect(html).toContain('目前已完成的自訂方案仍維持生效')
+    expect(html).toContain('將草稿還原為自動方案')
+    expect(html).toContain('改回自動方案')
+    expect(html).not.toContain('目前正式販售排程仍維持自動方案')
   })
 
   it('keeps the entry collapsed until the player chooses to edit', () => {
