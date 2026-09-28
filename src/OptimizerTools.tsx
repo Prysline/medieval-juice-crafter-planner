@@ -2209,6 +2209,26 @@ function OptimizerTools({
         })
         if (physical.status === 'invalid') return physical
 
+        if (
+          parsedMaxFillOperations !== undefined &&
+          Number.isFinite(parsedMaxFillOperations) &&
+          physical.salesPlan.productionJarFills.length >
+            parsedMaxFillOperations
+        ) {
+          return {
+            status: 'invalid',
+            salesPlan: null,
+            issues: [{
+              category: 'physical-realization',
+              message:
+                `這份自訂趟次需要 ${physical.salesPlan.productionJarFills.length} 次裝罐操作，超過目前設定的上限 ${parsedMaxFillOperations} 次。`,
+              suggestions: [
+                '調整趟次分組，或修改「最大裝罐操作次數」後重新規劃。',
+              ],
+            }],
+          }
+        }
+
         const candidateProductionLogistics =
           buildProductionLogisticsPlan(
             preparationShortfall,
