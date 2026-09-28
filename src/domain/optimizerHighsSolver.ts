@@ -181,6 +181,7 @@ export async function profileOptimizerSolveStages(
     stageTimeLimitSeconds?: number
     maxStages?: number
     aggregateEquivalentAssignmentsForProductionUnits?: boolean
+    initialProductionUnitsFix?: number
   } = {},
 ): Promise<OptimizerSolveProfile> {
   const startedAt = performance.now()
@@ -203,7 +204,16 @@ export async function profileOptimizerSolveStages(
   )
   const stageTimeLimitSeconds =
     options.stageTimeLimitSeconds ?? 12.5
-  const fixes: ObjectiveFix[] = []
+  const fixes: ObjectiveFix[] =
+    typeof options.initialProductionUnitsFix === 'number'
+      ? [{
+          objective: 'productionUnits',
+          value: Math.max(
+            0,
+            Math.round(options.initialProductionUnitsFix),
+          ),
+        }]
+      : []
   const stages: OptimizerSolveStageProfile[] = []
   let currentDomain = domain
   let stoppedAtObjective: string | null = null
