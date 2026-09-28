@@ -1907,6 +1907,45 @@ function OptimizerTools({
     setDeliveryUiState({ status: 'idle' })
   }
 
+  function restoreAutoSalesPlan() {
+    setRunState((current) => {
+      if (
+        current.status !== 'success' ||
+        !current.appliedCustomPlan
+      ) {
+        return current
+      }
+
+      const built = current.buildAppliedCustomTrip(
+        current.customTripAutoBaseline,
+        current.salesTripPlans.selected,
+        suppliedCustomerIds,
+      )
+      if (built.status === 'invalid') {
+        return {
+          ...current,
+          customTripApplyError: built.message,
+        }
+      }
+
+      return {
+        ...current,
+        appliedCustomPlan: null,
+        customTripApplyError: null,
+        productionLogistics:
+          built.downstream.productionLogistics,
+        transactionDraft:
+          built.downstream.transactionDraft,
+        transactionDraftInvalidatedByPartialDelivery: false,
+        deliveryExecutionPlan:
+          built.downstream.deliveryExecutionPlan,
+        deliveryCursor: built.downstream.deliveryCursor,
+      }
+    })
+    setApplicationState({ status: 'idle' })
+    setDeliveryUiState({ status: 'idle' })
+  }
+
   async function runOptimizer() {
     if (
       customTripDraftDirty &&
@@ -3113,6 +3152,7 @@ function OptimizerTools({
           validateCustomTripDraft={runState.validateCustomTripDraft}
           onCustomTripDraftDirtyChange={setCustomTripDraftDirty}
           onAcceptCustomTripPlan={commitCustomTripPlan}
+          onRestoreAutoSalesPlan={restoreAutoSalesPlan}
           transactionDraft={runState.transactionDraft}
           transactionDraftInvalidatedByPartialDelivery={
             runState.transactionDraftInvalidatedByPartialDelivery
@@ -4380,6 +4420,7 @@ function OptimizerResultPanel({
   validateCustomTripDraft,
   onCustomTripDraftDirtyChange,
   onAcceptCustomTripPlan,
+  onRestoreAutoSalesPlan,
   transactionDraft,
   transactionDraftInvalidatedByPartialDelivery,
   deliveryExecutionPlan,
@@ -4412,6 +4453,7 @@ function OptimizerResultPanel({
       { status: 'valid' }
     >,
   ) => void
+  onRestoreAutoSalesPlan: () => void
   transactionDraft: PlanApplicationTransactionDraft | null
   transactionDraftInvalidatedByPartialDelivery: boolean
   deliveryExecutionPlan: DeliveryExecutionPlan | null
@@ -5083,6 +5125,7 @@ function OptimizerResultPanel({
         validateDraft={validateCustomTripDraft}
         applyError={customTripApplyError}
         onDraftDirtyChange={onCustomTripDraftDirtyChange}
+        onRestoreAutoPlan={onRestoreAutoSalesPlan}
         onAcceptValidatedDraft={onAcceptCustomTripPlan}
         customerLabel={customerLabel}
         recipeLabel={(recipeId) =>
