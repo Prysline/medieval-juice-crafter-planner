@@ -1837,7 +1837,12 @@ describe('plan application preview', () => {
     expect(html).toContain('本次成功試喝後轉正式')
     expect(html).toContain('娜內特')
     expect(html).toContain('魚販')
-    expect(html).toContain('任一項改變')
+    expect(html).toContain('套用代表整份規劃已完成')
+    expect(html).toContain('本次規劃中的所有顧客')
+    expect(html).toContain('試喝者也會轉為正式顧客')
+    expect(html).toContain('若目前狀態與規劃衝突')
+    expect(html).not.toContain('任一項改變')
+    expect(html).not.toContain('canonical basis')
   })
 })
 
