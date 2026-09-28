@@ -156,6 +156,29 @@ describe('responsiveness wiring regression', () => {
     )
   })
 
+  it('resets recipe pagination with the search query instead of a query effect', () => {
+    expect(appSource).toContain(
+      'function updateQuery(value: string) {\n    setQuery(value)\n    setRecipePage(1)\n  }',
+    )
+    expect(appSource).toContain('onQueryChange={updateQuery}')
+
+    const resetEffectStart = appSource.indexOf(
+      'useEffect(() => {\n    setRecipePage(1)\n  }, [',
+    )
+    const resetEffectEnd = appSource.indexOf('  ])', resetEffectStart)
+    const resetEffect = appSource.slice(resetEffectStart, resetEffectEnd)
+
+    expect(resetEffectStart).toBeGreaterThanOrEqual(0)
+    expect(resetEffectEnd).toBeGreaterThan(resetEffectStart)
+    expect(resetEffect).not.toContain('normalizedRecipeQuery')
+    expect(resetEffect).toContain('currentProgress')
+    expect(resetEffect).toContain('recipePriceFilter')
+    expect(resetEffect).toContain('recipeSourceFilter')
+    expect(appSource).toContain(
+      'startTransition(() => {\n      onQueryChange(value)\n    })',
+    )
+  })
+
   it('keeps urgent search typing local and the hidden optimizer memoized', () => {
     expect(appSource).toContain('const MemoizedOptimizerTools = memo(OptimizerTools)')
     expect(appSource).toContain('<MemoizedOptimizerTools')
