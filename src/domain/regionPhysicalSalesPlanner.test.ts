@@ -7,6 +7,7 @@ import type { PreparationDemand } from './preparationDemand'
 import { buildPreparationShortfall } from './preparationShortfall'
 import {
   buildRegionPhysicalSalesPlan,
+  describeRealizedRegionPhysicalSalesPlan,
   type RegionPhysicalSalesPlan,
 } from './regionPhysicalSalesPlanner'
 import { buildMultiTripReplenishmentPlan } from './multiTripReplenishment'
@@ -202,6 +203,105 @@ function assignmentPairs(
 }
 
 describe('region physical sales planner', () => {
+  it('describes an already-realized fixed-trip plan without changing its trip grouping or order', () => {
+    const salesDemand = demand([
+      {
+        recipeId: 'a',
+        recipeName: 'A',
+        customerIds: ['east-a', 'ibex-a'],
+      },
+      {
+        recipeId: 'b',
+        recipeName: 'B',
+        customerIds: ['east-b', 'ibex-b'],
+      },
+    ])
+    const jars: JuiceJarInventoryItem[] = [
+      { id: 'jar-1', recipeId: null, servings: 0 },
+      { id: 'jar-2', recipeId: null, servings: 0 },
+    ]
+    const stock = inventory(jars, 2)
+    const shortfall = buildPreparationShortfall(
+      salesDemand,
+      stock,
+      { finishedJuiceJarIds: jars.map((jar) => jar.id) },
+    )
+    const salesPlan = buildMultiTripReplenishmentPlan(
+      salesDemand,
+      'retain-and-wash',
+      jars,
+      { cleanCups: 2, usedCups: 0 },
+      shortfall,
+      {
+        mode: 'auto',
+        reservedSlots: 0,
+        minimumCarriedSlots: 0,
+      },
+      false,
+      {
+        fixedCustomerTrips: [
+          { customerIds: ['ibex-a', 'ibex-b'] },
+          { customerIds: ['east-a', 'east-b'] },
+        ],
+      },
+    )
+
+    const described =
+      describeRealizedRegionPhysicalSalesPlan({
+        demand: salesDemand,
+        salesPlan,
+        activeWorkshop: {
+          id: 'workshop:east-harbor',
+          regionId: 'east-harbor',
+        },
+        topology: {
+          edges: [
+            {
+              from: 'east-harbor',
+              to: 'tranquil-fountain',
+              cost: 1,
+            },
+            {
+              from: 'tranquil-fountain',
+              to: 'ibex-statue',
+              cost: 1,
+            },
+          ],
+        },
+        customerRegionById: {
+          'east-a': 'east-harbor',
+          'east-b': 'east-harbor',
+          'ibex-a': 'ibex-statue',
+          'ibex-b': 'ibex-statue',
+        },
+      })
+
+    expect(
+      described.trips.map((trip) =>
+        trip.physicalTrip.juiceJars.flatMap(
+          (load) => load.customerIds,
+        ),
+      ),
+    ).toEqual([
+      ['ibex-a', 'ibex-b'],
+      ['east-a', 'east-b'],
+    ])
+    expect(described.trips[0]?.servicedRegionIds).toEqual([
+      'ibex-statue',
+    ])
+    expect(described.trips[1]?.servicedRegionIds).toEqual([
+      'east-harbor',
+    ])
+    expect(described.routeCost).toBe(4)
+    expect(described.regionServiceIntent.trips).toHaveLength(2)
+    expect(assignmentPairs(described)).toEqual([
+      'a:east-a',
+      'a:ibex-a',
+      'b:east-b',
+      'b:ibex-b',
+    ])
+  })
+
   it('uses Region grouping to reduce repeated remote travel while the physical scheduler keeps jar continuation authoritative', () => {
     const salesDemand = demand([
       {
