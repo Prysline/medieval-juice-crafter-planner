@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { customerResidenceByCustomerId } from '../data/customerResidences'
 import type {
   InventoryState,
   JuiceJarInventoryItem,
@@ -7,6 +8,7 @@ import type { PreparationDemand } from './preparationDemand'
 import { buildPreparationShortfall } from './preparationShortfall'
 import {
   buildRegionPhysicalSalesPlan,
+  compareRegionPhysicalSalesPlanScores,
   describeRealizedRegionPhysicalSalesPlan,
   type RegionPhysicalSalesPlan,
 } from './regionPhysicalSalesPlanner'
@@ -202,6 +204,85 @@ function assignmentPairs(
     .sort()
 }
 
+function buildEastHarborPlan(
+  recipes: Array<{
+    recipeId: string
+    recipeName: string
+    customerIds: string[]
+  }>,
+  cleanCups: number,
+  customerResidenceById?: Readonly<Record<string, string>>,
+): RegionPhysicalSalesPlan {
+  const salesDemand = demand(recipes)
+  const jarCount = Math.max(1, recipes.length)
+  const jars: JuiceJarInventoryItem[] = Array.from(
+    { length: jarCount },
+    (_, index) => ({
+      id: `jar-${index + 1}`,
+      recipeId: null,
+      servings: 0,
+    }),
+  )
+  const stock = inventory(jars, cleanCups)
+  const shortfall = buildPreparationShortfall(
+    salesDemand,
+    stock,
+    { finishedJuiceJarIds: jars.map((jar) => jar.id) },
+  )
+  const customerRegionById = Object.fromEntries(
+    recipes.flatMap((recipe) =>
+      recipe.customerIds.map((customerId) => [
+        customerId,
+        'east-harbor',
+      ]),
+    ),
+  )
+
+  return buildRegionPhysicalSalesPlan({
+    demand: salesDemand,
+    shortfall,
+    policy: 'retain-and-wash',
+    availableJuiceJarInventory: jars,
+    cups: { cleanCups, usedCups: 0 },
+    carryPolicy: {
+      mode: 'auto',
+      reservedSlots: 0,
+      minimumCarriedSlots: 0,
+    },
+    allowDiscardRetainedJuice: false,
+    activeWorkshop: {
+      id: 'workshop:east-harbor',
+      regionId: 'east-harbor',
+    },
+    topology: {
+      edges: [],
+    },
+    customerRegionById,
+    customerResidenceById,
+  })
+}
+
+function tripNumberForCustomer(
+  plan: RegionPhysicalSalesPlan,
+  customerId: string,
+): number | undefined {
+  return plan.trips.find((trip) =>
+    trip.physicalTrip.juiceJars.some((load) =>
+      load.customerIds.includes(customerId),
+    ),
+  )?.tripNumber
+}
+
+function tripCustomerSignature(
+  plan: RegionPhysicalSalesPlan,
+): string[][] {
+  return plan.trips.map((trip) =>
+    trip.physicalTrip.juiceJars.flatMap(
+      (load) => load.customerIds,
+    ),
+  )
+}
+
 describe('region physical sales planner', () => {
   it('describes an already-realized fixed-trip plan without changing its trip grouping or order', () => {
     const salesDemand = demand([
@@ -300,6 +381,211 @@ describe('region physical sales planner', () => {
       'b:east-b',
       'b:ibex-b',
     ])
+  })
+
+  it('keeps route cost and trip count ahead of residence cohesion, then residence cohesion ahead of Region fragmentation', () => {
+    expect(
+      compareRegionPhysicalSalesPlanScores(
+        {
+          routeCost: 6,
+          tripCount: 2,
+          sameRecipeResidenceFragmentation: 0,
+          serviceFragmentation: 0,
+        },
+        {
+          routeCost: 4,
+          tripCount: 2,
+          sameRecipeResidenceFragmentation: 3,
+          serviceFragmentation: 3,
+        },
+      ),
+    ).toBeGreaterThan(0)
+
+    expect(
+      compareRegionPhysicalSalesPlanScores(
+        {
+          routeCost: 4,
+          tripCount: 3,
+          sameRecipeResidenceFragmentation: 0,
+          serviceFragmentation: 0,
+        },
+        {
+          routeCost: 4,
+          tripCount: 2,
+          sameRecipeResidenceFragmentation: 2,
+          serviceFragmentation: 2,
+        },
+      ),
+    ).toBeGreaterThan(0)
+
+    expect(
+      compareRegionPhysicalSalesPlanScores(
+        {
+          routeCost: 4,
+          tripCount: 2,
+          sameRecipeResidenceFragmentation: 0,
+          serviceFragmentation: 2,
+        },
+        {
+          routeCost: 4,
+          tripCount: 2,
+          sameRecipeResidenceFragmentation: 1,
+          serviceFragmentation: 0,
+        },
+      ),
+    ).toBeLessThan(0)
+  })
+
+  it('keeps two same-recipe residents together when a whole-group two-trip realization exists', () => {
+    const plan = buildEastHarborPlan(
+      [
+        {
+          recipeId: 'a',
+          recipeName: 'A',
+          customerIds: [
+            'family-1',
+            'single-1',
+            'family-2',
+            'single-2',
+          ],
+        },
+      ],
+      2,
+      {
+        'family-1': 'east-harbor-residence-family',
+        'family-2': 'east-harbor-residence-family',
+        'single-1': 'east-harbor-residence-single-1',
+        'single-2': 'east-harbor-residence-single-2',
+      },
+    )
+
+    expect(plan.routeCost).toBe(0)
+    expect(plan.tripCount).toBe(2)
+    expect(plan.sameRecipeResidenceFragmentation).toBe(0)
+    expect(tripNumberForCustomer(plan, 'family-1')).toBe(
+      tripNumberForCustomer(plan, 'family-2'),
+    )
+  })
+
+  it('keeps the canonical East Harbor residence 8 trio together and stays deterministic', () => {
+    const recipes = [
+      {
+        recipeId: 'a',
+        recipeName: 'A',
+        customerIds: ['harry', 'eric', 'lizzie', 'zenobia'],
+      },
+    ]
+    const first = buildEastHarborPlan(
+      recipes,
+      3,
+      customerResidenceByCustomerId,
+    )
+    const second = buildEastHarborPlan(
+      recipes,
+      3,
+      customerResidenceByCustomerId,
+    )
+
+    expect(first.routeCost).toBe(0)
+    expect(first.tripCount).toBe(2)
+    expect(first.sameRecipeResidenceFragmentation).toBe(0)
+    expect(tripNumberForCustomer(first, 'harry')).toBe(
+      tripNumberForCustomer(first, 'lizzie'),
+    )
+    expect(tripNumberForCustomer(first, 'harry')).toBe(
+      tripNumberForCustomer(first, 'zenobia'),
+    )
+    expect(tripCustomerSignature(first)).toEqual(
+      tripCustomerSignature(second),
+    )
+  })
+
+  it('does not treat same-recipe customers at different residences as one residence group', () => {
+    const plan = buildEastHarborPlan(
+      [
+        {
+          recipeId: 'a',
+          recipeName: 'A',
+          customerIds: ['harry', 'eric'],
+        },
+      ],
+      1,
+      customerResidenceByCustomerId,
+    )
+
+    expect(plan.tripCount).toBe(2)
+    expect(plan.sameRecipeResidenceFragmentation).toBe(0)
+  })
+
+  it('does not merge same-residence customers across different recipes or change recipe assignment', () => {
+    const plan = buildEastHarborPlan(
+      [
+        {
+          recipeId: 'a',
+          recipeName: 'A',
+          customerIds: ['same-a', 'a-other'],
+        },
+        {
+          recipeId: 'b',
+          recipeName: 'B',
+          customerIds: ['same-b', 'b-other'],
+        },
+      ],
+      2,
+      {
+        'same-a': 'east-harbor-residence-shared',
+        'same-b': 'east-harbor-residence-shared',
+        'a-other': 'east-harbor-residence-a',
+        'b-other': 'east-harbor-residence-b',
+      },
+    )
+
+    expect(plan.sameRecipeResidenceFragmentation).toBe(0)
+    expect(assignmentPairs(plan)).toEqual([
+      'a:a-other',
+      'a:same-a',
+      'b:b-other',
+      'b:same-b',
+    ])
+  })
+
+  it('allows an oversized residence group to split without increasing the minimum trip count', () => {
+    const recipes = [
+      {
+        recipeId: 'a',
+        recipeName: 'A',
+        customerIds: [
+          'family-1',
+          'single',
+          'family-2',
+          'family-3',
+        ],
+      },
+    ]
+    const baseline = buildEastHarborPlan(recipes, 2)
+    const cohesive = buildEastHarborPlan(
+      recipes,
+      2,
+      {
+        'family-1': 'east-harbor-residence-family',
+        'family-2': 'east-harbor-residence-family',
+        'family-3': 'east-harbor-residence-family',
+        single: 'east-harbor-residence-single',
+      },
+    )
+
+    expect(cohesive.routeCost).toBe(baseline.routeCost)
+    expect(cohesive.tripCount).toBe(baseline.tripCount)
+    expect(cohesive.tripCount).toBe(2)
+    expect(cohesive.sameRecipeResidenceFragmentation).toBe(1)
+    expect(
+      new Set(
+        ['family-1', 'family-2', 'family-3'].map(
+          (customerId) =>
+            tripNumberForCustomer(cohesive, customerId),
+        ),
+      ).size,
+    ).toBe(2)
   })
 
   it('uses Region grouping to reduce repeated remote travel while the physical scheduler keeps jar continuation authoritative', () => {

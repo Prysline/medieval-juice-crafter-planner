@@ -56,8 +56,26 @@ export interface RegionPhysicalSalesTrip {
   routeCost: number
 }
 
-export interface RegionPhysicalSalesPlan
+export interface RegionPhysicalSalesPlanScore
   extends RegionServicePlanScore {
+  sameRecipeResidenceFragmentation: number
+}
+
+export function compareRegionPhysicalSalesPlanScores(
+  a: RegionPhysicalSalesPlanScore,
+  b: RegionPhysicalSalesPlanScore,
+): number {
+  return (
+    a.routeCost - b.routeCost ||
+    a.tripCount - b.tripCount ||
+    a.sameRecipeResidenceFragmentation -
+      b.sameRecipeResidenceFragmentation ||
+    a.serviceFragmentation - b.serviceFragmentation
+  )
+}
+
+export interface RegionPhysicalSalesPlan
+  extends RegionPhysicalSalesPlanScore {
   activeWorkshop: ActiveWorkshop
   regionServiceIntent: RegionServicePlan
   requiredByRegion: RegionRequiredService[]
@@ -78,6 +96,9 @@ export interface BuildRegionPhysicalSalesPlanInput {
     edges: readonly RegionTopologyEdge[]
   }
   customerRegionById: Readonly<Record<string, RegionId>>
+  customerResidenceById?: Readonly<
+    Record<string, string | null | undefined>
+  >
 }
 
 function regionForCustomer(
@@ -231,9 +252,39 @@ function customerPreferenceSignature(
     .join('|')
 }
 
+function residenceCohesionGroupByCustomerId(
+  input: BuildRegionPhysicalSalesPlanInput,
+): Readonly<Record<string, string>> | undefined {
+  if (!input.customerResidenceById) return undefined
+
+  return Object.fromEntries(
+    input.demand.recipes.flatMap((recipe) =>
+      recipe.customerIds.map((customerId) => {
+        const residenceId =
+          input.customerResidenceById?.[customerId]
+        if (!residenceId) {
+          throw new Error(
+            `Missing residence identity for customer ${customerId}`,
+          )
+        }
+        const regionId = regionForCustomer(
+          customerId,
+          input.customerRegionById,
+        )
+        return [
+          customerId,
+          `${recipe.recipeId}\u001f${regionId}\u001f${residenceId}`,
+        ] as const
+      }),
+    ),
+  )
+}
+
 function reorderRecipeCustomers(
   recipe: PreparationRecipeDemand,
   preferenceByCustomerId: Readonly<Record<string, number>>,
+  cohesionGroupByCustomerId?:
+    Readonly<Record<string, string>>,
 ): PreparationRecipeDemand {
   const originalIndex = new Map(
     recipe.customerIds.map((customerId, index) => [
@@ -241,6 +292,14 @@ function reorderRecipeCustomers(
       index,
     ]),
   )
+  const firstIndexByCohesionGroup = new Map<string, number>()
+  recipe.customerIds.forEach((customerId, index) => {
+    const group =
+      cohesionGroupByCustomerId?.[customerId]
+    if (group && !firstIndexByCohesionGroup.has(group)) {
+      firstIndexByCohesionGroup.set(group, index)
+    }
+  })
 
   return {
     ...recipe,
@@ -250,6 +309,18 @@ function reorderRecipeCustomers(
           Number.MAX_SAFE_INTEGER) -
           (preferenceByCustomerId[b] ??
             Number.MAX_SAFE_INTEGER) ||
+        (
+          firstIndexByCohesionGroup.get(
+            cohesionGroupByCustomerId?.[a] ?? '',
+          ) ??
+          (originalIndex.get(a) ?? 0)
+        ) -
+          (
+            firstIndexByCohesionGroup.get(
+              cohesionGroupByCustomerId?.[b] ?? '',
+            ) ??
+            (originalIndex.get(b) ?? 0)
+          ) ||
         (originalIndex.get(a) ?? 0) -
           (originalIndex.get(b) ?? 0),
     ),
@@ -259,6 +330,8 @@ function reorderRecipeCustomers(
 function demandForRegionServicePlan(
   demand: PreparationDemand,
   preferenceByCustomerId: Readonly<Record<string, number>>,
+  cohesionGroupByCustomerId?:
+    Readonly<Record<string, string>>,
 ): PreparationDemand {
   return {
     ...demand,
@@ -266,6 +339,7 @@ function demandForRegionServicePlan(
       reorderRecipeCustomers(
         recipe,
         preferenceByCustomerId,
+        cohesionGroupByCustomerId,
       ),
     ),
   }
@@ -276,11 +350,18 @@ function describePhysicalTrips(
   activeWorkshop: ActiveWorkshop,
   topology: { edges: readonly RegionTopologyEdge[] },
   customerRegionById: Readonly<Record<string, RegionId>>,
+  customerResidenceById?: Readonly<
+    Record<string, string | null | undefined>
+  >,
 ): {
   trips: RegionPhysicalSalesTrip[]
-  score: RegionServicePlanScore
+  score: RegionPhysicalSalesPlanScore
 } {
   const serviceCountByRegion = new Map<RegionId, number>()
+  const tripNumbersByResidenceGroup = new Map<
+    string,
+    Set<number>
+  >()
 
   const trips = salesPlan.trips.map(
     (physicalTrip): RegionPhysicalSalesTrip => {
@@ -296,6 +377,25 @@ function describePhysicalTrips(
             ),
           })),
       )
+      if (customerResidenceById) {
+        for (const assignment of assignments) {
+          const residenceId =
+            customerResidenceById[assignment.customerId]
+          if (!residenceId) {
+            throw new Error(
+              `Missing residence identity for customer ${assignment.customerId}`,
+            )
+          }
+          const groupKey =
+            `${assignment.recipeId}\u001f${assignment.regionId}\u001f${residenceId}`
+          const tripNumbers =
+            tripNumbersByResidenceGroup.get(groupKey) ??
+            new Set<number>()
+          tripNumbers.add(physicalTrip.tripNumber)
+          tripNumbersByResidenceGroup.set(groupKey, tripNumbers)
+        }
+      }
+
       const servicedRegionIds = [
         ...new Set(
           assignments.map(
@@ -384,6 +484,13 @@ function describePhysicalTrips(
         0,
       ),
       tripCount: trips.length,
+      sameRecipeResidenceFragmentation: [
+        ...tripNumbersByResidenceGroup.values(),
+      ].reduce(
+        (sum, tripNumbers) =>
+          sum + Math.max(0, tripNumbers.size - 1),
+        0,
+      ),
       serviceFragmentation: [
         ...serviceCountByRegion.values(),
       ].reduce(
@@ -403,6 +510,9 @@ export interface DescribeRealizedRegionPhysicalSalesPlanInput {
     edges: readonly RegionTopologyEdge[]
   }
   customerRegionById: Readonly<Record<string, RegionId>>
+  customerResidenceById?: Readonly<
+    Record<string, string | null | undefined>
+  >
 }
 
 /**
@@ -421,6 +531,7 @@ export function describeRealizedRegionPhysicalSalesPlan(
     input.activeWorkshop,
     input.topology,
     input.customerRegionById,
+    input.customerResidenceById,
   )
   const customerAssignments =
     input.demand.recipes.flatMap((recipe) =>
@@ -487,6 +598,8 @@ export function describeRealizedRegionPhysicalSalesPlan(
     trips: realized.trips,
     routeCost: realized.score.routeCost,
     tripCount: realized.score.tripCount,
+    sameRecipeResidenceFragmentation:
+      realized.score.sameRecipeResidenceFragmentation,
     serviceFragmentation:
       realized.score.serviceFragmentation,
   }
@@ -1030,6 +1143,8 @@ function buildPhysicalPlan(
   input: BuildRegionPhysicalSalesPlanInput,
   demand: PreparationDemand,
   preferenceByCustomerId?: Readonly<Record<string, number>>,
+  cohesionGroupByCustomerId?:
+    Readonly<Record<string, string>>,
 ): MultiTripReplenishmentPlan {
   return buildMultiTripReplenishmentPlan(
     demand,
@@ -1042,6 +1157,8 @@ function buildPhysicalPlan(
     {
       customerTripPreferenceById:
         preferenceByCustomerId,
+      customerTripCohesionGroupById:
+        cohesionGroupByCustomerId,
     },
   )
 }
@@ -1053,6 +1170,8 @@ export function buildRegionPhysicalSalesPlan(
     input,
     input.demand,
   )
+  const residenceCohesionGroups =
+    residenceCohesionGroupByCustomerId(input)
   const abstractPhysicalCapacity = Math.max(
     1,
     ...baselineSalesPlan.trips.map(
@@ -1090,7 +1209,7 @@ export function buildRegionPhysicalSalesPlan(
       ) === index
     )
   })
-  const regionPreferenceCandidates = [
+  const baseRegionPreferenceCandidates = [
     ...regionServiceIntents
       .flatMap((regionServiceIntent) => [
         {
@@ -1153,12 +1272,34 @@ export function buildRegionPhysicalSalesPlan(
       ) === index
     )
   })
+  const regionPreferenceCandidates =
+    baseRegionPreferenceCandidates.flatMap((candidate) =>
+      residenceCohesionGroups
+        ? [
+            {
+              ...candidate,
+              cohesionGroupByCustomerId: undefined,
+            },
+            {
+              ...candidate,
+              cohesionGroupByCustomerId:
+                residenceCohesionGroups,
+            },
+          ]
+        : [
+            {
+              ...candidate,
+              cohesionGroupByCustomerId: undefined,
+            },
+          ],
+    )
 
   const baseline = describePhysicalTrips(
     baselineSalesPlan,
     input.activeWorkshop,
     input.topology,
     input.customerRegionById,
+    input.customerResidenceById,
   )
   let selected = {
     salesPlan: baselineSalesPlan,
@@ -1170,11 +1311,13 @@ export function buildRegionPhysicalSalesPlan(
     const {
       regionServiceIntent,
       preferenceByCustomerId,
+      cohesionGroupByCustomerId,
     } = candidate
     const regionOrderedDemand =
       demandForRegionServicePlan(
         input.demand,
         preferenceByCustomerId,
+        cohesionGroupByCustomerId,
       )
     let regionSalesPlan: MultiTripReplenishmentPlan
     try {
@@ -1182,6 +1325,7 @@ export function buildRegionPhysicalSalesPlan(
         input,
         regionOrderedDemand,
         preferenceByCustomerId,
+        cohesionGroupByCustomerId,
       )
     } catch (error) {
       if (error instanceof PlanningUserError) {
@@ -1194,10 +1338,11 @@ export function buildRegionPhysicalSalesPlan(
       input.activeWorkshop,
       input.topology,
       input.customerRegionById,
+      input.customerResidenceById,
     )
 
     if (
-      compareRegionServicePlanScores(
+      compareRegionPhysicalSalesPlanScores(
         regional.score,
         selected.realized.score,
       ) < 0
@@ -1221,6 +1366,8 @@ export function buildRegionPhysicalSalesPlan(
     trips: selected.realized.trips,
     routeCost: selected.realized.score.routeCost,
     tripCount: selected.realized.score.tripCount,
+    sameRecipeResidenceFragmentation:
+      selected.realized.score.sameRecipeResidenceFragmentation,
     serviceFragmentation:
       selected.realized.score.serviceFragmentation,
   }

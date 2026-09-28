@@ -123,6 +123,14 @@ export interface MultiTripReplenishmentOptions {
    */
   customerTripPreferenceById?: Readonly<Record<string, number>>
   /**
+   * Optional soft cohesion identity inside one preferred service phase.
+   * Customers with the same group are kept as one sales prefix whenever a
+   * whole-group boundary fits the current physical trip. The scheduler may
+   * still split a group when the group itself exceeds jar / cup feasibility.
+   * This is ignored by fixed custom-trip execution.
+   */
+  customerTripCohesionGroupById?: Readonly<Record<string, string>>
+  /**
    * Strong downstream authority used by the custom-trip editor.
    *
    * Every assigned customer must appear exactly once. Array order is execution
@@ -1620,6 +1628,45 @@ function preferredCustomerPrefixServings(
   return Math.max(1, Math.min(load.servings, count))
 }
 
+function preferredCustomerCohesionBoundaries(
+  load: MultiTripJuiceJarLoad,
+  preferredServings: number,
+  cohesionGroupByCustomerId?:
+    Readonly<Record<string, string>>,
+): number[] {
+  if (
+    !cohesionGroupByCustomerId ||
+    preferredServings <= 0 ||
+    load.customerIds.length === 0
+  ) {
+    return [preferredServings]
+  }
+
+  const prefixCustomerIds = load.customerIds.slice(
+    0,
+    preferredServings,
+  )
+  if (prefixCustomerIds.length === 0) return [preferredServings]
+
+  const boundaries: number[] = []
+  let previousGroup =
+    cohesionGroupByCustomerId[prefixCustomerIds[0]] ??
+    `customer:${prefixCustomerIds[0]}`
+
+  for (let index = 1; index < prefixCustomerIds.length; index += 1) {
+    const customerId = prefixCustomerIds[index]
+    const group =
+      cohesionGroupByCustomerId[customerId] ??
+      `customer:${customerId}`
+    if (group === previousGroup) continue
+    boundaries.push(index)
+    previousGroup = group
+  }
+  boundaries.push(prefixCustomerIds.length)
+
+  return boundaries
+}
+
 function buildTrips(
   queues: JarQueue[],
   policy: UsedCupTripPolicy,
@@ -1628,6 +1675,8 @@ function buildTrips(
   orderMode: TripCandidateOrderMode = 'baseline',
   customerTripPreferenceById?: Readonly<Record<string, number>>,
   fixedCustomerTrips?: readonly FixedCustomerTripConstraint[],
+  customerTripCohesionGroupById?:
+    Readonly<Record<string, string>>,
 ): {
   trips: MutableTrip[]
   finalCupState: CupState
@@ -1789,30 +1838,60 @@ function buildTrips(
 
       let servingsForTrip = preferredServings
       if (!fullTransition) {
-        const preferredSegmentFitsAlone = simulateCupTrip(
-          cupState,
-          preferredServings,
-          policy,
-          jarSlotsFor(1),
-        )
-        if (preferredSegmentFitsAlone) continue
-
+        const cohesionBoundaries =
+          preferredCustomerCohesionBoundaries(
+            jar,
+            preferredServings,
+            customerTripCohesionGroupById,
+          )
         servingsForTrip = 0
+
         for (
-          let partialServings = preferredServings - 1;
-          partialServings > 0;
-          partialServings -= 1
+          let boundaryIndex = cohesionBoundaries.length - 2;
+          boundaryIndex >= 0;
+          boundaryIndex -= 1
         ) {
-          const partialTransition = simulateCupTrip(
+          const wholeGroupPrefix =
+            cohesionBoundaries[boundaryIndex] ?? 0
+          const wholeGroupTransition = simulateCupTrip(
             cupState,
-            trip.totalServings + partialServings,
+            trip.totalServings + wholeGroupPrefix,
             policy,
             proposedJarSlots,
           )
-          if (!partialTransition) continue
+          if (!wholeGroupTransition) continue
 
-          servingsForTrip = partialServings
+          servingsForTrip = wholeGroupPrefix
           break
+        }
+
+        if (servingsForTrip === 0) {
+          const firstGroupServings =
+            cohesionBoundaries[0] ?? preferredServings
+          const firstGroupFitsAlone = simulateCupTrip(
+            cupState,
+            firstGroupServings,
+            policy,
+            jarSlotsFor(1),
+          )
+          if (firstGroupFitsAlone) continue
+
+          for (
+            let partialServings = firstGroupServings - 1;
+            partialServings > 0;
+            partialServings -= 1
+          ) {
+            const partialTransition = simulateCupTrip(
+              cupState,
+              trip.totalServings + partialServings,
+              policy,
+              proposedJarSlots,
+            )
+            if (!partialTransition) continue
+
+            servingsForTrip = partialServings
+            break
+          }
         }
         if (servingsForTrip === 0) continue
       }
@@ -2199,6 +2278,8 @@ function selectTerminalLeftoverTimingCandidate(
   discardedJuiceServings: number,
   customerTripPreferenceById?: Readonly<Record<string, number>>,
   fixedCustomerTrips?: readonly FixedCustomerTripConstraint[],
+  customerTripCohesionGroupById?:
+    Readonly<Record<string, string>>,
 ): ReturnType<typeof buildTrips> {
   try {
     const timingCandidate = buildTrips(
@@ -2209,6 +2290,7 @@ function selectTerminalLeftoverTimingCandidate(
       'terminal-leftovers-last',
       customerTripPreferenceById,
       fixedCustomerTrips,
+      customerTripCohesionGroupById,
     )
     const baselineMetrics = terminalLeftoverScheduleMetrics(
       baselineTripBuild.trips,
@@ -2607,6 +2689,10 @@ export function buildMultiTripReplenishmentPlan(
   const tripPreferenceByCustomerId =
     fixedTripPreference ??
     options.customerTripPreferenceById
+  const tripCohesionGroupByCustomerId =
+    fixedTripPreference
+      ? undefined
+      : options.customerTripCohesionGroupById
   const salesDemand = demandOrderedByTripPreference(
     demand,
     fixedTripPreference,
@@ -2671,6 +2757,7 @@ export function buildMultiTripReplenishmentPlan(
     'baseline',
     tripPreferenceByCustomerId,
     options.fixedCustomerTrips,
+    tripCohesionGroupByCustomerId,
   )
   const baselineSelectedTripBuild =
     selectTerminalLeftoverTimingCandidate(
@@ -2682,6 +2769,7 @@ export function buildMultiTripReplenishmentPlan(
       discardedJuiceServings,
       tripPreferenceByCustomerId,
       options.fixedCustomerTrips,
+      tripCohesionGroupByCustomerId,
     )
   let selectedTripBuild = baselineSelectedTripBuild
 
@@ -2698,6 +2786,7 @@ export function buildMultiTripReplenishmentPlan(
         'baseline',
         tripPreferenceByCustomerId,
         options.fixedCustomerTrips,
+        tripCohesionGroupByCustomerId,
       )
       const prefillSelectedTripBuild =
         selectTerminalLeftoverTimingCandidate(
@@ -2709,6 +2798,7 @@ export function buildMultiTripReplenishmentPlan(
           discardedJuiceServings,
           tripPreferenceByCustomerId,
           options.fixedCustomerTrips,
+          tripCohesionGroupByCustomerId,
         )
 
       if (
