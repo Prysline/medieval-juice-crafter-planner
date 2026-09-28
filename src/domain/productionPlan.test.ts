@@ -94,6 +94,52 @@ describe('production plan', () => {
     expect(result.machineOperations.seasoning).toBe(4)
   })
 
+  it('routes milk through the liquid blender as an additive step', () => {
+    const result = buildStockOffsetProductionPlan([
+      {
+        recipeId: 'lemon-milk',
+        recipeName: 'Lemon Milk',
+        ingredientIds: ['lemon', 'milk'],
+        juiceUnits: 5,
+        assignedServings: 10,
+      },
+    ])
+
+    expect(result.steps).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: 'juice:lemon',
+          kind: 'juicing',
+          equipment: '柑橘榨汁機',
+          quantity: 5,
+          operationCount: 1,
+        }),
+        expect.objectContaining({
+          key: 'liquid:lemon>milk',
+          kind: 'seasoning',
+          equipment: '液料調和器',
+          fromIngredientIds: ['lemon'],
+          toIngredientIds: ['lemon', 'milk'],
+          addedIngredientId: 'milk',
+          quantity: 5,
+          operationCount: 1,
+        }),
+        expect.objectContaining({
+          key: 'finish:lemon>milk',
+          kind: 'finalizing',
+          quantity: 5,
+          operationCount: 1,
+        }),
+      ]),
+    )
+    expect(result.recipeUsage[0]?.ingredientUnits).toEqual({
+      lemon: 5,
+      milk: 5,
+    })
+    expect(result.seasoningIngredientUnits).toEqual({})
+    expect(result.seasoningBaseJuiceUnits).toEqual({})
+  })
+
   it('builds two drink segments before blending and finalizing', () => {
     const result = buildProductionPlan([
       {
