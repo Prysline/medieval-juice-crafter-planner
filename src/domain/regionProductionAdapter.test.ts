@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   availableProductionWorkshopRegions,
+  productionCustomerResidenceById,
   productionRegionRoutingInput,
 } from './regionProductionAdapter'
 
@@ -62,5 +63,27 @@ describe('region production adapter', () => {
         'tranquil-fountain',
       ),
     ).toThrow(/not available/i)
+  })
+
+  it('maps production customers to their confirmed home residences', () => {
+    expect(
+      productionCustomerResidenceById([
+        'harry',
+        'lizzie',
+        'zenobia',
+        'daniel',
+        'thorsten',
+      ]),
+    ).toEqual({
+      harry: 'east-harbor-residence-8',
+      lizzie: 'east-harbor-residence-8',
+      zenobia: 'east-harbor-residence-8',
+      daniel: 'tranquil-fountain-residence-4',
+      thorsten: 'ibex-statue-residence-6',
+    })
+
+    expect(() =>
+      productionCustomerResidenceById(['unknown-customer']),
+    ).toThrow(/Missing residence identity/)
   })
 })

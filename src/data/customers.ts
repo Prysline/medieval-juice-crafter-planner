@@ -17,7 +17,7 @@ export const customers: Customer[] = [
   { id: 'pierre', name: '皮埃爾', occupation: '旅行者', villageId: 'east-harbor', satisfactionRequired: 0, preferences: [effect('清新口氣'), effect('增強免疫')] },
   { id: 'barti', name: '巴蒂', occupation: '孩童', villageId: 'east-harbor', satisfactionRequired: 0, preferences: [ingredient('薄荷'), effect('甜味')] },
   { id: 'fulbertus', name: '富爾貝圖斯', occupation: '麵包師', villageId: 'east-harbor', satisfactionRequired: 0, preferences: [effect('清新口氣')] },
-  { id: 'lizzie', name: '莉姬', occupation: '貴婦', villageId: 'east-harbor', satisfactionRequired: 0, preferences: [effect('甜味'), effect('增強免疫')] },
+  { id: 'lizzie', name: '莉婭', occupation: '貴婦', villageId: 'east-harbor', satisfactionRequired: 0, preferences: [effect('甜味'), effect('增強免疫')] },
   { id: 'thomas', name: '托馬斯', occupation: '漁夫', villageId: 'east-harbor', satisfactionRequired: 0, preferences: [effect('甜味'), effect('舒緩腸胃')] },
   {
     id: 'jack',
