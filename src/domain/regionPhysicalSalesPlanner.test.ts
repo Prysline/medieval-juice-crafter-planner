@@ -764,7 +764,7 @@ describe('region physical sales planner', () => {
   it('keeps bounded Region candidate search available when one physical jar starts non-empty', () => {
     const fixture = playerRegionRegressionDemand()
     const jars: JuiceJarInventoryItem[] = [
-      { id: 'jar-1', recipeId: 'load-22', servings: 1 },
+      { id: 'jar-1', recipeId: 'load-01', servings: 2 },
       { id: 'jar-2', recipeId: null, servings: 0 },
       { id: 'jar-3', recipeId: null, servings: 0 },
       { id: 'jar-4', recipeId: null, servings: 0 },
@@ -823,6 +823,7 @@ describe('region physical sales planner', () => {
             load.physicalJarId === 'jar-1' &&
             (
               load.fillAction === 'use-existing' ||
+              load.fillAction === 'refill-same-type' ||
               load.fillAction === 'continue-loaded'
             ),
         ),
