@@ -71,8 +71,11 @@ describe('Stage 9 and 10 observed progression', () => {
     )
   })
 
-  it('records milk as Stage 10 inventory data without inventing a recipe capability', () => {
+  it('records milk as a Stage 10 liquid-blender additive', () => {
     const milk = ingredients.find((item) => item.id === 'milk')
+    const milkCapability = recipeIngredientCapabilities.find(
+      (capability) => capability.ingredientId === 'milk',
+    )
 
     expect(milk).toMatchObject({
       name: '牛奶',
@@ -84,11 +87,11 @@ describe('Stage 9 and 10 observed progression', () => {
         { name: '強健骨骼', value: 3 },
       ],
     })
-    expect(
-      recipeIngredientCapabilities.some(
-        (capability) => capability.ingredientId === 'milk',
-      ),
-    ).toBe(false)
+    expect(milkCapability).toEqual({
+      ingredientId: 'milk',
+      roles: ['seasoning'],
+      additiveEquipment: '液料調和器',
+    })
   })
 
   it('records the liquid blender price and only the directly observed input categories', () => {
@@ -104,7 +107,9 @@ describe('Stage 9 and 10 observed progression', () => {
     expect(blender?.seller).toBeUndefined()
     expect(blender?.note).toContain('果汁')
     expect(blender?.note).toContain('牛奶、優格、蜂蜜')
-    expect(blender?.note).toContain('比例、產量')
-    expect(blender?.note).toContain('尚未確認')
+    expect(blender?.note).toContain('5 份果汁 + 5 份牛奶 → 5 份下一狀態')
+    expect(blender?.note).toContain('每份果汁追加 1 份牛奶')
+    expect(blender?.note).toContain('優格／蜂蜜')
+    expect(blender?.note).toContain('仍未確認')
   })
 })
