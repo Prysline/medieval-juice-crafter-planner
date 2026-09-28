@@ -2147,6 +2147,7 @@ function OptimizerTools({
           activeWorkshop: regionRouting.activeWorkshop,
           topology: regionRouting.topology,
           customerRegionById,
+          customerResidenceById,
         })
         const plan = regionPlan.salesPlan
         const actualJarFillOperations =
