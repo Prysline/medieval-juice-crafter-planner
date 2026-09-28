@@ -1,4 +1,4 @@
-import { Model, sum } from '@bubblyworld/highs-ts'
+import { HiGHS, Model, sum } from '@bubblyworld/highs-ts'
 import { PROCESSING_STACK_CAPACITY } from './inventoryRules'
 import { juiceStateIdentity } from './juiceStateIdentity'
 import {
@@ -1024,6 +1024,83 @@ function buildHighsStage(
     yByCustomerRecipe,
     operationByEdgeKey,
     inventoryShortfallByIngredientId,
+  }
+}
+
+
+export async function profileMaximumIngredientCostStage(
+  domain: BatchOptimizationModel,
+  productionUnitsFix: number,
+  timeLimitSeconds = 10.5,
+): Promise<{
+  recipeCount: number
+  customerCount: number
+  assignmentVariableCount: number
+  buildMs: number
+  serializeMs: number
+  parseMs: number
+  solveMs: number
+  status: string
+  objectiveValue: number | null
+}> {
+  const buildStartedAt = performance.now()
+  const built = buildHighsStage(
+    domain,
+    'negativeAssignedIngredientCost',
+    [{
+      objective: 'productionUnits',
+      value: Math.max(0, Math.round(productionUnitsFix)),
+    }],
+  )
+  const buildMs = performance.now() - buildStartedAt
+
+  const serializeStartedAt = performance.now()
+  const mps = built.model.print('mps')
+  const serializeMs = performance.now() - serializeStartedAt
+
+  const highs = await HiGHS.create()
+  let parseMs = 0
+  let solveMs = 0
+  let status = 'unknown'
+  let objectiveValue: number | null = null
+
+  try {
+    const parseStartedAt = performance.now()
+    await highs.parse(mps, 'mps')
+    parseMs = performance.now() - parseStartedAt
+    highs.setParam(
+      'time_limit',
+      Math.max(
+        0.1,
+        Number.isInteger(timeLimitSeconds)
+          ? timeLimitSeconds + 1e-6
+          : timeLimitSeconds,
+      ),
+    )
+
+    const solveStartedAt = performance.now()
+    const solution = await highs.solve()
+    solveMs = performance.now() - solveStartedAt
+    status = solution.status
+    objectiveValue =
+      typeof solution.objective === 'number' &&
+      Number.isFinite(solution.objective)
+        ? solution.objective
+        : null
+  } finally {
+    highs.free()
+  }
+
+  return {
+    recipeCount: domain.recipes.length,
+    customerCount: domain.serviceableCustomerIds.length,
+    assignmentVariableCount: built.yByCustomerRecipe.size,
+    buildMs,
+    serializeMs,
+    parseMs,
+    solveMs,
+    status,
+    objectiveValue,
   }
 }
 
