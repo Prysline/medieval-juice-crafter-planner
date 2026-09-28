@@ -63,6 +63,13 @@ describe('customer residence data', () => {
 
   it('uses the corrected East Harbor residence 8 canonical customer identity', () => {
     expect(
+      customers.find((customer) => customer.id === 'lizzie'),
+    ).toMatchObject({
+      name: '莉婭',
+      occupation: '貴婦',
+      villageId: 'east-harbor',
+    })
+    expect(
       customerResidences.find(
         (residence) =>
           residence.id === 'east-harbor-residence-8',
