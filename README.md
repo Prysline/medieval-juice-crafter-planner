@@ -61,6 +61,7 @@ opening
 src/
   data/
     customers.ts       # 顧客、喜好、分村滿意度門檻、作息觀察
+    customerResidences.ts # 已直接確認的 home residence／送貨停靠 identity；stable ID 帶 Region namespace，不代表距離或 NPC 當下位置
     ingredients.ts     # 原料價格、效果與 unlockedAt
     equipment.ts       # 設備、價格與 unlockedAt
     progress.ts        # canonical 主線進度節點與順序
@@ -107,7 +108,7 @@ src/
     multiTripReplenishment.ts # 持久果汁罐 ID、初始內容、多趟販售、實際裝罐時序、leftover / discard 與杯具 policy；P1-C 可接 generic customer-trip preference，但 physical feasibility / fill lifecycle 仍由本模組決定
     regionServicePlanner.ts # P1-B 純 Region route / service core；recipe assignment immutable，route cost → trip count → fragmentation
     regionPhysicalSalesPlanner.ts # P1-C：Region service intent → physical scheduler preference → realized Region trip annotation / comparator
-    regionProductionAdapter.ts # P1-D：目前 production Region 工作間、confirmed Region topology、customer.villageId → Region adapter
+    regionProductionAdapter.ts # P1-D + residence 1A：production Region 工作間／topology、customer.villageId → Region，以及 confirmed customer → residence adapter
     deliveryExecution.ts # Workflow-3A：physical sales plan → partial execution trace；Inventory I3 依既有 per-unit provenance 在實際 preparation 時消耗 planned intermediate stock，同一 prepared trip 不重複扣除
     scheduleRouteReadiness.ts # 作息觀察 normalization 與 route-data blockers
   storage/
