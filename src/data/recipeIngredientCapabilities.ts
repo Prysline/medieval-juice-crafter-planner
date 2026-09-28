@@ -7,6 +7,11 @@ export interface RecipeIngredientCapability {
   roles: RecipeIngredientRole[]
   /** 作為果汁基底時所需的第一段榨汁設備。 */
   baseEquipment?: '柑橘榨汁機' | '榨汁機'
+  /**
+   * `seasoning` 是「接在既有果汁後追加原料」的結構角色；
+   * 未指定時沿用調味器，液料原料可指定液料調和器。
+   */
+  additiveEquipment?: '調味器' | '液料調和器'
 }
 
 /**
@@ -19,8 +24,10 @@ export interface RecipeIngredientCapability {
  * 使用 left-deep Blender tree 執行。這些都是網站搜尋 budget / canonicalization，
  * 不是 simulator/evaluator 或遊戲規則的上限。
  *
- * 手動 simulator 與 SavedRecipe 仍可保留重複調味與更長 sequence；第二個
+ * 手動 simulator 與 SavedRecipe 仍可保留重複追加原料與更長 sequence；第二個
  * juice-base 代表下一杯飲料的 sequence 開始，整體以果汁調和器串接。
+ * `seasoning` 在這裡是序列結構角色，不等同於一定使用調味器；例如牛奶
+ * 也是追加型原料，但直接實測設備為液料調和器。
  *
  * 果汁調和器已確認可投入任意兩種果汁，比例／產量為 1:1:1、q = 1～5；
  * 網站把不同 drink segment 的 ordered sequence 依序 concat。成品特性可沿用
@@ -39,4 +46,9 @@ export const recipeIngredientCapabilities: RecipeIngredientCapability[] = [
   { ingredientId: 'mint', roles: ['seasoning'] },
   { ingredientId: 'cinnamon', roles: ['seasoning'] },
   { ingredientId: 'clove', roles: ['seasoning'] },
+  {
+    ingredientId: 'milk',
+    roles: ['seasoning'],
+    additiveEquipment: '液料調和器',
+  },
 ]
