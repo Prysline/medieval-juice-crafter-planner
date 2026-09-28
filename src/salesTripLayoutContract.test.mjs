@@ -17,6 +17,8 @@ describe('sales trip layout CSS contract', () => {
     )
 
     expect(bodyRule).toContain('display: grid')
+    expect(bodyRule).toContain('justify-content: stretch')
+    expect(bodyRule).toContain('align-items: stretch')
     expect(bodyRule).not.toContain('!important')
     expect(ruleBody('.optimizer-batch-card > div')).toContain('display: flex')
   })
