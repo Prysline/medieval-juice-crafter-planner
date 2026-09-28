@@ -258,10 +258,27 @@ const observedBatch = [
     equipment: ['榨汁機', '調味器', '果汁調和器', '果汁成品台'],
     usesBlender: true,
   },
+  {
+    id: 'cucumber-mint-banana-cinnamon-blend',
+    ingredientIds: ['cucumber', 'mint', 'banana', 'cinnamon'],
+    ingredients: ['黃瓜', '薄荷', '香蕉', '肉桂'],
+    observedDisplayName: '血糖平衡 舞韻',
+    unlockedAt: 'ibex-statue-unlocked',
+    salePrice: 81,
+    effects: [
+      { name: '調節血糖', value: 5 },
+      { name: '輔助瘦身', value: 4 },
+      { name: '補充精力', value: 4 },
+      { name: '紓解壓力', value: 4 },
+      { name: '清新口氣', value: 4 },
+    ],
+    equipment: ['榨汁機', '調味器', '果汁調和器', '果汁成品台'],
+    usesBlender: true,
+  },
 ] as const
 
 describe('2026-09-28 late-game observed recipe batch', () => {
-  it('stores all sixteen screenshots with the confirmed ordered ingredient identity', () => {
+  it('stores all seventeen screenshots with the confirmed ordered ingredient identity', () => {
     for (const observation of observedBatch) {
       expect(recipes.find((recipe) => recipe.id === observation.id)).toMatchObject({
         id: observation.id,
