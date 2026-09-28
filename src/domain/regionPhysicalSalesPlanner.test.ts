@@ -760,6 +760,78 @@ describe('region physical sales planner', () => {
     ).toBe(true)
   })
 
+
+  it('keeps bounded Region candidate search available when one physical jar starts non-empty', () => {
+    const fixture = playerRegionRegressionDemand()
+    const jars: JuiceJarInventoryItem[] = [
+      { id: 'jar-1', recipeId: 'load-01', servings: 2 },
+      { id: 'jar-2', recipeId: null, servings: 0 },
+      { id: 'jar-3', recipeId: null, servings: 0 },
+      { id: 'jar-4', recipeId: null, servings: 0 },
+    ]
+    const stock = inventory(jars, 20)
+    const shortfall = buildPreparationShortfall(
+      fixture.demand,
+      stock,
+      { finishedJuiceJarIds: jars.map((jar) => jar.id) },
+    )
+
+    const plan = buildRegionPhysicalSalesPlan({
+      demand: fixture.demand,
+      shortfall,
+      policy: 'retain-and-wash',
+      availableJuiceJarInventory: jars,
+      cups: { cleanCups: 20, usedCups: 0 },
+      carryPolicy: {
+        mode: 'auto',
+        reservedSlots: 0,
+        minimumCarriedSlots: 0,
+      },
+      allowDiscardRetainedJuice: false,
+      activeWorkshop: {
+        id: 'workshop:east-harbor',
+        regionId: 'east-harbor',
+      },
+      topology: {
+        edges: [
+          {
+            from: 'east-harbor',
+            to: 'tranquil-fountain',
+            cost: 1,
+          },
+          {
+            from: 'tranquil-fountain',
+            to: 'case-c',
+            cost: 1,
+          },
+        ],
+      },
+      customerRegionById: fixture.customerRegionById,
+    })
+
+    const servedCustomerIds = plan.salesPlan.trips.flatMap((trip) =>
+      trip.juiceJars.flatMap((load) => load.customerIds),
+    )
+
+    expect(plan.routeCost).toBe(16)
+    expect(plan.tripCount).toBe(8)
+    expect(new Set(servedCustomerIds).size).toBe(64)
+    expect(
+      plan.salesPlan.trips.some((trip) =>
+        trip.juiceJars.some(
+          (load) =>
+            load.physicalJarId === 'jar-1' &&
+            (
+              load.fillAction === 'use-existing' ||
+              load.fillAction === 'refill-same-type' ||
+              load.fillAction === 'continue-loaded'
+            ),
+        ),
+      ),
+    ).toBe(true)
+  })
+
+
   it('keeps recipe-to-customer assignment invariant when only the active workshop changes', () => {
     const salesDemand = demand([
       {

@@ -1845,6 +1845,64 @@ describe('multi-trip replenishment', () => {
     expectScheduleConsistency(result)
   })
 
+
+  it('partially serves one initial non-empty jar by Region preference and continues the same physical contents next trip', () => {
+    const salesDemand = namedRecipes(['A'], 4)
+    const jars: JuiceJarInventoryItem[] = [
+      {
+        id: 'jar-1',
+        recipeId: 'a',
+        servings: 4,
+      },
+    ]
+    const result = buildMultiTripReplenishmentPlanWithCups(
+      salesDemand,
+      'retain-and-wash',
+      jars,
+      { cleanCups: 4, usedCups: 0 },
+      shortfallFor(salesDemand, jars),
+      undefined,
+      false,
+      {
+        customerTripPreferenceById: {
+          'a-customer-1': 1,
+          'a-customer-2': 1,
+          'a-customer-3': 2,
+          'a-customer-4': 2,
+        },
+      },
+    )
+
+    expect(result.tripCount).toBe(2)
+    expect(result.trips[0]?.juiceJars).toEqual([
+      expect.objectContaining({
+        physicalJarId: 'jar-1',
+        recipeId: 'a',
+        customerIds: ['a-customer-1', 'a-customer-2'],
+        servings: 2,
+        retainedLeftoverServings: 2,
+        plannedFillServings: 0,
+        fillAction: 'use-existing',
+      }),
+    ])
+    expect(result.trips[1]?.juiceJars).toEqual([
+      expect.objectContaining({
+        physicalJarId: 'jar-1',
+        recipeId: 'a',
+        customerIds: ['a-customer-3', 'a-customer-4'],
+        servings: 2,
+        retainedLeftoverServings: 0,
+        plannedFillServings: 0,
+        fillAction: 'continue-loaded',
+      }),
+    ])
+    expect(result.productionJarFills).toEqual([])
+    expect(result.jarTypeSwitches).toBe(0)
+    expect(result.discardedInitialJuice).toEqual([])
+    expect(result.leftoverJarContents).toEqual([])
+    expectScheduleConsistency(result)
+  })
+
   it('keeps complete prepared loads intact when each can fit on its own trip', () => {
     const result = buildPlan(
       namedRecipes(['A'], 15),
