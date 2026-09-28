@@ -5241,23 +5241,13 @@ function OptimizerResultPanel({
         </div>
 
         <p className="optimizer-boundary-note">
-          只沿用這份完整規劃已固定的顧客 → 配方分配，排除「今日已供應」後重新安排 Region／趟次；不重新選配方，也不重算製作、庫存、果汁罐或杯具。
+          沿用這份完整規劃既有的配方與其已分配顧客名單；排除「今日已供應」後，只重新安排未送顧客的 Region／趟次。既有配方分配不變，也不重算製作、庫存、果汁罐或杯具。
         </p>
 
         {remainingSalesTripPlan.recipes.length > 0 && (
-          <div
-            className="optimizer-sales-region-demand"
-            aria-label="剩餘販售需求"
-          >
-            {remainingSalesTripPlan.recipes.map((recipe) => (
-              <span key={'remaining-recipe-' + recipe.recipeId}>
-                <strong>
-                  {formatRecipeDisplayName(recipe.recipeName)}
-                </strong>
-                {recipe.servings} 杯
-              </span>
-            ))}
-          </div>
+          <RemainingSalesRecipeDemandBlock
+            recipes={remainingSalesTripPlan.recipes}
+          />
         )}
 
         {remainingSalesTripPlan.remainingCustomerCount === 0 ? (
@@ -5283,7 +5273,7 @@ function OptimizerResultPanel({
             {showRemainingSalesPlan && (
               <>
                 <small className="optimizer-boundary-note">
-                  沿用完整規劃的單趟服務規模：最多{' '}
+                  下方只在上述配方 → 顧客名單上重新分組 Region／趟次；沿用完整規劃的單趟服務規模：最多{' '}
                   {remainingSalesTripPlan.maxCustomerServicesPerTrip} 人。這只是剩餘行程的抽象分組上限，不代表目前實體果汁罐或杯具仍能承載相同數量。
                 </small>
                 <RemainingSalesTripPlanBlock
@@ -6049,6 +6039,48 @@ export function SalesTripPlanBlock({
   )
 }
 
+export function RemainingSalesRecipeDemandBlock({
+  recipes,
+}: {
+  recipes: RemainingSalesTripPlan['recipes']
+}) {
+  return (
+    <div
+      className="optimizer-remaining-recipe-list"
+      aria-label="剩餘販售需求"
+    >
+      {recipes.map((recipe) => {
+        const recipeName = formatRecipeDisplayName(recipe.recipeName)
+
+        return (
+          <article
+            className="optimizer-remaining-recipe-card"
+            aria-label={'剩餘配方 ' + recipeName}
+            key={'remaining-recipe-' + recipe.recipeId}
+          >
+            <header>
+              <div>
+                <strong>{recipeName}</strong>
+                <span>
+                  尚待 {recipe.servings} 杯 · {recipe.customerIds.length} 人
+                </span>
+              </div>
+            </header>
+            <div className="optimizer-delivery-customer-list">
+              {recipe.customerIds.map((customerId) => (
+                <SalesTripCustomerRow
+                  customerId={customerId}
+                  key={'remaining-demand-' + customerId}
+                />
+              ))}
+            </div>
+          </article>
+        )
+      })}
+    </div>
+  )
+}
+
 export function RemainingSalesTripPlanBlock({
   plan,
   deliveryControls,
@@ -6056,21 +6088,26 @@ export function RemainingSalesTripPlanBlock({
   plan: RemainingSalesTripPlan
   deliveryControls: SalesTripDeliveryControls
 }) {
-  const recipeNameById = new Map(
-    plan.recipes.map((recipe) => [
-      recipe.recipeId,
-      recipe.recipeName,
-    ]),
-  )
-
   return (
     <div className="optimizer-batch-list optimizer-sales-plan optimizer-remaining-sales-plan">
       {plan.regionPlan.trips.map((trip) => {
-        const customerIds = trip.services.flatMap((service) =>
-          service.customerAssignments.map(
-            (assignment) => assignment.customerId,
-          ),
+        const customerAssignments = trip.services.flatMap(
+          (service) => service.customerAssignments,
         )
+        const customerIds = customerAssignments.map(
+          (assignment) => assignment.customerId,
+        )
+        const recipeGroups = plan.recipes
+          .map((recipe) => ({
+            recipe,
+            customerIds: customerAssignments
+              .filter(
+                (assignment) =>
+                  assignment.recipeId === recipe.recipeId,
+              )
+              .map((assignment) => assignment.customerId),
+          }))
+          .filter((group) => group.customerIds.length > 0)
 
         return (
           <CollapsibleSalesTripCard
@@ -6141,65 +6178,60 @@ export function RemainingSalesTripPlanBlock({
 
             <section className="optimizer-sales-trip-section">
               <h4>販售</h4>
-              <div className="optimizer-sales-jar-list">
-                {trip.services.map((service) => (
-                  <article
-                    className="optimizer-sales-jar-manifest"
-                    key={
-                      'remaining-service-' +
-                      trip.tripNumber +
-                      '-' +
-                      service.regionId
-                    }
-                  >
-                    <header>
-                      <div>
-                        <strong>
-                          {regionDisplayName(service.regionId)} ·{' '}
-                          {service.customerAssignments.length} 人 ·{' '}
-                          {service.role === 'primary'
-                            ? '路線端點'
-                            : '沿途停靠'}
-                        </strong>
-                      </div>
-                    </header>
+              <div className="optimizer-remaining-recipe-list">
+                {recipeGroups.map(({ recipe, customerIds: recipeCustomerIds }) => {
+                  const recipeName = formatRecipeDisplayName(
+                    recipe.recipeName,
+                  )
 
-                    <div className="optimizer-delivery-customer-list">
-                      {service.customerAssignments.map(
-                        (assignment) => (
-                          <div
-                            className="optimizer-remaining-sales-customer"
+                  return (
+                    <article
+                      className="optimizer-remaining-recipe-card"
+                      aria-label={
+                        '第 ' +
+                        trip.tripNumber +
+                        ' 趟配方 ' +
+                        recipeName
+                      }
+                      key={
+                        'remaining-trip-recipe-' +
+                        trip.tripNumber +
+                        '-' +
+                        recipe.recipeId
+                      }
+                    >
+                      <header>
+                        <div>
+                          <strong>{recipeName}</strong>
+                          <span>
+                            本趟 {recipeCustomerIds.length} 杯
+                          </span>
+                        </div>
+                      </header>
+
+                      <div className="optimizer-delivery-customer-list">
+                        {recipeCustomerIds.map((customerId) => (
+                          <DeliveryCustomerCheckbox
+                            customerId={customerId}
                             key={
-                              'remaining-customer-' +
-                              assignment.customerId
+                              'remaining-customer-' + customerId
                             }
-                          >
-                            <DeliveryCustomerCheckbox
-                              customerId={assignment.customerId}
-                              plan={deliveryControls.plan}
-                              cursor={deliveryControls.cursor}
-                              suppliedCustomerIds={
-                                deliveryControls.suppliedCustomerIds
-                              }
-                              disabled={deliveryControls.disabled}
-                              showPlanningDetail={false}
-                              onChange={
-                                deliveryControls.onChangeCustomer
-                              }
-                            />
-                            <small>
-                              {formatRecipeDisplayName(
-                                recipeNameById.get(
-                                  assignment.recipeId,
-                                ) ?? assignment.recipeId,
-                              )}
-                            </small>
-                          </div>
-                        ),
-                      )}
-                    </div>
-                  </article>
-                ))}
+                            plan={deliveryControls.plan}
+                            cursor={deliveryControls.cursor}
+                            suppliedCustomerIds={
+                              deliveryControls.suppliedCustomerIds
+                            }
+                            disabled={deliveryControls.disabled}
+                            showPlanningDetail={false}
+                            onChange={
+                              deliveryControls.onChangeCustomer
+                            }
+                          />
+                        ))}
+                      </div>
+                    </article>
+                  )
+                })}
               </div>
             </section>
           </CollapsibleSalesTripCard>
