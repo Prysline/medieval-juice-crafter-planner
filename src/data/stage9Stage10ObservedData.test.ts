@@ -7,6 +7,7 @@ import {
   progressMilestoneLabels,
 } from './progress'
 import { stages } from './stages'
+import { generateUniqueRecipeCandidateLayers } from '../domain/recipeGenerator'
 
 describe('Stage 9 and 10 observed progression', () => {
   it('records Stage 9 Ibex satisfaction and customer-count requirements', () => {
@@ -92,6 +93,19 @@ describe('Stage 9 and 10 observed progression', () => {
       roles: ['seasoning'],
       additiveEquipment: '液料調和器',
     })
+  })
+
+  it('includes milk in Stage 10 additive candidate generation', () => {
+    const candidates = generateUniqueRecipeCandidateLayers(
+      'liquid-blender-unlocked',
+    ).flatMap((layer) => layer.candidates)
+
+    expect(
+      candidates.some(
+        (candidate) =>
+          candidate.ingredients.join('>') === '檸檬>牛奶',
+      ),
+    ).toBe(true)
   })
 
   it('records the liquid blender price and only the directly observed input categories', () => {
