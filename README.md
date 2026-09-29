@@ -10,7 +10,7 @@
 - 顧客只把「全部喜好都滿足」視為完全匹配。
 - 顧客列表預設使用直接截圖確認的遊戲排列順序；目前東港村 29 人、靜謐噴泉 23 人、羱羊雕像 21 人都已有完整 observed order。仍可切換依姓名、最佳完全匹配、最高售價排序，並可用「遊戲順序」回到預設排列。
 - 顧客研究篩選的「村落」下拉由 canonical `villages` 與目前主線進度產生，只列已解鎖地區；新增 Region 時不另維護硬編碼選項。喜好原料／喜好特性選項則由 canonical 顧客資料動態整理。
-- 正式顧客狀態與「今日已供應」分開保存；東港村會顯示 14 / 17 名主線進度。
+- 正式顧客狀態與「今日已供應」分開保存；首頁「下一目標」與正式顧客門檻提示都從 canonical progress requirement data 推導，不再在 UI 另寫 14 / 17 等門檻。
 - 顧客頁的「最佳完全匹配」可切換**最低成本／最高成本**；最高成本模式會優先只比較**不重複原料**的完整匹配，只有沒有任何不重複配方能滿足該顧客時才回退到重複原料候選。完整匹配清單套用相同規則並依所選原料成本方向排序，預設只顯示前 8 筆，其餘可展開。顧客的 full-match 狀態會區分「已有實測」「目前可製作的個人已確認／安全推導」「已知後續實測配方才可製作」「目前只有歧義候選」與「目前搜尋範圍沒有安全 full match」；搜尋未命中或 candidate budget 截斷都不外推成遊戲中絕對不存在。推薦與 full-match 項目直接列完整原料順序、設備、原料成本與來源／可信狀態；同一配方若同時是多種推薦理由只顯示一次並附理由標記。「加入我的配方」只把有序原料保存到 `mjc-saved-recipes`，不自動建立 `confirmedResult`，也不升格成專案 observed data。後續進度提示只使用已知正式實測配方作直接證據，不額外啟動一套最終進度全候選搜尋。
 - 配方列表可反查目前已解鎖、且滿意度門檻已達的顧客。
 - 正式 observed 配方不以原料數量限制；重複調味／長序列若主要用途是機制研究，仍可留在 research，不因「四原料以上」自動排除正式配方。
@@ -43,7 +43,7 @@
 
 ## 進度模型
 
-攻略文件仍保留「階段一～八」作閱讀章節；runtime availability／目前主線進度使用：
+攻略文件仍保留「階段一～十」作閱讀章節；runtime availability／目前主線進度使用：
 
 ```text
 opening
@@ -56,9 +56,11 @@ opening
 → advanced-citrus-juicer-unlocked
 → ibex-statue-unlocked
 → sales-assistant-adam-arrived
+→ advanced-juicer-unlocked
+→ liquid-blender-unlocked
 ```
 
-其中靜謐噴泉是階段四主線的必要後半 Region milestone；羱羊雕像同樣是階段七後半的 Region milestone，不會因只解鎖高級柑橘榨汁機就提前開放。`sales-assistant-adam-arrived` 是階段八的真實主線進度節點，目前只讓玩家正確保存「已到階段八」；尚未連動 Adam 操作 UI、工資、工作地區或 optimizer。
+首頁「下一目標」只從這條 canonical milestone 順序、各 milestone 的已確認 requirement、canonical Region `villages`、目前滿意度與正式顧客狀態推導；沒有已確認數值門檻時維持未知，不從 `stages.ts` 或 summary 文字猜規則。靜謐噴泉是階段四主線的必要後半 Region milestone；羱羊雕像同樣是階段七後半的 Region milestone，不會因只解鎖高級柑橘榨汁機就提前開放。`sales-assistant-adam-arrived` 是階段八的真實主線進度節點，目前只讓玩家正確保存「已到階段八」；尚未連動 Adam 操作 UI、工資、工作地區或 optimizer。
 
 ## 資料邊界
 
@@ -69,7 +71,7 @@ src/
     customerResidences.ts # 已直接確認的 home residence／送貨停靠 identity；stable ID 帶 Region namespace，不代表距離或 NPC 當下位置
     ingredients.ts     # 原料價格、效果與 unlockedAt
     equipment.ts       # 設備、價格與 unlockedAt
-    progress.ts        # canonical 主線進度節點與順序
+    progress.ts        # canonical 主線進度節點、順序與已確認數值門檻
     villages.ts        # 地區與 unlockedAt
     shops.ts           # 已確認的地區商店商品
     recipes.ts         # 正式已確認配方；直接實測且需依完整有序原料序列覆蓋推導結果即可收錄，不以原料數量限制
@@ -78,6 +80,7 @@ src/
     stages.ts          # 攻略閱讀章節，不作 runtime availability
   domain/
     availability.ts    # 集中式 progress / village / satisfaction availability
+    progressGoal.ts     # 從 canonical progress / Region / 玩家狀態推導下一主線目標；未知門檻不補值
     customerList.ts    # 顧客排序與今日供應顯示純函式
     customerState.ts   # 正式顧客狀態與分村計數
     customerRecommendation.ts # 單人最佳 full-match recommendation：最低／最高原料成本模式、成本排序

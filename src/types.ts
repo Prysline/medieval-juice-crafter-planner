@@ -99,10 +99,16 @@ export interface ShopDefinition {
   inventory: ShopInventoryEntry[]
 }
 
+export interface ProgressMilestoneRequirement {
+  satisfactionByVillageRequired?: Partial<Record<VillageId, number>>
+  formalCustomersByVillageRequired?: Partial<Record<VillageId, number>>
+}
+
 export interface ProgressMilestoneDefinition {
   id: ProgressMilestoneId
   label: string
   summary: string
+  requirement?: ProgressMilestoneRequirement
 }
 
 export interface VillageDefinition {

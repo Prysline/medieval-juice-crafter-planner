@@ -5,23 +5,23 @@ import { recipeIngredientCapabilities } from './recipeIngredientCapabilities'
 import {
   progressMilestoneIndex,
   progressMilestoneLabels,
+  progressMilestones,
 } from './progress'
-import { stages } from './stages'
 import { generateUniqueRecipeCandidateLayers } from '../domain/recipeGenerator'
 
 describe('Stage 9 and 10 observed progression', () => {
   it('records Stage 9 Ibex satisfaction and customer-count requirements', () => {
-    const stage9 = stages.find((stage) => stage.id === 9)
+    const milestone = progressMilestones.find(
+      (item) => item.id === 'advanced-juicer-unlocked',
+    )
 
-    expect(stage9?.unlockRequirement).toMatchObject({
+    expect(milestone?.requirement).toEqual({
       satisfactionByVillageRequired: {
         'ibex-statue': 50,
       },
       formalCustomersByVillageRequired: {
         'ibex-statue': 7,
       },
-      action: '寄信給爺爺',
-      timing: '收到回信後解鎖；等待時間未確認',
     })
 
     expect(progressMilestoneLabels['advanced-juicer-unlocked']).toBe(
@@ -50,16 +50,16 @@ describe('Stage 9 and 10 observed progression', () => {
   })
 
   it('records all three Stage 10 satisfaction thresholds', () => {
-    const stage10 = stages.find((stage) => stage.id === 10)
+    const milestone = progressMilestones.find(
+      (item) => item.id === 'liquid-blender-unlocked',
+    )
 
-    expect(stage10?.unlockRequirement).toMatchObject({
+    expect(milestone?.requirement).toEqual({
       satisfactionByVillageRequired: {
         'east-harbor': 1000,
         'tranquil-fountain': 450,
         'ibex-statue': 130,
       },
-      action: '寄信給爺爺',
-      timing: '收到回信後解鎖；等待時間未確認',
     })
 
     expect(progressMilestoneLabels['liquid-blender-unlocked']).toBe(
