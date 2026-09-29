@@ -11,7 +11,9 @@ import {
 } from './CustomSalesTripEditor'
 import {
   buildCustomSalesTripBaseline,
+  buildCustomSalesTripEditorDraft,
   moveCustomTripCustomers,
+  moveCustomTripEditorDraftCustomers,
 } from './domain/customSalesTripPlan'
 
 function baseline() {
@@ -67,7 +69,7 @@ function baseline() {
 
 describe('custom sales trip editor grouping', () => {
   it('keeps trip → recipe → Region → customer identity visible', () => {
-    const groups = buildCustomTripEditorGroups(baseline())
+    const groups = buildCustomTripEditorGroups(buildCustomSalesTripEditorDraft(baseline()))
 
     expect(groups).toEqual([
       {
@@ -166,7 +168,9 @@ describe('custom sales trip editor grouping', () => {
       },
     })
 
-    const groups = buildCustomTripEditorGroups(plan)
+    const groups = buildCustomTripEditorGroups(
+      buildCustomSalesTripEditorDraft(plan),
+    )
 
     expect(groups[0]?.recipes[0]?.regions[0]).toMatchObject({
       customerIds: ['harry', 'lizzie', 'zenobia'],
@@ -225,7 +229,9 @@ describe('custom sales trip editor grouping', () => {
       },
     })
 
-    const recipes = buildCustomTripEditorGroups(plan)[0]!.recipes
+    const recipes = buildCustomTripEditorGroups(
+      buildCustomSalesTripEditorDraft(plan),
+    )[0]!.recipes
 
     expect(recipes[0]!.regions[0]!.residences).toEqual([
       {
@@ -247,7 +253,7 @@ describe('custom sales trip editor grouping', () => {
 
   it('selects only the requested residence group or individual customer', () => {
     const residenceCustomerIds =
-      buildCustomTripEditorGroups(baseline())[0]!
+      buildCustomTripEditorGroups(buildCustomSalesTripEditorDraft(baseline()))[0]!
         .recipes[0]!.regions[0]!.residences[0]!.customerIds
 
     const groupSelection = updatedCustomTripSelection(
@@ -268,7 +274,7 @@ describe('custom sales trip editor grouping', () => {
   })
 
   it('moves only the selected resident to an adjacent trip, even when a same-recipe same-residence resident remains behind', () => {
-    const initial = baseline()
+    const initial = buildCustomSalesTripEditorDraft(baseline())
     const moved = moveCustomTripSelectionToAdjacentTrip(
       initial,
       ['east-a'],
@@ -282,7 +288,7 @@ describe('custom sales trip editor grouping', () => {
   })
 
   it('does not apply an adjacent-trip command when the selection spans multiple source trips', () => {
-    const initial = baseline()
+    const initial = buildCustomSalesTripEditorDraft(baseline())
     const moved = moveCustomTripSelectionToAdjacentTrip(
       initial,
       ['east-a', 'fountain-a'],
@@ -293,7 +299,7 @@ describe('custom sales trip editor grouping', () => {
   })
 
   it('enables resident swap only for exactly two customers from different trips', () => {
-    const initial = baseline()
+    const initial = buildCustomSalesTripEditorDraft(baseline())
 
     expect(
       swappableCustomTripCustomerPair(
@@ -319,7 +325,7 @@ describe('custom sales trip editor grouping', () => {
   })
 
   it('validates only the complete swap candidate and keeps the draft unchanged when that final state is invalid', () => {
-    const initial = baseline()
+    const initial = buildCustomSalesTripEditorDraft(baseline())
     let validationCalls = 0
 
     const attempt = attemptCustomTripCustomerSwap(
@@ -364,7 +370,7 @@ describe('custom sales trip editor grouping', () => {
   })
 
   it('applies a valid atomic resident swap without changing customer recipe authority', () => {
-    const initial = baseline()
+    const initial = buildCustomSalesTripEditorDraft(baseline())
     const attempt = attemptCustomTripCustomerSwap(
       initial,
       ['east-a', 'fountain-a'],
@@ -388,6 +394,22 @@ describe('custom sales trip editor grouping', () => {
     expect(
       attempt.plan.customersById['fountain-a']?.recipeId,
     ).toBe('recipe-a')
+  })
+
+  it('keeps an empty trip card in editor grouping after moving away its last residents', () => {
+    const initial = buildCustomSalesTripEditorDraft(baseline())
+    const moved = moveCustomTripEditorDraftCustomers(
+      initial,
+      ['east-a', 'east-b'],
+      'auto-trip-2',
+    )
+
+    expect(buildCustomTripEditorGroups(moved)[0]).toEqual({
+      tripId: 'auto-trip-1',
+      displayNumber: 1,
+      customerIds: [],
+      recipes: [],
+    })
   })
 
   it('changes the draft fingerprint when customer → trip assignment changes', () => {
@@ -439,6 +461,9 @@ describe('custom sales trip editor UI', () => {
     expect(html).toContain('指定趟次')
     expect(html).toContain('移到指定趟')
     expect(html).toContain('移到新趟')
+    expect(html).toContain('清除所有空白趟')
+    expect(html).toContain('移除此空白趟')
+    expect(html).toContain('空白趟只保留在編輯草稿')
     expect(html).toContain('與上一趟交換')
     expect(html).toContain('與下一趟交換')
     expect(html).not.toContain('>上移<')

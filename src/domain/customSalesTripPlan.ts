@@ -15,6 +15,12 @@ export interface CustomSalesTripPlan {
   tripOrder: readonly string[]
 }
 
+export interface CustomSalesTripEditorDraft {
+  customersById: Readonly<Record<string, CustomSalesTripCustomer>>
+  tripByCustomerId: Readonly<Record<string, string>>
+  editorTripOrder: readonly string[]
+}
+
 export interface FixedRecipeCustomerAssignment {
   recipeId: string
   customerIds: readonly string[]
@@ -45,7 +51,7 @@ function stableBaselineTripId(tripNumber: number): string {
 }
 
 function normalizedSelection(
-  plan: CustomSalesTripPlan,
+  plan: Pick<CustomSalesTripPlan, 'customersById'>,
   customerIds: readonly string[],
 ): string[] {
   const unique = [...new Set(customerIds)]
@@ -177,6 +183,301 @@ export function cloneCustomSalesTripPlan(
   }
   assertCustomSalesTripPlan(clone)
   return clone
+}
+
+
+function normalizedPlanFromEditorDraft(
+  draft: CustomSalesTripEditorDraft,
+): CustomSalesTripPlan {
+  const tripIds = new Set<string>()
+  for (const tripId of draft.editorTripOrder) {
+    if (!tripId) {
+      throw new Error('Custom editor trip IDs must be non-empty')
+    }
+    if (tripIds.has(tripId)) {
+      throw new Error(`Duplicate custom editor trip ID ${tripId}`)
+    }
+    tripIds.add(tripId)
+  }
+
+  if (
+    Object.keys(draft.customersById).length === 0 &&
+    draft.editorTripOrder.length !== 0
+  ) {
+    throw new Error('Empty custom editor draft cannot contain trips')
+  }
+
+  for (const tripId of Object.values(draft.tripByCustomerId)) {
+    if (!tripIds.has(tripId)) {
+      throw new Error(
+        `Custom editor assignment references unknown trip ${tripId}`,
+      )
+    }
+  }
+
+  const usedTripIds = new Set(Object.values(draft.tripByCustomerId))
+  const normalized: CustomSalesTripPlan = {
+    customersById: draft.customersById,
+    tripByCustomerId: draft.tripByCustomerId,
+    tripOrder: draft.editorTripOrder.filter((tripId) =>
+      usedTripIds.has(tripId),
+    ),
+  }
+  assertCustomSalesTripPlan(normalized)
+  return normalized
+}
+
+export function assertCustomSalesTripEditorDraft(
+  draft: CustomSalesTripEditorDraft,
+): void {
+  normalizedPlanFromEditorDraft(draft)
+}
+
+export function buildCustomSalesTripEditorDraft(
+  plan: CustomSalesTripPlan,
+): CustomSalesTripEditorDraft {
+  assertCustomSalesTripPlan(plan)
+  const draft: CustomSalesTripEditorDraft = {
+    customersById: Object.fromEntries(
+      Object.entries(plan.customersById).map(
+        ([customerId, customer]) => [
+          customerId,
+          { ...customer },
+        ],
+      ),
+    ),
+    tripByCustomerId: { ...plan.tripByCustomerId },
+    editorTripOrder: [...plan.tripOrder],
+  }
+  assertCustomSalesTripEditorDraft(draft)
+  return draft
+}
+
+export function normalizeCustomSalesTripEditorDraft(
+  draft: CustomSalesTripEditorDraft,
+): CustomSalesTripPlan {
+  return cloneCustomSalesTripPlan(
+    normalizedPlanFromEditorDraft(draft),
+  )
+}
+
+export function customerIdsForCustomTripEditorDraft(
+  draft: CustomSalesTripEditorDraft,
+  tripId: string,
+): string[] {
+  if (!draft.editorTripOrder.includes(tripId)) {
+    throw new Error(`Unknown custom editor trip ${tripId}`)
+  }
+  return Object.keys(draft.customersById).filter(
+    (customerId) => draft.tripByCustomerId[customerId] === tripId,
+  )
+}
+
+export function moveCustomTripEditorDraftCustomers(
+  draft: CustomSalesTripEditorDraft,
+  customerIds: readonly string[],
+  targetTripId: string,
+): CustomSalesTripEditorDraft {
+  assertCustomSalesTripEditorDraft(draft)
+  if (!draft.editorTripOrder.includes(targetTripId)) {
+    throw new Error(`Unknown target custom editor trip ${targetTripId}`)
+  }
+
+  const selection = normalizedSelection(draft, customerIds)
+  const tripByCustomerId = { ...draft.tripByCustomerId }
+  for (const customerId of selection) {
+    tripByCustomerId[customerId] = targetTripId
+  }
+
+  const next: CustomSalesTripEditorDraft = {
+    customersById: draft.customersById,
+    tripByCustomerId,
+    editorTripOrder: draft.editorTripOrder,
+  }
+  assertCustomSalesTripEditorDraft(next)
+  return next
+}
+
+export function moveCustomTripEditorDraftCustomersToNewTrip(
+  draft: CustomSalesTripEditorDraft,
+  customerIds: readonly string[],
+  newTripId: string,
+  insertAfterTripId: string,
+): CustomSalesTripEditorDraft {
+  assertCustomSalesTripEditorDraft(draft)
+  if (!newTripId) {
+    throw new Error('New custom editor trip requires a non-empty ID')
+  }
+  if (draft.editorTripOrder.includes(newTripId)) {
+    throw new Error(`Custom editor trip ID ${newTripId} already exists`)
+  }
+  const insertIndex = draft.editorTripOrder.indexOf(insertAfterTripId)
+  if (insertIndex < 0) {
+    throw new Error(
+      `Unknown custom editor trip insertion point ${insertAfterTripId}`,
+    )
+  }
+
+  const selection = normalizedSelection(draft, customerIds)
+  const tripByCustomerId = { ...draft.tripByCustomerId }
+  for (const customerId of selection) {
+    tripByCustomerId[customerId] = newTripId
+  }
+
+  const editorTripOrder = [...draft.editorTripOrder]
+  editorTripOrder.splice(insertIndex + 1, 0, newTripId)
+
+  const next: CustomSalesTripEditorDraft = {
+    customersById: draft.customersById,
+    tripByCustomerId,
+    editorTripOrder,
+  }
+  assertCustomSalesTripEditorDraft(next)
+  return next
+}
+
+export function swapCustomTripEditorDraftCustomers(
+  draft: CustomSalesTripEditorDraft,
+  firstCustomerId: string,
+  secondCustomerId: string,
+): CustomSalesTripEditorDraft {
+  assertCustomSalesTripEditorDraft(draft)
+  const selection = normalizedSelection(draft, [
+    firstCustomerId,
+    secondCustomerId,
+  ])
+  if (selection.length !== 2) {
+    throw new Error(
+      'Custom editor customer swap requires exactly two distinct customers',
+    )
+  }
+
+  const [firstId, secondId] = selection
+  const firstTripId = draft.tripByCustomerId[firstId]!
+  const secondTripId = draft.tripByCustomerId[secondId]!
+  if (firstTripId === secondTripId) return draft
+
+  const next: CustomSalesTripEditorDraft = {
+    customersById: draft.customersById,
+    tripByCustomerId: {
+      ...draft.tripByCustomerId,
+      [firstId]: secondTripId,
+      [secondId]: firstTripId,
+    },
+    editorTripOrder: draft.editorTripOrder,
+  }
+  assertCustomSalesTripEditorDraft(next)
+  return next
+}
+
+export function removeEmptyCustomTripEditorDraftTrip(
+  draft: CustomSalesTripEditorDraft,
+  tripId: string,
+): CustomSalesTripEditorDraft {
+  assertCustomSalesTripEditorDraft(draft)
+  if (!draft.editorTripOrder.includes(tripId)) {
+    throw new Error(`Unknown custom editor trip ${tripId}`)
+  }
+  if (customerIdsForCustomTripEditorDraft(draft, tripId).length > 0) {
+    throw new Error(
+      `Custom editor trip ${tripId} cannot be removed while it has customers`,
+    )
+  }
+
+  const next: CustomSalesTripEditorDraft = {
+    customersById: draft.customersById,
+    tripByCustomerId: draft.tripByCustomerId,
+    editorTripOrder: draft.editorTripOrder.filter(
+      (currentTripId) => currentTripId !== tripId,
+    ),
+  }
+  assertCustomSalesTripEditorDraft(next)
+  return next
+}
+
+export function clearEmptyCustomTripEditorDraftTrips(
+  draft: CustomSalesTripEditorDraft,
+): CustomSalesTripEditorDraft {
+  assertCustomSalesTripEditorDraft(draft)
+  const usedTripIds = new Set(Object.values(draft.tripByCustomerId))
+  const editorTripOrder = draft.editorTripOrder.filter((tripId) =>
+    usedTripIds.has(tripId),
+  )
+  if (editorTripOrder.length === draft.editorTripOrder.length) {
+    return draft
+  }
+
+  const next: CustomSalesTripEditorDraft = {
+    customersById: draft.customersById,
+    tripByCustomerId: draft.tripByCustomerId,
+    editorTripOrder,
+  }
+  assertCustomSalesTripEditorDraft(next)
+  return next
+}
+
+export function mergeCustomSalesTripEditorDraftTrips(
+  draft: CustomSalesTripEditorDraft,
+  sourceTripId: string,
+  targetTripId: string,
+): CustomSalesTripEditorDraft {
+  assertCustomSalesTripEditorDraft(draft)
+  if (sourceTripId === targetTripId) {
+    throw new Error('Cannot merge a custom editor trip into itself')
+  }
+  if (!draft.editorTripOrder.includes(sourceTripId)) {
+    throw new Error(`Unknown source custom editor trip ${sourceTripId}`)
+  }
+  if (!draft.editorTripOrder.includes(targetTripId)) {
+    throw new Error(`Unknown target custom editor trip ${targetTripId}`)
+  }
+
+  const sourceCustomerIds =
+    customerIdsForCustomTripEditorDraft(draft, sourceTripId)
+  const moved =
+    sourceCustomerIds.length > 0
+      ? moveCustomTripEditorDraftCustomers(
+          draft,
+          sourceCustomerIds,
+          targetTripId,
+        )
+      : draft
+  return removeEmptyCustomTripEditorDraftTrip(
+    moved,
+    sourceTripId,
+  )
+}
+
+export function reorderCustomSalesTripEditorDraftTrips(
+  draft: CustomSalesTripEditorDraft,
+  editorTripOrder: readonly string[],
+): CustomSalesTripEditorDraft {
+  assertCustomSalesTripEditorDraft(draft)
+
+  if (editorTripOrder.length !== draft.editorTripOrder.length) {
+    throw new Error(
+      'Custom editor trip reorder must include every existing trip exactly once',
+    )
+  }
+  const unique = new Set(editorTripOrder)
+  if (unique.size !== editorTripOrder.length) {
+    throw new Error('Custom editor trip reorder contains duplicate trip IDs')
+  }
+  for (const tripId of draft.editorTripOrder) {
+    if (!unique.has(tripId)) {
+      throw new Error(
+        `Custom editor trip reorder is missing trip ${tripId}`,
+      )
+    }
+  }
+
+  const next: CustomSalesTripEditorDraft = {
+    customersById: draft.customersById,
+    tripByCustomerId: draft.tripByCustomerId,
+    editorTripOrder: [...editorTripOrder],
+  }
+  assertCustomSalesTripEditorDraft(next)
+  return next
 }
 
 export function buildCustomSalesTripBaseline(

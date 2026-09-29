@@ -5,13 +5,18 @@ import {
   useState,
 } from 'react'
 import {
+  buildCustomSalesTripEditorDraft,
+  clearEmptyCustomTripEditorDraftTrips,
   cloneCustomSalesTripPlan,
-  customerIdsForCustomTrip,
-  mergeCustomSalesTrips,
-  moveCustomTripCustomers,
-  moveCustomTripCustomersToNewTrip,
-  reorderCustomSalesTrips,
-  swapCustomTripCustomers,
+  customerIdsForCustomTripEditorDraft,
+  mergeCustomSalesTripEditorDraftTrips,
+  moveCustomTripEditorDraftCustomers,
+  moveCustomTripEditorDraftCustomersToNewTrip,
+  normalizeCustomSalesTripEditorDraft,
+  removeEmptyCustomTripEditorDraftTrip,
+  reorderCustomSalesTripEditorDraftTrips,
+  swapCustomTripEditorDraftCustomers,
+  type CustomSalesTripEditorDraft,
   type CustomSalesTripPlan,
 } from './domain/customSalesTripPlan'
 import type {
@@ -49,7 +54,7 @@ export interface CustomTripEditorTripGroup {
 }
 
 export function buildCustomTripEditorGroups(
-  plan: CustomSalesTripPlan,
+  plan: CustomSalesTripEditorDraft,
 ): CustomTripEditorTripGroup[] {
   const residenceByCustomerId = Object.fromEntries(
     Object.entries(plan.customersById).map(([customerId, customer]) => [
@@ -58,8 +63,11 @@ export function buildCustomTripEditorGroups(
     ]),
   )
 
-  return plan.tripOrder.map((tripId, tripIndex) => {
-    const customerIds = customerIdsForCustomTrip(plan, tripId)
+  return plan.editorTripOrder.map((tripId, tripIndex) => {
+    const customerIds = customerIdsForCustomTripEditorDraft(
+      plan,
+      tripId,
+    )
     const recipeMap = new Map<string, string[]>()
 
     for (const customerId of customerIds) {
@@ -132,6 +140,24 @@ export function customTripPlanFingerprint(
   })
 }
 
+
+export function customTripEditorDraftFingerprint(
+  draft: CustomSalesTripEditorDraft,
+): string {
+  return JSON.stringify({
+    editorTripOrder: draft.editorTripOrder,
+    tripByCustomerId: draft.tripByCustomerId,
+    customers: Object.values(draft.customersById).map((customer) => ({
+      customerId: customer.customerId,
+      recipeId: customer.recipeId,
+      servings: customer.servings,
+      regionId: customer.regionId,
+      residenceId: customer.residenceId ?? null,
+      routeNodeId: customer.routeNodeId ?? null,
+    })),
+  })
+}
+
 export function updatedCustomTripSelection(
   current: ReadonlySet<string>,
   customerIds: readonly string[],
@@ -146,7 +172,7 @@ export function updatedCustomTripSelection(
 }
 
 export function adjacentCustomTripIdForSelection(
-  plan: CustomSalesTripPlan,
+  plan: CustomSalesTripEditorDraft,
   customerIds: readonly string[],
   direction: -1 | 1,
 ): string | null {
@@ -161,13 +187,13 @@ export function adjacentCustomTripIdForSelection(
   }
 
   if (!sourceTripId) return null
-  const sourceIndex = plan.tripOrder.indexOf(sourceTripId)
+  const sourceIndex = plan.editorTripOrder.indexOf(sourceTripId)
   if (sourceIndex < 0) return null
-  return plan.tripOrder[sourceIndex + direction] ?? null
+  return plan.editorTripOrder[sourceIndex + direction] ?? null
 }
 
 export function moveCustomTripSelectionToAdjacentTrip(
-  plan: CustomSalesTripPlan,
+  plan: CustomSalesTripEditorDraft,
   customerIds: readonly string[],
   direction: -1 | 1,
 ): CustomSalesTripPlan {
@@ -177,11 +203,15 @@ export function moveCustomTripSelectionToAdjacentTrip(
     direction,
   )
   if (!targetTripId) return plan
-  return moveCustomTripCustomers(plan, customerIds, targetTripId)
+  return moveCustomTripEditorDraftCustomers(
+    plan,
+    customerIds,
+    targetTripId,
+  )
 }
 
 export function swappableCustomTripCustomerPair(
-  plan: CustomSalesTripPlan,
+  plan: CustomSalesTripEditorDraft,
   customerIds: readonly string[],
 ): readonly [string, string] | null {
   const uniqueCustomerIds = [...new Set(customerIds)]
@@ -209,13 +239,13 @@ export function swappableCustomTripCustomerPair(
 }
 
 export interface CustomTripCustomerSwapAttempt {
-  plan: CustomSalesTripPlan
+  plan: CustomSalesTripEditorDraft
   validation: CustomTripPhysicalValidationResult | null
   applied: boolean
 }
 
 export function attemptCustomTripCustomerSwap(
-  plan: CustomSalesTripPlan,
+  plan: CustomSalesTripEditorDraft,
   customerIds: readonly string[],
   validateDraft: (
     draft: CustomSalesTripPlan,
@@ -230,12 +260,14 @@ export function attemptCustomTripCustomerSwap(
     }
   }
 
-  const candidate = swapCustomTripCustomers(
+  const candidate = swapCustomTripEditorDraftCustomers(
     plan,
     pair[0],
     pair[1],
   )
-  const validation = validateDraft(candidate)
+  const validation = validateDraft(
+    normalizeCustomSalesTripEditorDraft(candidate),
+  )
   if (validation.status === 'invalid') {
     return {
       plan,
@@ -252,47 +284,47 @@ export function attemptCustomTripCustomerSwap(
 }
 
 function moveTripBefore(
-  plan: CustomSalesTripPlan,
+  plan: CustomSalesTripEditorDraft,
   sourceTripId: string,
   targetTripId: string,
 ): CustomSalesTripPlan {
   if (
     sourceTripId === targetTripId ||
-    !plan.tripOrder.includes(sourceTripId) ||
-    !plan.tripOrder.includes(targetTripId)
+    !plan.editorTripOrder.includes(sourceTripId) ||
+    !plan.editorTripOrder.includes(targetTripId)
   ) {
     return plan
   }
 
-  const order = plan.tripOrder.filter(
+  const order = plan.editorTripOrder.filter(
     (tripId) => tripId !== sourceTripId,
   )
   const targetIndex = order.indexOf(targetTripId)
   order.splice(targetIndex, 0, sourceTripId)
-  return reorderCustomSalesTrips(plan, order)
+  return reorderCustomSalesTripEditorDraftTrips(plan, order)
 }
 
 function swapTrip(
-  plan: CustomSalesTripPlan,
+  plan: CustomSalesTripEditorDraft,
   tripId: string,
   direction: -1 | 1,
 ): CustomSalesTripPlan {
-  const index = plan.tripOrder.indexOf(tripId)
+  const index = plan.editorTripOrder.indexOf(tripId)
   const targetIndex = index + direction
   if (
     index < 0 ||
     targetIndex < 0 ||
-    targetIndex >= plan.tripOrder.length
+    targetIndex >= plan.editorTripOrder.length
   ) {
     return plan
   }
 
-  const order = [...plan.tripOrder]
+  const order = [...plan.editorTripOrder]
   ;[order[index], order[targetIndex]] = [
     order[targetIndex]!,
     order[index]!,
   ]
-  return reorderCustomSalesTrips(plan, order)
+  return reorderCustomSalesTripEditorDraftTrips(plan, order)
 }
 
 function selectionState(
@@ -388,9 +420,16 @@ export function CustomSalesTripEditor({
     () => customTripPlanFingerprint(editingStartPlan),
     [editingStartPlan],
   )
+  const editingStartDraftFingerprint = useMemo(
+    () =>
+      customTripEditorDraftFingerprint(
+        buildCustomSalesTripEditorDraft(editingStartPlan),
+      ),
+    [editingStartFingerprint, editingStartPlan],
+  )
   const [open, setOpen] = useState(defaultOpen)
   const [draft, setDraft] = useState(() =>
-    cloneCustomSalesTripPlan(editingStartPlan),
+    buildCustomSalesTripEditorDraft(editingStartPlan),
   )
   const [revision, setRevision] = useState(0)
   const revisionRef = useRef(0)
@@ -418,7 +457,7 @@ export function CustomSalesTripEditor({
   const nextTripSequenceRef = useRef(1)
 
   useEffect(() => {
-    setDraft(cloneCustomSalesTripPlan(editingStartPlan))
+    setDraft(buildCustomSalesTripEditorDraft(editingStartPlan))
     setRevision(0)
     setValidation({ status: 'idle', revision: 0 })
     setSelectedCustomerIds(new Set())
@@ -429,11 +468,15 @@ export function CustomSalesTripEditor({
   }, [editingStartFingerprint, editingStartPlan])
 
   const draftFingerprint = useMemo(
-    () => customTripPlanFingerprint(draft),
+    () => customTripEditorDraftFingerprint(draft),
     [draft],
   )
   const draftDirty =
-    draftFingerprint !== editingStartFingerprint
+    draftFingerprint !== editingStartDraftFingerprint
+  const normalizedDraft = useMemo(
+    () => normalizeCustomSalesTripEditorDraft(draft),
+    [draft],
+  )
 
   useEffect(() => {
     onDraftDirtyChange?.(draftDirty)
@@ -445,13 +488,17 @@ export function CustomSalesTripEditor({
   )
 
   useEffect(() => {
-    if (!draft.tripOrder.includes(moveTargetTripId)) {
-      setMoveTargetTripId(draft.tripOrder[0] ?? '')
+    if (!draft.editorTripOrder.includes(moveTargetTripId)) {
+      setMoveTargetTripId(draft.editorTripOrder[0] ?? '')
     }
-    if (!draft.tripOrder.includes(insertAfterTripId)) {
-      setInsertAfterTripId(draft.tripOrder[0] ?? '')
+    if (!draft.editorTripOrder.includes(insertAfterTripId)) {
+      setInsertAfterTripId(draft.editorTripOrder[0] ?? '')
     }
-  }, [draft.tripOrder, insertAfterTripId, moveTargetTripId])
+  }, [
+    draft.editorTripOrder,
+    insertAfterTripId,
+    moveTargetTripId,
+  ])
 
   useEffect(() => {
     if (!open) return
@@ -461,18 +508,25 @@ export function CustomSalesTripEditor({
       status: 'checking',
       revision: validatingRevision,
     })
-    const result = validateDraft(draft)
+    const result = validateDraft(normalizedDraft)
     if (revisionRef.current !== validatingRevision) return
     setValidation({
       status: 'done',
       revision: validatingRevision,
       result,
     })
-  }, [draft, open, revision, validateDraft])
+  }, [normalizedDraft, open, revision, validateDraft])
 
   const groups = useMemo(
     () => buildCustomTripEditorGroups(draft),
     [draft],
+  )
+  const emptyTripIds = useMemo(
+    () =>
+      groups
+        .filter((trip) => trip.customerIds.length === 0)
+        .map((trip) => trip.tripId),
+    [groups],
   )
   const selectedIds = useMemo(
     () => [...selectedCustomerIds],
@@ -500,7 +554,7 @@ export function CustomSalesTripEditor({
       ? currentValidation.issues
       : []
 
-  function applyDraft(next: CustomSalesTripPlan) {
+  function applyDraft(next: CustomSalesTripEditorDraft) {
     if (next === draft) return
     setSwapValidation(null)
     setDraft(next)
@@ -560,7 +614,7 @@ export function CustomSalesTripEditor({
       return
     }
     applyDraft(
-      moveCustomTripCustomers(
+      moveCustomTripEditorDraftCustomers(
         draft,
         selectedIds,
         moveTargetTripId,
@@ -580,10 +634,10 @@ export function CustomSalesTripEditor({
     do {
       newTripId =
         'custom-trip-' + nextTripSequenceRef.current++
-    } while (draft.tripOrder.includes(newTripId))
+    } while (draft.editorTripOrder.includes(newTripId))
 
     applyDraft(
-      moveCustomTripCustomersToNewTrip(
+      moveCustomTripEditorDraftCustomersToNewTrip(
         draft,
         selectedIds,
         newTripId,
@@ -595,7 +649,7 @@ export function CustomSalesTripEditor({
   }
 
   function resetToAutoBaseline() {
-    setDraft(cloneCustomSalesTripPlan(autoBaseline))
+    setDraft(buildCustomSalesTripEditorDraft(autoBaseline))
     setRevision((current) => current + 1)
     setSelectedCustomerIds(new Set())
     setSwapValidation(null)
@@ -672,6 +726,7 @@ export function CustomSalesTripEditor({
             {appliedPlan
               ? '目前已完成的自訂方案仍維持生效；此處修改的是新草稿，只有再次按「完成自訂」後才會替換目前方案。'
               : '這裡只編輯自訂草稿並檢查實體果汁罐、杯具與補裝是否可行；目前正式販售排程仍維持自動方案。'}
+            搬走一趟最後一位居民後，空白趟只保留在編輯草稿；驗證與完成自訂前會先排除，不會送進實體排程。
           </p>
 
           <div className="optimizer-run-actions">
@@ -711,6 +766,9 @@ export function CustomSalesTripEditor({
             <span>
               草稿版本 {revision + 1}
               {draftDirty ? ' · 尚未完成自訂' : ' · 已與目前方案一致'}
+              {emptyTripIds.length > 0
+                ? ' · 空白趟 ' + emptyTripIds.length
+                : ''}
               {currentValidation?.status === 'valid'
                 ? ' · 實體排程 ' +
                   currentValidation.salesPlan.tripCount +
@@ -761,7 +819,7 @@ export function CustomSalesTripEditor({
                     setMoveTargetTripId(event.target.value)
                   }
                 >
-                  {draft.tripOrder.map((tripId, index) => (
+                  {draft.editorTripOrder.map((tripId, index) => (
                     <option key={tripId} value={tripId}>
                       第 {index + 1} 趟
                     </option>
@@ -783,7 +841,7 @@ export function CustomSalesTripEditor({
                     setInsertAfterTripId(event.target.value)
                   }
                 >
-                  {draft.tripOrder.map((tripId, index) => (
+                  {draft.editorTripOrder.map((tripId, index) => (
                     <option key={tripId} value={tripId}>
                       第 {index + 1} 趟之後
                     </option>
@@ -806,6 +864,17 @@ export function CustomSalesTripEditor({
                 }}
               >
                 清除選取
+              </button>
+              <button
+                type="button"
+                disabled={emptyTripIds.length === 0}
+                onClick={() =>
+                  applyDraft(
+                    clearEmptyCustomTripEditorDraftTrips(draft),
+                  )
+                }
+              >
+                清除所有空白趟
               </button>
             </div>
             <IssueBlock
@@ -832,7 +901,7 @@ export function CustomSalesTripEditor({
                       draggedCustomerIdsRef.current
                     if (draggedCustomers.length > 0) {
                       applyDraft(
-                        moveCustomTripCustomers(
+                        moveCustomTripEditorDraftCustomers(
                           draft,
                           draggedCustomers,
                           trip.tripId,
@@ -903,10 +972,10 @@ export function CustomSalesTripEditor({
                       disabled={tripIndex === 0}
                       onClick={() =>
                         applyDraft(
-                          mergeCustomSalesTrips(
+                          mergeCustomSalesTripEditorDraftTrips(
                             draft,
                             trip.tripId,
-                            draft.tripOrder[tripIndex - 1]!,
+                            draft.editorTripOrder[tripIndex - 1]!,
                           ),
                         )
                       }
@@ -920,15 +989,29 @@ export function CustomSalesTripEditor({
                       }
                       onClick={() =>
                         applyDraft(
-                          mergeCustomSalesTrips(
+                          mergeCustomSalesTripEditorDraftTrips(
                             draft,
                             trip.tripId,
-                            draft.tripOrder[tripIndex + 1]!,
+                            draft.editorTripOrder[tripIndex + 1]!,
                           ),
                         )
                       }
                     >
                       併入下一趟
+                    </button>
+                    <button
+                      type="button"
+                      disabled={trip.customerIds.length !== 0}
+                      onClick={() =>
+                        applyDraft(
+                          removeEmptyCustomTripEditorDraftTrip(
+                            draft,
+                            trip.tripId,
+                          ),
+                        )
+                      }
+                    >
+                      移除此空白趟
                     </button>
                   </div>
 
@@ -936,6 +1019,12 @@ export function CustomSalesTripEditor({
                     title={'第 ' + trip.displayNumber + ' 趟問題'}
                     issues={tripIssues}
                   />
+
+                  {trip.customerIds.length === 0 && (
+                    <p className="optimizer-boundary-note">
+                      此趟目前空白，可將居民移入或移除此空白趟；它只存在於編輯草稿。
+                    </p>
+                  )}
 
                   {trip.recipes.map((recipe) => {
                     const recipeState = selectionState(
@@ -1119,7 +1208,7 @@ export function CustomSalesTripEditor({
               onClick={() => {
                 if (currentValidation?.status !== 'valid') return
                 onAcceptValidatedDraft(
-                  cloneCustomSalesTripPlan(draft),
+                  cloneCustomSalesTripPlan(normalizedDraft),
                   currentValidation,
                 )
               }}
