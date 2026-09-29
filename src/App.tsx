@@ -2062,14 +2062,15 @@ function RecommendationCompact({
   const sources = new Set(
     recommendation.candidates.map(({ candidate }) => candidate.source),
   )
-  const sourceLabel =
-    sources.size > 1
-      ? '實測／個人確認／推導'
-      : sources.has('computed')
-        ? '安全推導'
-        : sources.has('personal')
+  const sourceLabel = [...sources]
+    .map((source) =>
+      source === 'observed'
+        ? '正式實測'
+        : source === 'personal'
           ? '個人已確認'
-          : '正式實測'
+          : '安全推導',
+    )
+    .join('／')
   const costLabel =
     recommendation.costMode === 'minimum' ? '最低成本' : '最高成本'
   const recipeLabel =
