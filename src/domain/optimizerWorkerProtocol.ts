@@ -4,6 +4,7 @@ import type {
 } from './optimizer'
 import type { OptimizationSource } from './optimizerModel'
 import {
+  OptimizerWorkerExecutionError,
   PlanningUserError,
   type PlanningUserErrorCode,
   type PlanningUserErrorContext,
@@ -83,5 +84,5 @@ export function deserializeOptimizerWorkerError(
       error.message,
     )
   }
-  return new Error(error.message)
+  return new OptimizerWorkerExecutionError(error.message)
 }
