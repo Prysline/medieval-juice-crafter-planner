@@ -503,7 +503,7 @@ export function CustomSalesTripEditor({
   function renderCustomerRow(customerId: string) {
     return (
       <label
-        className="optimizer-transaction-row"
+        className="optimizer-transaction-row optimizer-custom-resident-row"
         key={customerId}
         draggable
         onDragStart={(event) => {
@@ -701,7 +701,7 @@ export function CustomSalesTripEditor({
             </div>
           </section>
 
-          <div className="optimizer-batch-list">
+          <div className="optimizer-batch-list optimizer-custom-trip-grid">
             {groups.map((trip, tripIndex) => {
               const tripIssues = issues.filter(
                 (issue) =>
@@ -710,7 +710,7 @@ export function CustomSalesTripEditor({
               )
               return (
                 <article
-                  className="optimizer-batch-card"
+                  className="optimizer-batch-card optimizer-custom-trip-card"
                   key={trip.tripId}
                   onDragOver={(event) => event.preventDefault()}
                   onDrop={(event) => {
@@ -836,7 +836,7 @@ export function CustomSalesTripEditor({
                     )
                     return (
                       <section
-                        className="optimizer-transaction-card"
+                        className="optimizer-transaction-card optimizer-custom-recipe-card"
                         key={recipe.recipeId}
                       >
                         <div className="optimizer-transaction-card-heading">
@@ -880,7 +880,7 @@ export function CustomSalesTripEditor({
                           )
                           return (
                             <div
-                              className="optimizer-transaction-list"
+                              className="optimizer-transaction-list optimizer-custom-region-group"
                               key={region.regionId}
                             >
                               <label>

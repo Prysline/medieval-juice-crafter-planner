@@ -345,12 +345,27 @@ describe('custom sales trip editor UI', () => {
     expect(html).toContain('併入上一趟')
     expect(html).toContain('併入下一趟')
     expect(html).toContain('整趟操作 · 拖曳整趟調整順序')
+    expect(html).toContain(
+      'class="optimizer-batch-list optimizer-custom-trip-grid"',
+    )
+    expect(html).toContain(
+      'class="optimizer-batch-card optimizer-custom-trip-card"',
+    )
+    expect(html).toContain(
+      'class="optimizer-transaction-card optimizer-custom-recipe-card"',
+    )
+    expect(html).toContain(
+      'class="optimizer-transaction-list optimizer-custom-region-group"',
+    )
     expect(html).toContain('配方 recipe-a')
     expect(html).toContain('地區 east-harbor')
     expect(html).toContain('住處 1')
     expect(html).toContain('aria-label="住處 1整組選取"')
     expect(html).toContain('aria-label="顧客 east-a單人選取"')
     expect(html).toContain('class="optimizer-custom-residence-group"')
+    expect(html).toContain(
+      'class="optimizer-transaction-row optimizer-custom-resident-row"',
+    )
     expect(html).toContain('顧客 east-a')
     expect(html).toContain('draggable="true"')
     expect(html).not.toContain('完成自訂')

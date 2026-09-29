@@ -2599,6 +2599,32 @@ footer {
   z-index: 3;
 }
 
+.optimizer-custom-trip-grid {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  align-items: start;
+}
+
+.optimizer-custom-trip-card {
+  min-width: 0;
+  align-content: start;
+  border-width: 2px;
+  border-color: #cfbea2;
+  background: #f7efe2;
+}
+
+.optimizer-custom-recipe-card {
+  background: #fffdf8;
+}
+
+.optimizer-custom-region-group {
+  border-left: 3px solid #dfd1bb;
+  padding-left: 8px;
+}
+
+.optimizer-custom-resident-row {
+  min-width: 0;
+}
+
 .optimizer-batch-card > .optimizer-custom-resident-controls {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -3748,6 +3774,10 @@ footer {
   .optimizer-controls,
   .optimizer-metrics,
   .optimizer-transaction-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .optimizer-custom-trip-grid {
     grid-template-columns: 1fr;
   }
 
