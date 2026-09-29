@@ -4,6 +4,7 @@ import RecipeTools from './RecipeTools'
 import { buildCustomerGameOrder } from './data/customerGameOrder'
 import { customers } from './data/customers'
 import { ingredients } from './data/ingredients'
+import { recipes } from './data/recipes'
 import { progressMilestoneLabels, progressMilestones } from './data/progress'
 import { villageNames, villages } from './data/villages'
 import {
@@ -18,8 +19,11 @@ import {
   type SortDirection,
 } from './domain/customerList'
 import {
+  customerFullMatchAvailability,
   customerRecipeRecommendationsFromSearch,
+  recommendationDisplayItems,
   sortFullMatchCandidatesByIngredientCost,
+  type CustomerFullMatchAvailability,
   type CustomerRecipeRecommendations,
   type RecommendationCostMode,
 } from './domain/customerRecommendation'
@@ -30,6 +34,7 @@ import {
 } from './domain/matching'
 import {
   buildRecipeCandidatePool,
+  recipeIngredientIdsForCandidate,
   recipeCandidatesInCurrentSearchScope,
   type RecipeCandidatePool,
   type RecipeCandidatePoolEntry,
@@ -70,7 +75,11 @@ import {
   writeSatisfactionByVillage,
   writeSuppliedCustomerIds,
 } from './storage/plannerState'
-import { readSavedRecipes } from './storage/savedRecipes'
+import {
+  readSavedRecipes,
+  upsertSavedRecipe,
+  writeSavedRecipes,
+} from './storage/savedRecipes'
 import type {
   Customer,
   EffectValue,
@@ -113,6 +122,40 @@ function recipePoolSourceLabel(source: RecipeCandidatePoolSource): string {
 
 function recipeEntrySourceLabel(entry: RecipeCandidatePoolEntry): string {
   return entry.sources.map(recipePoolSourceLabel).join('・')
+}
+
+function recipeCandidateAuthorityLabel(
+  candidate: RecipeCandidate,
+): string {
+  if (candidate.source === 'observed') return '正式實測'
+  if (candidate.source === 'personal') return '個人已確認'
+  return candidate.effectAmbiguity ? '歧義推導' : '安全推導'
+}
+
+function fullMatchAvailabilityLabel(
+  availability: CustomerFullMatchAvailability,
+): string {
+  if (availability.kind === 'observed-current') {
+    return '已有實測 full match'
+  }
+  if (availability.kind === 'safe-current') {
+    const hasPersonal = availability.currentSources.includes('personal')
+    const hasComputed = availability.currentSources.includes('computed')
+    if (hasPersonal && !hasComputed) {
+      return '目前可製作的個人已確認 full match'
+    }
+    if (hasPersonal && hasComputed) {
+      return '目前可製作的個人已確認／安全推導 full match'
+    }
+    return '目前可製作的安全推導 full match'
+  }
+  if (availability.kind === 'future-observed') {
+    return '後續進度才可製作'
+  }
+  if (availability.kind === 'ambiguous-only') {
+    return '目前只有歧義候選'
+  }
+  return '目前搜尋範圍沒有安全 full match'
 }
 
 export type SatisfactionVillageDefinition<TVillageId extends string> = {
@@ -383,6 +426,15 @@ function App() {
     () => recipeCandidatesInCurrentSearchScope(recipeCandidatePool),
     [recipeCandidatePool],
   )
+  const savedRecipeCandidateIds = useMemo(
+    () =>
+      new Set(
+        recipeCandidatePool.entries
+          .filter((entry) => entry.savedRecipeIds.length > 0)
+          .map((entry) => entry.candidate.id),
+      ),
+    [recipeCandidatePool],
+  )
   const recipeListEntries = useMemo(
     () =>
       recipeCandidatePool.entries.filter(
@@ -528,22 +580,31 @@ function App() {
         .map((customer) => {
           const searches = customerSearchesByCustomerId.get(customer.id)
           const candidates = searches?.allowComputed.candidates ?? []
+          const matches = sortFullMatchCandidatesByIngredientCost(
+            matchingRecipeCandidatesForCustomer(
+              [...candidates],
+              customer,
+            ),
+            customerRecommendationCostMode,
+          )
 
           return {
             customer,
-            matches: sortFullMatchCandidatesByIngredientCost(
-              matchingRecipeCandidatesForCustomer(
-                [...candidates],
-                customer,
-              ),
-              customerRecommendationCostMode,
-            ),
+            matches,
             recommendations: customerRecipeRecommendationsFromSearch(
               searches?.observedOnly.candidates ?? [],
-              searches?.allowComputed.candidates ?? [],
+              candidates,
               customer,
               customerRecommendationCostMode,
             ),
+            availability: customerFullMatchAvailability({
+              customer,
+              currentProgress,
+              currentFullMatches: matches,
+              searchedCandidates: candidates,
+              knownObservedRecipes: recipes,
+              searchTruncated: searches?.allowComputed.truncated ?? false,
+            }),
           }
         }),
     [
@@ -833,6 +894,34 @@ function App() {
   function clearComparisonCustomers() {
     setComparisonCustomerIds([])
   }
+
+  const saveRecommendationRecipe = useCallback(
+    (candidate: RecipeCandidate) => {
+      const ingredientIds = recipeIngredientIdsForCandidate(candidate)
+
+      setSavedRecipes((current) => {
+        const alreadySaved = current.some(
+          (recipe) =>
+            recipe.ingredientIds.length === ingredientIds.length &&
+            recipe.ingredientIds.every(
+              (ingredientId, index) =>
+                ingredientId === ingredientIds[index],
+            ),
+        )
+        if (alreadySaved) return current
+
+        const next = upsertSavedRecipe(current, {
+          id: `recommendation:${candidate.id}`,
+          name: candidate.name,
+          ingredientIds,
+          createdAt: new Date().toISOString(),
+        })
+        writeSavedRecipes(window.localStorage, next)
+        return next
+      })
+    },
+    [],
+  )
 
   function clearCustomerResearchFilters() {
     setCustomerVillageFilter(null)
@@ -1133,7 +1222,13 @@ function App() {
           </div>
 
           {sortedCustomerResearchRows.map(
-            ({ customer, matches, unlocked, recommendations }) => (
+            ({
+              customer,
+              matches,
+              unlocked,
+              recommendations,
+              availability,
+            }) => (
               <div
                 className={
                   customer.id === lastVisibleCustomerId
@@ -1148,6 +1243,9 @@ function App() {
                   matches={matches}
                   recommendations={recommendations}
                   recommendationCostMode={customerRecommendationCostMode}
+                  availability={availability}
+                  savedRecipeCandidateIds={savedRecipeCandidateIds}
+                  onSaveRecipe={saveRecommendationRecipe}
                   unlocked={unlocked}
                   formal={isFormalCustomer(customer.id, formalCustomerIds)}
                   suppliedToday={suppliedCustomerIds.includes(customer.id)}
@@ -1542,6 +1640,9 @@ function CustomerRow({
   matches,
   recommendations,
   recommendationCostMode,
+  availability,
+  savedRecipeCandidateIds,
+  onSaveRecipe,
   unlocked,
   formal,
   suppliedToday,
@@ -1554,6 +1655,9 @@ function CustomerRow({
   matches: RecipeCandidate[]
   recommendations: CustomerRecipeRecommendations
   recommendationCostMode: RecommendationCostMode
+  availability: CustomerFullMatchAvailability
+  savedRecipeCandidateIds: ReadonlySet<string>
+  onSaveRecipe: (candidate: RecipeCandidate) => void
   unlocked: boolean
   formal: boolean
   suppliedToday: boolean
@@ -1631,12 +1735,17 @@ function CustomerRow({
           ) : bestMatch ? (
             <>
               <span>{formatRecipeDisplayName(bestMatch.name)}</span>
+              <span className="match-availability-status">
+                {fullMatchAvailabilityLabel(availability)}
+              </span>
               <RecommendationCompact
                 recommendation={recommendations.allowComputed}
               />
             </>
           ) : (
-            <span className="muted">無完全匹配</span>
+            <span className="muted">
+              {fullMatchAvailabilityLabel(availability)}
+            </span>
           )}
         </div>
 
@@ -1689,10 +1798,14 @@ function CustomerRow({
           </div>
         )}
 
+        <FullMatchAvailabilityNotice availability={availability} />
+
         <RecommendationDetails
           formal={formal}
           recommendations={recommendations}
           costMode={recommendationCostMode}
+          savedRecipeCandidateIds={savedRecipeCandidateIds}
+          onSaveRecipe={onSaveRecipe}
         />
 
         <div className="match-list">
@@ -1706,7 +1819,12 @@ function CustomerRow({
             <>
               <ol>
                 {visibleMatches.map((recipe) => (
-                  <FullMatchRecipeItem key={recipe.id} recipe={recipe} />
+                  <FullMatchRecipeItem
+                    key={recipe.id}
+                    recipe={recipe}
+                    saved={savedRecipeCandidateIds.has(recipe.id)}
+                    onSaveRecipe={onSaveRecipe}
+                  />
                 ))}
               </ol>
               {remainingMatches.length > 0 && (
@@ -1717,6 +1835,8 @@ function CustomerRow({
                       <FullMatchRecipeItem
                         key={recipe.id}
                         recipe={recipe}
+                        saved={savedRecipeCandidateIds.has(recipe.id)}
+                        onSaveRecipe={onSaveRecipe}
                       />
                     ))}
                   </ol>
@@ -1724,7 +1844,9 @@ function CustomerRow({
               )}
             </>
           ) : (
-            <p className="muted">目前主線進度沒有能完全滿足所有喜好的已知配方。</p>
+            <p className="muted">
+              目前沒有可列入安全 full-match 清單的配方；原因見上方「完整匹配狀態」。
+            </p>
           )}
         </div>
 
@@ -1813,7 +1935,52 @@ function SupplyToggle({
   )
 }
 
-function FullMatchRecipeItem({
+export function FullMatchAvailabilityNotice({
+  availability,
+}: {
+  availability: CustomerFullMatchAvailability
+}) {
+  let detail: string
+
+  if (availability.kind === 'future-observed') {
+    const labels = availability.futureObservedMatches
+      .slice(0, 4)
+      .map(
+        (recipe) =>
+          `${formatRecipeDisplayName(recipe.name)}（${progressMilestoneLabels[recipe.unlockedAt]}）`,
+      )
+    detail =
+      `已知後續實測 full match：${labels.join('、')}` +
+      (availability.futureObservedMatches.length > labels.length
+        ? `，另有 ${availability.futureObservedMatches.length - labels.length} 種`
+        : '')
+  } else if (availability.kind === 'ambiguous-only') {
+    detail =
+      `目前有 ${availability.ambiguousCandidates.length} 個歧義推導候選可能滿足喜好；` +
+      '同分 cutoff 尚未確認，因此不宣稱 full match。'
+  } else if (availability.kind === 'none-in-search-scope') {
+    detail = availability.searchTruncated
+      ? '目前有界搜尋已碰到候選預算截斷；沒有找到安全 full match，但這不是「遊戲中不存在」的證明。'
+      : '目前有界搜尋與已知實測資料沒有找到安全 full match；不把搜尋未命中外推成全域不存在。'
+  } else {
+    detail =
+      availability.kind === 'observed-current'
+        ? '目前至少有一個正式實測配方能完全滿足所有已知喜好。'
+        : '目前至少有一個無歧義、可製作的可靠候選能完全滿足所有已知喜好。'
+  }
+
+  return (
+    <div className="full-match-availability">
+      <span className="detail-label">完整匹配狀態</span>
+      <div>
+        <strong>{fullMatchAvailabilityLabel(availability)}</strong>
+        <small>{detail}</small>
+      </div>
+    </div>
+  )
+}
+
+function RecipeCandidateMeta({
   recipe,
 }: {
   recipe: RecipeCandidate
@@ -1821,14 +1988,66 @@ function FullMatchRecipeItem({
   const cost = calculateRecipeIngredientCost(recipe)
 
   return (
-    <li>
-      <span>{formatRecipeDisplayName(recipe.name)}</span>
-      <strong>
-        {formatRecipeCost(cost)} ·{' '}
-        {recipe.salePrice === null
-          ? '售價未知'
-          : '售價 ' + formatMoney(recipe.salePrice)}
-      </strong>
+    <div className="recipe-evidence-meta">
+      <span>原料順序：{formatRecipeSequence(recipe.ingredients)}</span>
+      <span>
+        所需設備：{recipe.equipment.length > 0
+          ? recipe.equipment.join('・')
+          : '未列設備'}
+      </span>
+      <span>原料成本：{formatRecipeCost(cost)}</span>
+      <span>來源／可信狀態：{recipeCandidateAuthorityLabel(recipe)}</span>
+    </div>
+  )
+}
+
+function SaveRecipeButton({
+  recipe,
+  saved,
+  onSaveRecipe,
+}: {
+  recipe: RecipeCandidate
+  saved: boolean
+  onSaveRecipe: (candidate: RecipeCandidate) => void
+}) {
+  return (
+    <button
+      type="button"
+      className="recipe-save-button"
+      disabled={saved}
+      title="只保存有序原料到 mjc-saved-recipes；不會升格為專案實測資料"
+      onClick={() => onSaveRecipe(recipe)}
+    >
+      {saved ? '已在我的配方' : '加入我的配方'}
+    </button>
+  )
+}
+
+export function FullMatchRecipeItem({
+  recipe,
+  saved,
+  onSaveRecipe,
+}: {
+  recipe: RecipeCandidate
+  saved: boolean
+  onSaveRecipe: (candidate: RecipeCandidate) => void
+}) {
+  return (
+    <li className="full-match-recipe-item">
+      <div className="full-match-recipe-heading">
+        <span>{formatRecipeDisplayName(recipe.name)}</span>
+        <strong>
+          {recipe.salePrice === null
+            ? '售價未知'
+            : '售價 ' + formatMoney(recipe.salePrice)}
+        </strong>
+      </div>
+      <RecipeCandidateMeta recipe={recipe} />
+      <SaveRecipeButton
+        recipe={recipe}
+        saved={saved}
+        onSaveRecipe={onSaveRecipe}
+      />
     </li>
   )
 }
@@ -1843,12 +2062,15 @@ function RecommendationCompact({
   const sources = new Set(
     recommendation.candidates.map(({ candidate }) => candidate.source),
   )
-  const sourceLabel =
-    sources.size > 1
-      ? '實測／預測'
-      : sources.has('computed')
-        ? '預測'
-        : '實測'
+  const sourceLabel = [...sources]
+    .map((source) =>
+      source === 'observed'
+        ? '正式實測'
+        : source === 'personal'
+          ? '個人已確認'
+          : '安全推導',
+    )
+    .join('／')
   const costLabel =
     recommendation.costMode === 'minimum' ? '最低成本' : '最高成本'
   const recipeLabel =
@@ -1866,17 +2088,22 @@ function RecommendationCompact({
   )
 }
 
-function RecommendationDetails({
+export function RecommendationDetails({
   formal,
   recommendations,
   costMode,
+  savedRecipeCandidateIds,
+  onSaveRecipe,
 }: {
   formal: boolean
   recommendations: CustomerRecipeRecommendations
   costMode: RecommendationCostMode
+  savedRecipeCandidateIds: ReadonlySet<string>
+  onSaveRecipe: (candidate: RecipeCandidate) => void
 }) {
   const title = formal ? '最佳完全匹配' : '最佳試喝建議'
   const costLabel = costMode === 'minimum' ? '最低成本' : '最高成本'
+  const items = recommendationDisplayItems(recommendations)
 
   return (
     <div className="recommendation-box">
@@ -1884,52 +2111,39 @@ function RecommendationDetails({
         <strong>{title}</strong>
         <span>{costLabel}</span>
       </div>
-      <RecommendationLine
-        label={`已實測${costLabel}`}
-        recommendation={recommendations.observedOnly}
-      />
-      <RecommendationLine
-        label={`含預測${costLabel}`}
-        recommendation={recommendations.allowComputed}
-      />
-    </div>
-  )
-}
-
-function RecommendationLine({
-  label,
-  recommendation,
-}: {
-  label: string
-  recommendation: CustomerRecipeRecommendations['observedOnly']
-}) {
-  if (!recommendation) {
-    return (
-      <div className="recommendation-line">
-        <span>{label}</span>
-        <span className="muted">目前沒有可靠 full match</span>
-      </div>
-    )
-  }
-
-  return (
-    <div className="recommendation-line">
-      <span>{label}</span>
-      <div>
-        <strong>
-          {recommendation.candidates
-            .map(({ candidate }) =>
-              formatRecipeDisplayName(candidate.name),
-            )
-            .join('、')}
-        </strong>
-        <small>
-          {formatRecipeIngredientCost(
-            recommendation.batchIngredientCost,
-            recommendation.unitIngredientCost,
-          )}
-        </small>
-      </div>
+      {items.length === 0 ? (
+        <p className="muted">
+          目前沒有可推薦的安全 full match；請看上方完整匹配狀態。
+        </p>
+      ) : (
+        items.map((item) => (
+          <div
+            className="recommendation-line recommendation-recipe-line"
+            key={item.candidate.id}
+          >
+            <span>{recipeCandidateAuthorityLabel(item.candidate)}</span>
+            <div>
+              <strong>
+                {formatRecipeDisplayName(item.candidate.name)}
+              </strong>
+              <div className="tags recommendation-reasons">
+                {item.reasons.map((reason) => (
+                  <span className="tag" key={reason}>{reason}</span>
+                ))}
+              </div>
+              <RecipeCandidateMeta recipe={item.candidate} />
+              <SaveRecipeButton
+                recipe={item.candidate}
+                saved={savedRecipeCandidateIds.has(item.candidate.id)}
+                onSaveRecipe={onSaveRecipe}
+              />
+            </div>
+          </div>
+        ))
+      )}
+      <small className="recommendation-save-note">
+        「加入我的配方」只保存有序原料；不代表玩家已實測確認，也不會升格為專案 observed data。
+      </small>
     </div>
   )
 }

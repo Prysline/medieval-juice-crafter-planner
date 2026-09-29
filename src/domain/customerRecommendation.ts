@@ -1,7 +1,16 @@
-import { recipeCandidateMatchesCustomer } from './matching'
+import { isAvailableAtProgress } from './availability'
+import {
+  recipeCandidateMatchesCustomer,
+  recipeMatchesCustomer,
+} from './matching'
 import { calculateRecipeIngredientCost } from './recipeCost'
 import type { ProgressiveRecipeSearchPolicy } from './recipeSearch'
-import type { Customer, RecipeCandidate } from '../types'
+import type {
+  Customer,
+  ProgressMilestoneId,
+  Recipe,
+  RecipeCandidate,
+} from '../types'
 
 export type RecommendationPolicy = ProgressiveRecipeSearchPolicy
 export type RecommendationCostMode = 'minimum' | 'maximum'
@@ -25,6 +34,176 @@ export type CheapestRecipeRecommendation = BestRecipeRecommendation
 export interface CustomerRecipeRecommendations {
   observedOnly: BestRecipeRecommendation | null
   allowComputed: BestRecipeRecommendation | null
+}
+
+export type CustomerFullMatchAvailabilityKind =
+  | 'observed-current'
+  | 'safe-current'
+  | 'future-observed'
+  | 'ambiguous-only'
+  | 'none-in-search-scope'
+
+export interface CustomerFullMatchAvailability {
+  kind: CustomerFullMatchAvailabilityKind
+  currentSources: readonly RecipeCandidate['source'][]
+  futureObservedMatches: readonly Recipe[]
+  ambiguousCandidates: readonly RecipeCandidate[]
+  searchTruncated: boolean
+}
+
+export interface RecommendationDisplayItem extends CostedRecipeCandidate {
+  reasons: readonly string[]
+}
+
+function ambiguousCandidateCouldMatchCustomer(
+  candidate: RecipeCandidate,
+  customer: Customer,
+): boolean {
+  const ambiguity = candidate.effectAmbiguity
+  const preferences = customer.preferences
+  if (!ambiguity || !preferences || preferences.length === 0) {
+    return false
+  }
+
+  const confirmedEffectNames = new Set(
+    candidate.effects.map((effect) => effect.name),
+  )
+  const ambiguousEffectNames = new Set(
+    ambiguity.candidates.map((effect) => effect.name),
+  )
+  const requiredAmbiguousEffects = new Set<string>()
+
+  for (const preference of preferences) {
+    if (preference.kind === 'ingredient') {
+      if (!candidate.ingredients.includes(preference.value)) {
+        return false
+      }
+      continue
+    }
+
+    if (confirmedEffectNames.has(preference.value)) continue
+    if (!ambiguousEffectNames.has(preference.value)) return false
+    requiredAmbiguousEffects.add(preference.value)
+  }
+
+  return requiredAmbiguousEffects.size <= ambiguity.remainingSlots
+}
+
+export function customerFullMatchAvailability({
+  customer,
+  currentProgress,
+  currentFullMatches,
+  searchedCandidates,
+  knownObservedRecipes,
+  searchTruncated,
+}: {
+  customer: Customer
+  currentProgress: ProgressMilestoneId
+  currentFullMatches: readonly RecipeCandidate[]
+  searchedCandidates: readonly RecipeCandidate[]
+  knownObservedRecipes: readonly Recipe[]
+  searchTruncated: boolean
+}): CustomerFullMatchAvailability {
+  const currentSources = (
+    ['observed', 'personal', 'computed'] as const
+  ).filter((source) =>
+    currentFullMatches.some((candidate) => candidate.source === source),
+  )
+
+  if (currentSources.includes('observed')) {
+    return {
+      kind: 'observed-current',
+      currentSources,
+      futureObservedMatches: [],
+      ambiguousCandidates: [],
+      searchTruncated,
+    }
+  }
+
+  if (currentFullMatches.length > 0) {
+    return {
+      kind: 'safe-current',
+      currentSources,
+      futureObservedMatches: [],
+      ambiguousCandidates: [],
+      searchTruncated,
+    }
+  }
+
+  const futureObservedMatches = knownObservedRecipes.filter(
+    (recipe) =>
+      !isAvailableAtProgress(recipe.unlockedAt, currentProgress) &&
+      recipeMatchesCustomer(recipe, customer),
+  )
+  if (futureObservedMatches.length > 0) {
+    return {
+      kind: 'future-observed',
+      currentSources: [],
+      futureObservedMatches,
+      ambiguousCandidates: [],
+      searchTruncated,
+    }
+  }
+
+  const ambiguousCandidates = searchedCandidates.filter((candidate) =>
+    ambiguousCandidateCouldMatchCustomer(candidate, customer),
+  )
+  if (ambiguousCandidates.length > 0) {
+    return {
+      kind: 'ambiguous-only',
+      currentSources: [],
+      futureObservedMatches: [],
+      ambiguousCandidates,
+      searchTruncated,
+    }
+  }
+
+  return {
+    kind: 'none-in-search-scope',
+    currentSources: [],
+    futureObservedMatches: [],
+    ambiguousCandidates: [],
+    searchTruncated,
+  }
+}
+
+export function recommendationDisplayItems(
+  recommendations: CustomerRecipeRecommendations,
+): RecommendationDisplayItem[] {
+  const byCandidateId = new Map<string, RecommendationDisplayItem>()
+
+  function addRecommendation(
+    recommendation: BestRecipeRecommendation | null,
+    reasonPrefix: string,
+  ) {
+    if (!recommendation) return
+    const costLabel =
+      recommendation.costMode === 'minimum' ? '最低成本' : '最高成本'
+    const reason = `${reasonPrefix}${costLabel}`
+
+    for (const item of recommendation.candidates) {
+      const current = byCandidateId.get(item.candidate.id)
+      if (current) {
+        if (!current.reasons.includes(reason)) {
+          byCandidateId.set(item.candidate.id, {
+            ...current,
+            reasons: [...current.reasons, reason],
+          })
+        }
+        continue
+      }
+
+      byCandidateId.set(item.candidate.id, {
+        ...item,
+        reasons: [reason],
+      })
+    }
+  }
+
+  addRecommendation(recommendations.observedOnly, '已實測')
+  addRecommendation(recommendations.allowComputed, '目前可製作')
+
+  return [...byCandidateId.values()]
 }
 
 function eligibleForPolicy(

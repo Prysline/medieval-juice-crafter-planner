@@ -4,10 +4,12 @@ import { generateRecipeCandidates } from './recipeGenerator'
 import {
   bestFullMatchRecommendation,
   cheapestFullMatchRecommendation,
+  customerFullMatchAvailability,
   customerRecipeRecommendations,
+  recommendationDisplayItems,
   sortFullMatchCandidatesByIngredientCost,
 } from './customerRecommendation'
-import type { Customer, RecipeCandidate } from '../types'
+import type { Customer, Recipe, RecipeCandidate } from '../types'
 
 const syntheticCustomer: Customer = {
   id: 'fixture',
@@ -170,6 +172,130 @@ describe('customer lowest-cost recommendations', () => {
     expect(
       recommendations.allowComputed?.candidates[0].candidate.id,
     ).toBe('computed')
+  })
+
+  it('deduplicates one recipe that is best for multiple recommendation reasons', () => {
+    const observed = fixtureCandidate(
+      'observed',
+      ['檸檬', '糖'],
+      'observed',
+    )
+    const observedRecommendation = bestFullMatchRecommendation(
+      [observed],
+      syntheticCustomer,
+      'observed-only',
+      'minimum',
+    )
+    const broadRecommendation = bestFullMatchRecommendation(
+      [observed],
+      syntheticCustomer,
+      'allow-unambiguous-computed',
+      'minimum',
+    )
+
+    const displayItems = recommendationDisplayItems({
+      observedOnly: observedRecommendation,
+      allowComputed: broadRecommendation,
+    })
+
+    expect(displayItems).toHaveLength(1)
+    expect(displayItems[0].candidate.id).toBe('observed')
+    expect(displayItems[0].reasons).toEqual([
+      '已實測最低成本',
+      '目前可製作最低成本',
+    ])
+  })
+
+  it('classifies current, future, ambiguous, and bounded-search full-match states without overclaiming', () => {
+    const observed = fixtureCandidate(
+      'observed',
+      ['檸檬', '糖'],
+      'observed',
+    )
+    const computed = fixtureCandidate(
+      'computed',
+      ['檸檬', '糖'],
+      'computed',
+    )
+    const futureObserved: Recipe = {
+      id: 'future-observed',
+      name: '未來實測配方',
+      unlockedAt: 'juice-blender-unlocked',
+      salePrice: 50,
+      ingredients: ['檸檬', '糖'],
+      effects: [{ name: '甜味', value: 5 }],
+      equipment: ['果汁調和器'],
+    }
+    const ambiguous = fixtureCandidate(
+      'ambiguous',
+      ['檸檬', '糖'],
+      'computed',
+    )
+    ambiguous.effects = []
+    ambiguous.effectAmbiguity = {
+      cutoffValue: 5,
+      remainingSlots: 1,
+      candidates: [{ name: '甜味', value: 5 }],
+    }
+
+    expect(
+      customerFullMatchAvailability({
+        customer: syntheticCustomer,
+        currentProgress: 'seasoner-unlocked',
+        currentFullMatches: [observed],
+        searchedCandidates: [observed],
+        knownObservedRecipes: [futureObserved],
+        searchTruncated: false,
+      }).kind,
+    ).toBe('observed-current')
+
+    expect(
+      customerFullMatchAvailability({
+        customer: syntheticCustomer,
+        currentProgress: 'seasoner-unlocked',
+        currentFullMatches: [computed],
+        searchedCandidates: [computed],
+        knownObservedRecipes: [futureObserved],
+        searchTruncated: false,
+      }).kind,
+    ).toBe('safe-current')
+
+    const future = customerFullMatchAvailability({
+      customer: syntheticCustomer,
+      currentProgress: 'seasoner-unlocked',
+      currentFullMatches: [],
+      searchedCandidates: [],
+      knownObservedRecipes: [futureObserved],
+      searchTruncated: false,
+    })
+    expect(future.kind).toBe('future-observed')
+    expect(future.futureObservedMatches.map((recipe) => recipe.id)).toEqual([
+      'future-observed',
+    ])
+
+    const ambiguousOnly = customerFullMatchAvailability({
+      customer: syntheticCustomer,
+      currentProgress: 'seasoner-unlocked',
+      currentFullMatches: [],
+      searchedCandidates: [ambiguous],
+      knownObservedRecipes: [],
+      searchTruncated: false,
+    })
+    expect(ambiguousOnly.kind).toBe('ambiguous-only')
+    expect(
+      ambiguousOnly.ambiguousCandidates.map((candidate) => candidate.id),
+    ).toEqual(['ambiguous'])
+
+    const none = customerFullMatchAvailability({
+      customer: syntheticCustomer,
+      currentProgress: 'seasoner-unlocked',
+      currentFullMatches: [],
+      searchedCandidates: [],
+      knownObservedRecipes: [],
+      searchTruncated: true,
+    })
+    expect(none.kind).toBe('none-in-search-scope')
+    expect(none.searchTruncated).toBe(true)
   })
 
   it('never recommends an ambiguous computed candidate', () => {

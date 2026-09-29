@@ -67,7 +67,7 @@ function sequenceKey(ingredientIds: readonly string[]): string {
   return ingredientIds.join('\u001f')
 }
 
-function ingredientIdsForCandidate(
+export function recipeIngredientIdsForCandidate(
   candidate: RecipeCandidate,
 ): string[] {
   return candidate.ingredients.map((name) => {
@@ -175,7 +175,7 @@ export function buildRecipeCandidatePool(
     const candidateIds: string[] = []
 
     for (const candidate of layer.candidates) {
-      const ingredientIds = ingredientIdsForCandidate(candidate)
+      const ingredientIds = recipeIngredientIdsForCandidate(candidate)
       mergeEntry({
         ingredientIds,
         candidate,
