@@ -28,6 +28,30 @@ describe('delivery checkbox and whole-plan application contract', () => {
     )
   })
 
+  it('keeps stale optimizer success as session-only readonly state with an active-draft apply gate', () => {
+    expect(optimizerToolsSource).toContain(
+      'useState<OptimizerStaleSuccessReference | null>(null)',
+    )
+    expect(optimizerToolsSource).toContain(
+      "captureStaleSuccessReference(existing, current, reason)",
+    )
+    expect(optimizerToolsSource).toContain(
+      'setStaleSuccessReference(null)',
+    )
+    expect(optimizerToolsSource).toContain(
+      'optimizerTransactionDraftIsActive(runState, draft)',
+    )
+    expect(optimizerToolsSource).toContain(
+      '上一份成功規劃已過期／唯讀',
+    )
+    expect(optimizerToolsSource).toContain(
+      'readOnly || deliveryUiState.status',
+    )
+    expect(optimizerToolsSource).not.toContain(
+      'STALE_SUCCESS_STORAGE_KEY',
+    )
+  })
+
   it('keeps manual delivery checks record-only', () => {
     expect(optimizerToolsSource).toContain(
       'Manual checklist edits are record corrections only.',
