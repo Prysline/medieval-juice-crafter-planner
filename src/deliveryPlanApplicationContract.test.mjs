@@ -68,13 +68,17 @@ describe('delivery checkbox and whole-plan application contract', () => {
     const runStart = optimizerToolsSource.indexOf(
       'async function runOptimizer()',
     )
-    const catchStart = optimizerToolsSource.indexOf(
-      '} catch (error) {',
+    const cancelledGuard = optimizerToolsSource.indexOf(
+      'if (isOptimizerWorkerCancelledError(error))',
       runStart,
+    )
+    const catchStart = optimizerToolsSource.lastIndexOf(
+      '} catch (error) {',
+      cancelledGuard,
     )
     const finallyStart = optimizerToolsSource.indexOf(
       '} finally {',
-      catchStart,
+      cancelledGuard,
     )
     const optimizerCatchSource = optimizerToolsSource.slice(
       catchStart,
@@ -82,8 +86,10 @@ describe('delivery checkbox and whole-plan application contract', () => {
     )
 
     expect(runStart).toBeGreaterThanOrEqual(0)
+    expect(cancelledGuard).toBeGreaterThan(runStart)
     expect(catchStart).toBeGreaterThan(runStart)
-    expect(finallyStart).toBeGreaterThan(catchStart)
+    expect(catchStart).toBeLessThan(cancelledGuard)
+    expect(finallyStart).toBeGreaterThan(cancelledGuard)
     expect(optimizerCatchSource).toContain(
       'error: presentPlanningError(error)',
     )
