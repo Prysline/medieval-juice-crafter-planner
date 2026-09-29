@@ -204,6 +204,8 @@ export type OptimizerRunState =
       currentProgress: ProgressMilestoneId
       activeWorkshopRegionId: VillageId
       suppliedCustomerIdsSnapshot: readonly string[]
+      inputRevisionToken: object
+      canonicalDeliveryUiFingerprint: string
     }
   | { status: 'error'; error: PlanningErrorPresentation }
 
@@ -228,9 +230,14 @@ export function captureStaleSuccessReference(
 export function optimizerTransactionDraftIsActive(
   runState: OptimizerRunState,
   draft: PlanApplicationTransactionDraft,
+  currentInputRevisionToken: object,
+  currentCanonicalDeliveryUiFingerprint: string,
 ): boolean {
   return (
     runState.status === 'success' &&
+    runState.inputRevisionToken === currentInputRevisionToken &&
+    runState.canonicalDeliveryUiFingerprint ===
+      currentCanonicalDeliveryUiFingerprint &&
     !runState.transactionDraftInvalidatedByPartialDelivery &&
     runState.transactionDraft === draft
   )
@@ -2148,6 +2155,26 @@ function OptimizerTools({
     [inventoryState, suppliedCustomerIds],
   )
 
+  const optimizerInputRevisionToken = useMemo(
+    () => Object.freeze({}),
+    [
+      currentProgress,
+      satisfactionByVillage,
+      formalCustomerIds,
+      scope,
+      targetMode,
+      selectedVillageIds,
+      selectedCustomerIds,
+      candidatePolicy,
+      materialSourceMode,
+      priorities,
+      plannerSettings,
+      maxJarFillOperations,
+      activeWorkshopRegionId,
+      recipeCandidatePool,
+    ],
+  )
+
   function persistInventory(next: InventoryState) {
     setInventoryState(next)
     writeInventoryState(window.localStorage, next)
@@ -2323,8 +2350,17 @@ function OptimizerTools({
   function invalidateOptimizerRun(reason: OptimizerStaleReason) {
     const current = runStateRef.current
     if (current.status === 'success') {
+      const effectiveReason =
+        current.canonicalDeliveryUiFingerprint !==
+        canonicalDeliveryUiFingerprint
+          ? 'canonical-state-changed'
+          : reason
       setStaleSuccessReference((existing) =>
-        captureStaleSuccessReference(existing, current, reason),
+        captureStaleSuccessReference(
+          existing,
+          current,
+          effectiveReason,
+        ),
       )
     }
     runStateRef.current = { status: 'idle' }
@@ -2336,22 +2372,7 @@ function OptimizerTools({
     optimizerAbortControllerRef.current = null
     invalidateOptimizerRun('solver-input-changed')
     setDeliveryUiState({ status: 'idle' })
-  }, [
-    currentProgress,
-    satisfactionByVillage,
-    formalCustomerIds,
-    scope,
-    targetMode,
-    selectedVillageIds,
-    selectedCustomerIds,
-    candidatePolicy,
-    materialSourceMode,
-    priorities,
-    plannerSettings,
-    maxJarFillOperations,
-    activeWorkshopRegionId,
-    recipeCandidatePool,
-  ])
+  }, [optimizerInputRevisionToken])
 
   useEffect(
     () => () => {
@@ -2386,7 +2407,14 @@ function OptimizerTools({
   function applyTransactionDraft(
     draft: PlanApplicationTransactionDraft,
   ) {
-    if (!optimizerTransactionDraftIsActive(runState, draft)) {
+    if (
+      !optimizerTransactionDraftIsActive(
+        runState,
+        draft,
+        optimizerInputRevisionToken,
+        canonicalDeliveryUiFingerprint,
+      )
+    ) {
       setApplicationState({ status: 'blocked-stale' })
       return
     }
@@ -2481,6 +2509,7 @@ function OptimizerTools({
         return {
           ...current,
           suppliedCustomerIdsSnapshot: [...committedSupplied],
+          canonicalDeliveryUiFingerprint: targetFingerprint,
         }
       }
 
@@ -2497,6 +2526,7 @@ function OptimizerTools({
         transactionDraftInvalidatedByPartialDelivery:
           rebasedTransaction.invalidated,
         suppliedCustomerIdsSnapshot: [...committedSupplied],
+        canonicalDeliveryUiFingerprint: targetFingerprint,
       }
     })
     setApplicationState({ status: 'idle' })
@@ -3029,6 +3059,8 @@ function OptimizerTools({
         currentProgress,
         activeWorkshopRegionId,
         suppliedCustomerIdsSnapshot: [...suppliedCustomerIds],
+        inputRevisionToken: optimizerInputRevisionToken,
+        canonicalDeliveryUiFingerprint,
       }
       runStateRef.current = successState
       setStaleSuccessReference(null)
@@ -3060,6 +3092,23 @@ function OptimizerTools({
     optimizerAbortControllerRef.current = null
     setRunState({ status: 'idle' })
   }
+
+  const runStateIsCurrentSuccess =
+    runState.status === 'success' &&
+    runState.inputRevisionToken === optimizerInputRevisionToken &&
+    runState.canonicalDeliveryUiFingerprint ===
+      canonicalDeliveryUiFingerprint
+  const visibleStaleSuccessReference =
+    runState.status === 'success' && !runStateIsCurrentSuccess
+      ? captureStaleSuccessReference(
+          null,
+          runState,
+          runState.canonicalDeliveryUiFingerprint !==
+            canonicalDeliveryUiFingerprint
+            ? 'canonical-state-changed'
+            : 'solver-input-changed',
+        )
+      : staleSuccessReference
 
   return (
     <section className="optimizer-tools" aria-label="最佳化規劃">
@@ -3837,7 +3886,7 @@ function OptimizerTools({
         </div>
       )}
 
-      {runState.status === 'success' && (
+      {runStateIsCurrentSuccess && runState.status === 'success' && (
         <>
           <OptimizerRunSummary
             elapsedMs={runState.elapsedMs}
@@ -3880,50 +3929,50 @@ function OptimizerTools({
         </>
       )}
 
-      {staleSuccessReference && runState.status !== 'success' && (
+      {visibleStaleSuccessReference && !runStateIsCurrentSuccess && (
         <>
           <div className="optimizer-result-note" role="status">
             <strong>上一份成功規劃已過期／唯讀</strong>
             <span>
-              {staleSuccessReference.reason === 'canonical-state-changed'
+              {visibleStaleSuccessReference.reason === 'canonical-state-changed'
                 ? '庫存或今日供應等 canonical 狀態已改變。'
                 : '影響最佳化求解的輸入已改變。'}
               這份結果只保留作本次頁面工作階段的參考，不會被當成目前輸入下仍有效的規劃，也不能整份套用。
             </span>
           </div>
           <OptimizerRunSummary
-            elapsedMs={staleSuccessReference.run.elapsedMs}
-            candidatePolicy={staleSuccessReference.run.candidatePolicy}
-            customerCount={staleSuccessReference.run.customerCount}
-            assignedCustomerCount={staleSuccessReference.run.result.assignedServings}
+            elapsedMs={visibleStaleSuccessReference.run.elapsedMs}
+            candidatePolicy={visibleStaleSuccessReference.run.candidatePolicy}
+            customerCount={visibleStaleSuccessReference.run.customerCount}
+            assignedCustomerCount={visibleStaleSuccessReference.run.result.assignedServings}
             unresolvedCustomerCount={
-              staleSuccessReference.run.result.unresolvedCustomers.length +
-              (staleSuccessReference.run.result.inventoryUnfulfilledCustomers?.length ?? 0)
+              visibleStaleSuccessReference.run.result.unresolvedCustomers.length +
+              (visibleStaleSuccessReference.run.result.inventoryUnfulfilledCustomers?.length ?? 0)
             }
           />
           <OptimizerResultPanel
-            result={staleSuccessReference.run.result}
-            materialSourceMode={staleSuccessReference.run.materialSourceMode}
-            currentProgress={staleSuccessReference.run.currentProgress}
-            activeWorkshopRegionId={staleSuccessReference.run.activeWorkshopRegionId}
-            preparationShortfall={staleSuccessReference.run.preparationShortfall}
-            productionLogistics={staleSuccessReference.run.productionLogistics}
-            priorities={staleSuccessReference.run.priorities}
-            salesTripPlans={staleSuccessReference.run.salesTripPlans}
-            customTripAutoBaseline={staleSuccessReference.run.customTripAutoBaseline}
-            appliedCustomPlan={staleSuccessReference.run.appliedCustomPlan}
-            customTripApplyError={staleSuccessReference.run.customTripApplyError}
-            validateCustomTripDraft={staleSuccessReference.run.validateCustomTripDraft}
+            result={visibleStaleSuccessReference.run.result}
+            materialSourceMode={visibleStaleSuccessReference.run.materialSourceMode}
+            currentProgress={visibleStaleSuccessReference.run.currentProgress}
+            activeWorkshopRegionId={visibleStaleSuccessReference.run.activeWorkshopRegionId}
+            preparationShortfall={visibleStaleSuccessReference.run.preparationShortfall}
+            productionLogistics={visibleStaleSuccessReference.run.productionLogistics}
+            priorities={visibleStaleSuccessReference.run.priorities}
+            salesTripPlans={visibleStaleSuccessReference.run.salesTripPlans}
+            customTripAutoBaseline={visibleStaleSuccessReference.run.customTripAutoBaseline}
+            appliedCustomPlan={visibleStaleSuccessReference.run.appliedCustomPlan}
+            customTripApplyError={visibleStaleSuccessReference.run.customTripApplyError}
+            validateCustomTripDraft={visibleStaleSuccessReference.run.validateCustomTripDraft}
             onCustomTripDraftDirtyChange={() => {}}
             onAcceptCustomTripPlan={() => {}}
             onRestoreAutoSalesPlan={() => {}}
-            transactionDraft={staleSuccessReference.run.transactionDraft}
+            transactionDraft={visibleStaleSuccessReference.run.transactionDraft}
             transactionDraftInvalidatedByPartialDelivery={
-              staleSuccessReference.run.transactionDraftInvalidatedByPartialDelivery
+              visibleStaleSuccessReference.run.transactionDraftInvalidatedByPartialDelivery
             }
-            deliveryExecutionPlan={staleSuccessReference.run.deliveryExecutionPlan}
-            deliveryCursor={staleSuccessReference.run.deliveryCursor}
-            suppliedCustomerIds={staleSuccessReference.run.suppliedCustomerIdsSnapshot}
+            deliveryExecutionPlan={visibleStaleSuccessReference.run.deliveryExecutionPlan}
+            deliveryCursor={visibleStaleSuccessReference.run.deliveryCursor}
+            suppliedCustomerIds={visibleStaleSuccessReference.run.suppliedCustomerIdsSnapshot}
             deliveryUiState={{ status: 'idle' }}
             onApplyTransaction={applyTransactionDraft}
             onCommitDelivery={() => {}}
