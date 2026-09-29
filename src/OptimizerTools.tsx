@@ -12,6 +12,7 @@ import { ingredients } from './data/ingredients'
 import { recipes } from './data/recipes'
 import { recipeIngredientCapabilities } from './data/recipeIngredientCapabilities'
 import { ingredientIsAvailable } from './domain/availability'
+import { evaluateRecipeSequence } from './domain/recipeEvaluator'
 import {
   availableProductionWorkshopRegions,
   productionCustomerRegionById,
@@ -73,7 +74,10 @@ import {
 } from './domain/recipeCandidatePool'
 import type { ProductionLogisticsPlan } from './domain/productionLogistics'
 import { productionPathForIngredientIds } from './domain/productionPlan'
-import { juiceStateIdentity } from './domain/juiceStateIdentity'
+import {
+  ingredientIdsFromJuiceStateIdentity,
+  juiceStateIdentity,
+} from './domain/juiceStateIdentity'
 import {
   rebasePlanApplicationTransactionSuppliedCustomers,
   type PlanApplicationTransactionDraft,
@@ -119,6 +123,7 @@ import {
   type PlanningErrorPresentation,
 } from './domain/planningErrors'
 import type {
+  Ingredient,
   InventoryState,
   PlannerSettings,
   ProgressMilestoneId,
@@ -529,6 +534,59 @@ export interface IntermediateJuiceInventoryEntry {
   label: string
 }
 
+export function intermediateJuiceInventoryEntryFromIdentity(
+  identity: string,
+): IntermediateJuiceInventoryEntry | null {
+  const ingredientIds = ingredientIdsFromJuiceStateIdentity(identity)
+  if (
+    !ingredientIds ||
+    ingredientIds.some((ingredientId) => !ingredientById.has(ingredientId)) ||
+    !productionPathForIngredientIds(ingredientIds)
+  ) {
+    return null
+  }
+
+  return {
+    identity,
+    ingredientIds,
+    label: sequenceLabel(ingredientIds),
+  }
+}
+
+export function intermediateJuiceInventoryEntryFromSequence(
+  ingredientIds: readonly string[],
+  currentProgress: ProgressMilestoneId,
+): IntermediateJuiceInventoryEntry | null {
+  if (ingredientIds.length === 0) return null
+
+  const evaluation = evaluateRecipeSequence(
+    [...ingredientIds],
+    currentProgress,
+  )
+  if (!evaluation.valid || !evaluation.availableAtCurrentProgress) {
+    return null
+  }
+
+  const path = productionPathForIngredientIds(ingredientIds)
+  if (!path) return null
+  const lastIntermediateEdge = [...path.edges]
+    .reverse()
+    .find((edge) => edge.kind !== 'finalizing')
+  if (
+    !lastIntermediateEdge ||
+    lastIntermediateEdge.toIngredientIds.join('\u001f') !==
+      ingredientIds.join('\u001f')
+  ) {
+    return null
+  }
+
+  return {
+    identity: juiceStateIdentity(ingredientIds),
+    ingredientIds: [...ingredientIds],
+    label: sequenceLabel(ingredientIds),
+  }
+}
+
 function ingredientIsAvailableAtProgress(
   ingredientId: string,
   currentProgress: ProgressMilestoneId,
@@ -591,6 +649,8 @@ export interface IntermediateJuiceSearchIndexRow {
   readonly normalizedLabel: string
   readonly normalizedIngredientIds: string
   readonly normalizedIngredientNames: string
+  readonly normalizedIngredientNameTokens: readonly string[]
+  readonly normalizedIngredientIdTokens: readonly string[]
   readonly normalizedSingleIngredientName: string | null
   readonly normalizedSingleIngredientId: string | null
 }
@@ -623,6 +683,12 @@ export function buildIntermediateJuiceSearchIndex(
         normalizedIngredientNames: normalizeRecipeSearchText(
           ingredientNames.join(' '),
         ),
+        normalizedIngredientNameTokens: ingredientNames.map(
+          normalizeRecipeSearchText,
+        ),
+        normalizedIngredientIdTokens: entry.ingredientIds.map(
+          normalizeRecipeSearchText,
+        ),
         normalizedSingleIngredientName:
           entry.ingredientIds.length === 1
             ? normalizeRecipeSearchText(ingredientNames[0] ?? '')
@@ -644,6 +710,40 @@ export function buildIntermediateJuiceSearchIndex(
   return index
 }
 
+function intermediateJuiceSearchTokens(query: string): string[] {
+  return normalizeRecipeSearchText(query)
+    .split(/[\s,，、/|>→]+/u)
+    .filter(Boolean)
+}
+
+function intermediateIngredientTokensMatch(
+  queryTokens: readonly string[],
+  row: IntermediateJuiceSearchIndexRow,
+  mode: 'exact' | 'contains',
+): boolean {
+  if (queryTokens.length === 0) return false
+  if (queryTokens.length > row.entry.ingredientIds.length) return false
+
+  const remaining = row.normalizedIngredientNameTokens.map(
+    (name, index) => ({
+      name,
+      id: row.normalizedIngredientIdTokens[index] ?? '',
+    }),
+  )
+
+  for (const token of queryTokens) {
+    const matchIndex = remaining.findIndex(({ name, id }) =>
+      mode === 'exact'
+        ? name === token || id === token
+        : name.includes(token) || id.includes(token),
+    )
+    if (matchIndex < 0) return false
+    remaining.splice(matchIndex, 1)
+  }
+
+  return true
+}
+
 export function searchIntermediateJuiceIndex(
   index: IntermediateJuiceSearchIndex,
   query: string,
@@ -651,6 +751,7 @@ export function searchIntermediateJuiceIndex(
   limit = INTERMEDIATE_JUICE_SEARCH_RESULT_LIMIT,
 ): IntermediateJuiceInventoryEntry[] {
   const normalized = normalizeRecipeSearchText(query)
+  const queryTokens = intermediateJuiceSearchTokens(query)
   const boundedLimit = Math.max(0, Math.floor(limit))
   if (boundedLimit === 0) return []
   if (!normalized) {
@@ -664,31 +765,44 @@ export function searchIntermediateJuiceIndex(
   }
 
   const buckets: IntermediateJuiceInventoryEntry[][] =
-    Array.from({ length: 6 }, () => [])
+    Array.from({ length: 8 }, () => [])
 
   for (const row of index.rankedRows) {
     if (excludedIdentities?.has(row.entry.identity)) continue
+
+    const exactIngredientMatch =
+      queryTokens.length === row.entry.ingredientIds.length &&
+      intermediateIngredientTokensMatch(queryTokens, row, 'exact')
+    const exactIngredientSubset =
+      queryTokens.length > 1 &&
+      intermediateIngredientTokensMatch(queryTokens, row, 'exact')
+    const tokenAndMatch =
+      intermediateIngredientTokensMatch(queryTokens, row, 'contains')
+
     let rank = -1
-    if (row.normalizedLabel === normalized) {
+    if (exactIngredientMatch) {
       rank = 0
+    } else if (row.normalizedLabel === normalized) {
+      rank = 1
     } else if (
       row.normalizedSingleIngredientName === normalized
     ) {
-      rank = 1
+      rank = 2
     } else if (
       row.normalizedSingleIngredientId === normalized
     ) {
-      rank = 2
-    } else if (row.normalizedLabel.includes(normalized)) {
       rank = 3
-    } else if (
-      row.normalizedIngredientNames.includes(normalized)
-    ) {
+    } else if (exactIngredientSubset) {
       rank = 4
+    } else if (tokenAndMatch) {
+      rank = 5
+    } else if (row.normalizedLabel.includes(normalized)) {
+      rank = 6
     } else if (
+      row.normalizedIngredientNames.includes(normalized) ||
       row.normalizedIngredientIds.includes(normalized)
     ) {
-      rank = 5
+      rank = 7
     }
 
     if (rank >= 0 && buckets[rank].length < boundedLimit) {
@@ -1163,6 +1277,171 @@ export function IntermediateJuiceCombobox({
           )) : <p className="optimizer-recipe-combobox-empty">找不到可用的中間果汁階段。</p>}
         </div>
       )}
+    </div>
+  )
+}
+
+export function IntermediateJuiceSequenceBuilder({
+  currentProgress,
+  availableIngredients,
+  excludedIdentities,
+  onChoose,
+}: {
+  currentProgress: ProgressMilestoneId
+  availableIngredients: readonly Ingredient[]
+  excludedIdentities: ReadonlySet<string>
+  onChoose: (entry: IntermediateJuiceInventoryEntry) => void
+}) {
+  const [ingredientIds, setIngredientIds] = useState<string[]>([])
+  const [ingredientQuery, setIngredientQuery] = useState('')
+
+  const evaluation = useMemo(
+    () => evaluateRecipeSequence(ingredientIds, currentProgress),
+    [currentProgress, ingredientIds],
+  )
+  const entry = useMemo(
+    () =>
+      intermediateJuiceInventoryEntryFromSequence(
+        ingredientIds,
+        currentProgress,
+      ),
+    [currentProgress, ingredientIds],
+  )
+  const filteredIngredients = useMemo(() => {
+    const tokens = intermediateJuiceSearchTokens(ingredientQuery)
+    if (tokens.length === 0) return availableIngredients
+    return availableIngredients.filter((ingredient) => {
+      const haystack = normalizeRecipeSearchText(
+        `${ingredient.name} ${ingredient.id}`,
+      )
+      return tokens.every((token) => haystack.includes(token))
+    })
+  }, [availableIngredients, ingredientQuery])
+  const alreadyStocked =
+    entry !== null && excludedIdentities.has(entry.identity)
+  const requiredEquipment =
+    evaluation.valid
+      ? evaluation.candidate.equipment.filter(
+          (equipment) => equipment !== '果汁成品台',
+        )
+      : []
+
+  function appendIngredient(ingredientId: string) {
+    setIngredientIds((current) => [...current, ingredientId])
+  }
+
+  return (
+    <div className="sequence-builder optimizer-intermediate-builder">
+      <div className="sequence-builder-heading">
+        <strong>依原料建立中間果汁</strong>
+        <span>{ingredientIds.length} 項</span>
+      </div>
+
+      {ingredientIds.length === 0 ? (
+        <p className="sequence-empty">
+          依序點原料建立目前持有的果汁階段；原料順序會保留。
+        </p>
+      ) : (
+        <div className="sequence-strip" aria-label="中間果汁原料順序">
+          {ingredientIds.map((ingredientId, index) => (
+            <button
+              type="button"
+              className="sequence-chip"
+              key={`${ingredientId}-${index}`}
+              onClick={() =>
+                setIngredientIds((current) =>
+                  current.filter(
+                    (_, currentIndex) => currentIndex !== index,
+                  ),
+                )
+              }
+              title="點擊移除此項"
+            >
+              <span>{ingredientLabel(ingredientId)}</span>
+              <small>{index + 1}</small>
+              <b>×</b>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <input
+        className="optimizer-intermediate-builder-filter"
+        aria-label="篩選中間果汁原料"
+        placeholder="篩選原料…"
+        value={ingredientQuery}
+        onChange={(event) => setIngredientQuery(event.target.value)}
+      />
+
+      <div className="ingredient-palette optimizer-intermediate-ingredient-palette">
+        {filteredIngredients.map((ingredient) => (
+          <button
+            type="button"
+            aria-label={`加入原料：${ingredient.name}`}
+            key={ingredient.id}
+            onClick={() => appendIngredient(ingredient.id)}
+          >
+            <strong>{ingredient.name}</strong>
+            <small className="ingredient-effect-summary">
+              {ingredient.effects
+                .map((effect) => `${effect.name} ${effect.value}`)
+                .join(' · ')}
+            </small>
+          </button>
+        ))}
+      </div>
+
+      <div className="optimizer-intermediate-builder-status" role="status">
+        {ingredientIds.length === 0 ? (
+          <span>先選擇至少一項果汁基底。</span>
+        ) : !evaluation.valid ? (
+          <span>{evaluation.issues.map((issue) => issue.message).join('；')}</span>
+        ) : !evaluation.availableAtCurrentProgress ? (
+          <span>目前主線進度尚未解鎖這個製作序列。</span>
+        ) : !entry ? (
+          <span>目前序列無法建立為中間果汁。</span>
+        ) : alreadyStocked ? (
+          <span>這個中間果汁已在庫存清單，可直接修改數量。</span>
+        ) : (
+          <span>
+            可加入：{entry.label}
+            {requiredEquipment.length > 0
+              ? ` · 需要 ${requiredEquipment.join('、')}`
+              : ''}
+          </span>
+        )}
+      </div>
+
+      <div className="sequence-actions">
+        <button
+          type="button"
+          disabled={ingredientIds.length === 0}
+          onClick={() =>
+            setIngredientIds((current) => current.slice(0, -1))
+          }
+        >
+          移除最後一項
+        </button>
+        <button
+          type="button"
+          disabled={ingredientIds.length === 0}
+          onClick={() => setIngredientIds([])}
+        >
+          清空
+        </button>
+        <button
+          type="button"
+          disabled={!entry || alreadyStocked}
+          onClick={() => {
+            if (!entry) return
+            onChoose(entry)
+            setIngredientIds([])
+            setIngredientQuery('')
+          }}
+        >
+          加入中間果汁庫存
+        </button>
+      </div>
     </div>
   )
 }
@@ -2828,10 +3107,23 @@ function OptimizerTools({
               <strong>中間果汁庫存</strong>
               <span>以果汁單位計；只記錄尚未加水成為販售成品的階段</span>
             </div>
+            <IntermediateJuiceSequenceBuilder
+              currentProgress={currentProgress}
+              availableIngredients={availableInventoryIngredients}
+              excludedIdentities={intermediateInventoryIdentitySet}
+              onChoose={(entry) =>
+                setIntermediateJuiceInventory(entry.identity, 1)
+              }
+            />
+            <div className="optimizer-inventory-search-divider">
+              <span>或搜尋目前已知的中間果汁階段</span>
+            </div>
             <IntermediateJuiceCombobox
               searchIndex={intermediateJuiceSearchIndex}
               excludedIdentities={intermediateInventoryIdentitySet}
-              onChoose={(entry) => setIntermediateJuiceInventory(entry.identity, 1)}
+              onChoose={(entry) =>
+                setIntermediateJuiceInventory(entry.identity, 1)
+              }
             />
             {Object.keys(inventoryState.intermediateJuiceUnits ?? {}).length === 0 ? (
               <p className="optimizer-inventory-empty">目前沒有中間果汁庫存。</p>
@@ -2840,7 +3132,11 @@ function OptimizerTools({
                 {Object.entries(inventoryState.intermediateJuiceUnits ?? {})
                   .sort(([a], [b]) => a.localeCompare(b))
                   .map(([identity, units]) => {
-                    const entry = intermediateInventoryEntries.find((item) => item.identity === identity)
+                    const entry =
+                      intermediateInventoryEntries.find(
+                        (item) => item.identity === identity,
+                      ) ??
+                      intermediateJuiceInventoryEntryFromIdentity(identity)
                     return (
                       <label key={identity}>
                         <span>{entry?.label ?? identity}</span>

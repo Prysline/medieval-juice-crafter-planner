@@ -2206,6 +2206,45 @@ footer {
   min-width: 0;
 }
 
+.optimizer-intermediate-builder {
+  margin-bottom: 2px;
+}
+
+.optimizer-intermediate-builder-filter {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid #d6c8b3;
+  border-radius: 9px;
+  background: #fffdf8;
+  color: #2f2a22;
+  padding: 7px 9px;
+}
+
+.optimizer-intermediate-builder-status {
+  min-height: 1.2em;
+  color: #6d604d;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.optimizer-inventory-search-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #7a6d5d;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.optimizer-inventory-search-divider::before,
+.optimizer-inventory-search-divider::after {
+  content: '';
+  height: 1px;
+  flex: 1 1 auto;
+  background: #e7dccb;
+}
+
 .optimizer-recipe-combobox-input-row {
   display: flex;
   gap: 6px;
