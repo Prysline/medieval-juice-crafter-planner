@@ -30,6 +30,7 @@ import {
   JuiceJarSequenceBuilder,
   buildIntermediateJuiceSearchIndex,
   buildInventoryRecipeSearchIndex,
+  captureStaleSuccessReference,
   MachineBatchFlow,
   ProductionStepFinalJuiceNote,
   SeasoningStageMaterialSummary,
@@ -55,6 +56,7 @@ import {
   formatOptimizerDuration,
   moveInventoryRecipeSearchIndex,
   optimizerCriterionOptions,
+  optimizerTransactionDraftIsActive,
   optimizerInventoryIngredients,
   intermediateJuiceInventoryEntries,
   intermediateJuiceInventoryEntryFromIdentity,
@@ -64,6 +66,7 @@ import {
   searchIntermediateJuiceIndex,
   searchInventoryRecipeEntries,
   searchInventoryRecipeIndex,
+  type OptimizerRunState,
 } from './OptimizerTools'
 import {
   PlanningUserError,
@@ -335,6 +338,62 @@ describe('whole-plan delivery rebase', () => {
     expect(
       deliveredAgain.transactionDraft.changes.newlySuppliedCustomerIds,
     ).toEqual([])
+  })
+})
+
+describe('optimizer stale success lifecycle', () => {
+  function successState(
+    draft: PlanApplicationTransactionDraft,
+    invalidated = false,
+  ): OptimizerRunState {
+    return {
+      status: 'success',
+      transactionDraft: draft,
+      transactionDraftInvalidatedByPartialDelivery: invalidated,
+    } as unknown as OptimizerRunState
+  }
+
+  it('captures the last success as a session-only stale reference and keeps it across later non-success states', () => {
+    const draft = transactionDraft()
+    const success = successState(draft)
+    const stale = captureStaleSuccessReference(
+      null,
+      success,
+      'solver-input-changed',
+    )
+
+    expect(stale?.reason).toBe('solver-input-changed')
+    expect(stale?.run).toBe(success)
+    expect(
+      captureStaleSuccessReference(
+        stale,
+        { status: 'idle' },
+        'canonical-state-changed',
+      ),
+    ).toBe(stale)
+  })
+
+  it('allows whole-plan application only for the current active success draft', () => {
+    const draft = transactionDraft()
+    const otherDraft = {
+      ...draft,
+      changes: {
+        ...draft.changes,
+      },
+    } as PlanApplicationTransactionDraft
+
+    expect(
+      optimizerTransactionDraftIsActive(successState(draft), draft),
+    ).toBe(true)
+    expect(
+      optimizerTransactionDraftIsActive(successState(draft), otherDraft),
+    ).toBe(false)
+    expect(
+      optimizerTransactionDraftIsActive(successState(draft, true), draft),
+    ).toBe(false)
+    expect(
+      optimizerTransactionDraftIsActive({ status: 'idle' }, draft),
+    ).toBe(false)
   })
 })
 
@@ -1390,6 +1449,32 @@ describe('production checklist UI', () => {
     expect(html).toContain('檸檬原汁 ×5')
   })
 
+  it('disables production checklist mutation in readonly stale mode', () => {
+    const html = renderToStaticMarkup(
+      <MachineBatchFlow
+        step={{
+          key: 'juice:lemon',
+          kind: 'juicing',
+          equipment: '柑橘榨汁機',
+          fromIngredientIds: [],
+          toIngredientIds: ['lemon'],
+          addedIngredientId: 'lemon',
+          quantity: 5,
+          operationCount: 1,
+          recipeIds: ['recipe-lemon'],
+        }}
+        quantity={5}
+        batchIndex={0}
+        completed={false}
+        disabled
+        onCompletedChange={() => {}}
+      />,
+    )
+
+    expect(html).toContain('type="checkbox"')
+    expect(html).toContain('disabled=""')
+  })
+
   it('labels final juice produced by seasoning or blending before finalizing', () => {
     const seasoningHtml = renderToStaticMarkup(
       <ProductionStepFinalJuiceNote
@@ -2267,6 +2352,22 @@ describe('plan application preview', () => {
     expect(html).toContain('期末果汁罐內容')
     expect(html).toContain('果汁罐 jar-1')
     expect(html).toContain('檸檬汁 · 1 杯')
+  })
+
+
+  it('renders a stale transaction preview as readonly without an apply control', () => {
+    const html = renderToStaticMarkup(
+      <PlanApplicationPreview
+        draft={transactionDraft()}
+        productionJarFills={fills}
+        readOnly
+      />,
+    )
+
+    expect(html).toContain('已過期／唯讀')
+    expect(html).toContain('已過期規劃只能參考')
+    expect(html).not.toContain('確認套用這份規劃')
+    expect(html).toContain('disabled=""')
   })
 
   it('renders before/after state and the Phase 5C-4 apply control', () => {
