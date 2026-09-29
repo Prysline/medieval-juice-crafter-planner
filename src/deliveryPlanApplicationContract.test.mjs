@@ -33,7 +33,10 @@ describe('delivery checkbox and whole-plan application contract', () => {
       'useState<OptimizerStaleSuccessReference | null>(null)',
     )
     expect(optimizerToolsSource).toContain(
-      "captureStaleSuccessReference(existing, current, reason)",
+      'captureStaleSuccessReference(',
+    )
+    expect(optimizerToolsSource).toContain(
+      'effectiveReason',
     )
     expect(optimizerToolsSource).toContain(
       'setStaleSuccessReference(null)',
