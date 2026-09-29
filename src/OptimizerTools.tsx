@@ -5243,7 +5243,7 @@ function OptimizerResultPanel({
   activeWorkshopRegionId: VillageId
   preparationShortfall: PreparationShortfall
   productionLogistics: ProductionLogisticsPlan
-  priorities: OptimizationCriterion[]
+  priorities: readonly OptimizationCriterion[]
   salesTripPlans: SalesTripPlans
   customTripAutoBaseline: CustomSalesTripPlan
   appliedCustomPlan: AppliedCustomSalesTripPlan | null
