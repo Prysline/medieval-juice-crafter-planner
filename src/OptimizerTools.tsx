@@ -2477,7 +2477,12 @@ function OptimizerTools({
     setRunState((current) => {
       if (current.status !== 'success') return current
 
-      if (!current.transactionDraft) return current
+      if (!current.transactionDraft) {
+        return {
+          ...current,
+          suppliedCustomerIdsSnapshot: [...committedSupplied],
+        }
+      }
 
       const rebasedTransaction =
         rebaseDeliveryTransactionDraft(
@@ -5960,7 +5965,7 @@ function OptimizerResultPanel({
             plan: deliveryExecutionPlan,
             cursor: deliveryCursor,
             suppliedCustomerIds,
-            disabled: deliveryUiState.status === 'stale',
+            disabled: readOnly || deliveryUiState.status === 'stale',
             onChangeCustomer: onCommitDelivery,
             onChangeGroup: onCommitDeliveryGroup,
           }}
@@ -6052,7 +6057,7 @@ function OptimizerResultPanel({
                     plan: deliveryExecutionPlan,
                     cursor: deliveryCursor,
                     suppliedCustomerIds,
-                    disabled: deliveryUiState.status === 'stale',
+                    disabled: readOnly || deliveryUiState.status === 'stale',
                     onChangeCustomer: onCommitDelivery,
                     onChangeGroup: onCommitDeliveryGroup,
                   }}
