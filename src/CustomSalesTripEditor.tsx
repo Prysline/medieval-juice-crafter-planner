@@ -11,6 +11,7 @@ import {
   moveCustomTripCustomers,
   moveCustomTripCustomersToNewTrip,
   reorderCustomSalesTrips,
+  swapCustomTripCustomers,
   type CustomSalesTripPlan,
 } from './domain/customSalesTripPlan'
 import type {
@@ -179,6 +180,77 @@ export function moveCustomTripSelectionToAdjacentTrip(
   return moveCustomTripCustomers(plan, customerIds, targetTripId)
 }
 
+export function swappableCustomTripCustomerPair(
+  plan: CustomSalesTripPlan,
+  customerIds: readonly string[],
+): readonly [string, string] | null {
+  const uniqueCustomerIds = [...new Set(customerIds)]
+  if (uniqueCustomerIds.length !== 2) return null
+
+  const [firstCustomerId, secondCustomerId] = uniqueCustomerIds
+  if (
+    !plan.customersById[firstCustomerId] ||
+    !plan.customersById[secondCustomerId]
+  ) {
+    return null
+  }
+
+  const firstTripId = plan.tripByCustomerId[firstCustomerId]
+  const secondTripId = plan.tripByCustomerId[secondCustomerId]
+  if (
+    !firstTripId ||
+    !secondTripId ||
+    firstTripId === secondTripId
+  ) {
+    return null
+  }
+
+  return [firstCustomerId, secondCustomerId]
+}
+
+export interface CustomTripCustomerSwapAttempt {
+  plan: CustomSalesTripPlan
+  validation: CustomTripPhysicalValidationResult | null
+  applied: boolean
+}
+
+export function attemptCustomTripCustomerSwap(
+  plan: CustomSalesTripPlan,
+  customerIds: readonly string[],
+  validateDraft: (
+    draft: CustomSalesTripPlan,
+  ) => CustomTripPhysicalValidationResult,
+): CustomTripCustomerSwapAttempt {
+  const pair = swappableCustomTripCustomerPair(plan, customerIds)
+  if (!pair) {
+    return {
+      plan,
+      validation: null,
+      applied: false,
+    }
+  }
+
+  const candidate = swapCustomTripCustomers(
+    plan,
+    pair[0],
+    pair[1],
+  )
+  const validation = validateDraft(candidate)
+  if (validation.status === 'invalid') {
+    return {
+      plan,
+      validation,
+      applied: false,
+    }
+  }
+
+  return {
+    plan: candidate,
+    validation,
+    applied: true,
+  }
+}
+
 function moveTripBefore(
   plan: CustomSalesTripPlan,
   sourceTripId: string,
@@ -330,6 +402,11 @@ export function CustomSalesTripEditor({
     }))
   const [selectedCustomerIds, setSelectedCustomerIds] =
     useState<Set<string>>(() => new Set())
+  const [swapValidation, setSwapValidation] =
+    useState<Extract<
+      CustomTripPhysicalValidationResult,
+      { status: 'invalid' }
+    > | null>(null)
   const [moveTargetTripId, setMoveTargetTripId] = useState(
     autoBaseline.tripOrder[0] ?? '',
   )
@@ -345,6 +422,7 @@ export function CustomSalesTripEditor({
     setRevision(0)
     setValidation({ status: 'idle', revision: 0 })
     setSelectedCustomerIds(new Set())
+    setSwapValidation(null)
     setMoveTargetTripId(editingStartPlan.tripOrder[0] ?? '')
     setInsertAfterTripId(editingStartPlan.tripOrder[0] ?? '')
     nextTripSequenceRef.current = 1
@@ -408,6 +486,10 @@ export function CustomSalesTripEditor({
     () => adjacentCustomTripIdForSelection(draft, selectedIds, 1),
     [draft, selectedIds],
   )
+  const selectedSwapPair = useMemo(
+    () => swappableCustomTripCustomerPair(draft, selectedIds),
+    [draft, selectedIds],
+  )
   const currentValidation =
     validation.status === 'done' &&
     validation.revision === revision
@@ -420,6 +502,7 @@ export function CustomSalesTripEditor({
 
   function applyDraft(next: CustomSalesTripPlan) {
     if (next === draft) return
+    setSwapValidation(null)
     setDraft(next)
     setRevision((current) => current + 1)
     setSelectedCustomerIds((current) => {
@@ -437,6 +520,7 @@ export function CustomSalesTripEditor({
     customerIds: readonly string[],
     checked: boolean,
   ) {
+    setSwapValidation(null)
     setSelectedCustomerIds((current) =>
       updatedCustomTripSelection(current, customerIds, checked),
     )
@@ -450,6 +534,22 @@ export function CustomSalesTripEditor({
         direction,
       ),
     )
+  }
+
+  function swapSelectedCustomers() {
+    const attempt = attemptCustomTripCustomerSwap(
+      draft,
+      selectedIds,
+      validateDraft,
+    )
+    if (!attempt.applied) {
+      if (attempt.validation?.status === 'invalid') {
+        setSwapValidation(attempt.validation)
+      }
+      return
+    }
+
+    applyDraft(attempt.plan)
   }
 
   function moveSelectedToExistingTrip() {
@@ -498,6 +598,7 @@ export function CustomSalesTripEditor({
     setDraft(cloneCustomSalesTripPlan(autoBaseline))
     setRevision((current) => current + 1)
     setSelectedCustomerIds(new Set())
+    setSwapValidation(null)
   }
 
   function renderCustomerRow(customerId: string) {
@@ -627,7 +728,7 @@ export function CustomSalesTripEditor({
             <div>
               <strong>居民操作 · 已選擇 {selectedIds.length} 位</strong>
               <span>
-                以下移動只影響目前選取居民；上一／下一趟只在選取居民都來自同一趟時可用
+                以下移動只影響目前選取居民；上一／下一趟只在選取居民都來自同一趟時可用；剛好選取兩位不同趟居民時可直接交換趟次
               </span>
             </div>
             <div className="optimizer-controls optimizer-custom-resident-controls">
@@ -644,6 +745,13 @@ export function CustomSalesTripEditor({
                 onClick={() => moveSelectedToAdjacentTrip(1)}
               >
                 移到下一趟
+              </button>
+              <button
+                type="button"
+                disabled={!selectedSwapPair}
+                onClick={swapSelectedCustomers}
+              >
+                交換兩人的趟次
               </button>
               <label>
                 <span>指定趟次</span>
@@ -692,13 +800,18 @@ export function CustomSalesTripEditor({
               <button
                 type="button"
                 disabled={selectedIds.length === 0}
-                onClick={() =>
+                onClick={() => {
                   setSelectedCustomerIds(new Set())
-                }
+                  setSwapValidation(null)
+                }}
               >
                 清除選取
               </button>
             </div>
+            <IssueBlock
+              title="兩位居民交換不可實現"
+              issues={swapValidation?.issues ?? []}
+            />
           </section>
 
           <div className="optimizer-batch-list optimizer-custom-trip-grid">

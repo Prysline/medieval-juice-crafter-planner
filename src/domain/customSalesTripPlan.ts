@@ -377,6 +377,40 @@ export function moveCustomTripCustomersToNewTrip(
   return next
 }
 
+export function swapCustomTripCustomers(
+  plan: CustomSalesTripPlan,
+  firstCustomerId: string,
+  secondCustomerId: string,
+): CustomSalesTripPlan {
+  assertCustomSalesTripPlan(plan)
+  const selection = normalizedSelection(plan, [
+    firstCustomerId,
+    secondCustomerId,
+  ])
+  if (selection.length !== 2) {
+    throw new Error(
+      'Custom trip customer swap requires exactly two distinct customers',
+    )
+  }
+
+  const [firstId, secondId] = selection
+  const firstTripId = plan.tripByCustomerId[firstId]!
+  const secondTripId = plan.tripByCustomerId[secondId]!
+  if (firstTripId === secondTripId) return plan
+
+  const next: CustomSalesTripPlan = {
+    customersById: plan.customersById,
+    tripByCustomerId: {
+      ...plan.tripByCustomerId,
+      [firstId]: secondTripId,
+      [secondId]: firstTripId,
+    },
+    tripOrder: plan.tripOrder,
+  }
+  assertCustomSalesTripPlan(next)
+  return next
+}
+
 export function mergeCustomSalesTrips(
   plan: CustomSalesTripPlan,
   sourceTripId: string,

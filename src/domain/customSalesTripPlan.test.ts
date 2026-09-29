@@ -8,6 +8,7 @@ import {
   moveCustomTripCustomers,
   moveCustomTripCustomersToNewTrip,
   reorderCustomSalesTrips,
+  swapCustomTripCustomers,
 } from './customSalesTripPlan'
 
 function baseline() {
@@ -189,6 +190,37 @@ describe('custom sales trip plan', () => {
     expect(
       customerIdsForCustomTrip(moved, 'custom-trip-3'),
     ).toEqual(['east-a', 'east-b'])
+  })
+
+  it('atomically swaps two customers between trips without changing other assignments or trip order', () => {
+    const plan = baseline()
+    const swapped = swapCustomTripCustomers(
+      plan,
+      'east-a',
+      'fountain-a',
+    )
+
+    expect(swapped.tripOrder).toEqual(plan.tripOrder)
+    expect(swapped.tripByCustomerId).toEqual({
+      'east-a': 'auto-trip-2',
+      'east-b': 'auto-trip-1',
+      'fountain-a': 'auto-trip-1',
+      'ibex-a': 'auto-trip-2',
+    })
+    expect(swapped.customersById).toBe(plan.customersById)
+    expect(plan.tripByCustomerId['east-a']).toBe('auto-trip-1')
+    expect(plan.tripByCustomerId['fountain-a']).toBe('auto-trip-2')
+  })
+
+  it('treats a two-customer swap inside the same trip as a no-op', () => {
+    const plan = baseline()
+    const swapped = swapCustomTripCustomers(
+      plan,
+      'east-a',
+      'east-b',
+    )
+
+    expect(swapped).toBe(plan)
   })
 
   it('merges a whole trip using the same customer-move semantics', () => {
