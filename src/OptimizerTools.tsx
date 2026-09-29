@@ -875,6 +875,8 @@ export interface InventoryRecipeSearchIndexRow {
   readonly normalizedName: string
   readonly normalizedIngredientNames: string
   readonly normalizedIngredientIds: string
+  readonly normalizedIngredientNameTokens: readonly string[]
+  readonly normalizedIngredientIdTokens: readonly string[]
   readonly normalizedCandidateId: string
   readonly sourceRank: number
 }
@@ -917,6 +919,10 @@ export function buildInventoryRecipeSearchIndex(
         normalizedIngredientIds: normalizeRecipeSearchText(
           entry.ingredientIds.join(' '),
         ),
+        normalizedIngredientNameTokens:
+          entry.candidate.ingredients.map(normalizeRecipeSearchText),
+        normalizedIngredientIdTokens:
+          entry.ingredientIds.map(normalizeRecipeSearchText),
         normalizedCandidateId: normalizeRecipeSearchText(
           entry.candidate.id,
         ),
@@ -946,12 +952,43 @@ export function buildInventoryRecipeSearchIndex(
   return index
 }
 
+function inventoryRecipeIngredientTokensMatch(
+  queryTokens: readonly string[],
+  row: InventoryRecipeSearchIndexRow,
+  mode: 'exact' | 'contains',
+): boolean {
+  if (queryTokens.length === 0) return false
+  if (queryTokens.length > row.entry.ingredientIds.length) {
+    return false
+  }
+
+  const remaining = row.normalizedIngredientNameTokens.map(
+    (name, tokenIndex) => ({
+      name,
+      id: row.normalizedIngredientIdTokens[tokenIndex] ?? '',
+    }),
+  )
+
+  for (const token of queryTokens) {
+    const matchIndex = remaining.findIndex(({ name, id }) =>
+      mode === 'exact'
+        ? name === token || id === token
+        : name.includes(token) || id.includes(token),
+    )
+    if (matchIndex < 0) return false
+    remaining.splice(matchIndex, 1)
+  }
+
+  return true
+}
+
 export function searchInventoryRecipeIndex(
   index: InventoryRecipeSearchIndex,
   query: string,
   limit = INVENTORY_RECIPE_SEARCH_RESULT_LIMIT,
 ): RecipeCandidatePoolEntry[] {
   const normalizedQuery = normalizeRecipeSearchText(query)
+  const queryTokens = intermediateJuiceSearchTokens(query)
   const boundedLimit = Math.max(0, Math.floor(limit))
   if (boundedLimit === 0) return []
   if (!normalizedQuery) {
@@ -961,34 +998,61 @@ export function searchInventoryRecipeIndex(
   }
 
   const buckets: RecipeCandidatePoolEntry[][] =
-    Array.from({ length: 5 }, () => [])
+    Array.from({ length: 8 }, () => [])
 
   for (const row of index.rows) {
+    const exactIngredientMatch =
+      queryTokens.length === row.entry.ingredientIds.length &&
+      inventoryRecipeIngredientTokensMatch(
+        queryTokens,
+        row,
+        'exact',
+      )
+    const exactIngredientSubset =
+      queryTokens.length > 1 &&
+      inventoryRecipeIngredientTokensMatch(
+        queryTokens,
+        row,
+        'exact',
+      )
+    const tokenAndMatch =
+      inventoryRecipeIngredientTokensMatch(
+        queryTokens,
+        row,
+        'contains',
+      )
+
     let score = -1
-    if (
+    if (exactIngredientMatch) {
+      score = 0
+    } else if (
       row.normalizedName === normalizedQuery ||
       row.normalizedIngredientNames === normalizedQuery ||
       row.normalizedIngredientIds === normalizedQuery ||
       row.normalizedCandidateId === normalizedQuery
     ) {
-      score = 0
+      score = 1
     } else if (
       row.normalizedName.startsWith(normalizedQuery) ||
       row.normalizedIngredientNames.startsWith(normalizedQuery) ||
       row.normalizedIngredientIds.startsWith(normalizedQuery)
     ) {
-      score = 1
-    } else if (row.normalizedName.includes(normalizedQuery)) {
       score = 2
+    } else if (exactIngredientSubset) {
+      score = 3
+    } else if (tokenAndMatch) {
+      score = 4
+    } else if (row.normalizedName.includes(normalizedQuery)) {
+      score = 5
     } else if (
       row.normalizedIngredientNames.includes(normalizedQuery)
     ) {
-      score = 3
+      score = 6
     } else if (
       row.normalizedIngredientIds.includes(normalizedQuery) ||
       row.normalizedCandidateId.includes(normalizedQuery)
     ) {
-      score = 4
+      score = 7
     }
 
     if (score >= 0 && buckets[score].length < boundedLimit) {

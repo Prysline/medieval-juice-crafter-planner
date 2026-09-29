@@ -72,6 +72,7 @@ import {
 import {
   buildRecipeCandidatePool,
   recipeCandidateEntriesForInventoryEditor,
+  recipeCandidateEntryForSequence,
 } from './domain/recipeCandidatePool'
 
 function transactionDraft(): PlanApplicationTransactionDraft {
@@ -365,6 +366,79 @@ describe('juice jar recipe search UX', () => {
     expect(
       searchInventoryRecipeEntries(entries, 'definitely-no-such-recipe'),
     ).toEqual([])
+  })
+
+  it('ranks exact multi-token jar ingredient matches before contains matches while preserving ordered identity', () => {
+    const pool = buildRecipeCandidatePool(
+      'liquid-blender-unlocked',
+    )
+    const exact = recipeCandidateEntryForSequence(
+      pool,
+      'liquid-blender-unlocked',
+      ['pear', 'cinnamon', 'lemon'],
+    )
+    const contains = recipeCandidateEntryForSequence(
+      pool,
+      'liquid-blender-unlocked',
+      ['pear', 'cinnamon', 'lemon', 'mint'],
+    )
+    const reordered = recipeCandidateEntryForSequence(
+      pool,
+      'liquid-blender-unlocked',
+      ['lemon', 'pear', 'cinnamon'],
+    )
+
+    expect(exact).not.toBeNull()
+    expect(contains).not.toBeNull()
+    expect(reordered).not.toBeNull()
+    if (!exact || !contains || !reordered) return
+
+    const results = searchInventoryRecipeEntries(
+      [contains, reordered, exact],
+      '梨 肉桂 檸檬',
+    )
+
+    expect(
+      results.slice(0, 2).map((entry) => entry.candidate.id),
+    ).toEqual(
+      expect.arrayContaining([
+        exact.candidate.id,
+        reordered.candidate.id,
+      ]),
+    )
+    expect(results.indexOf(contains)).toBeGreaterThan(
+      results.indexOf(exact),
+    )
+    expect(exact.candidate.id).not.toBe(
+      reordered.candidate.id,
+    )
+  })
+
+  it('matches repeated jar ingredient tokens as a multiset instead of reusing one ingredient occurrence', () => {
+    const pool = buildRecipeCandidatePool('seasoner-unlocked')
+    const repeated = recipeCandidateEntryForSequence(
+      pool,
+      'seasoner-unlocked',
+      ['lemon', 'sugar', 'sugar'],
+    )
+    const singleSugar = recipeCandidateEntryForSequence(
+      pool,
+      'seasoner-unlocked',
+      ['lemon', 'sugar', 'mint'],
+    )
+
+    expect(repeated).not.toBeNull()
+    expect(singleSugar).not.toBeNull()
+    if (!repeated || !singleSugar) return
+
+    const results = searchInventoryRecipeEntries(
+      [singleSugar, repeated],
+      '檸檬 糖 糖',
+    )
+
+    expect(results.map((entry) => entry.candidate.id)).toEqual([
+      repeated.candidate.id,
+    ])
   })
 
   it('keeps indexed inventory recipe search result ordering equivalent to the compatibility search', () => {
