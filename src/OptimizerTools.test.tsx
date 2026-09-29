@@ -27,6 +27,7 @@ import {
   INTERMEDIATE_JUICE_SEARCH_RESULT_LIMIT,
   IntermediateJuiceSequenceBuilder,
   JuiceJarRecipeCombobox,
+  JuiceJarSequenceBuilder,
   buildIntermediateJuiceSearchIndex,
   buildInventoryRecipeSearchIndex,
   MachineBatchFlow,
@@ -611,6 +612,58 @@ describe('juice jar recipe search UX', () => {
     expect(moveInventoryRecipeSearchIndex(0, 'previous', 3)).toBe(2)
     expect(moveInventoryRecipeSearchIndex(1, 'previous', 3)).toBe(0)
     expect(moveInventoryRecipeSearchIndex(4, 'next', 0)).toBe(0)
+  })
+
+  it('renders a jar sequence builder that preserves final recipe authority labels', () => {
+    const pool = buildRecipeCandidatePool(
+      'liquid-blender-unlocked',
+    )
+    const html = renderToStaticMarkup(
+      <JuiceJarSequenceBuilder
+        jarId="jar-1"
+        currentProgress="liquid-blender-unlocked"
+        availableIngredients={optimizerInventoryIngredients(
+          'liquid-blender-unlocked',
+        )}
+        recipeCandidatePool={pool}
+        onChoose={() => {}}
+      />,
+    )
+
+    expect(html).toContain('依原料建立果汁罐內容')
+    expect(html).toContain('aria-label="jar-1 加入原料：梨"')
+    expect(html).toContain('aria-label="jar-1 加入原料：牛奶"')
+    expect(html).toContain('設定這個果汁罐內容')
+  })
+
+  it('shows reconstructed computed jar content without exposing it as a legacy unknown id', () => {
+    const entries = recipeCandidateEntriesForInventoryEditor(
+      buildRecipeCandidatePool('opening'),
+    )
+    const candidate = {
+      id: 'computed:lemon+sugar+sugar+sugar+sugar+sugar+sugar',
+      name: '預測（檸檬 → 糖 → 糖 → 糖 → 糖 → 糖 → 糖）',
+      source: 'computed' as const,
+      unlockedAt: 'seasoner-unlocked' as const,
+      salePrice: null,
+      ingredients: ['檸檬', '糖', '糖', '糖', '糖', '糖', '糖'],
+      effects: [{ name: '甜味', value: 5 }],
+      equipment: ['柑橘榨汁機', '調味器', '果汁成品台'],
+    }
+    const html = renderToStaticMarkup(
+      <JuiceJarRecipeCombobox
+        jarId="jar-computed"
+        recipeId={candidate.id}
+        searchIndex={buildInventoryRecipeSearchIndex(entries)}
+        selectedCandidate={candidate}
+        onChange={() => {}}
+      />,
+    )
+
+    expect(html).toContain('預測（檸檬▸糖▸糖▸糖▸糖▸糖▸糖）')
+    expect(html).not.toContain(
+      '既有內容：computed:lemon+sugar+sugar+sugar+sugar+sugar+sugar',
+    )
   })
 
   it('keeps unknown legacy jar content readable and exposes an explicit clear action', () => {

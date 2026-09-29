@@ -103,6 +103,12 @@ export interface OptimizationSource {
    */
   candidates?: readonly RecipeCandidate[]
   candidatePool?: RecipeCandidatePool
+  /**
+   * Candidate identities reconstructed only from persisted finished-juice jar
+   * contents. They may consume existing servings but must not authorize new
+   * production merely because the player recorded that jar contents exist.
+   */
+  finishedStockOnlyRecipeIds?: readonly string[]
 }
 
 export interface EligibleOptimizationRecipe {
@@ -111,6 +117,8 @@ export interface EligibleOptimizationRecipe {
   juiceUnitIngredientCost: number
   /** Existing sellable servings already available in accessible physical jars. Defaults to 0 for hand-built test models. */
   initialFinishedServings?: number
+  /** Optional hard cap on newly produced juice units for this candidate. */
+  maxProductionUnits?: number
   eligibleCustomerIds: string[]
   productionPath: RecipeProductionPath
 }
@@ -255,11 +263,20 @@ function eligibleOptimizationRecipe(
   candidate: RecipeCandidate,
   request: OptimizationRequest,
   initialFinishedServings: ReadonlyMap<string, number>,
+  finishedStockOnlyRecipeIds: ReadonlySet<string>,
 ): EligibleOptimizationRecipeCore | null {
   if (!candidateIsEligible(candidate, request)) return null
 
   const cost = calculateRecipeIngredientCost(candidate)
   if (cost.batchIngredientCost === null) return null
+
+  const existingFinishedServings =
+    initialFinishedServings.get(candidate.id) ?? 0
+  const finishedStockOnly =
+    finishedStockOnlyRecipeIds.has(candidate.id)
+  if (finishedStockOnly && existingFinishedServings <= 0) {
+    return null
+  }
 
   // 製作可行性仍由 production graph 負責。Candidate-2B 的共用搜尋可產生
   // canonical multi-segment candidates，但不另外實作第二套 Blender execution 規則。
@@ -269,8 +286,8 @@ function eligibleOptimizationRecipe(
   return {
     candidate,
     juiceUnitIngredientCost: cost.batchIngredientCost,
-    initialFinishedServings:
-      initialFinishedServings.get(candidate.id) ?? 0,
+    initialFinishedServings: existingFinishedServings,
+    ...(finishedStockOnly ? { maxProductionUnits: 0 } : {}),
     productionPath,
   }
 }
@@ -292,6 +309,9 @@ export function buildOptimizationModel(
   const revenueSensitive = requestUsesRevenueCriterion(request)
   const initialFinishedServings =
     initialFinishedServingsByRecipeId(request)
+  const finishedStockOnlyRecipeIds = new Set(
+    source.finishedStockOnlyRecipeIds ?? [],
+  )
   const eligibleEntryCache = new Map<
     string,
     EligibleOptimizationRecipeCore | null
@@ -311,6 +331,7 @@ export function buildOptimizationModel(
       candidate,
       request,
       initialFinishedServings,
+      finishedStockOnlyRecipeIds,
     )
     eligibleEntryCache.set(candidate.id, entry)
     return entry

@@ -121,6 +121,34 @@ describe('minimum-waste equivalent-assignment grouping', () => {
         }),
       ),
     ).toBe(true)
+
+    expect(
+      minimumWasteEquivalentAssignmentGroupingIsSafe({
+        ...safetyDomain({
+          initialAvailableJuiceJars: [
+            { recipeId: 'stock-only', servings: 1 },
+            { recipeId: null, servings: 0 },
+          ],
+        }),
+        recipes: [
+          {
+            candidate: recipe(
+              'stock-only',
+              ['檸檬', '糖'],
+              ['甜味'],
+            ),
+            juiceUnitIngredientCost: 16,
+            initialFinishedServings: 1,
+            maxProductionUnits: 0,
+            eligibleCustomerIds: ['a'],
+            productionPath: {
+              ingredientIds: ['lemon', 'sugar'],
+              edges: [],
+            },
+          },
+        ],
+      }),
+    ).toBe(false)
   })
 
   it('uses the grouped waste optimum only as a fix before restoring recipe-specific maximum-cost assignment', async () => {

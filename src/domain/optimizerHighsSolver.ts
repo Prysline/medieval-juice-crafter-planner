@@ -117,6 +117,13 @@ export function minimumWasteEquivalentAssignmentGroupingIsSafe(
   if (domain.request.materialSourceMode === 'inventory-only') {
     return false
   }
+  if (
+    domain.recipes.some(
+      (recipe) => recipe.maxProductionUnits !== undefined,
+    )
+  ) {
+    return false
+  }
 
   const initialJars = normalizedInitialCarriedJuiceJars(
     domain.request,
@@ -286,7 +293,7 @@ function buildHighsStage(
             fixedMinimumCost / recipe.juiceUnitIngredientCost,
           )
         : maxJuiceUnitsPerRecipe
-    const recipeUpperBound =
+    const computedRecipeUpperBound =
       options.tightenRecipeBoundsFromMinimumCostFix
         ? Math.max(
             0,
@@ -297,6 +304,12 @@ function buildHighsStage(
             ),
           )
         : maxJuiceUnitsPerRecipe
+    const recipeUpperBound = Math.min(
+      computedRecipeUpperBound,
+      recipe.maxProductionUnits === undefined
+        ? computedRecipeUpperBound
+        : Math.max(0, Math.floor(recipe.maxProductionUnits)),
+    )
     const x = model.intVar(
       0,
       recipeUpperBound,

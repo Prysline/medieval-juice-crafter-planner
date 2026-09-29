@@ -7,6 +7,8 @@ import {
 } from './optimizerModel'
 import {
   buildRecipeCandidatePool,
+  recipeCandidateEntryForSequence,
+  recipeCandidatePoolWithPersistedJarRecipes,
   recipeCandidatesForInventoryEditor,
   recipeCandidatesInCurrentSearchScope,
 } from './recipeCandidatePool'
@@ -325,6 +327,99 @@ describe('shared recipe candidate pool', () => {
         )
       }),
     ).toBe(true)
+  })
+
+  it('reconstructs jar-only computed candidates without promoting their authority', () => {
+    const base = buildRecipeCandidatePool('liquid-blender-unlocked')
+    const ingredientIds = [
+      'lemon',
+      'sugar',
+      'sugar',
+      'sugar',
+      'sugar',
+      'sugar',
+      'sugar',
+    ]
+    const entry = recipeCandidateEntryForSequence(
+      base,
+      'liquid-blender-unlocked',
+      ingredientIds,
+    )
+    expect(entry).toMatchObject({
+      candidate: {
+        source: 'computed',
+        salePrice: null,
+      },
+      inGeneratedSearchScope: false,
+    })
+    expect(entry?.ingredientIds).toEqual(ingredientIds)
+
+    const recipeId = entry?.candidate.id
+    expect(recipeId).toBe(
+      'computed:lemon+sugar+sugar+sugar+sugar+sugar+sugar',
+    )
+    if (!recipeId) return
+
+    const augmented = recipeCandidatePoolWithPersistedJarRecipes(
+      base,
+      'liquid-blender-unlocked',
+      [recipeId],
+    )
+    const restored = augmented.pool.entries.find(
+      (candidate) => candidate.candidate.id === recipeId,
+    )
+
+    expect(restored).toMatchObject({
+      candidate: {
+        id: recipeId,
+        source: 'computed',
+        salePrice: null,
+      },
+      sources: ['computed'],
+      inGeneratedSearchScope: false,
+      availableAtCurrentProgress: true,
+    })
+    expect(augmented.finishedStockOnlyRecipeIds).toEqual([recipeId])
+  })
+
+  it('keeps observed or already-known authority when jar sequence input matches an existing candidate', () => {
+    const base = buildRecipeCandidatePool('seasoner-unlocked')
+    const observed = recipeCandidateEntryForSequence(
+      base,
+      'seasoner-unlocked',
+      ['lemon', 'mint'],
+    )
+
+    expect(observed).toMatchObject({
+      candidate: {
+        id: 'lemon-mint',
+        source: 'observed',
+      },
+    })
+
+    const augmented = recipeCandidatePoolWithPersistedJarRecipes(
+      base,
+      'seasoner-unlocked',
+      ['lemon-mint'],
+    )
+    expect(augmented.pool).toBe(base)
+    expect(augmented.finishedStockOnlyRecipeIds).toEqual([])
+  })
+
+  it('does not reinterpret an old computed id as observed authority for the same sequence', () => {
+    const base = buildRecipeCandidatePool('seasoner-unlocked')
+    const augmented = recipeCandidatePoolWithPersistedJarRecipes(
+      base,
+      'seasoner-unlocked',
+      ['computed:lemon+mint'],
+    )
+
+    expect(
+      augmented.pool.entries.some(
+        (entry) => entry.candidate.id === 'computed:lemon+mint',
+      ),
+    ).toBe(false)
+    expect(augmented.finishedStockOnlyRecipeIds).toEqual([])
   })
 
   it('keeps generated Blender candidates as future metadata until the Blender unlock', () => {

@@ -146,6 +146,59 @@ describe('production optimizer', () => {
     expect(result.jarTypeSwitches).toBe(0)
   })
 
+  it('uses jar-only candidate stock without authorizing new production of that candidate', async () => {
+    const stockOnly = recipe(
+      'stock-only',
+      ['檸檬', '糖', '薄荷'],
+      ['甜味'],
+    )
+    const normal = recipe(
+      'normal',
+      ['檸檬', '糖'],
+      ['甜味'],
+    )
+    const result = await optimizeBatchPlan(
+      {
+        ...request(['a', 'b', 'c']),
+        initialAvailableJuiceJars: [
+          { recipeId: stockOnly.id, servings: 1 },
+        ],
+      },
+      {
+        source: {
+          customers: [
+            customer('a', '甜味'),
+            customer('b', '甜味'),
+            customer('c', '甜味'),
+          ],
+          candidates: [stockOnly, normal],
+          finishedStockOnlyRecipeIds: [stockOnly.id],
+        },
+      },
+    )
+
+    expect(
+      result.assignments.filter(
+        (assignment) => assignment.recipeId === stockOnly.id,
+      ),
+    ).toHaveLength(1)
+    expect(result.recipePlans).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          recipeId: stockOnly.id,
+          juiceUnits: 0,
+          assignedServings: 1,
+        }),
+        expect.objectContaining({
+          recipeId: normal.id,
+          juiceUnits: 1,
+          assignedServings: 2,
+        }),
+      ]),
+    )
+    expect(result.producedServings).toBe(2)
+  })
+
   it('only produces the serving shortfall after existing finished stock', async () => {
     const result = await optimizeBatchPlan(
       {

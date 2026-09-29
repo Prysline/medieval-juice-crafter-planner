@@ -69,6 +69,8 @@ import {
 } from './domain/deliveryExecution'
 import {
   recipeCandidateEntriesForInventoryEditor,
+  recipeCandidateEntryForSequence,
+  recipeCandidatePoolWithPersistedJarRecipes,
   type RecipeCandidatePool,
   type RecipeCandidatePoolEntry,
 } from './domain/recipeCandidatePool'
@@ -1032,11 +1034,13 @@ export function JuiceJarRecipeCombobox({
   jarId,
   recipeId,
   searchIndex,
+  selectedCandidate,
   onChange,
 }: {
   jarId: string
   recipeId: string | null
   searchIndex: InventoryRecipeSearchIndex
+  selectedCandidate?: RecipeCandidate
   onChange: (recipeId: string) => void
 }) {
   const listboxId = useId()
@@ -1045,9 +1049,11 @@ export function JuiceJarRecipeCombobox({
     : undefined
   const selectedLabel = selectedEntry
     ? formatRecipeDisplayName(selectedEntry.candidate.name)
-    : recipeId
-      ? `既有內容：${recipeId}`
-      : '空罐'
+    : selectedCandidate
+      ? formatRecipeDisplayName(selectedCandidate.name)
+      : recipeId
+        ? `既有內容：${recipeId}`
+        : '空罐'
 
   const [query, setQuery] = useState(selectedLabel)
   const [open, setOpen] = useState(false)
@@ -1099,7 +1105,9 @@ export function JuiceJarRecipeCombobox({
           role="combobox"
           value={open ? query : selectedLabel}
           onFocus={(event) => {
-            setQuery(selectedEntry ? selectedLabel : '')
+            setQuery(
+              selectedEntry || selectedCandidate ? selectedLabel : '',
+            )
             setOpen(true)
             setActiveIndex(0)
             event.currentTarget.select()
@@ -1446,6 +1454,188 @@ export function IntermediateJuiceSequenceBuilder({
   )
 }
 
+function jarRecipeAuthorityLabel(
+  entry: RecipeCandidatePoolEntry,
+): string {
+  if (entry.candidate.source === 'observed') return '正式實測'
+  if (entry.candidate.source === 'personal') return '已確認個人配方'
+  if (entry.candidate.effectAmbiguity) return '推導有歧義'
+  return '安全推導'
+}
+
+export function JuiceJarSequenceBuilder({
+  jarId,
+  currentProgress,
+  availableIngredients,
+  recipeCandidatePool,
+  onChoose,
+}: {
+  jarId: string
+  currentProgress: ProgressMilestoneId
+  availableIngredients: readonly Ingredient[]
+  recipeCandidatePool: RecipeCandidatePool
+  onChoose: (entry: RecipeCandidatePoolEntry) => void
+}) {
+  const [ingredientIds, setIngredientIds] = useState<string[]>([])
+  const [ingredientQuery, setIngredientQuery] = useState('')
+
+  const evaluation = useMemo(
+    () => evaluateRecipeSequence(ingredientIds, currentProgress),
+    [currentProgress, ingredientIds],
+  )
+  const entry = useMemo(
+    () =>
+      recipeCandidateEntryForSequence(
+        recipeCandidatePool,
+        currentProgress,
+        ingredientIds,
+      ),
+    [currentProgress, ingredientIds, recipeCandidatePool],
+  )
+  const filteredIngredients = useMemo(() => {
+    const tokens = intermediateJuiceSearchTokens(ingredientQuery)
+    if (tokens.length === 0) return availableIngredients
+    return availableIngredients.filter((ingredient) => {
+      const haystack = normalizeRecipeSearchText(
+        `${ingredient.name} ${ingredient.id}`,
+      )
+      return tokens.every((token) => haystack.includes(token))
+    })
+  }, [availableIngredients, ingredientQuery])
+
+  return (
+    <div className="sequence-builder optimizer-jar-sequence-builder">
+      <div className="sequence-builder-heading">
+        <strong>依原料建立果汁罐內容</strong>
+        <span>{ingredientIds.length} 項</span>
+      </div>
+
+      {ingredientIds.length === 0 ? (
+        <p className="sequence-empty">
+          依序點選這罐成品使用的原料；網站會保留完整順序並沿用既有配方 authority。
+        </p>
+      ) : (
+        <div
+          className="sequence-strip"
+          aria-label={`${jarId} 果汁罐原料順序`}
+        >
+          {ingredientIds.map((ingredientId, index) => (
+            <button
+              type="button"
+              className="sequence-chip"
+              key={`${ingredientId}-${index}`}
+              onClick={() =>
+                setIngredientIds((current) =>
+                  current.filter(
+                    (_, currentIndex) => currentIndex !== index,
+                  ),
+                )
+              }
+              title="點擊移除此項"
+            >
+              <span>{ingredientLabel(ingredientId)}</span>
+              <small>{index + 1}</small>
+              <b>×</b>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <input
+        className="optimizer-intermediate-builder-filter"
+        aria-label={`${jarId} 篩選果汁罐原料`}
+        placeholder="篩選原料…"
+        value={ingredientQuery}
+        onChange={(event) => setIngredientQuery(event.target.value)}
+      />
+
+      <div className="ingredient-palette optimizer-intermediate-ingredient-palette">
+        {filteredIngredients.map((ingredient) => (
+          <button
+            type="button"
+            aria-label={`${jarId} 加入原料：${ingredient.name}`}
+            key={ingredient.id}
+            onClick={() =>
+              setIngredientIds((current) => [
+                ...current,
+                ingredient.id,
+              ])
+            }
+          >
+            <strong>{ingredient.name}</strong>
+            <small className="ingredient-effect-summary">
+              {ingredient.effects
+                .map((effect) => `${effect.name} ${effect.value}`)
+                .join(' · ')}
+            </small>
+          </button>
+        ))}
+      </div>
+
+      <div
+        className="optimizer-jar-sequence-builder-status"
+        role="status"
+      >
+        {ingredientIds.length === 0 ? (
+          <span>先選擇至少一項果汁基底。</span>
+        ) : !evaluation.valid ? (
+          <span>
+            {evaluation.issues
+              .map((issue) => issue.message)
+              .join('；')}
+          </span>
+        ) : !evaluation.availableAtCurrentProgress ? (
+          <span>目前主線進度尚未解鎖這個最終配方序列。</span>
+        ) : !entry ? (
+          <span>目前序列無法建立為果汁罐中的最終成品。</span>
+        ) : (
+          <span>
+            可設定：{formatRecipeDisplayName(entry.candidate.name)}
+            {' · '}{jarRecipeAuthorityLabel(entry)}
+            {entry.candidate.effectAmbiguity
+              ? ' · 特性仍有歧義，不會作為安全完整匹配'
+              : ''}
+            {entry.candidate.salePrice === null
+              ? ' · 售價未知'
+              : ''}
+          </span>
+        )}
+      </div>
+
+      <div className="sequence-actions">
+        <button
+          type="button"
+          disabled={ingredientIds.length === 0}
+          onClick={() =>
+            setIngredientIds((current) => current.slice(0, -1))
+          }
+        >
+          移除最後一項
+        </button>
+        <button
+          type="button"
+          disabled={ingredientIds.length === 0}
+          onClick={() => setIngredientIds([])}
+        >
+          清空
+        </button>
+        <button
+          type="button"
+          disabled={!entry}
+          onClick={() => {
+            if (!entry) return
+            onChoose(entry)
+            setIngredientIds([])
+            setIngredientQuery('')
+          }}
+        >
+          設定這個果汁罐內容
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export function jarFillActionLabel(
   load: MultiTripJuiceJarLoad,
 ): string | null {
@@ -1750,14 +1940,54 @@ function OptimizerTools({
     [currentProgress],
   )
 
+  const persistedJarRecipeIds = useMemo(
+    () =>
+      inventoryState.juiceJars.flatMap((jar) =>
+        jar.recipeId ? [jar.recipeId] : [],
+      ),
+    [inventoryState.juiceJars],
+  )
+
+  const jarRecipeCandidateState = useMemo(
+    () =>
+      recipeCandidatePoolWithPersistedJarRecipes(
+        recipeCandidatePool,
+        currentProgress,
+        persistedJarRecipeIds,
+      ),
+    [currentProgress, persistedJarRecipeIds, recipeCandidatePool],
+  )
+
+  const effectiveRecipeCandidatePool =
+    jarRecipeCandidateState.pool
+
   const inventoryRecipeEntries = useMemo(
     () =>
-      recipeCandidateEntriesForInventoryEditor(recipeCandidatePool).sort(
+      recipeCandidateEntriesForInventoryEditor(
+        effectiveRecipeCandidatePool,
+      ).sort(
         (a, b) =>
           a.candidate.name.localeCompare(b.candidate.name, 'zh-Hant') ||
           a.candidate.id.localeCompare(b.candidate.id),
       ),
+    [effectiveRecipeCandidatePool],
+  )
+
+  const canonicalIntermediateRecipeEntries = useMemo(
+    () =>
+      recipeCandidateEntriesForInventoryEditor(recipeCandidatePool),
     [recipeCandidatePool],
+  )
+
+  const jarRecipeCandidateById = useMemo(
+    () =>
+      new Map(
+        effectiveRecipeCandidatePool.entries.map((entry) => [
+          entry.candidate.id,
+          entry,
+        ]),
+      ),
+    [effectiveRecipeCandidatePool],
   )
 
   const inventoryRecipeSearchIndex = useMemo(
@@ -1769,8 +1999,12 @@ function OptimizerTools({
   )
 
   const intermediateInventoryEntries = useMemo(
-    () => intermediateJuiceInventoryEntries(inventoryRecipeEntries, currentProgress),
-    [inventoryRecipeEntries, currentProgress],
+    () =>
+      intermediateJuiceInventoryEntries(
+        canonicalIntermediateRecipeEntries,
+        currentProgress,
+      ),
+    [canonicalIntermediateRecipeEntries, currentProgress],
   )
 
   const intermediateInventoryIdentitySet = useMemo(
@@ -2341,7 +2575,9 @@ function OptimizerTools({
         },
         {
           customers,
-          candidatePool: recipeCandidatePool,
+          candidatePool: effectiveRecipeCandidatePool,
+          finishedStockOnlyRecipeIds:
+            jarRecipeCandidateState.finishedStockOnlyRecipeIds,
         },
         optimizerAbortController.signal,
       )
@@ -3229,7 +3465,7 @@ function OptimizerTools({
               )}
 
             <p className="optimizer-inventory-empty">
-              果汁罐內容可搜尋目前可用的實測、個人已保存與安全推導配方；每次只顯示少量匹配結果，不會把數千個推導候選全部 render 成選項。
+              果汁罐內容可搜尋目前可用的實測、個人已保存與安全推導配方，也可直接依 ordered 原料序列建立。只因果汁罐輸入而新增的 computed candidate 只能使用罐內既有成品，不會因此授權 optimizer 額外製作。
             </p>
 
             {inventoryState.juiceJars.length === 0 ? (
@@ -3252,11 +3488,32 @@ function OptimizerTools({
                         jarId={jar.id}
                         recipeId={jar.recipeId}
                         searchIndex={inventoryRecipeSearchIndex}
+                        selectedCandidate={
+                          jar.recipeId
+                            ? jarRecipeCandidateById.get(jar.recipeId)
+                                ?.candidate
+                            : undefined
+                        }
                         onChange={(recipeId) =>
                           setJuiceJarRecipe(jar.id, recipeId)
                         }
                       />
                     </label>
+                    <details className="optimizer-jar-sequence-details">
+                      <summary>依原料建立</summary>
+                      <JuiceJarSequenceBuilder
+                        jarId={jar.id}
+                        currentProgress={currentProgress}
+                        availableIngredients={availableInventoryIngredients}
+                        recipeCandidatePool={effectiveRecipeCandidatePool}
+                        onChoose={(entry) =>
+                          setJuiceJarRecipe(
+                            jar.id,
+                            entry.candidate.id,
+                          )
+                        }
+                      />
+                    </details>
                     <label>
                       <span>杯數</span>
                       <input

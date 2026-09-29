@@ -446,6 +446,37 @@ describe('optimizer model', () => {
     }
   })
 
+  it('marks persisted jar-only candidates as finished-stock-only production capacity', () => {
+    const stockOnly = candidate(
+      'computed:lemon+sugar+sugar+sugar+sugar+sugar+sugar',
+      'computed',
+      ['檸檬', '糖', '糖', '糖', '糖', '糖', '糖'],
+      [{ name: '甜味', value: 5 }],
+    )
+    const model = buildOptimizationModel(
+      {
+        ...baseRequest,
+        customerIds: ['a'],
+        formalCustomerIds: [],
+        initialAvailableJuiceJars: [
+          { recipeId: stockOnly.id, servings: 1 },
+        ],
+      },
+      {
+        customers,
+        candidates: [stockOnly],
+        finishedStockOnlyRecipeIds: [stockOnly.id],
+      },
+    )
+
+    expect(model.serviceableCustomerIds).toEqual(['a'])
+    expect(model.recipes).toHaveLength(1)
+    expect(model.recipes[0]).toMatchObject({
+      initialFinishedServings: 1,
+      maxProductionUnits: 0,
+    })
+  })
+
   it('keeps future-progress candidates out of the eligible matrix', () => {
     const model = buildOptimizationModel(
       {

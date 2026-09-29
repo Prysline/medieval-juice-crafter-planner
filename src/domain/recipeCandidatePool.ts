@@ -7,6 +7,7 @@ import type {
 } from '../types'
 import { isAvailableAtProgress } from './availability'
 import { evaluateRecipeSequence } from './recipeEvaluator'
+import { ingredientIdsFromComputedRecipeIdentity } from './recipeIdentity'
 import {
   generateProgressiveRecipeCandidateLayers,
   type RecipeCandidateSearchPhase,
@@ -244,6 +245,89 @@ export function buildRecipeCandidatePool(
     entries: order.map((key) => entriesBySequence.get(key)!),
     generatedLayers,
     rejectedSavedRecipes,
+  }
+}
+
+export function recipeCandidateEntryForSequence(
+  pool: RecipeCandidatePool,
+  currentProgress: ProgressMilestoneId,
+  ingredientIds: readonly string[],
+): RecipeCandidatePoolEntry | null {
+  const key = sequenceKey(ingredientIds)
+  const existing = pool.entries.find(
+    (entry) => sequenceKey(entry.ingredientIds) === key,
+  )
+  if (existing) {
+    return existing.availableAtCurrentProgress ? existing : null
+  }
+
+  const evaluation = evaluateRecipeSequence(
+    [...ingredientIds],
+    currentProgress,
+  )
+  if (!evaluation.valid || !evaluation.availableAtCurrentProgress) {
+    return null
+  }
+
+  const candidate = evaluation.candidate
+  return {
+    id: candidate.id,
+    ingredientIds: [...evaluation.ingredientIds],
+    candidate,
+    sources: [derivedSource(candidate)],
+    savedRecipeIds: [],
+    availableAtCurrentProgress: true,
+    inGeneratedSearchScope: false,
+  }
+}
+
+export function recipeCandidatePoolWithPersistedJarRecipes(
+  pool: RecipeCandidatePool,
+  currentProgress: ProgressMilestoneId,
+  recipeIds: readonly string[],
+): {
+  pool: RecipeCandidatePool
+  finishedStockOnlyRecipeIds: readonly string[]
+} {
+  const knownIds = new Set(pool.entries.map((entry) => entry.candidate.id))
+  const extraEntries: RecipeCandidatePoolEntry[] = []
+  const finishedStockOnlyRecipeIds: string[] = []
+
+  for (const recipeId of new Set(recipeIds)) {
+    if (knownIds.has(recipeId)) continue
+
+    const ingredientIds =
+      ingredientIdsFromComputedRecipeIdentity(recipeId)
+    if (!ingredientIds) continue
+
+    const entry = recipeCandidateEntryForSequence(
+      pool,
+      currentProgress,
+      ingredientIds,
+    )
+    if (
+      !entry ||
+      entry.candidate.id !== recipeId ||
+      !entry.availableAtCurrentProgress
+    ) {
+      continue
+    }
+
+    knownIds.add(recipeId)
+    extraEntries.push(entry)
+    finishedStockOnlyRecipeIds.push(recipeId)
+  }
+
+  if (extraEntries.length === 0) {
+    return { pool, finishedStockOnlyRecipeIds: [] }
+  }
+
+  return {
+    pool: {
+      ...pool,
+      entries: [...pool.entries, ...extraEntries],
+    },
+    finishedStockOnlyRecipeIds,
   }
 }
 

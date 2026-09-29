@@ -19,3 +19,28 @@ export function computedRecipeIdentity(
 
   return `computed:${ingredientIds.join('+')}`
 }
+
+
+export function ingredientIdsFromComputedRecipeIdentity(
+  identity: string,
+): string[] | null {
+  if (!identity.startsWith('computed:')) return null
+
+  const payload = identity.slice('computed:'.length)
+  if (!payload) return null
+
+  const ingredientIds = payload.split('+')
+  if (
+    ingredientIds.length === 0 ||
+    ingredientIds.some(
+      (ingredientId) =>
+        ingredientId.length === 0 || ingredientId.includes('+'),
+    )
+  ) {
+    return null
+  }
+
+  return computedRecipeIdentity(ingredientIds) === identity
+    ? ingredientIds
+    : null
+}
