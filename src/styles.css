@@ -2593,6 +2593,19 @@ footer {
   padding: 9px 10px;
 }
 
+.optimizer-custom-resident-actions {
+  position: sticky;
+  top: 8px;
+  z-index: 3;
+}
+
+.optimizer-batch-card > .optimizer-custom-resident-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
 .optimizer-batch-card > div {
   display: flex;
   gap: 10px;
@@ -3775,6 +3788,10 @@ footer {
 
   .optimizer-batch-card > div {
     display: grid;
+  }
+
+  .optimizer-batch-card > .optimizer-custom-resident-controls {
+    grid-template-columns: 1fr;
   }
 
   .optimizer-collapsible-section-header {
