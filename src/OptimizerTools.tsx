@@ -164,7 +164,7 @@ export type OptimizerRunPhase =
   | 'solving'
   | 'finalizing'
 
-type OptimizerRunState =
+export type OptimizerRunState =
   | { status: 'idle' }
   | {
       status: 'loading'
@@ -200,8 +200,41 @@ type OptimizerRunState =
       deliveryExecutionPlan: DeliveryExecutionPlan | null
       deliveryCursor: DeliveryExecutionCursor | null
       deliveryExpectedBasis: DeliveryExecutionBasis
+      priorities: readonly OptimizationCriterion[]
+      currentProgress: ProgressMilestoneId
+      activeWorkshopRegionId: VillageId
+      suppliedCustomerIdsSnapshot: readonly string[]
     }
   | { status: 'error'; error: PlanningErrorPresentation }
+
+export type OptimizerStaleReason =
+  | 'solver-input-changed'
+  | 'canonical-state-changed'
+
+export interface OptimizerStaleSuccessReference {
+  readonly reason: OptimizerStaleReason
+  readonly run: Extract<OptimizerRunState, { status: 'success' }>
+}
+
+export function captureStaleSuccessReference(
+  current: OptimizerStaleSuccessReference | null,
+  runState: OptimizerRunState,
+  reason: OptimizerStaleReason,
+): OptimizerStaleSuccessReference | null {
+  if (runState.status !== 'success') return current
+  return Object.freeze({ reason, run: runState })
+}
+
+export function optimizerTransactionDraftIsActive(
+  runState: OptimizerRunState,
+  draft: PlanApplicationTransactionDraft,
+): boolean {
+  return (
+    runState.status === 'success' &&
+    !runState.transactionDraftInvalidatedByPartialDelivery &&
+    runState.transactionDraft === draft
+  )
+}
 
 type PlanApplicationUiState =
   | { status: 'idle' }
@@ -211,6 +244,7 @@ type PlanApplicationUiState =
       mismatches: readonly PlanApplicationBasisMismatchField[]
     }
   | { status: 'error'; error: PlanningErrorPresentation }
+  | { status: 'blocked-stale' }
 
 type DeliveryUiState =
   | { status: 'idle' }
@@ -1941,6 +1975,12 @@ function OptimizerTools({
   const [runState, setRunState] = useState<OptimizerRunState>({
     status: 'idle',
   })
+  const [staleSuccessReference, setStaleSuccessReference] =
+    useState<OptimizerStaleSuccessReference | null>(null)
+  const runStateRef = useRef<OptimizerRunState>(runState)
+  useEffect(() => {
+    runStateRef.current = runState
+  }, [runState])
   const [customTripDraftDirty, setCustomTripDraftDirty] =
     useState(false)
   const [applicationState, setApplicationState] =
@@ -2280,10 +2320,21 @@ function OptimizerTools({
     }
   }, [availableWorkshopRegions, activeWorkshopRegionId])
 
+  function invalidateOptimizerRun(reason: OptimizerStaleReason) {
+    const current = runStateRef.current
+    if (current.status === 'success') {
+      setStaleSuccessReference((existing) =>
+        captureStaleSuccessReference(existing, current, reason),
+      )
+    }
+    runStateRef.current = { status: 'idle' }
+    setRunState({ status: 'idle' })
+  }
+
   useEffect(() => {
     optimizerAbortControllerRef.current?.abort()
     optimizerAbortControllerRef.current = null
-    setRunState({ status: 'idle' })
+    invalidateOptimizerRun('solver-input-changed')
     setDeliveryUiState({ status: 'idle' })
   }, [
     currentProgress,
@@ -2324,7 +2375,7 @@ function OptimizerTools({
       deliveryCanonicalSyncGuardRef.current = null
     }
 
-    setRunState({ status: 'idle' })
+    invalidateOptimizerRun('canonical-state-changed')
     setDeliveryUiState((current) =>
       current.status === 'stale' || current.status === 'error'
         ? current
@@ -2335,6 +2386,11 @@ function OptimizerTools({
   function applyTransactionDraft(
     draft: PlanApplicationTransactionDraft,
   ) {
+    if (!optimizerTransactionDraftIsActive(runState, draft)) {
+      setApplicationState({ status: 'blocked-stale' })
+      return
+    }
+
     const result = commitPlanApplicationTransaction(
       draft,
       window.localStorage,
@@ -2435,6 +2491,7 @@ function OptimizerTools({
         transactionDraft: rebasedTransaction.transactionDraft,
         transactionDraftInvalidatedByPartialDelivery:
           rebasedTransaction.invalidated,
+        suppliedCustomerIdsSnapshot: [...committedSupplied],
       }
     })
     setApplicationState({ status: 'idle' })
@@ -2937,7 +2994,10 @@ function OptimizerTools({
         ? createDeliveryExecutionCursor(deliveryExecutionPlan)
         : null
 
-      setRunState({
+      const successState: Extract<
+        OptimizerRunState,
+        { status: 'success' }
+      > = {
         status: 'success',
         elapsedMs: Math.max(0, Date.now() - runStartedAtMs),
         candidatePolicy: runCandidatePolicy,
@@ -2960,7 +3020,14 @@ function OptimizerTools({
           inventory: inventoryState,
           suppliedCustomerIds: [...suppliedCustomerIds],
         },
-      })
+        priorities: [...priorities],
+        currentProgress,
+        activeWorkshopRegionId,
+        suppliedCustomerIdsSnapshot: [...suppliedCustomerIds],
+      }
+      runStateRef.current = successState
+      setStaleSuccessReference(null)
+      setRunState(successState)
     } catch (error) {
       if (isOptimizerWorkerCancelledError(error)) {
         if (
@@ -3724,6 +3791,15 @@ function OptimizerTools({
         <PlanningErrorBlock presentation={applicationState.error} />
       )}
 
+      {applicationState.status === 'blocked-stale' && (
+        <div className="optimizer-error" role="alert">
+          <strong>這份規劃已不是目前可套用的結果</strong>
+          <span>
+            未寫入任何庫存或今日供應變更；請使用目前有效的成功結果，或重新產生規劃。
+          </span>
+        </div>
+      )}
+
       {deliveryUiState.status === 'applied' && (
         <div className="optimizer-result-note" role="status">
           <strong>
@@ -3771,11 +3847,11 @@ function OptimizerTools({
           <OptimizerResultPanel
           result={runState.result}
           materialSourceMode={runState.materialSourceMode}
-          currentProgress={currentProgress}
-          activeWorkshopRegionId={activeWorkshopRegionId}
+          currentProgress={runState.currentProgress}
+          activeWorkshopRegionId={runState.activeWorkshopRegionId}
           preparationShortfall={runState.preparationShortfall}
           productionLogistics={runState.productionLogistics}
-          priorities={priorities}
+          priorities={runState.priorities}
           salesTripPlans={runState.salesTripPlans}
           customTripAutoBaseline={runState.customTripAutoBaseline}
           appliedCustomPlan={runState.appliedCustomPlan}
@@ -3790,12 +3866,65 @@ function OptimizerTools({
           }
           deliveryExecutionPlan={runState.deliveryExecutionPlan}
           deliveryCursor={runState.deliveryCursor}
-          suppliedCustomerIds={suppliedCustomerIds}
+          suppliedCustomerIds={runState.suppliedCustomerIdsSnapshot}
           deliveryUiState={deliveryUiState}
           onApplyTransaction={applyTransactionDraft}
           onCommitDelivery={commitDeliveryCustomer}
           onCommitDeliveryGroup={commitDeliveryCustomers}
         />
+        </>
+      )}
+
+      {staleSuccessReference && runState.status !== 'success' && (
+        <>
+          <div className="optimizer-result-note" role="status">
+            <strong>上一份成功規劃已過期／唯讀</strong>
+            <span>
+              {staleSuccessReference.reason === 'canonical-state-changed'
+                ? '庫存或今日供應等 canonical 狀態已改變。'
+                : '影響最佳化求解的輸入已改變。'}
+              這份結果只保留作本次頁面工作階段的參考，不會被當成目前輸入下仍有效的規劃，也不能整份套用。
+            </span>
+          </div>
+          <OptimizerRunSummary
+            elapsedMs={staleSuccessReference.run.elapsedMs}
+            candidatePolicy={staleSuccessReference.run.candidatePolicy}
+            customerCount={staleSuccessReference.run.customerCount}
+            assignedCustomerCount={staleSuccessReference.run.result.assignedServings}
+            unresolvedCustomerCount={
+              staleSuccessReference.run.result.unresolvedCustomers.length +
+              (staleSuccessReference.run.result.inventoryUnfulfilledCustomers?.length ?? 0)
+            }
+          />
+          <OptimizerResultPanel
+            result={staleSuccessReference.run.result}
+            materialSourceMode={staleSuccessReference.run.materialSourceMode}
+            currentProgress={staleSuccessReference.run.currentProgress}
+            activeWorkshopRegionId={staleSuccessReference.run.activeWorkshopRegionId}
+            preparationShortfall={staleSuccessReference.run.preparationShortfall}
+            productionLogistics={staleSuccessReference.run.productionLogistics}
+            priorities={staleSuccessReference.run.priorities}
+            salesTripPlans={staleSuccessReference.run.salesTripPlans}
+            customTripAutoBaseline={staleSuccessReference.run.customTripAutoBaseline}
+            appliedCustomPlan={staleSuccessReference.run.appliedCustomPlan}
+            customTripApplyError={staleSuccessReference.run.customTripApplyError}
+            validateCustomTripDraft={staleSuccessReference.run.validateCustomTripDraft}
+            onCustomTripDraftDirtyChange={() => {}}
+            onAcceptCustomTripPlan={() => {}}
+            onRestoreAutoSalesPlan={() => {}}
+            transactionDraft={staleSuccessReference.run.transactionDraft}
+            transactionDraftInvalidatedByPartialDelivery={
+              staleSuccessReference.run.transactionDraftInvalidatedByPartialDelivery
+            }
+            deliveryExecutionPlan={staleSuccessReference.run.deliveryExecutionPlan}
+            deliveryCursor={staleSuccessReference.run.deliveryCursor}
+            suppliedCustomerIds={staleSuccessReference.run.suppliedCustomerIdsSnapshot}
+            deliveryUiState={{ status: 'idle' }}
+            onApplyTransaction={applyTransactionDraft}
+            onCommitDelivery={() => {}}
+            onCommitDeliveryGroup={() => {}}
+            readOnly
+          />
         </>
       )}
     </section>
@@ -4017,12 +4146,14 @@ export function MachineBatchFlow({
   quantity,
   batchIndex,
   completed,
+  disabled = false,
   onCompletedChange,
 }: {
   step: ProductionStep
   quantity: number
   batchIndex: number
   completed: boolean
+  disabled?: boolean
   onCompletedChange: (completed: boolean) => void
 }) {
   const outputQuantity =
@@ -4046,6 +4177,7 @@ export function MachineBatchFlow({
         className="optimizer-operation-checkbox"
         type="checkbox"
         checked={completed}
+        disabled={disabled}
         onChange={(event) =>
           onCompletedChange(event.target.checked)
         }
@@ -4266,12 +4398,14 @@ export function PlanApplicationPreview({
   checkedIngredientIds = new Set<string>(),
   onIngredientCheckedChange,
   onApply,
+  readOnly = false,
 }: {
   draft: PlanApplicationTransactionDraft
   productionJarFills: readonly MultiTripProductionJarFill[]
   checkedIngredientIds?: ReadonlySet<string>
   onIngredientCheckedChange?: (ingredientId: string, checked: boolean) => void
-  onApply: (draft: PlanApplicationTransactionDraft) => void
+  onApply?: (draft: PlanApplicationTransactionDraft) => void
+  readOnly?: boolean
 }) {
   const changes = draft.changes
   const terminalJuiceJars = sortedByNaturalPresentationId(
@@ -4284,7 +4418,7 @@ export function PlanApplicationPreview({
   return (
     <CollapsibleOptimizerResultSection
       title="套用規劃預覽"
-      summary="確認後才會寫入"
+      summary={readOnly ? '已過期／唯讀' : '確認後才會寫入'}
       className="optimizer-transaction-preview"
     >
 
@@ -4294,13 +4428,19 @@ export function PlanApplicationPreview({
         需先調整後才能套用。
       </p>
 
-      <button
-        type="button"
-        className="optimizer-run-button"
-        onClick={() => onApply(draft)}
-      >
-        確認套用這份規劃
-      </button>
+      {readOnly ? (
+        <p className="optimizer-transaction-warning">
+          已過期規劃只能參考，不能套用或寫入新的 transaction。
+        </p>
+      ) : (
+        <button
+          type="button"
+          className="optimizer-run-button"
+          onClick={() => onApply?.(draft)}
+        >
+          確認套用這份規劃
+        </button>
+      )}
 
       <div className="optimizer-transaction-grid">
         <article className="optimizer-transaction-card">
@@ -4321,6 +4461,7 @@ export function PlanApplicationPreview({
                     <input
                       type="checkbox"
                       checked={checkedIngredientIds.has(change.ingredientId)}
+                      disabled={readOnly}
                       onChange={(event) =>
                         onIngredientCheckedChange?.(
                           change.ingredientId,
@@ -5089,6 +5230,7 @@ function OptimizerResultPanel({
   onApplyTransaction,
   onCommitDelivery,
   onCommitDeliveryGroup,
+  readOnly = false,
 }: {
   result: OptimizationResult
   materialSourceMode: OptimizationMaterialSourceMode
@@ -5122,6 +5264,7 @@ function OptimizerResultPanel({
   onApplyTransaction: (draft: PlanApplicationTransactionDraft) => void
   onCommitDelivery: (customerId: string, supplied: boolean) => void
   onCommitDeliveryGroup: (customerIds: readonly string[], supplied: boolean) => void
+  readOnly?: boolean
 }) {
   const selectedSalesTripPlan =
     appliedCustomPlan?.salesPlan ?? salesTripPlans.selected
@@ -5409,6 +5552,7 @@ function OptimizerResultPanel({
           checkedIngredientIds={checkedIngredientIds}
           onIngredientCheckedChange={setIngredientChecked}
           onApply={onApplyTransaction}
+          readOnly={readOnly}
         />
       ) : (
         <section
@@ -5499,7 +5643,7 @@ function OptimizerResultPanel({
             </span>
             <button
               type="button"
-              disabled={completedProductionOperationIds.size === 0}
+              disabled={readOnly || completedProductionOperationIds.size === 0}
               onClick={resetProductionChecklist}
             >
               全部取消／重新開始
@@ -5581,6 +5725,7 @@ function OptimizerResultPanel({
                                   completed={completedProductionOperationIds.has(
                                     operationId,
                                   )}
+                                  disabled={readOnly}
                                   onCompletedChange={(completed) =>
                                     setProductionOperationCompleted(
                                       operationId,
@@ -5717,8 +5862,9 @@ function OptimizerResultPanel({
 
         <div className="optimizer-delivery-toolbar">
           <span>
-            勾選個別顧客或配方標題，代表對應顧客已實際收到果汁；可依實際送達順序勾選，不受規劃趟次限制。勾選會更新「今日已供應」，但不會假裝尚未發生的前置趟次、裝瓶或杯具操作已完成。若只需要調整接下來的販售行程，可使用下方「剩餘販售重排」；若要重算製作或庫存，請先確認目前狀態後重新產生完整規劃。
-            取消勾選只修正「今日已供應」紀錄，不會回復或修改任何庫存、杯具、果汁罐或製作狀態。
+            {readOnly
+              ? '這是已過期的唯讀參考；顧客交付勾選在此停用，不會修改目前的今日供應狀態。'
+              : '勾選個別顧客或配方標題，代表對應顧客已實際收到果汁；可依實際送達順序勾選，不受規劃趟次限制。勾選會更新「今日已供應」，但不會假裝尚未發生的前置趟次、裝瓶或杯具操作已完成。若只需要調整接下來的販售行程，可使用下方「剩餘販售重排」；若要重算製作或庫存，請先確認目前狀態後重新產生完整規劃。取消勾選只修正「今日已供應」紀錄，不會回復或修改任何庫存、杯具、果汁罐或製作狀態。'}
           </span>
         </div>
 
@@ -5744,7 +5890,7 @@ function OptimizerResultPanel({
                     plan={deliveryExecutionPlan}
                     cursor={deliveryCursor}
                     suppliedCustomerIds={suppliedCustomerIds}
-                    disabled={deliveryUiState.status === 'stale'}
+                    disabled={readOnly || deliveryUiState.status === 'stale'}
                     onChange={onCommitDeliveryGroup}
                   />
                   <span>{recipeCostSummary(plan)}</span>
@@ -5761,7 +5907,7 @@ function OptimizerResultPanel({
                         plan={deliveryExecutionPlan}
                         cursor={deliveryCursor}
                         suppliedCustomerIds={suppliedCustomerIds}
-                        disabled={deliveryUiState.status === 'stale'}
+                        disabled={readOnly || deliveryUiState.status === 'stale'}
                         onChange={onCommitDelivery}
                       />
                     ),
@@ -5779,22 +5925,28 @@ function OptimizerResultPanel({
         )}
       </CollapsibleOptimizerResultSection>
 
-      <CustomSalesTripEditor
-        autoBaseline={customTripAutoBaseline}
-        appliedPlan={appliedCustomPlan?.planningPlan ?? null}
-        validateDraft={validateCustomTripDraft}
-        applyError={customTripApplyError}
-        onDraftDirtyChange={onCustomTripDraftDirtyChange}
-        onRestoreAutoPlan={onRestoreAutoSalesPlan}
-        onAcceptValidatedDraft={onAcceptCustomTripPlan}
-        customerLabel={customerLabel}
-        recipeLabel={(recipeId) =>
-          formatRecipeDisplayName(
-            recipeNameById.get(recipeId) ?? recipeId,
-          )
-        }
-        regionLabel={regionDisplayName}
-      />
+      {readOnly ? (
+        <p className="optimizer-boundary-note">
+          自訂趟次編輯在已過期參考中停用；上方販售排程保留當時已套用的安排供查看。
+        </p>
+      ) : (
+        <CustomSalesTripEditor
+          autoBaseline={customTripAutoBaseline}
+          appliedPlan={appliedCustomPlan?.planningPlan ?? null}
+          validateDraft={validateCustomTripDraft}
+          applyError={customTripApplyError}
+          onDraftDirtyChange={onCustomTripDraftDirtyChange}
+          onRestoreAutoPlan={onRestoreAutoSalesPlan}
+          onAcceptValidatedDraft={onAcceptCustomTripPlan}
+          customerLabel={customerLabel}
+          recipeLabel={(recipeId) =>
+            formatRecipeDisplayName(
+              recipeNameById.get(recipeId) ?? recipeId,
+            )
+          }
+          regionLabel={regionDisplayName}
+        />
+      )}
 
       <CollapsibleOptimizerResultSection
         title="販售排程"
@@ -5847,6 +5999,7 @@ function OptimizerResultPanel({
         </small>
       </CollapsibleOptimizerResultSection>
 
+      {!readOnly && (
       <section className="optimizer-result-section">
         <div className="section-title">
           <strong>剩餘販售重排</strong>
@@ -5909,6 +6062,7 @@ function OptimizerResultPanel({
           </>
         )}
       </section>
+      )}
 
       {result.unresolvedCustomers.length > 0 && (
         <section className="optimizer-unresolved">
