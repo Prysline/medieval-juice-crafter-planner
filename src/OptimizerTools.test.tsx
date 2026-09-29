@@ -660,7 +660,7 @@ describe('juice jar recipe search UX', () => {
       />,
     )
 
-    expect(html).toContain('預測（檸檬 → 糖 → 糖 → 糖 → 糖 → 糖 → 糖）')
+    expect(html).toContain('預測（檸檬▸糖▸糖▸糖▸糖▸糖▸糖）')
     expect(html).not.toContain(
       '既有內容：computed:lemon+sugar+sugar+sugar+sugar+sugar+sugar',
     )
