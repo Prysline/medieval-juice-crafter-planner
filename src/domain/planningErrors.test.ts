@@ -1,10 +1,55 @@
 import { describe, expect, it } from 'vitest'
 import {
+  OptimizerWorkerExecutionError,
+  OptimizerWorkerRuntimeError,
   PlanningUserError,
   presentPlanningError,
 } from './planningErrors'
 
 describe('planning error presentation', () => {
+  it('presents Worker runtime failure separately from planning infeasibility', () => {
+    const result = presentPlanningError(
+      new OptimizerWorkerRuntimeError(
+        'worker-error-event',
+        'Script error at optimizerWorker.js:42',
+      ),
+    )
+
+    expect(result.title).toBe('背景規劃程序異常中止')
+    expect(result.message).toContain('runtime／通訊異常')
+    expect(result.message).toContain('找不到可行方案')
+    expect(result.suggestions.join(' ')).not.toContain(
+      '確認庫存與規劃設定後重新執行',
+    )
+    expect(result.suggestions.join(' ')).toContain(
+      '不需要為了這個錯誤反覆修改庫存',
+    )
+    expect(result.technicalDetails).toContain(
+      'Worker phase: worker-error-event',
+    )
+    expect(result.technicalDetails).toContain(
+      'Script error at optimizerWorker.js:42',
+    )
+  })
+
+  it('presents Worker execution exceptions as internal errors rather than user-fixable inventory failures', () => {
+    const result = presentPlanningError(
+      new OptimizerWorkerExecutionError(
+        'unexpected optimizer invariant',
+      ),
+    )
+
+    expect(result.title).toBe('背景規劃程序發生內部錯誤')
+    expect(result.message).toContain('未分類錯誤')
+    expect(result.message).toContain('PlanningUserError')
+    expect(result.suggestions.join(' ')).not.toContain(
+      '確認庫存與規劃設定後重新執行',
+    )
+    expect(result.technicalDetails).toBe(
+      'unexpected optimizer invariant',
+    )
+  })
+
   it('attributes fixed-trip realization failure to the requested trip', () => {
     const presentation = presentPlanningError(
       new PlanningUserError(
