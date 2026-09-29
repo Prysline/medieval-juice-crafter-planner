@@ -39,7 +39,16 @@ describe('delivery checkbox and whole-plan application contract', () => {
       'setStaleSuccessReference(null)',
     )
     expect(optimizerToolsSource).toContain(
-      'optimizerTransactionDraftIsActive(runState, draft)',
+      'optimizerInputRevisionToken',
+    )
+    expect(optimizerToolsSource).toContain(
+      'currentCanonicalDeliveryUiFingerprint',
+    )
+    expect(optimizerToolsSource).toContain(
+      'runState.inputRevisionToken === currentInputRevisionToken',
+    )
+    expect(optimizerToolsSource).toContain(
+      'runStateIsCurrentSuccess',
     )
     expect(optimizerToolsSource).toContain(
       '上一份成功規劃已過期／唯讀',
