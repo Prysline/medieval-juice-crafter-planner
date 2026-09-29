@@ -456,7 +456,7 @@ describe('juice jar recipe search UX', () => {
     ).toEqual({
       identity: 'juice-state:v1:pear/cinnamon/lemon',
       ingredientIds: ['pear', 'cinnamon', 'lemon'],
-      label: '梨 → 肉桂 → 檸檬',
+      label: '梨▸肉桂▸檸檬',
     })
   })
 
