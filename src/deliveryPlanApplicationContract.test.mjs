@@ -64,6 +64,34 @@ describe('delivery checkbox and whole-plan application contract', () => {
     )
   })
 
+  it('keeps stale success reference when a new optimizer run fails', () => {
+    const runStart = optimizerToolsSource.indexOf(
+      'async function runOptimizer()',
+    )
+    const catchStart = optimizerToolsSource.indexOf(
+      '} catch (error) {',
+      runStart,
+    )
+    const finallyStart = optimizerToolsSource.indexOf(
+      '} finally {',
+      catchStart,
+    )
+    const optimizerCatchSource = optimizerToolsSource.slice(
+      catchStart,
+      finallyStart,
+    )
+
+    expect(runStart).toBeGreaterThanOrEqual(0)
+    expect(catchStart).toBeGreaterThan(runStart)
+    expect(finallyStart).toBeGreaterThan(catchStart)
+    expect(optimizerCatchSource).toContain(
+      'error: presentPlanningError(error)',
+    )
+    expect(optimizerCatchSource).not.toContain(
+      'setStaleSuccessReference',
+    )
+  })
+
   it('keeps manual delivery checks record-only', () => {
     expect(optimizerToolsSource).toContain(
       'Manual checklist edits are record corrections only.',
