@@ -342,14 +342,21 @@ describe('whole-plan delivery rebase', () => {
 })
 
 describe('optimizer stale success lifecycle', () => {
+  const inputRevisionToken = {}
+  const canonicalFingerprint = 'canonical-a'
+
   function successState(
     draft: PlanApplicationTransactionDraft,
     invalidated = false,
+    revisionToken: object = inputRevisionToken,
+    fingerprint = canonicalFingerprint,
   ): OptimizerRunState {
     return {
       status: 'success',
       transactionDraft: draft,
       transactionDraftInvalidatedByPartialDelivery: invalidated,
+      inputRevisionToken: revisionToken,
+      canonicalDeliveryUiFingerprint: fingerprint,
     } as unknown as OptimizerRunState
   }
 
@@ -383,16 +390,52 @@ describe('optimizer stale success lifecycle', () => {
     } as PlanApplicationTransactionDraft
 
     expect(
-      optimizerTransactionDraftIsActive(successState(draft), draft),
+      optimizerTransactionDraftIsActive(
+        successState(draft),
+        draft,
+        inputRevisionToken,
+        canonicalFingerprint,
+      ),
     ).toBe(true)
     expect(
-      optimizerTransactionDraftIsActive(successState(draft), otherDraft),
+      optimizerTransactionDraftIsActive(
+        successState(draft),
+        otherDraft,
+        inputRevisionToken,
+        canonicalFingerprint,
+      ),
     ).toBe(false)
     expect(
-      optimizerTransactionDraftIsActive(successState(draft, true), draft),
+      optimizerTransactionDraftIsActive(
+        successState(draft, true),
+        draft,
+        inputRevisionToken,
+        canonicalFingerprint,
+      ),
     ).toBe(false)
     expect(
-      optimizerTransactionDraftIsActive({ status: 'idle' }, draft),
+      optimizerTransactionDraftIsActive(
+        { status: 'idle' },
+        draft,
+        inputRevisionToken,
+        canonicalFingerprint,
+      ),
+    ).toBe(false)
+    expect(
+      optimizerTransactionDraftIsActive(
+        successState(draft),
+        draft,
+        {},
+        canonicalFingerprint,
+      ),
+    ).toBe(false)
+    expect(
+      optimizerTransactionDraftIsActive(
+        successState(draft),
+        draft,
+        inputRevisionToken,
+        'canonical-b',
+      ),
     ).toBe(false)
   })
 })
