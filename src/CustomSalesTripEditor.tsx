@@ -196,7 +196,7 @@ export function moveCustomTripSelectionToAdjacentTrip(
   plan: CustomSalesTripEditorDraft,
   customerIds: readonly string[],
   direction: -1 | 1,
-): CustomSalesTripPlan {
+): CustomSalesTripEditorDraft {
   const targetTripId = adjacentCustomTripIdForSelection(
     plan,
     customerIds,
@@ -287,7 +287,7 @@ function moveTripBefore(
   plan: CustomSalesTripEditorDraft,
   sourceTripId: string,
   targetTripId: string,
-): CustomSalesTripPlan {
+): CustomSalesTripEditorDraft {
   if (
     sourceTripId === targetTripId ||
     !plan.editorTripOrder.includes(sourceTripId) ||
@@ -308,7 +308,7 @@ function swapTrip(
   plan: CustomSalesTripEditorDraft,
   tripId: string,
   direction: -1 | 1,
-): CustomSalesTripPlan {
+): CustomSalesTripEditorDraft {
   const index = plan.editorTripOrder.indexOf(tripId)
   const targetIndex = index + direction
   if (
@@ -726,7 +726,7 @@ export function CustomSalesTripEditor({
             {appliedPlan
               ? '目前已完成的自訂方案仍維持生效；此處修改的是新草稿，只有再次按「完成自訂」後才會替換目前方案。'
               : '這裡只編輯自訂草稿並檢查實體果汁罐、杯具與補裝是否可行；目前正式販售排程仍維持自動方案。'}
-            搬走一趟最後一位居民後，空白趟只保留在編輯草稿；驗證與完成自訂前會先排除，不會送進實體排程。
+            搬走一趟最後一位居民後，空白趟只保留在編輯草稿；驗證與套用前會先排除，不會送進實體排程。
           </p>
 
           <div className="optimizer-run-actions">
