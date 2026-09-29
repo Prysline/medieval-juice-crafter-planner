@@ -5,10 +5,14 @@ import {
   ComparisonDock,
   CustomerVillageFilterOptions,
   FormalCustomerStats,
+  FullMatchAvailabilityNotice,
+  FullMatchRecipeItem,
+  RecommendationDetails,
   SatisfactionFields,
   withSatisfactionUpdate,
 } from './App'
 import { villages } from './data/villages'
+import type { RecipeCandidate } from './types'
 
 describe('shared customer comparison dock', () => {
   it('keeps multiple selected customers visible outside the recipe tools tab', () => {
@@ -199,5 +203,136 @@ describe('data-driven formal customer summaries', () => {
     expect(html).toContain(
       '<span>未來地區正式顧客</span><strong>1 人</strong>',
     )
+  })
+})
+
+
+describe('customer recommendation readability', () => {
+  const recipe: RecipeCandidate = {
+    id: 'readable-recipe',
+    name: '甜味（檸檬 → 糖）',
+    source: 'observed',
+    unlockedAt: 'seasoner-unlocked',
+    salePrice: 19,
+    ingredients: ['檸檬', '糖'],
+    effects: [{ name: '甜味', value: 5 }],
+    equipment: ['柑橘榨汁機', '調味器', '果汁成品台'],
+  }
+
+  it('shows full sequence, equipment, cost, authority, and save action for a full-match item', () => {
+    const html = renderToStaticMarkup(
+      <ol>
+        <FullMatchRecipeItem
+          recipe={recipe}
+          saved={false}
+          onSaveRecipe={() => {}}
+        />
+      </ol>,
+    )
+
+    expect(html).toContain('檸檬▸糖')
+    expect(html).toContain('柑橘榨汁機・調味器・果汁成品台')
+    expect(html).toContain('16 金幣／批 · 8 金幣／杯')
+    expect(html).toContain('來源／可信狀態：正式實測')
+    expect(html).toContain('加入我的配方')
+  })
+
+  it('renders one recommendation recipe with multiple reason tags instead of duplicating it', () => {
+    const costed = {
+      candidate: recipe,
+      batchIngredientCost: 16,
+      unitIngredientCost: 8,
+    }
+    const html = renderToStaticMarkup(
+      <RecommendationDetails
+        formal
+        costMode="minimum"
+        recommendations={{
+          observedOnly: {
+            policy: 'observed-only',
+            costMode: 'minimum',
+            batchIngredientCost: 16,
+            unitIngredientCost: 8,
+            candidates: [costed],
+          },
+          allowComputed: {
+            policy: 'allow-unambiguous-computed',
+            costMode: 'minimum',
+            batchIngredientCost: 16,
+            unitIngredientCost: 8,
+            candidates: [costed],
+          },
+        }}
+        savedRecipeCandidateIds={new Set()}
+        onSaveRecipe={() => {}}
+      />,
+    )
+
+    expect((html.match(/甜味（檸檬▸糖）/g) ?? [])).toHaveLength(1)
+    expect(html).toContain('已實測最低成本')
+    expect(html).toContain('目前可製作最低成本')
+    expect(html).toContain('不會升格為專案 observed data')
+  })
+
+  it('explains future-only, ambiguous-only, and bounded-search misses without claiming global absence', () => {
+    const futureHtml = renderToStaticMarkup(
+      <FullMatchAvailabilityNotice
+        availability={{
+          kind: 'future-observed',
+          currentSources: [],
+          futureObservedMatches: [{
+            id: 'future',
+            name: '未來配方',
+            unlockedAt: 'juice-blender-unlocked',
+            salePrice: 50,
+            ingredients: ['檸檬', '糖'],
+            effects: [{ name: '甜味', value: 5 }],
+            equipment: ['果汁調和器'],
+          }],
+          ambiguousCandidates: [],
+          searchTruncated: false,
+        }}
+      />,
+    )
+    expect(futureHtml).toContain('後續進度才可製作')
+    expect(futureHtml).toContain('已知後續實測 full match：未來配方')
+
+    const ambiguousHtml = renderToStaticMarkup(
+      <FullMatchAvailabilityNotice
+        availability={{
+          kind: 'ambiguous-only',
+          currentSources: [],
+          futureObservedMatches: [],
+          ambiguousCandidates: [{
+            ...recipe,
+            id: 'ambiguous',
+            source: 'computed',
+            salePrice: null,
+            effectAmbiguity: {
+              cutoffValue: 5,
+              remainingSlots: 1,
+              candidates: [{ name: '甜味', value: 5 }],
+            },
+          }],
+          searchTruncated: false,
+        }}
+      />,
+    )
+    expect(ambiguousHtml).toContain('目前只有歧義候選')
+    expect(ambiguousHtml).toContain('不宣稱 full match')
+
+    const noneHtml = renderToStaticMarkup(
+      <FullMatchAvailabilityNotice
+        availability={{
+          kind: 'none-in-search-scope',
+          currentSources: [],
+          futureObservedMatches: [],
+          ambiguousCandidates: [],
+          searchTruncated: true,
+        }}
+      />,
+    )
+    expect(noneHtml).toContain('目前搜尋範圍沒有安全 full match')
+    expect(noneHtml).toContain('不是「遊戲中不存在」的證明')
   })
 })

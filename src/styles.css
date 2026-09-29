@@ -865,6 +865,77 @@ h1 {
   font-weight: 800;
 }
 
+.match-availability-status {
+  display: block;
+  margin-top: 2px;
+  color: #6f624f;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.full-match-availability {
+  display: grid;
+  grid-template-columns: minmax(112px, 0.72fr) minmax(0, 1.4fr);
+  gap: 10px;
+  align-items: start;
+  margin-top: 12px;
+}
+
+.full-match-availability > div {
+  display: grid;
+  gap: 3px;
+}
+
+.full-match-availability strong {
+  color: #38502f;
+  font-size: 0.82rem;
+}
+
+.full-match-availability small {
+  color: #776b5c;
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+.recipe-evidence-meta {
+  display: grid;
+  gap: 2px;
+  color: #6f624f;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.recommendation-reasons {
+  margin: 2px 0 3px;
+}
+
+.recipe-save-button {
+  width: fit-content;
+  margin-top: 4px;
+}
+
+.recommendation-save-note {
+  color: #776b5c !important;
+  font-weight: 700 !important;
+  line-height: 1.5;
+}
+
+.full-match-recipe-item {
+  display: grid;
+  gap: 5px;
+}
+
+.full-match-recipe-heading {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.match-list li.full-match-recipe-item strong {
+  float: none;
+}
+
 .cost-cell {
   color: #795d22 !important;
   font-size: 0.76rem !important;
@@ -1027,7 +1098,8 @@ footer {
     display: none;
   }
 
-  .recommendation-line {
+  .recommendation-line,
+  .full-match-availability {
     grid-template-columns: 1fr;
     gap: 3px;
   }
