@@ -42,4 +42,30 @@ describe('sales trip layout CSS contract', () => {
       'grid-template-columns: 1fr',
     )
   })
+
+  it('uses a responsive custom-trip workspace without changing generic batch-card layout', () => {
+    const desktopTripRule = ruleBody('.optimizer-custom-trip-grid')
+    expect(desktopTripRule).toContain(
+      'grid-template-columns: repeat(auto-fit, minmax(320px, 1fr))',
+    )
+    expect(desktopTripRule).toContain('align-items: start')
+
+    const tripCardRule = ruleBody('.optimizer-custom-trip-card')
+    expect(tripCardRule).toContain('min-width: 0')
+    expect(tripCardRule).toContain('align-content: start')
+    expect(tripCardRule).toContain('border-width: 2px')
+    expect(ruleBody('.optimizer-custom-region-group')).toContain(
+      'border-left: 3px solid',
+    )
+    expect(ruleBody('.optimizer-batch-card')).not.toContain(
+      'grid-template-columns',
+    )
+
+    const mobileStart = styles.lastIndexOf('@media (max-width: 720px)')
+    expect(mobileStart).toBeGreaterThanOrEqual(0)
+    const mobileStyles = styles.slice(mobileStart)
+    expect(ruleBody('.optimizer-custom-trip-grid', mobileStyles)).toContain(
+      'grid-template-columns: 1fr',
+    )
+  })
 })
