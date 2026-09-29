@@ -28,6 +28,12 @@ describe('sales trip layout CSS contract', () => {
     expect(desktopJarRule).toContain(
       'grid-template-columns: repeat(auto-fit, minmax(280px, 1fr))',
     )
+    expect(desktopJarRule).toContain('align-items: start')
+
+    const jarManifestRule = ruleBody('.optimizer-sales-jar-manifest')
+    expect(jarManifestRule).toContain('align-content: start')
+    expect(jarManifestRule).not.toContain('min-height')
+    expect(jarManifestRule).not.toContain('height:')
 
     const mobileStart = styles.lastIndexOf('@media (max-width: 720px)')
     expect(mobileStart).toBeGreaterThanOrEqual(0)
