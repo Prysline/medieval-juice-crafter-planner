@@ -34,7 +34,7 @@ import {
 } from './domain/matching'
 import {
   buildRecipeCandidatePool,
-  recipeCandidateIngredientIds,
+  recipeIngredientIdsForCandidate,
   recipeCandidatesInCurrentSearchScope,
   type RecipeCandidatePool,
   type RecipeCandidatePoolEntry,
@@ -897,7 +897,7 @@ function App() {
 
   const saveRecommendationRecipe = useCallback(
     (candidate: RecipeCandidate) => {
-      const ingredientIds = recipeCandidateIngredientIds(candidate)
+      const ingredientIds = recipeIngredientIdsForCandidate(candidate)
 
       setSavedRecipes((current) => {
         const alreadySaved = current.some(
