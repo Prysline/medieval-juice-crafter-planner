@@ -2,9 +2,11 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import {
   CustomSalesTripEditor,
+  attemptCustomTripCustomerSwap,
   buildCustomTripEditorGroups,
   customTripPlanFingerprint,
   moveCustomTripSelectionToAdjacentTrip,
+  swappableCustomTripCustomerPair,
   updatedCustomTripSelection,
 } from './CustomSalesTripEditor'
 import {
@@ -290,6 +292,104 @@ describe('custom sales trip editor grouping', () => {
     expect(moved).toBe(initial)
   })
 
+  it('enables resident swap only for exactly two customers from different trips', () => {
+    const initial = baseline()
+
+    expect(
+      swappableCustomTripCustomerPair(
+        initial,
+        ['east-a', 'fountain-a'],
+      ),
+    ).toEqual(['east-a', 'fountain-a'])
+    expect(
+      swappableCustomTripCustomerPair(initial, ['east-a']),
+    ).toBeNull()
+    expect(
+      swappableCustomTripCustomerPair(
+        initial,
+        ['east-a', 'east-b'],
+      ),
+    ).toBeNull()
+    expect(
+      swappableCustomTripCustomerPair(
+        initial,
+        ['east-a', 'fountain-a', 'ibex-a'],
+      ),
+    ).toBeNull()
+  })
+
+  it('validates only the complete swap candidate and keeps the draft unchanged when that final state is invalid', () => {
+    const initial = baseline()
+    let validationCalls = 0
+
+    const attempt = attemptCustomTripCustomerSwap(
+      initial,
+      ['east-a', 'fountain-a'],
+      (candidate) => {
+        validationCalls += 1
+        expect(candidate.tripByCustomerId['east-a']).toBe(
+          'auto-trip-2',
+        )
+        expect(candidate.tripByCustomerId['fountain-a']).toBe(
+          'auto-trip-1',
+        )
+        expect(candidate.tripByCustomerId['east-b']).toBe(
+          'auto-trip-1',
+        )
+        expect(candidate.tripByCustomerId['ibex-a']).toBe(
+          'auto-trip-2',
+        )
+        return {
+          status: 'invalid',
+          salesPlan: null,
+          issues: [
+            {
+              category: 'carrying-capacity',
+              message: '交換後容量不可行',
+              suggestions: [],
+            },
+          ],
+        }
+      },
+    )
+
+    expect(validationCalls).toBe(1)
+    expect(attempt.applied).toBe(false)
+    expect(attempt.plan).toBe(initial)
+    expect(attempt.validation?.status).toBe('invalid')
+    expect(initial.tripByCustomerId['east-a']).toBe('auto-trip-1')
+    expect(initial.tripByCustomerId['fountain-a']).toBe(
+      'auto-trip-2',
+    )
+  })
+
+  it('applies a valid atomic resident swap without changing customer recipe authority', () => {
+    const initial = baseline()
+    const attempt = attemptCustomTripCustomerSwap(
+      initial,
+      ['east-a', 'fountain-a'],
+      () => ({
+        status: 'valid',
+        salesPlan: {} as never,
+        issues: [],
+      }),
+    )
+
+    expect(attempt.applied).toBe(true)
+    expect(attempt.plan.tripByCustomerId['east-a']).toBe(
+      'auto-trip-2',
+    )
+    expect(attempt.plan.tripByCustomerId['fountain-a']).toBe(
+      'auto-trip-1',
+    )
+    expect(attempt.plan.customersById['east-a']?.recipeId).toBe(
+      'recipe-a',
+    )
+    expect(
+      attempt.plan.customersById['fountain-a']?.recipeId,
+    ).toBe('recipe-a')
+  })
+
   it('changes the draft fingerprint when customer → trip assignment changes', () => {
     const initial = baseline()
     const moved = moveCustomTripCustomers(
@@ -335,6 +435,7 @@ describe('custom sales trip editor UI', () => {
     expect(html).toContain('居民操作 · 已選擇 0 位')
     expect(html).toContain('移到上一趟')
     expect(html).toContain('移到下一趟')
+    expect(html).toContain('交換兩人的趟次')
     expect(html).toContain('指定趟次')
     expect(html).toContain('移到指定趟')
     expect(html).toContain('移到新趟')
