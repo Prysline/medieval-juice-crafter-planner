@@ -18,6 +18,8 @@ export const progressMilestones: ProgressMilestoneDefinition[] = [
     requirement: {
       satisfactionByVillageRequired: { 'east-harbor': 120 },
       formalCustomersByVillageRequired: { 'east-harbor': 14 },
+      action: '寄信給爺爺',
+      timing: '隔天收信後解鎖',
     },
   },
   {
@@ -27,6 +29,8 @@ export const progressMilestones: ProgressMilestoneDefinition[] = [
     requirement: {
       satisfactionByVillageRequired: { 'east-harbor': 220 },
       formalCustomersByVillageRequired: { 'east-harbor': 17 },
+      action: '寄信給爺爺',
+      timing: '隔天收信後解鎖榨汁機',
     },
   },
   {
@@ -48,6 +52,8 @@ export const progressMilestones: ProgressMilestoneDefinition[] = [
         'east-harbor': 525,
         'tranquil-fountain': 25,
       },
+      action: '寄信給爺爺',
+      timing: '收到回信後解鎖；等待時間未確認',
     },
   },
   {
@@ -59,6 +65,8 @@ export const progressMilestones: ProgressMilestoneDefinition[] = [
         'east-harbor': 29,
         'tranquil-fountain': 15,
       },
+      action: '寄信給爺爺',
+      timing: '收到回信後解鎖；約 6 小時規則待驗證',
     },
   },
   {
@@ -78,6 +86,8 @@ export const progressMilestones: ProgressMilestoneDefinition[] = [
     requirement: {
       satisfactionByVillageRequired: { 'ibex-statue': 50 },
       formalCustomersByVillageRequired: { 'ibex-statue': 7 },
+      action: '寄信給爺爺',
+      timing: '收到回信後解鎖；等待時間未確認',
     },
   },
   {
@@ -90,6 +100,8 @@ export const progressMilestones: ProgressMilestoneDefinition[] = [
         'tranquil-fountain': 450,
         'ibex-statue': 130,
       },
+      action: '寄信給爺爺',
+      timing: '收到回信後解鎖；等待時間未確認',
     },
   },
 ]

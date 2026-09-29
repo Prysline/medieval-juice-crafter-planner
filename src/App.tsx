@@ -350,6 +350,12 @@ export function NextProgressGoal({
       </span>
       <strong>{goal.milestone.label}</strong>
       <small>{goal.milestone.summary}</small>
+      {goal.milestone.requirement?.action ? (
+        <small>下一步：{goal.milestone.requirement.action}</small>
+      ) : null}
+      {goal.milestone.requirement?.timing ? (
+        <small>時機：{goal.milestone.requirement.timing}</small>
+      ) : null}
       {goal.thresholds.length > 0 ? (
         goal.thresholds.map((item) => (
           <small key={`${item.kind}:${item.villageId}`}>

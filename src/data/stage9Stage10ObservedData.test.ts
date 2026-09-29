@@ -22,6 +22,8 @@ describe('Stage 9 and 10 observed progression', () => {
       formalCustomersByVillageRequired: {
         'ibex-statue': 7,
       },
+      action: '寄信給爺爺',
+      timing: '收到回信後解鎖；等待時間未確認',
     })
 
     expect(progressMilestoneLabels['advanced-juicer-unlocked']).toBe(
@@ -60,6 +62,8 @@ describe('Stage 9 and 10 observed progression', () => {
         'tranquil-fountain': 450,
         'ibex-statue': 130,
       },
+      action: '寄信給爺爺',
+      timing: '收到回信後解鎖；等待時間未確認',
     })
 
     expect(progressMilestoneLabels['liquid-blender-unlocked']).toBe(

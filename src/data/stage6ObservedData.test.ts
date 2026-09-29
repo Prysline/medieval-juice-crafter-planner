@@ -24,6 +24,8 @@ describe('Stage 6 observed data', () => {
         'east-harbor': 525,
         'tranquil-fountain': 25,
       },
+      action: '寄信給爺爺',
+      timing: '收到回信後解鎖；等待時間未確認',
     })
   })
 

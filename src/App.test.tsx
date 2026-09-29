@@ -173,6 +173,8 @@ describe('next progress goal presentation', () => {
     expect(html).toContain('階段三｜果汁罐已解鎖')
     expect(html).toContain('東港村滿意度 100/120 · 尚差 20')
     expect(html).toContain('東港村正式顧客 10/14 人 · 尚差 4')
+    expect(html).toContain('下一步：寄信給爺爺')
+    expect(html).toContain('時機：隔天收信後解鎖')
   })
 
   it('marks a Region milestone without inventing a numeric threshold', () => {
