@@ -50,6 +50,39 @@ export class PlanningUserError extends Error {
   }
 }
 
+export type OptimizerWorkerRuntimePhase =
+  | 'worker-start'
+  | 'worker-post-message'
+  | 'worker-error-event'
+  | 'worker-message-error'
+  | 'worker-protocol'
+
+export class OptimizerWorkerRuntimeError extends Error {
+  readonly phase: OptimizerWorkerRuntimePhase
+
+  constructor(
+    phase: OptimizerWorkerRuntimePhase,
+    technicalMessage?: string,
+  ) {
+    super(
+      technicalMessage?.trim() ||
+        'Optimizer worker failed unexpectedly',
+    )
+    this.name = 'OptimizerWorkerRuntimeError'
+    this.phase = phase
+  }
+}
+
+export class OptimizerWorkerExecutionError extends Error {
+  constructor(technicalMessage?: string) {
+    super(
+      technicalMessage?.trim() ||
+        'Optimizer worker execution failed unexpectedly',
+    )
+    this.name = 'OptimizerWorkerExecutionError'
+  }
+}
+
 export interface PlanningErrorPresentation {
   title: string
   message: string
@@ -66,6 +99,33 @@ function technicalDetails(error: unknown): string | undefined {
 export function presentPlanningError(
   error: unknown,
 ): PlanningErrorPresentation {
+  if (error instanceof OptimizerWorkerRuntimeError) {
+    return {
+      title: '背景規劃程序異常中止',
+      message:
+        '背景 Worker 在啟動、執行或回傳結果時發生 runtime／通訊異常。這和「目前條件找不到可行方案」不同，不能據此判定庫存或規劃設定有問題。',
+      suggestions: [
+        '可以保留目前設定直接重新執行一次。',
+        '若再次發生，請保留下方技術資訊供除錯；不需要為了這個錯誤反覆修改庫存。',
+      ],
+      technicalDetails:
+        `Worker phase: ${error.phase}\n${error.message}`,
+    }
+  }
+
+  if (error instanceof OptimizerWorkerExecutionError) {
+    return {
+      title: '背景規劃程序發生內部錯誤',
+      message:
+        'Worker 已正常回傳，但規劃程序內部發生未分類錯誤。這不是已知的求解無解或可由修改庫存直接修正的 PlanningUserError。',
+      suggestions: [
+        '可以保留目前設定再執行一次。',
+        '若問題持續發生，請保留下方技術資訊供除錯。',
+      ],
+      technicalDetails: technicalDetails(error),
+    }
+  }
+
   if (error instanceof PlanningUserError) {
     const details = technicalDetails(error)
 
