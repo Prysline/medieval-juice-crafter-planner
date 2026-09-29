@@ -25,6 +25,7 @@ import {
   CollapsibleSalesTripCard,
   INVENTORY_RECIPE_SEARCH_RESULT_LIMIT,
   INTERMEDIATE_JUICE_SEARCH_RESULT_LIMIT,
+  IntermediateJuiceSequenceBuilder,
   JuiceJarRecipeCombobox,
   buildIntermediateJuiceSearchIndex,
   buildInventoryRecipeSearchIndex,
@@ -55,6 +56,8 @@ import {
   optimizerCriterionOptions,
   optimizerInventoryIngredients,
   intermediateJuiceInventoryEntries,
+  intermediateJuiceInventoryEntryFromIdentity,
+  intermediateJuiceInventoryEntryFromSequence,
   jarFillActionLabel,
   searchIntermediateJuiceEntries,
   searchIntermediateJuiceIndex,
@@ -380,6 +383,100 @@ describe('juice jar recipe search UX', () => {
         ),
       )
     }
+  })
+
+  it('ranks exact multi-token ingredient matches before contains matches without changing ordered identity', () => {
+    const exact = intermediateJuiceInventoryEntryFromSequence(
+      ['pear', 'cinnamon', 'lemon'],
+      'liquid-blender-unlocked',
+    )
+    const contains = intermediateJuiceInventoryEntryFromSequence(
+      ['pear', 'cinnamon', 'lemon', 'mint'],
+      'liquid-blender-unlocked',
+    )
+    const reordered = intermediateJuiceInventoryEntryFromSequence(
+      ['lemon', 'pear', 'cinnamon'],
+      'liquid-blender-unlocked',
+    )
+    expect(exact).not.toBeNull()
+    expect(contains).not.toBeNull()
+    expect(reordered).not.toBeNull()
+    if (!exact || !contains || !reordered) return
+
+    const results = searchIntermediateJuiceEntries(
+      [contains, reordered, exact],
+      '梨 肉桂 檸檬',
+    )
+
+    expect(results.slice(0, 2).map((entry) => entry.identity)).toEqual(
+      expect.arrayContaining([exact.identity, reordered.identity]),
+    )
+    expect(results.indexOf(contains)).toBeGreaterThan(
+      results.indexOf(exact),
+    )
+    expect(exact.identity).not.toBe(reordered.identity)
+  })
+
+  it('builds legal intermediate identities outside the candidate-derived catalog and keeps progress gates', () => {
+    expect(
+      intermediateJuiceInventoryEntryFromSequence(
+        ['lemon', 'mint', 'milk', 'orange'],
+        'advanced-juicer-unlocked',
+      ),
+    ).toBeNull()
+
+    const stageTen = intermediateJuiceInventoryEntryFromSequence(
+      ['lemon', 'mint', 'milk', 'orange'],
+      'liquid-blender-unlocked',
+    )
+    expect(stageTen).toEqual(
+      expect.objectContaining({
+        identity: 'juice-state:v1:lemon/mint/milk/orange',
+        ingredientIds: ['lemon', 'mint', 'milk', 'orange'],
+      }),
+    )
+
+    const pearCinnamonLemon =
+      intermediateJuiceInventoryEntryFromSequence(
+        ['pear', 'cinnamon', 'lemon'],
+        'liquid-blender-unlocked',
+      )
+    expect(pearCinnamonLemon).toEqual(
+      expect.objectContaining({
+        identity: 'juice-state:v1:pear/cinnamon/lemon',
+      }),
+    )
+  })
+
+  it('reconstructs a builder-created juice-state label from persisted identity', () => {
+    expect(
+      intermediateJuiceInventoryEntryFromIdentity(
+        'juice-state:v1:pear/cinnamon/lemon',
+      ),
+    ).toEqual({
+      identity: 'juice-state:v1:pear/cinnamon/lemon',
+      ingredientIds: ['pear', 'cinnamon', 'lemon'],
+      label: '梨 → 肉桂 → 檸檬',
+    })
+  })
+
+  it('renders the intermediate sequence-builder ingredient palette without changing storage authority', () => {
+    const html = renderToStaticMarkup(
+      <IntermediateJuiceSequenceBuilder
+        currentProgress="liquid-blender-unlocked"
+        availableIngredients={optimizerInventoryIngredients(
+          'liquid-blender-unlocked',
+        )}
+        excludedIdentities={new Set()}
+        onChoose={() => {}}
+      />,
+    )
+
+    expect(html).toContain('依原料建立中間果汁')
+    expect(html).toContain('aria-label="加入原料：梨"')
+    expect(html).toContain('aria-label="加入原料：牛奶"')
+    expect(html).toContain('加入中間果汁庫存')
+    expect(html).not.toContain('recipeId')
   })
 
   it('keeps indexed intermediate search ordering and excludes already-stocked identities without rebuilding the catalog', () => {
