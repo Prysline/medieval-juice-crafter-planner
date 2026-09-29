@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  OptimizerWorkerExecutionError,
   PlanningUserError,
 } from './planningErrors'
 import {
@@ -33,7 +34,7 @@ describe('optimizer worker error protocol', () => {
       serializeOptimizerWorkerError(new Error('boom')),
     )
 
-    expect(restored).toBeInstanceOf(Error)
+    expect(restored).toBeInstanceOf(OptimizerWorkerExecutionError)
     expect(restored.message).toBe('boom')
   })
 })
