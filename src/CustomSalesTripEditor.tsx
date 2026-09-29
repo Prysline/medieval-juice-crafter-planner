@@ -144,6 +144,41 @@ export function updatedCustomTripSelection(
   return next
 }
 
+export function adjacentCustomTripIdForSelection(
+  plan: CustomSalesTripPlan,
+  customerIds: readonly string[],
+  direction: -1 | 1,
+): string | null {
+  if (customerIds.length === 0) return null
+
+  let sourceTripId: string | null = null
+  for (const customerId of customerIds) {
+    const tripId = plan.tripByCustomerId[customerId]
+    if (!tripId) return null
+    if (sourceTripId && tripId !== sourceTripId) return null
+    sourceTripId = tripId
+  }
+
+  if (!sourceTripId) return null
+  const sourceIndex = plan.tripOrder.indexOf(sourceTripId)
+  if (sourceIndex < 0) return null
+  return plan.tripOrder[sourceIndex + direction] ?? null
+}
+
+export function moveCustomTripSelectionToAdjacentTrip(
+  plan: CustomSalesTripPlan,
+  customerIds: readonly string[],
+  direction: -1 | 1,
+): CustomSalesTripPlan {
+  const targetTripId = adjacentCustomTripIdForSelection(
+    plan,
+    customerIds,
+    direction,
+  )
+  if (!targetTripId) return plan
+  return moveCustomTripCustomers(plan, customerIds, targetTripId)
+}
+
 function moveTripBefore(
   plan: CustomSalesTripPlan,
   sourceTripId: string,
@@ -365,6 +400,14 @@ export function CustomSalesTripEditor({
     () => [...selectedCustomerIds],
     [selectedCustomerIds],
   )
+  const selectedPreviousTripId = useMemo(
+    () => adjacentCustomTripIdForSelection(draft, selectedIds, -1),
+    [draft, selectedIds],
+  )
+  const selectedNextTripId = useMemo(
+    () => adjacentCustomTripIdForSelection(draft, selectedIds, 1),
+    [draft, selectedIds],
+  )
   const currentValidation =
     validation.status === 'done' &&
     validation.revision === revision
@@ -396,6 +439,16 @@ export function CustomSalesTripEditor({
   ) {
     setSelectedCustomerIds((current) =>
       updatedCustomTripSelection(current, customerIds, checked),
+    )
+  }
+
+  function moveSelectedToAdjacentTrip(direction: -1 | 1) {
+    applyDraft(
+      moveCustomTripSelectionToAdjacentTrip(
+        draft,
+        selectedIds,
+        direction,
+      ),
     )
   }
 
@@ -570,14 +623,30 @@ export function CustomSalesTripEditor({
             issues={issues.filter((issue) => !issue.tripId)}
           />
 
-          <section className="optimizer-batch-card">
+          <section className="optimizer-batch-card optimizer-custom-resident-actions">
             <div>
-              <strong>已選擇 {selectedIds.length} 位顧客</strong>
-              <span>手機可直接用下方移動控制</span>
+              <strong>居民操作 · 已選擇 {selectedIds.length} 位</strong>
+              <span>
+                以下移動只影響目前選取居民；上一／下一趟只在選取居民都來自同一趟時可用
+              </span>
             </div>
-            <div className="optimizer-controls">
+            <div className="optimizer-controls optimizer-custom-resident-controls">
+              <button
+                type="button"
+                disabled={!selectedPreviousTripId}
+                onClick={() => moveSelectedToAdjacentTrip(-1)}
+              >
+                移到上一趟
+              </button>
+              <button
+                type="button"
+                disabled={!selectedNextTripId}
+                onClick={() => moveSelectedToAdjacentTrip(1)}
+              >
+                移到下一趟
+              </button>
               <label>
-                <span>移到既有趟次</span>
+                <span>指定趟次</span>
                 <select
                   value={moveTargetTripId}
                   onChange={(event) =>
@@ -596,7 +665,7 @@ export function CustomSalesTripEditor({
                 disabled={selectedIds.length === 0}
                 onClick={moveSelectedToExistingTrip}
               >
-                移到選定趟
+                移到指定趟
               </button>
               <label>
                 <span>新趟插入位置</span>
@@ -690,7 +759,7 @@ export function CustomSalesTripEditor({
                         draggedTripIdRef.current = null
                       }}
                     >
-                      拖曳調整趟次順序
+                      整趟操作 · 拖曳整趟調整順序
                     </span>
                     <button
                       type="button"
@@ -701,7 +770,7 @@ export function CustomSalesTripEditor({
                         )
                       }
                     >
-                      上移
+                      與上一趟交換
                     </button>
                     <button
                       type="button"
@@ -714,7 +783,7 @@ export function CustomSalesTripEditor({
                         )
                       }
                     >
-                      下移
+                      與下一趟交換
                     </button>
                     <button
                       type="button"

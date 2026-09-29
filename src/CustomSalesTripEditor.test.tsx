@@ -4,6 +4,7 @@ import {
   CustomSalesTripEditor,
   buildCustomTripEditorGroups,
   customTripPlanFingerprint,
+  moveCustomTripSelectionToAdjacentTrip,
   updatedCustomTripSelection,
 } from './CustomSalesTripEditor'
 import {
@@ -264,6 +265,31 @@ describe('custom sales trip editor grouping', () => {
     expect(individualSelection.has('east-b')).toBe(true)
   })
 
+  it('moves only the selected resident to an adjacent trip, even when a same-recipe same-residence resident remains behind', () => {
+    const initial = baseline()
+    const moved = moveCustomTripSelectionToAdjacentTrip(
+      initial,
+      ['east-a'],
+      1,
+    )
+
+    expect(moved.tripByCustomerId['east-a']).toBe('auto-trip-2')
+    expect(moved.tripByCustomerId['east-b']).toBe('auto-trip-1')
+    expect(moved.customersById['east-a']?.recipeId).toBe('recipe-a')
+    expect(moved.customersById['east-b']?.recipeId).toBe('recipe-a')
+  })
+
+  it('does not apply an adjacent-trip command when the selection spans multiple source trips', () => {
+    const initial = baseline()
+    const moved = moveCustomTripSelectionToAdjacentTrip(
+      initial,
+      ['east-a', 'fountain-a'],
+      1,
+    )
+
+    expect(moved).toBe(initial)
+  })
+
   it('changes the draft fingerprint when customer → trip assignment changes', () => {
     const initial = baseline()
     const moved = moveCustomTripCustomers(
@@ -306,13 +332,19 @@ describe('custom sales trip editor UI', () => {
 
     expect(html).toContain('自訂販售趟次')
     expect(html).toContain('將草稿還原為自動方案')
-    expect(html).toContain('移到既有趟次')
+    expect(html).toContain('居民操作 · 已選擇 0 位')
+    expect(html).toContain('移到上一趟')
+    expect(html).toContain('移到下一趟')
+    expect(html).toContain('指定趟次')
+    expect(html).toContain('移到指定趟')
     expect(html).toContain('移到新趟')
-    expect(html).toContain('上移')
-    expect(html).toContain('下移')
+    expect(html).toContain('與上一趟交換')
+    expect(html).toContain('與下一趟交換')
+    expect(html).not.toContain('>上移<')
+    expect(html).not.toContain('>下移<')
     expect(html).toContain('併入上一趟')
     expect(html).toContain('併入下一趟')
-    expect(html).toContain('拖曳調整趟次順序')
+    expect(html).toContain('整趟操作 · 拖曳整趟調整順序')
     expect(html).toContain('配方 recipe-a')
     expect(html).toContain('地區 east-harbor')
     expect(html).toContain('住處 1')
