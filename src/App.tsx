@@ -60,6 +60,11 @@ import {
   type RecipeIngredientCost,
 } from './domain/recipeCost'
 import {
+  nextFormalCustomerRequirementForVillage,
+  nextProgressGoal,
+  type ProgressGoalThreshold,
+} from './domain/progressGoal'
+import {
   formatMoney,
   formatRecipeDisplayName,
   formatRecipeIngredientCost,
@@ -276,12 +281,94 @@ export function formalCustomerStatsAtProgress<TVillageId extends string>(
 function formalCustomerProgressNote(
   villageId: string,
   formalCount: number,
+  currentProgress: ProgressMilestoneId,
 ): string {
-  if (villageId === 'east-harbor') {
-    return `階段三 ${Math.min(formalCount, 14)}/14 · 階段四 ${Math.min(formalCount, 17)}/17`
+  const canonicalVillage = villages.find((village) => village.id === villageId)
+  if (!canonicalVillage) {
+    return '目前沒有已確認的正式顧客數主線門檻'
   }
 
-  return '目前沒有已確認的正式顧客數主線門檻'
+  const requirement = nextFormalCustomerRequirementForVillage(
+    currentProgress,
+    canonicalVillage.id,
+  )
+  if (!requirement) {
+    return '目前沒有後續已確認的正式顧客數主線門檻'
+  }
+
+  return `${requirement.milestone.label} ${Math.min(formalCount, requirement.required)}/${requirement.required}`
+}
+
+function progressGoalThresholdLabel(
+  item: ProgressGoalThreshold,
+): string {
+  const villageName = villageNames[item.villageId]
+  const valueLabel =
+    item.kind === 'satisfaction'
+      ? `${villageName}滿意度 ${item.current}/${item.required}`
+      : `${villageName}正式顧客 ${item.current}/${item.required} 人`
+  const remainingLabel =
+    item.remaining > 0 ? `尚差 ${item.remaining}` : '已達門檻'
+
+  return `${valueLabel} · ${remainingLabel}`
+}
+
+export function NextProgressGoal({
+  currentProgress,
+  satisfactionByVillage,
+  customerDefinitions,
+  formalCustomerIds,
+}: {
+  currentProgress: ProgressMilestoneId
+  satisfactionByVillage: SatisfactionByVillage
+  customerDefinitions: readonly { id: string; villageId: VillageId }[]
+  formalCustomerIds: readonly string[]
+}) {
+  const goal = nextProgressGoal({
+    currentProgress,
+    satisfactionByVillage,
+    customerDefinitions,
+    formalCustomerIds,
+  })
+
+  if (!goal) {
+    return (
+      <div className="progress-stat">
+        <span>下一個主線目標</span>
+        <strong>目前已到網站已確認的最後進度節點</strong>
+        <small>後續主線尚未有可安全顯示的 canonical milestone。</small>
+      </div>
+    )
+  }
+
+  return (
+    <div className="progress-stat">
+      <span>
+        {goal.region
+          ? `下一個 Region 目標 · ${goal.region.name}`
+          : '下一個主線目標'}
+      </span>
+      <strong>{goal.milestone.label}</strong>
+      <small>{goal.milestone.summary}</small>
+      {goal.milestone.requirement?.action ? (
+        <small>下一步：{goal.milestone.requirement.action}</small>
+      ) : null}
+      {goal.milestone.requirement?.timing ? (
+        <small>時機：{goal.milestone.requirement.timing}</small>
+      ) : null}
+      {goal.thresholds.length > 0 ? (
+        goal.thresholds.map((item) => (
+          <small key={`${item.kind}:${item.villageId}`}>
+            {progressGoalThresholdLabel(item)}
+          </small>
+        ))
+      ) : (
+        <small>
+          目前沒有已確認的數值門檻；只沿用既有主線／Region 資料，不自行補規則。
+        </small>
+      )}
+    </div>
+  )
 }
 
 export function FormalCustomerStats<TVillageId extends string>({
@@ -306,7 +393,13 @@ export function FormalCustomerStats<TVillageId extends string>({
         <div className="progress-stat" key={village.id}>
           <span>{village.name}正式顧客</span>
           <strong>{village.count} 人</strong>
-          <small>{formalCustomerProgressNote(village.id, village.count)}</small>
+          <small>
+            {formalCustomerProgressNote(
+              village.id,
+              village.count,
+              currentProgress,
+            )}
+          </small>
         </div>
       ))}
     </>
@@ -971,6 +1064,21 @@ function App() {
             satisfactionByVillage={satisfactionByVillage}
             onSatisfactionChange={updateSatisfaction}
           />
+        </div>
+
+        <div className="progress-summary">
+          <div className="progress-summary-heading">
+            <strong>下一目標</strong>
+            <span>只使用 canonical 進度、Region 與已確認門檻</span>
+          </div>
+          <div className="progress-stat-grid">
+            <NextProgressGoal
+              currentProgress={currentProgress}
+              satisfactionByVillage={satisfactionByVillage}
+              customerDefinitions={customers}
+              formalCustomerIds={formalCustomerIds}
+            />
+          </div>
         </div>
 
         <div className="progress-summary">

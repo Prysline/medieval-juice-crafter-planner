@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import { customers } from './customers'
 import { equipment } from './equipment'
 import { progressMilestones } from './progress'
-import { stages } from './stages'
 
 describe('Stage 6 observed data', () => {
   it('records Daniel customer preferences from the direct screenshot', () => {
@@ -16,9 +15,11 @@ describe('Stage 6 observed data', () => {
   })
 
   it('requires both village satisfaction thresholds before the Stage 6 letter', () => {
-    const stage6 = stages.find((stage) => stage.id === 6)
+    const milestone = progressMilestones.find(
+      (item) => item.id === 'advanced-tragic-washing-station-unlocked',
+    )
 
-    expect(stage6?.unlockRequirement).toMatchObject({
+    expect(milestone?.requirement).toEqual({
       satisfactionByVillageRequired: {
         'east-harbor': 525,
         'tranquil-fountain': 25,

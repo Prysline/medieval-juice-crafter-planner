@@ -7,6 +7,7 @@ import {
   FormalCustomerStats,
   FullMatchAvailabilityNotice,
   FullMatchRecipeItem,
+  NextProgressGoal,
   RecommendationDetails,
   SatisfactionFields,
   withSatisfactionUpdate,
@@ -148,7 +149,82 @@ describe('data-driven satisfaction fields', () => {
 })
 
 
+describe('next progress goal presentation', () => {
+  it('shows the next confirmed numeric thresholds from canonical progression data', () => {
+    const formalCustomerIds = customers
+      .filter((customer) => customer.villageId === 'east-harbor')
+      .slice(0, 10)
+      .map((customer) => customer.id)
+
+    const html = renderToStaticMarkup(
+      <NextProgressGoal
+        currentProgress="seasoner-unlocked"
+        satisfactionByVillage={{
+          'east-harbor': 100,
+          'tranquil-fountain': 0,
+          'ibex-statue': 0,
+        }}
+        customerDefinitions={customers}
+        formalCustomerIds={formalCustomerIds}
+      />,
+    )
+
+    expect(html).toContain('下一個主線目標')
+    expect(html).toContain('階段三｜果汁罐已解鎖')
+    expect(html).toContain('東港村滿意度 100/120 · 尚差 20')
+    expect(html).toContain('東港村正式顧客 10/14 人 · 尚差 4')
+    expect(html).toContain('下一步：寄信給爺爺')
+    expect(html).toContain('時機：隔天收信後解鎖')
+  })
+
+  it('marks a Region milestone without inventing a numeric threshold', () => {
+    const html = renderToStaticMarkup(
+      <NextProgressGoal
+        currentProgress="juicer-unlocked"
+        satisfactionByVillage={{
+          'east-harbor': 999,
+          'tranquil-fountain': 999,
+          'ibex-statue': 999,
+        }}
+        customerDefinitions={customers}
+        formalCustomerIds={customers.map((customer) => customer.id)}
+      />,
+    )
+
+    expect(html).toContain('下一個 Region 目標 · 靜謐噴泉')
+    expect(html).toContain('階段四｜靜謐噴泉已解鎖')
+    expect(html).toContain('目前沒有已確認的數值門檻')
+  })
+})
+
 describe('data-driven formal customer summaries', () => {
+  it('derives the next formal-customer threshold from canonical progression data', () => {
+    const formalCustomerIds = customers
+      .filter((customer) => customer.villageId === 'east-harbor')
+      .slice(0, 10)
+      .map((customer) => customer.id)
+
+    const stage3Html = renderToStaticMarkup(
+      <FormalCustomerStats
+        villageDefinitions={villages}
+        currentProgress="seasoner-unlocked"
+        customerDefinitions={customers}
+        formalCustomerIds={formalCustomerIds}
+      />,
+    )
+    const stage4Html = renderToStaticMarkup(
+      <FormalCustomerStats
+        villageDefinitions={villages}
+        currentProgress="juice-jar-unlocked"
+        customerDefinitions={customers}
+        formalCustomerIds={formalCustomerIds}
+      />,
+    )
+
+    expect(stage3Html).toContain('階段三｜果汁罐已解鎖 10/14')
+    expect(stage4Html).toContain('階段四｜榨汁機已解鎖 10/17')
+  })
+
   it('shows a formal-customer card only after its region is unlocked', () => {
     const beforeIbex = renderToStaticMarkup(
       <FormalCustomerStats

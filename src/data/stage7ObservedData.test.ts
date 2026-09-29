@@ -5,9 +5,11 @@ import { stages } from './stages'
 
 describe('Stage 7 observed data', () => {
   it('records both village customer-count requirements', () => {
-    const stage7 = stages.find((stage) => stage.id === 7)
+    const milestone = progressMilestones.find(
+      (item) => item.id === 'advanced-citrus-juicer-unlocked',
+    )
 
-    expect(stage7?.unlockRequirement).toMatchObject({
+    expect(milestone?.requirement).toEqual({
       formalCustomersByVillageRequired: {
         'east-harbor': 29,
         'tranquil-fountain': 15,

@@ -99,10 +99,18 @@ export interface ShopDefinition {
   inventory: ShopInventoryEntry[]
 }
 
+export interface ProgressMilestoneRequirement {
+  satisfactionByVillageRequired?: Partial<Record<VillageId, number>>
+  formalCustomersByVillageRequired?: Partial<Record<VillageId, number>>
+  action?: string
+  timing?: string
+}
+
 export interface ProgressMilestoneDefinition {
   id: ProgressMilestoneId
   label: string
   summary: string
+  requirement?: ProgressMilestoneRequirement
 }
 
 export interface VillageDefinition {
@@ -111,21 +119,10 @@ export interface VillageDefinition {
   unlockedAt: ProgressMilestoneId
 }
 
-export interface StageUnlockRequirement {
-  villageId?: VillageId
-  satisfactionRequired?: number
-  satisfactionByVillageRequired?: Partial<Record<VillageId, number>>
-  formalCustomersRequired?: number
-  formalCustomersByVillageRequired?: Partial<Record<VillageId, number>>
-  action?: string
-  timing?: string
-}
-
 export interface StageDefinition {
   id: StageId
   label: string
   summary: string
-  unlockRequirement?: StageUnlockRequirement
   progressionNotes?: string[]
 }
 

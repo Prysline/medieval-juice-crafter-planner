@@ -15,11 +15,23 @@ export const progressMilestones: ProgressMilestoneDefinition[] = [
     id: 'juice-jar-unlocked',
     label: '階段三｜果汁罐已解鎖',
     summary: '爺爺回信後解鎖果汁罐購買。',
+    requirement: {
+      satisfactionByVillageRequired: { 'east-harbor': 120 },
+      formalCustomersByVillageRequired: { 'east-harbor': 14 },
+      action: '寄信給爺爺',
+      timing: '隔天收信後解鎖',
+    },
   },
   {
     id: 'juicer-unlocked',
     label: '階段四｜榨汁機已解鎖',
     summary: '爺爺回信後解鎖榨汁機、紅蘿蔔與梨；靜謐噴泉尚未開放。',
+    requirement: {
+      satisfactionByVillageRequired: { 'east-harbor': 220 },
+      formalCustomersByVillageRequired: { 'east-harbor': 17 },
+      action: '寄信給爺爺',
+      timing: '隔天收信後解鎖榨汁機',
+    },
   },
   {
     id: 'tranquil-fountain-unlocked',
@@ -35,11 +47,27 @@ export const progressMilestones: ProgressMilestoneDefinition[] = [
     id: 'advanced-tragic-washing-station-unlocked',
     label: '階段六｜高級悲劇清洗台已解鎖',
     summary: '東港村滿意度 525、靜謐噴泉滿意度 25 後寄信給爺爺；收到回信後解鎖高級悲劇清洗台。回信等待時間尚未確認。',
+    requirement: {
+      satisfactionByVillageRequired: {
+        'east-harbor': 525,
+        'tranquil-fountain': 25,
+      },
+      action: '寄信給爺爺',
+      timing: '收到回信後解鎖；等待時間未確認',
+    },
   },
   {
     id: 'advanced-citrus-juicer-unlocked',
     label: '階段七｜高級柑橘榨汁機已解鎖',
     summary: '東港村顧客 29、靜謐噴泉顧客 15 後寄信給爺爺；收到回信後解鎖高級柑橘榨汁機。回信約 6 小時的規則仍待更多實測。',
+    requirement: {
+      formalCustomersByVillageRequired: {
+        'east-harbor': 29,
+        'tranquil-fountain': 15,
+      },
+      action: '寄信給爺爺',
+      timing: '收到回信後解鎖；約 6 小時規則待驗證',
+    },
   },
   {
     id: 'ibex-statue-unlocked',
@@ -55,11 +83,26 @@ export const progressMilestones: ProgressMilestoneDefinition[] = [
     id: 'advanced-juicer-unlocked',
     label: '階段九｜高級榨汁機已解鎖',
     summary: '羱羊雕像滿意度 50、正式顧客 7 人後寄信給爺爺；收到回信後解鎖高級榨汁機。',
+    requirement: {
+      satisfactionByVillageRequired: { 'ibex-statue': 50 },
+      formalCustomersByVillageRequired: { 'ibex-statue': 7 },
+      action: '寄信給爺爺',
+      timing: '收到回信後解鎖；等待時間未確認',
+    },
   },
   {
     id: 'liquid-blender-unlocked',
     label: '階段十｜液料調和器已解鎖',
     summary: '東港村滿意度 1000、靜謐噴泉滿意度 450、羱羊雕像滿意度 130 後寄信給爺爺；收到回信後解鎖液料調和器。',
+    requirement: {
+      satisfactionByVillageRequired: {
+        'east-harbor': 1000,
+        'tranquil-fountain': 450,
+        'ibex-statue': 130,
+      },
+      action: '寄信給爺爺',
+      timing: '收到回信後解鎖；等待時間未確認',
+    },
   },
 ]
 
