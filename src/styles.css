@@ -2967,11 +2967,13 @@ footer {
   display: grid !important;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 7px !important;
+  align-items: start;
 }
 
 .optimizer-sales-jar-manifest {
   display: grid;
   gap: 6px;
+  align-content: start;
   border: 1px solid #ddd1bf;
   border-radius: 9px;
   background: #fffaf1;
