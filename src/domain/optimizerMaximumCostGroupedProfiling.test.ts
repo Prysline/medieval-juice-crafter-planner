@@ -4,7 +4,7 @@ import { customerVillageIsAvailable } from './availability'
 import {
   profileGroupedMaximumIngredientCostStage,
   profileMaximumIngredientCostParityCostStage,
-  profileMaximumIngredientCostMachineStages,
+  profileMaximumIngredientCostGroupedMachineLong,
 } from './optimizerHighsSolver'
 import { buildOptimizationModel, type OptimizationRequest } from './optimizerModel'
 import { buildRecipeCandidatePool } from './recipeCandidatePool'
@@ -93,32 +93,23 @@ it(
       parityProfile.productionCostObjective
     expect(productionCostOptimum).not.toBeNull()
     const machineProfile =
-      await profileMaximumIngredientCostMachineStages(
+      await profileMaximumIngredientCostGroupedMachineLong(
         model,
         stageProfile.minimumWasteOptimum,
         Math.round(stageProfile.objectiveValue ?? 0),
         Math.round(productionCostOptimum ?? 0),
-        10.5,
+        60,
       )
     console.info(
-      '[maximum-cost-machine-profile]',
+      '[maximum-cost-machine-long-profile]',
       JSON.stringify({
-        generic: {
-          ...machineProfile.generic,
-          buildMs: Math.round(machineProfile.generic.buildMs),
-          serializeMs: Math.round(machineProfile.generic.serializeMs),
-          parseMs: Math.round(machineProfile.generic.parseMs),
-          solveMs: Math.round(machineProfile.generic.solveMs),
-        },
-        grouped: {
-          ...machineProfile.grouped,
-          buildMs: Math.round(machineProfile.grouped.buildMs),
-          serializeMs: Math.round(machineProfile.grouped.serializeMs),
-          parseMs: Math.round(machineProfile.grouped.parseMs),
-          solveMs: Math.round(machineProfile.grouped.solveMs),
-        },
+        ...machineProfile,
+        buildMs: Math.round(machineProfile.buildMs),
+        serializeMs: Math.round(machineProfile.serializeMs),
+        parseMs: Math.round(machineProfile.parseMs),
+        solveMs: Math.round(machineProfile.solveMs),
       }),
     )
   },
-  120000,
+  180000,
 )
