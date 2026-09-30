@@ -5,7 +5,6 @@ import {
   finalizingEdgesAreRecipeIdentityUnique,
   machineOperationBreakdownForSelection,
   minimumRecipeKindsFromFinalizingBound,
-  prepareMaximumIngredientCostStageCertificate,
   prepareMinimumCostStageCertificate,
   repairMachineOperationWitness,
   type RecipeUnitSelection,
@@ -104,6 +103,7 @@ function objectiveOrder(
 interface HighsStageOptions {
   relaxAssignmentVariables?: boolean
   aggregateEquivalentAssignments?: boolean
+  aggregateEquivalentMaximumCostAssignments?: boolean
   tightenRecipeBoundsFromMinimumCostFix?: boolean
   tightenOperationBoundsFromRecipeBounds?: boolean
   machineOperationKinds?: Set<ProductionStepKind>
@@ -244,6 +244,13 @@ function buildHighsStage(
 
   if (
     options.aggregateEquivalentAssignments &&
+    options.aggregateEquivalentMaximumCostAssignments
+  ) {
+    throw new Error('Only one assignment grouping mode may be active')
+  }
+
+  if (
+    options.aggregateEquivalentAssignments &&
     (needsRecipeSpecificAssignments || needsJarStructure)
   ) {
     throw new Error(
@@ -251,7 +258,26 @@ function buildHighsStage(
     )
   }
 
-  const assignmentGroups = options.aggregateEquivalentAssignments
+  if (
+    options.aggregateEquivalentMaximumCostAssignments &&
+    (
+      needsAnyObjective(
+        'negativeKnownRevenue',
+        'negativeKnownGrossProfit',
+        'negativeEmptiedInitialJars',
+      ) ||
+      needsJarStructure
+    )
+  ) {
+    throw new Error(
+      'Maximum-cost grouping requires assignment equivalence for every active fix',
+    )
+  }
+
+  const shouldGroupAssignments =
+    options.aggregateEquivalentAssignments ||
+    options.aggregateEquivalentMaximumCostAssignments
+  const assignmentGroups = shouldGroupAssignments
     ? (() => {
         const groups = new Map<
           string,
@@ -259,13 +285,22 @@ function buildHighsStage(
             key: string
             recipes: typeof domain.recipes
             eligibleCustomerIds: string[]
+            ingredientCost?: number
           }
         >()
         for (const recipe of domain.recipes) {
           const eligibleCustomerIds = [
             ...recipe.eligibleCustomerIds,
           ].sort()
-          const key = eligibleCustomerIds.join('\u001e')
+          const serviceKey = eligibleCustomerIds.join('\u001e')
+          const ingredientCost =
+            options.aggregateEquivalentMaximumCostAssignments
+              ? recipe.juiceUnitIngredientCost
+              : undefined
+          const key =
+            ingredientCost === undefined
+              ? serviceKey
+              : `${serviceKey}\u001d${ingredientCost}`
           const group = groups.get(key)
           if (group) group.recipes.push(recipe)
           else {
@@ -273,6 +308,9 @@ function buildHighsStage(
               key,
               recipes: [recipe],
               eligibleCustomerIds,
+              ...(ingredientCost === undefined
+                ? {}
+                : { ingredientCost }),
             })
           }
         }
@@ -544,10 +582,18 @@ function buildHighsStage(
                 `y_${customerIndex}_${groupIndex}`,
               )
             : model.boolVar(`y_${customerIndex}_${groupIndex}`)
-          yByCustomerRecipe.set(
-            `${customerId}\u001f${group.key}`,
-            y,
-          )
+          const assignmentKey =
+            `${customerId}\u001f${group.key}`
+          yByCustomerRecipe.set(assignmentKey, y)
+          if (
+            options.aggregateEquivalentMaximumCostAssignments &&
+            group.ingredientCost !== undefined
+          ) {
+            assignedIngredientCostByAssignmentKey.set(
+              assignmentKey,
+              group.ingredientCost,
+            )
+          }
           assignmentVars.push(y)
         })
 
@@ -1892,31 +1938,15 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
         }
       }
 
-      let usingMaximumIngredientCostCertificate = false
-      let maximumIngredientCostUpperBound: number | null = null
-
-      if (
-        objectiveKey === 'negativeAssignedIngredientCost' &&
-        !allowPartialAssignments
-      ) {
-        const certificate =
-          prepareMaximumIngredientCostStageCertificate(stageDomain)
-        if (
-          certificate &&
-          certificate.certificateAssignmentCount <
-            certificate.originalAssignmentCount
-        ) {
-          stageDomain = certificate.stageDomain
-          continuationDomain = currentDomain
-          usingMaximumIngredientCostCertificate = true
-          maximumIngredientCostUpperBound = certificate.upperBound
-        }
-      }
-
       let usingMinimumWasteGrouping =
         objectiveIndex === 0 &&
         objectiveKey === 'productionUnits' &&
         fixes.length === 0 &&
+        minimumWasteEquivalentAssignmentGroupingIsSafe(stageDomain)
+      let usingMaximumIngredientCostGrouping =
+        objectiveKey === 'negativeAssignedIngredientCost' &&
+        fixes.length === 1 &&
+        fixes[0].objective === 'productionUnits' &&
         minimumWasteEquivalentAssignmentGroupingIsSafe(stageDomain)
 
       let built = buildHighsStage(
@@ -1927,48 +1957,21 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
           allowUnassignedCustomers: allowPartialAssignments,
           aggregateEquivalentAssignments:
             usingMinimumWasteGrouping,
+          aggregateEquivalentMaximumCostAssignments:
+            usingMaximumIngredientCostGrouping,
         },
       )
       let solution = await built.model.solve()
 
-      if (usingMaximumIngredientCostCertificate) {
-        const certificateClosed =
-          solution.status === 'optimal' &&
-          maximumIngredientCostUpperBound !== null &&
-          Math.round(
-            requiredFiniteNumber(
-              solution.objective,
-              'maximum ingredient cost certificate objective',
-            ),
-          ) === -maximumIngredientCostUpperBound &&
-          verifiedAssignmentCount(
-            stageDomain,
-            built,
-            solution,
-          ) === stageDomain.serviceableCustomerIds.length
-
-        if (!certificateClosed) {
-          stageDomain = currentDomain
-          continuationDomain = currentDomain
-          usingMaximumIngredientCostCertificate = false
-          maximumIngredientCostUpperBound = null
-          built = buildHighsStage(
-            currentDomain,
-            objectiveKey,
-            fixes,
-            {
-              allowUnassignedCustomers: allowPartialAssignments,
-            },
-          )
-          solution = await built.model.solve()
-        }
-      }
-
       if (
-        usingMinimumWasteGrouping &&
+        (
+          usingMinimumWasteGrouping ||
+          usingMaximumIngredientCostGrouping
+        ) &&
         solution.status !== 'optimal'
       ) {
         usingMinimumWasteGrouping = false
+        usingMaximumIngredientCostGrouping = false
         built = buildHighsStage(
           stageDomain,
           objectiveKey,
