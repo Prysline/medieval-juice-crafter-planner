@@ -371,7 +371,10 @@ function buildHighsStage(
         group.key,
         model.intVar(
           0,
-          maxJuiceUnitsPerRecipe,
+          Math.max(
+            0,
+            Math.ceil(group.eligibleCustomerIds.length / 2),
+          ),
           `x_group_${groupIndex}`,
         ),
       )
@@ -1147,6 +1150,7 @@ function buildHighsStage(
   return {
     model,
     xByRecipeId,
+    groupedProductionUnitsByAssignmentGroupKey,
     yByCustomerRecipe,
     operationByEdgeKey,
     inventoryShortfallByIngredientId,
@@ -1172,6 +1176,7 @@ export async function profileMaximumIngredientCostAfterGroupedMinimumWaste(
   maximumCostStatus: string
   maximumCostObjectiveValue: number | null
   groupedMaximumCostAssignmentVariableCount: number
+  groupedMaximumCostProductionVariableCount: number
   groupedMaximumCostBuildMs: number
   groupedMaximumCostSerializeMs: number
   groupedMaximumCostParseMs: number
@@ -1216,7 +1221,10 @@ export async function profileMaximumIngredientCostAfterGroupedMinimumWaste(
     domain,
     'negativeAssignedIngredientCost',
     fixes,
-    { aggregateEquivalentMaximumCostAssignments: true },
+    {
+      aggregateEquivalentMaximumCostAssignments: true,
+      aggregateEquivalentMaximumCostProductionUnits: true,
+    },
   )
   const groupedMaximumCostBuildMs =
     performance.now() - groupedBuildStartedAt
@@ -1324,6 +1332,8 @@ export async function profileMaximumIngredientCostAfterGroupedMinimumWaste(
     maximumCostObjectiveValue,
     groupedMaximumCostAssignmentVariableCount:
       groupedBuilt.yByCustomerRecipe.size,
+    groupedMaximumCostProductionVariableCount:
+      groupedBuilt.groupedProductionUnitsByAssignmentGroupKey.size,
     groupedMaximumCostBuildMs,
     groupedMaximumCostSerializeMs,
     groupedMaximumCostParseMs,
