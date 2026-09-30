@@ -20,6 +20,7 @@ const GLOBAL_SERVING_SLACK =
 const SINGLETON_RECIPE_COST =
   PRODUCTION_COST_FIX * 2 - ASSIGNED_INGREDIENT_COST_FIX
 const CERTIFIED_THROUGH_SEASONING_RELAXED_LB = 26
+const CERTIFIED_FINALIZING_RELAXED_LB = 30
 
 function canonicalDomain(): BatchOptimizationModel {
   const currentProgress = 'liquid-blender-unlocked'
@@ -125,32 +126,9 @@ function assignmentGroups(
   return [...groups.values()]
 }
 
-function addCeilOperation(
-  model: Model,
-  quantity: ReturnType<typeof sum>,
-  upperBound: number,
-  name: string,
-) {
-  const operation = model.intVar(
-    0,
-    Math.max(1, upperBound),
-    name,
-  )
-  model.addConstraint(
-    quantity
-      .minus(operation.times(PROCESSING_STACK_CAPACITY))
-      .leq(0),
-    `${name}_capacity`,
-  )
-  model.addConstraint(
-    operation.minus(quantity).leq(0),
-    `${name}_usage`,
-  )
-  return operation
-}
-
-function buildUniqueTailLowerBound(
+function buildBlendClassificationBound(
   domain: BatchOptimizationModel,
+  includedBlendCounts: ReadonlySet<0 | 1 | 2>,
 ) {
   const groups = assignmentGroups(domain)
   const model = new Model()
@@ -189,10 +167,8 @@ function buildUniqueTailLowerBound(
   const productionCostTerms: ReturnType<
     ReturnType<Model['intVar']>['times']
   >[] = []
+  const includedUnitTerms: ReturnType<Model['intVar']>[] = []
   const singletonVars: ReturnType<Model['boolVar']>[] = []
-  const finalizingOperationTerms: ReturnType<Model['intVar']>[] = []
-  const finalBlendOperationTerms: ReturnType<Model['intVar']>[] = []
-  const threeSegmentUnitTerms: ReturnType<Model['intVar']>[] = []
   let categoryVariableCount = 0
 
   groups.forEach((group, groupIndex) => {
@@ -217,8 +193,10 @@ function buildUniqueTailLowerBound(
       productionCostTerms.push(
         x.times(group.ingredientCost),
       )
+      if (includedBlendCounts.has(count)) {
+        includedUnitTerms.push(x)
+      }
       categoryVariableCount += 1
-      if (count === 2) threeSegmentUnitTerms.push(x)
     }
 
     const groupUnits = sum(...xByBlendCount.values())
@@ -248,32 +226,6 @@ function buildUniqueTailLowerBound(
         `group_capacity_${groupIndex}`,
       )
     }
-
-    finalizingOperationTerms.push(
-      addCeilOperation(
-        model,
-        groupUnits,
-        upperBound,
-        `finish_op_${groupIndex}`,
-      ),
-    )
-
-    const blendedUnits = sum(
-      ...[1, 2].flatMap((count) => {
-        const variable = xByBlendCount.get(count as 1 | 2)
-        return variable ? [variable] : []
-      }),
-    )
-    if (xByBlendCount.has(1) || xByBlendCount.has(2)) {
-      finalBlendOperationTerms.push(
-        addCeilOperation(
-          model,
-          blendedUnits,
-          upperBound,
-          `final_blend_op_${groupIndex}`,
-        ),
-      )
-    }
   })
 
   model.addConstraint(
@@ -293,21 +245,7 @@ function buildUniqueTailLowerBound(
     'assigned_cost_fix',
   )
 
-  const firstBlendCollapsedOperation =
-    addCeilOperation(
-      model,
-      sum(...threeSegmentUnitTerms),
-      PRODUCTION_UNITS_FIX,
-      'first_blend_collapsed_op',
-    )
-
-  model.minimize(
-    sum(
-      ...finalizingOperationTerms,
-      ...finalBlendOperationTerms,
-      firstBlendCollapsedOperation,
-    ),
-  )
+  model.maximize(sum(...includedUnitTerms))
 
   return {
     model,
@@ -318,10 +256,6 @@ function buildUniqueTailLowerBound(
         0,
       ),
     categoryVariableCount,
-    finalizingOperationCount:
-      finalizingOperationTerms.length,
-    finalBlendOperationCount:
-      finalBlendOperationTerms.length,
   }
 }
 
@@ -364,7 +298,7 @@ async function solveBounded(
 }
 
 it(
-  'profiles joint finalizing and unique final-blend lower bound',
+  'profiles blend-classification bounds from unique final-blend edges',
   async () => {
     const domain = canonicalDomain()
 
@@ -378,32 +312,90 @@ it(
       finalBlendEdgesAreRecipeIdentityUnique(domain),
     ).toBe(true)
 
-    const buildStartedAt = performance.now()
-    const built = buildUniqueTailLowerBound(domain)
-    const buildMs = performance.now() - buildStartedAt
-    const solved = await solveBounded(built.model)
+    const nonblendBuilt = buildBlendClassificationBound(
+      domain,
+      new Set([0]),
+    )
+    const nonblend = await solveBounded(nonblendBuilt.model)
+
+    const atMostOneBlendBuilt = buildBlendClassificationBound(
+      domain,
+      new Set([0, 1]),
+    )
+    const atMostOneBlend =
+      await solveBounded(atMostOneBlendBuilt.model)
+
+    const maxNonblendUnits =
+      nonblend.status === 'optimal' && nonblend.objective !== null
+        ? Math.round(nonblend.objective)
+        : null
+    const maxAtMostOneBlendUnits =
+      atMostOneBlend.status === 'optimal' &&
+      atMostOneBlend.objective !== null
+        ? Math.round(atMostOneBlend.objective)
+        : null
+    const finalBlendLowerBound =
+      maxNonblendUnits === null
+        ? null
+        : Math.max(
+            0,
+            CERTIFIED_FINALIZING_RELAXED_LB -
+              maxNonblendUnits,
+          )
+    const threeSegmentUnitLowerBound =
+      maxAtMostOneBlendUnits === null
+        ? null
+        : Math.max(
+            0,
+            PRODUCTION_UNITS_FIX -
+              maxAtMostOneBlendUnits,
+          )
+    const firstBlendLowerBound =
+      threeSegmentUnitLowerBound === null
+        ? null
+        : Math.ceil(
+            threeSegmentUnitLowerBound /
+              PROCESSING_STACK_CAPACITY,
+          )
+    const totalMachineLowerBound =
+      finalBlendLowerBound === null ||
+      firstBlendLowerBound === null
+        ? null
+        : (
+            CERTIFIED_THROUGH_SEASONING_RELAXED_LB +
+            CERTIFIED_FINALIZING_RELAXED_LB +
+            finalBlendLowerBound +
+            firstBlendLowerBound
+          )
 
     console.info(
-      '[machine-unique-tail-lower-bound]',
+      '[machine-blend-classification-bound]',
       JSON.stringify({
-        buildMs: Math.round(buildMs),
-        groupCount: built.groupCount,
-        assignmentVariableCount: built.assignmentVariableCount,
-        categoryVariableCount: built.categoryVariableCount,
-        finalizingOperationCount:
-          built.finalizingOperationCount,
-        finalBlendOperationCount:
-          built.finalBlendOperationCount,
-        serializeMs: Math.round(solved.serializeMs),
-        parseMs: Math.round(solved.parseMs),
-        solveMs: Math.round(solved.solveMs),
-        status: solved.status,
-        uniqueTailObjective: solved.objective,
-        totalWithThroughSeasoning26:
-          solved.objective === null
-            ? null
-            : solved.objective +
-              CERTIFIED_THROUGH_SEASONING_RELAXED_LB,
+        groupCount: nonblendBuilt.groupCount,
+        assignmentVariableCount:
+          nonblendBuilt.assignmentVariableCount,
+        categoryVariableCount:
+          nonblendBuilt.categoryVariableCount,
+        maxNonblend: {
+          status: nonblend.status,
+          objective: nonblend.objective,
+          solveMs: Math.round(nonblend.solveMs),
+        },
+        maxAtMostOneBlend: {
+          status: atMostOneBlend.status,
+          objective: atMostOneBlend.objective,
+          solveMs: Math.round(atMostOneBlend.solveMs),
+        },
+        maxNonblendUnits,
+        maxAtMostOneBlendUnits,
+        finalBlendLowerBound,
+        threeSegmentUnitLowerBound,
+        firstBlendLowerBound,
+        throughSeasoningLowerBound:
+          CERTIFIED_THROUGH_SEASONING_RELAXED_LB,
+        finalizingLowerBound:
+          CERTIFIED_FINALIZING_RELAXED_LB,
+        totalMachineLowerBound,
       }),
     )
   },
