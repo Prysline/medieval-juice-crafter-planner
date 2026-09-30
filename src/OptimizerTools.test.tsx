@@ -155,6 +155,11 @@ function transactionDraft(): PlanApplicationTransactionDraft {
           afterUnits: 2,
           consumedFromInventory: 1,
           acquiredAndConsumedUnits: 0,
+          plannedPurchaseUnits: 0,
+          actualPurchaseUnits: 0,
+          unitPrice: 1,
+          plannedPurchaseCost: 0,
+          actualPurchaseCost: 0,
         },
       ],
       water: {
@@ -2446,6 +2451,110 @@ describe('plan application preview', () => {
     expect(html).toContain('檸檬汁 · 1 杯')
   })
 
+
+  it('renders planned versus actual purchase settlement without rewriting the planner requirement', () => {
+    const base = transactionDraft()
+    const draft: PlanApplicationTransactionDraft = {
+      ...base,
+      before: {
+        ...base.before,
+        inventory: {
+          ...base.before.inventory,
+          ingredientUnits: {},
+        },
+      },
+      after: {
+        ...base.after,
+        inventory: {
+          ...base.after.inventory,
+          ingredientUnits: {},
+        },
+      },
+      changes: {
+        ...base.changes,
+        ingredients: [{
+          ingredientId: 'lemon',
+          beforeUnits: 0,
+          afterUnits: 0,
+          consumedFromInventory: 0,
+          acquiredAndConsumedUnits: 2,
+          plannedPurchaseUnits: 2,
+          actualPurchaseUnits: 2,
+          unitPrice: 4,
+          plannedPurchaseCost: 8,
+          actualPurchaseCost: 8,
+        }],
+      },
+    }
+
+    const html = renderToStaticMarkup(
+      <PlanApplicationPreview
+        draft={draft}
+        productionJarFills={[]}
+        actualPurchaseUnitsByIngredientId={{ lemon: 4 }}
+        onActualPurchaseUnitsChange={() => {}}
+        onResetActualPurchases={() => {}}
+        onApply={() => {}}
+      />,
+    )
+
+    expect(html).toContain('實際採買與期末結算')
+    expect(html).toContain('規劃購買 2 單位')
+    expect(html).toContain('多買 2 單位')
+    expect(html).toContain('實際支出 16 金幣')
+    expect(html).toContain('0 → 2 單位')
+    expect(html).toContain('依規劃填入全部實際購買量')
+  })
+
+  it('blocks apply when actual purchase is below the planner requirement', () => {
+    const base = transactionDraft()
+    const draft: PlanApplicationTransactionDraft = {
+      ...base,
+      before: {
+        ...base.before,
+        inventory: {
+          ...base.before.inventory,
+          ingredientUnits: {},
+        },
+      },
+      after: {
+        ...base.after,
+        inventory: {
+          ...base.after.inventory,
+          ingredientUnits: {},
+        },
+      },
+      changes: {
+        ...base.changes,
+        ingredients: [{
+          ingredientId: 'lemon',
+          beforeUnits: 0,
+          afterUnits: 0,
+          consumedFromInventory: 0,
+          acquiredAndConsumedUnits: 2,
+          plannedPurchaseUnits: 2,
+          actualPurchaseUnits: 2,
+          unitPrice: 4,
+          plannedPurchaseCost: 8,
+          actualPurchaseCost: 8,
+        }],
+      },
+    }
+
+    const html = renderToStaticMarkup(
+      <PlanApplicationPreview
+        draft={draft}
+        productionJarFills={[]}
+        actualPurchaseUnitsByIngredientId={{ lemon: 1 }}
+        onApply={() => {}}
+      />,
+    )
+
+    expect(html).toContain('實際採買不足')
+    expect(html).toContain('少買 1 單位')
+    expect(html).toContain('目前不會建立可套用的期末結算')
+    expect(html).toContain('disabled=""')
+  })
 
   it('renders a stale transaction preview as readonly without an apply control', () => {
     const html = renderToStaticMarkup(

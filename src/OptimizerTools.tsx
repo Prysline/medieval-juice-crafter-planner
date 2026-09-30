@@ -81,7 +81,9 @@ import {
   juiceStateIdentity,
 } from './domain/juiceStateIdentity'
 import {
+  planApplicationPlannedPurchaseUnits,
   rebasePlanApplicationTransactionSuppliedCustomers,
+  withPlanApplicationActualPurchases,
   type PlanApplicationTransactionDraft,
 } from './domain/planApplicationTransaction'
 import type { PlanApplicationBasisMismatchField } from './domain/planApplicationValidation'
@@ -2453,6 +2455,7 @@ function OptimizerTools({
 
   function applyTransactionDraft(
     draft: PlanApplicationTransactionDraft,
+    actualPurchaseUnitsByIngredientId: Readonly<Record<string, number>>,
   ) {
     if (
       !optimizerTransactionDraftIsActive(
@@ -2466,8 +2469,22 @@ function OptimizerTools({
       return
     }
 
+    let effectiveDraft: PlanApplicationTransactionDraft
+    try {
+      effectiveDraft = withPlanApplicationActualPurchases(
+        draft,
+        actualPurchaseUnitsByIngredientId,
+      )
+    } catch (error) {
+      setApplicationState({
+        status: 'error',
+        error: presentPlanningError(error),
+      })
+      return
+    }
+
     const result = commitPlanApplicationTransaction(
-      draft,
+      effectiveDraft,
       window.localStorage,
     )
 
@@ -4506,6 +4523,9 @@ export function PlanApplicationPreview({
   productionJarFills,
   checkedIngredientIds = new Set<string>(),
   onIngredientCheckedChange,
+  actualPurchaseUnitsByIngredientId,
+  onActualPurchaseUnitsChange,
+  onResetActualPurchases,
   onApply,
   readOnly = false,
 }: {
@@ -4513,12 +4533,61 @@ export function PlanApplicationPreview({
   productionJarFills: readonly MultiTripProductionJarFill[]
   checkedIngredientIds?: ReadonlySet<string>
   onIngredientCheckedChange?: (ingredientId: string, checked: boolean) => void
-  onApply?: (draft: PlanApplicationTransactionDraft) => void
+  actualPurchaseUnitsByIngredientId?: Readonly<Record<string, number>>
+  onActualPurchaseUnitsChange?: (ingredientId: string, units: number) => void
+  onResetActualPurchases?: () => void
+  onApply?: (
+    draft: PlanApplicationTransactionDraft,
+    actualPurchaseUnitsByIngredientId: Readonly<Record<string, number>>,
+  ) => void
   readOnly?: boolean
 }) {
-  const changes = draft.changes
+  const plannedPurchaseUnits =
+    planApplicationPlannedPurchaseUnits(draft)
+  const effectiveActualPurchaseUnits =
+    actualPurchaseUnitsByIngredientId ?? plannedPurchaseUnits
+  let previewDraft = draft
+  let actualPurchaseError: string | null = null
+  try {
+    previewDraft = withPlanApplicationActualPurchases(
+      draft,
+      effectiveActualPurchaseUnits,
+    )
+  } catch (error) {
+    actualPurchaseError =
+      error instanceof Error
+        ? error.message
+        : '實際採買量無法套用到目前規劃。'
+  }
+  const changes = previewDraft.changes
+  const plannedPurchaseChanges = draft.changes.ingredients.filter(
+    (change) => change.plannedPurchaseUnits > 0,
+  )
+  const plannedPurchaseTotalUnits = plannedPurchaseChanges.reduce(
+    (sum, change) => sum + change.plannedPurchaseUnits,
+    0,
+  )
+  const actualPurchaseTotalUnits = plannedPurchaseChanges.reduce(
+    (sum, change) =>
+      sum +
+      (effectiveActualPurchaseUnits[change.ingredientId] ??
+        change.plannedPurchaseUnits),
+    0,
+  )
+  const plannedPurchaseTotalCost = plannedPurchaseChanges.reduce(
+    (sum, change) => sum + change.plannedPurchaseCost,
+    0,
+  )
+  const actualPurchaseTotalCost = plannedPurchaseChanges.reduce(
+    (sum, change) =>
+      sum +
+      (effectiveActualPurchaseUnits[change.ingredientId] ??
+        change.plannedPurchaseUnits) *
+        change.unitPrice,
+    0,
+  )
   const terminalJuiceJars = sortedByNaturalPresentationId(
-    draft.after.inventory.juiceJars.filter(
+    previewDraft.after.inventory.juiceJars.filter(
       (jar) => jar.servings > 0,
     ),
     (jar) => jar.id,
@@ -4537,6 +4606,95 @@ export function PlanApplicationPreview({
         需先調整後才能套用。
       </p>
 
+      {plannedPurchaseChanges.length > 0 && (
+        <article className="optimizer-transaction-card">
+          <div className="optimizer-transaction-card-heading">
+            <strong>實際採買與期末結算</strong>
+            <span>
+              規劃 {plannedPurchaseTotalUnits} · 實際{' '}
+              {actualPurchaseTotalUnits}
+            </span>
+          </div>
+          <p>
+            規劃需求不會因這裡的實際購買量改變；多買會留在期末原料庫存，
+            實際支出則依實際購買量計算。
+          </p>
+          {!readOnly && onResetActualPurchases && (
+            <button
+              type="button"
+              className="optimizer-section-toggle"
+              onClick={onResetActualPurchases}
+            >
+              依規劃填入全部實際購買量
+            </button>
+          )}
+          <div className="optimizer-transaction-list">
+            {plannedPurchaseChanges.map((change) => {
+              const actualPurchaseUnits =
+                effectiveActualPurchaseUnits[change.ingredientId] ??
+                change.plannedPurchaseUnits
+              const delta =
+                actualPurchaseUnits - change.plannedPurchaseUnits
+              return (
+                <div
+                  className="optimizer-transaction-row"
+                  key={change.ingredientId}
+                >
+                  <strong>{ingredientLabel(change.ingredientId)}</strong>
+                  <label>
+                    <span>實際購買</span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      step={1}
+                      value={actualPurchaseUnits}
+                      disabled={readOnly}
+                      aria-label={
+                        ingredientLabel(change.ingredientId) +
+                        ' 實際購買量'
+                      }
+                      onChange={(event) =>
+                        onActualPurchaseUnitsChange?.(
+                          change.ingredientId,
+                          Number(event.currentTarget.value) || 0,
+                        )
+                      }
+                    />
+                  </label>
+                  <small>
+                    規劃購買 {change.plannedPurchaseUnits} 單位 · 單價{' '}
+                    {optimizerMoney(change.unitPrice)} · 實際支出{' '}
+                    {optimizerMoney(
+                      actualPurchaseUnits * change.unitPrice,
+                    )}{' '}
+                    ·{' '}
+                    {delta === 0
+                      ? '符合規劃'
+                      : delta > 0
+                        ? `多買 ${delta} 單位`
+                        : `少買 ${Math.abs(delta)} 單位`}
+                  </small>
+                </div>
+              )
+            })}
+          </div>
+          <small>
+            規劃支出 {optimizerMoney(plannedPurchaseTotalCost)} ·
+            實際支出 {optimizerMoney(actualPurchaseTotalCost)} · 差額{' '}
+            {optimizerMoney(
+              actualPurchaseTotalCost - plannedPurchaseTotalCost,
+            )}
+          </small>
+        </article>
+      )}
+
+      {actualPurchaseError && (
+        <p className="optimizer-transaction-warning" role="alert">
+          {actualPurchaseError} 目前不會建立可套用的期末結算。
+        </p>
+      )}
+
       {readOnly ? (
         <p className="optimizer-transaction-warning">
           已過期規劃只能參考，不能套用或寫入新的 transaction。
@@ -4545,7 +4703,10 @@ export function PlanApplicationPreview({
         <button
           type="button"
           className="optimizer-run-button"
-          onClick={() => onApply?.(draft)}
+          disabled={actualPurchaseError !== null}
+          onClick={() =>
+            onApply?.(draft, effectiveActualPurchaseUnits)
+          }
         >
           確認套用這份規劃
         </button>
@@ -4586,10 +4747,11 @@ export function PlanApplicationPreview({
                   </span>
                   <small>
                     使用既有 {change.consumedFromInventory} 單位
-                    {change.acquiredAndConsumedUnits > 0
-                      ? ' · 另取得並於當日使用 ' +
-                        change.acquiredAndConsumedUnits +
-                        ' 單位'
+                    {change.plannedPurchaseUnits > 0
+                      ? ' · 規劃購買 ' +
+                        change.plannedPurchaseUnits +
+                        ' · 實際購買 ' +
+                        change.actualPurchaseUnits
                       : ''}
                   </small>
                 </div>
@@ -5370,7 +5532,10 @@ function OptimizerResultPanel({
   deliveryCursor: DeliveryExecutionCursor | null
   suppliedCustomerIds: readonly string[]
   deliveryUiState: DeliveryUiState
-  onApplyTransaction: (draft: PlanApplicationTransactionDraft) => void
+  onApplyTransaction: (
+    draft: PlanApplicationTransactionDraft,
+    actualPurchaseUnitsByIngredientId: Readonly<Record<string, number>>,
+  ) => void
   onCommitDelivery: (customerId: string, supplied: boolean) => void
   onCommitDeliveryGroup: (customerIds: readonly string[], supplied: boolean) => void
   readOnly?: boolean
@@ -5502,6 +5667,44 @@ function OptimizerResultPanel({
       ),
     )
   }, [ingredientChecklistPlanFingerprint])
+
+  const [
+    actualPurchaseUnitsByIngredientId,
+    setActualPurchaseUnitsByIngredientId,
+  ] = useState<Record<string, number>>(() =>
+    transactionDraft
+      ? { ...planApplicationPlannedPurchaseUnits(transactionDraft) }
+      : {},
+  )
+
+  useEffect(() => {
+    // A new solve/recovery creates a new shortfall authority. Pending
+    // actual-purchase execution input must not cross that boundary. Same-run
+    // custom trips and supplied-customer rebases keep the current input.
+    setActualPurchaseUnitsByIngredientId(
+      transactionDraft
+        ? { ...planApplicationPlannedPurchaseUnits(transactionDraft) }
+        : {},
+    )
+  }, [preparationShortfall])
+
+  function setActualPurchaseUnits(
+    ingredientId: string,
+    units: number,
+  ) {
+    setActualPurchaseUnitsByIngredientId((current) => ({
+      ...current,
+      [ingredientId]: Math.max(0, Math.floor(units || 0)),
+    }))
+  }
+
+  function resetActualPurchaseUnits() {
+    setActualPurchaseUnitsByIngredientId(
+      transactionDraft
+        ? { ...planApplicationPlannedPurchaseUnits(transactionDraft) }
+        : {},
+    )
+  }
 
   function setIngredientChecked(
     ingredientId: string,
@@ -5660,6 +5863,11 @@ function OptimizerResultPanel({
           productionJarFills={selectedSalesTripPlan.productionJarFills}
           checkedIngredientIds={checkedIngredientIds}
           onIngredientCheckedChange={setIngredientChecked}
+          actualPurchaseUnitsByIngredientId={
+            actualPurchaseUnitsByIngredientId
+          }
+          onActualPurchaseUnitsChange={setActualPurchaseUnits}
+          onResetActualPurchases={resetActualPurchaseUnits}
           onApply={onApplyTransaction}
           readOnly={readOnly}
         />
