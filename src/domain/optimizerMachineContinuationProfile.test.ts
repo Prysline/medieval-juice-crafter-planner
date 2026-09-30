@@ -261,6 +261,194 @@ async function boundedSolve(model: Model, timeLimitSeconds = 15) {
   }
 }
 
+
+type CoarseBucketScheme = 'structural' | 'ingredient-aware'
+
+function coarseNonfinalBucketKey(
+  edge: EligibleOptimizationRecipe['productionPath']['edges'][number],
+  scheme: CoarseBucketScheme,
+): string | null {
+  if (edge.kind === 'finalizing') return null
+
+  if (edge.kind === 'juicing') {
+    return scheme === 'ingredient-aware'
+      ? \`juicing:\${edge.equipment}:\${edge.addedIngredientId ?? ''}\`
+      : \`juicing:\${edge.equipment}\`
+  }
+
+  if (edge.kind === 'seasoning') {
+    return scheme === 'ingredient-aware'
+      ? \`seasoning:\${edge.equipment}:len\${edge.toIngredientIds.length}:add:\${edge.addedIngredientId ?? ''}\`
+      : \`seasoning:\${edge.equipment}:len\${edge.toIngredientIds.length}\`
+  }
+
+  const secondaryLength =
+    edge.secondaryFromIngredientIds?.length ?? 0
+  return scheme === 'ingredient-aware'
+    ? \`blending:\${edge.fromIngredientIds.length}+\${secondaryLength}->\${edge.toIngredientIds.length}:front:\${edge.fromIngredientIds[0] ?? ''}:back:\${edge.secondaryFromIngredientIds?.[0] ?? ''}\`
+    : \`blending:\${edge.fromIngredientIds.length}+\${secondaryLength}->\${edge.toIngredientIds.length}\`
+}
+
+function coarseNonfinalSignature(
+  recipe: EligibleOptimizationRecipe,
+  scheme: CoarseBucketScheme,
+): {
+  signature: string
+  multiplicityByBucket: Map<string, number>
+} {
+  const multiplicityByBucket = new Map<string, number>()
+  for (const edge of recipe.productionPath.edges) {
+    const bucket = coarseNonfinalBucketKey(edge, scheme)
+    if (!bucket) continue
+    multiplicityByBucket.set(
+      bucket,
+      (multiplicityByBucket.get(bucket) ?? 0) + 1,
+    )
+  }
+  return {
+    signature: [...multiplicityByBucket.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, count]) => \`\${key}*\${count}\`)
+      .join('\\u001f'),
+    multiplicityByBucket,
+  }
+}
+
+function buildCoarseNonfinalQuotient(
+  domain: BatchOptimizationModel,
+  scheme: CoarseBucketScheme,
+) {
+  const assignmentGroups = new Map<
+    string,
+    {
+      key: string
+      eligibleCustomerIds: string[]
+      ingredientCost: number
+    }
+  >()
+  const machineGroups = new Map<
+    string,
+    {
+      assignmentKey: string
+      eligibleCustomerIds: string[]
+      ingredientCost: number
+      multiplicityByBucket: Map<string, number>
+    }
+  >()
+
+  for (const recipe of domain.recipes) {
+    const aKey = assignmentKey(recipe)
+    if (!assignmentGroups.has(aKey)) {
+      assignmentGroups.set(aKey, {
+        key: aKey,
+        eligibleCustomerIds: [...recipe.eligibleCustomerIds].sort(),
+        ingredientCost: recipe.juiceUnitIngredientCost,
+      })
+    }
+    const coarse = coarseNonfinalSignature(recipe, scheme)
+    const mKey = \`\${aKey}\\u001c\${coarse.signature}\`
+    if (!machineGroups.has(mKey)) {
+      machineGroups.set(mKey, {
+        assignmentKey: aKey,
+        eligibleCustomerIds: [...recipe.eligibleCustomerIds].sort(),
+        ingredientCost: recipe.juiceUnitIngredientCost,
+        multiplicityByBucket: coarse.multiplicityByBucket,
+      })
+    }
+  }
+
+  const model = new Model()
+  const assignmentsByGroup = new Map<string, ReturnType<Model['numVar']>[]>()
+  const assignedCostTerms: ReturnType<ReturnType<Model['numVar']>['times']>[] = []
+
+  domain.serviceableCustomerIds.forEach((customerId, customerIndex) => {
+    const customerTerms: ReturnType<Model['numVar']>[] = []
+    ;[...assignmentGroups.values()].forEach((group, groupIndex) => {
+      if (!group.eligibleCustomerIds.includes(customerId)) return
+      const y = model.numVar(0, 1, \`y_\${customerIndex}_\${groupIndex}\`)
+      customerTerms.push(y)
+      const groupTerms = assignmentsByGroup.get(group.key)
+      if (groupTerms) groupTerms.push(y)
+      else assignmentsByGroup.set(group.key, [y])
+      assignedCostTerms.push(y.times(group.ingredientCost))
+    })
+    model.addConstraint(
+      sum(...customerTerms).eq(1),
+      \`customer_\${customerIndex}\`,
+    )
+  })
+
+  const xByMachineGroup = new Map<string, ReturnType<Model['intVar']>>()
+  const productionUnitTerms: ReturnType<Model['intVar']>[] = []
+  const productionCostTerms: ReturnType<ReturnType<Model['intVar']>['times']>[] = []
+
+  ;[...machineGroups.entries()].forEach(([key, group], index) => {
+    const x = model.intVar(
+      0,
+      Math.max(1, Math.ceil(group.eligibleCustomerIds.length / 2)),
+      \`x_\${index}\`,
+    )
+    xByMachineGroup.set(key, x)
+    productionUnitTerms.push(x)
+    productionCostTerms.push(x.times(group.ingredientCost))
+  })
+
+  ;[...assignmentGroups.values()].forEach((group, index) => {
+    const capacityTerms = [...machineGroups.entries()]
+      .filter(([, machineGroup]) => machineGroup.assignmentKey === group.key)
+      .map(([key]) => xByMachineGroup.get(key)!.times(2))
+    model.addConstraint(
+      sum(...(assignmentsByGroup.get(group.key) ?? []))
+        .minus(sum(...capacityTerms))
+        .leq(0),
+      \`capacity_\${index}\`,
+    )
+  })
+
+  model.addConstraint(sum(...productionUnitTerms).eq(35), 'production_units_fix')
+  model.addConstraint(sum(...assignedCostTerms).eq(3853), 'assigned_cost_fix')
+  model.addConstraint(sum(...productionCostTerms).eq(1948), 'production_cost_fix')
+
+  const quantityTermsByBucket = new Map<
+    string,
+    ReturnType<ReturnType<Model['intVar']>['times']>[]
+  >()
+  for (const [key, group] of machineGroups) {
+    const x = xByMachineGroup.get(key)!
+    for (const [bucket, multiplicity] of group.multiplicityByBucket) {
+      const terms = quantityTermsByBucket.get(bucket)
+      const term = x.times(multiplicity)
+      if (terms) terms.push(term)
+      else quantityTermsByBucket.set(bucket, [term])
+    }
+  }
+
+  const operationTerms: ReturnType<Model['intVar']>[] = []
+  ;[...quantityTermsByBucket.entries()].forEach(
+    ([, quantityTerms], index) => {
+      const op = model.intVar(0, 69, \`coarse_op_\${index}\`)
+      const quantity = sum(...quantityTerms)
+      model.addConstraint(
+        quantity.minus(op.times(PROCESSING_STACK_CAPACITY)).leq(0),
+        \`coarse_op_capacity_\${index}\`,
+      )
+      model.addConstraint(
+        op.minus(quantity).leq(0),
+        \`coarse_op_usage_\${index}\`,
+      )
+      operationTerms.push(op)
+    },
+  )
+  model.minimize(sum(...operationTerms))
+
+  return {
+    model,
+    assignmentGroupCount: assignmentGroups.size,
+    machineGroupCount: machineGroups.size,
+    bucketCount: quantityTermsByBucket.size,
+  }
+}
+
 it(
   'profiles post-maximum-cost machine-operation quotient shapes',
   async () => {
@@ -348,6 +536,31 @@ it(
           solveMs: Math.round(solved.solveMs),
           status: solved.status,
           objective: solved.objective,
+        }),
+      )
+    }
+
+
+    for (const scheme of ['structural', 'ingredient-aware'] as const) {
+      const buildStartedAt = performance.now()
+      const built = buildCoarseNonfinalQuotient(domain, scheme)
+      const buildMs = performance.now() - buildStartedAt
+      const solved = await boundedSolve(built.model)
+      console.info(
+        '[machine-coarse-lower-bound]',
+        JSON.stringify({
+          scheme,
+          buildMs: Math.round(buildMs),
+          assignmentGroupCount: built.assignmentGroupCount,
+          machineGroupCount: built.machineGroupCount,
+          bucketCount: built.bucketCount,
+          serializeMs: Math.round(solved.serializeMs),
+          parseMs: Math.round(solved.parseMs),
+          solveMs: Math.round(solved.solveMs),
+          status: solved.status,
+          nonfinalObjective: solved.objective,
+          totalWithFinalizing30:
+            solved.objective === null ? null : solved.objective + 30,
         }),
       )
     }
