@@ -55,7 +55,13 @@ export interface IngredientTransactionChange {
   readonly beforeUnits: number
   readonly afterUnits: number
   readonly consumedFromInventory: number
+  /** Planner/domain requirement. Actual purchase input must never rewrite this value. */
   readonly acquiredAndConsumedUnits: number
+  readonly plannedPurchaseUnits: number
+  readonly actualPurchaseUnits: number
+  readonly unitPrice: number
+  readonly plannedPurchaseCost: number
+  readonly actualPurchaseCost: number
 }
 
 export interface IntermediateJuiceTransactionChange {
@@ -132,6 +138,34 @@ export interface BuildPlanApplicationTransactionInput {
   preparationShortfall: PreparationShortfall
   productionLogistics: ProductionLogisticsPlan
   salesPlan: MultiTripReplenishmentPlan
+  actualPurchaseUnitsByIngredientId?: Readonly<Record<string, number>>
+}
+
+export type PlanApplicationActualPurchaseErrorReason =
+  | 'invalid-quantity'
+  | 'unexpected-ingredient'
+  | 'insufficient-purchase'
+
+export class PlanApplicationActualPurchaseError extends Error {
+  readonly reason: PlanApplicationActualPurchaseErrorReason
+  readonly ingredientId: string
+  readonly plannedPurchaseUnits: number
+  readonly actualPurchaseUnits: number
+
+  constructor(
+    reason: PlanApplicationActualPurchaseErrorReason,
+    ingredientId: string,
+    plannedPurchaseUnits: number,
+    actualPurchaseUnits: number,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'PlanApplicationActualPurchaseError'
+    this.reason = reason
+    this.ingredientId = ingredientId
+    this.plannedPurchaseUnits = plannedPurchaseUnits
+    this.actualPurchaseUnits = actualPurchaseUnits
+  }
 }
 
 function unique(values: string[]): string[] {
@@ -549,17 +583,31 @@ function validatePlanBasis(
 function buildIngredientTransaction(
   shortfall: PreparationShortfall,
   before: PlanApplicationInventorySnapshot,
+  result: OptimizationResult,
 ): {
   ingredientUnits: Record<string, number>
   changes: IngredientTransactionChange[]
 } {
   const ingredientUnits = { ...before.ingredientUnits }
+  const purchaseByIngredientId = new Map(
+    result.shoppingList.map((item) => [item.ingredientId, item]),
+  )
   const changes = shortfall.ingredients
     .map((ingredient): IngredientTransactionChange => {
       const beforeUnits =
         before.ingredientUnits[ingredient.ingredientId] ?? 0
       const afterUnits =
         beforeUnits - ingredient.inventoryUnitsUsed
+      const plannedPurchaseUnits = ingredient.purchaseUnits
+      const purchaseItem = purchaseByIngredientId.get(
+        ingredient.ingredientId,
+      )
+      if (plannedPurchaseUnits > 0 && !purchaseItem) {
+        throw new Error(
+          `Missing purchase price for transaction ingredient ${ingredient.ingredientId}`,
+        )
+      }
+      const unitPrice = purchaseItem?.unitPrice ?? 0
 
       if (afterUnits > 0) {
         ingredientUnits[ingredient.ingredientId] = afterUnits
@@ -572,7 +620,12 @@ function buildIngredientTransaction(
         beforeUnits,
         afterUnits,
         consumedFromInventory: ingredient.inventoryUnitsUsed,
-        acquiredAndConsumedUnits: ingredient.purchaseUnits,
+        acquiredAndConsumedUnits: plannedPurchaseUnits,
+        plannedPurchaseUnits,
+        actualPurchaseUnits: plannedPurchaseUnits,
+        unitPrice,
+        plannedPurchaseCost: plannedPurchaseUnits * unitPrice,
+        actualPurchaseCost: plannedPurchaseUnits * unitPrice,
       }
     })
     .sort((a, b) =>
@@ -580,6 +633,126 @@ function buildIngredientTransaction(
     )
 
   return { ingredientUnits, changes }
+}
+
+export function planApplicationPlannedPurchaseUnits(
+  draft: PlanApplicationTransactionDraft,
+): Readonly<Record<string, number>> {
+  return Object.freeze(Object.fromEntries(
+    draft.changes.ingredients
+      .filter((change) => change.plannedPurchaseUnits > 0)
+      .map((change) => [
+        change.ingredientId,
+        change.plannedPurchaseUnits,
+      ]),
+  ))
+}
+
+export function withPlanApplicationActualPurchases(
+  draft: PlanApplicationTransactionDraft,
+  actualPurchaseUnitsByIngredientId: Readonly<Record<string, number>>,
+): PlanApplicationTransactionDraft {
+  const plannedByIngredientId = new Map(
+    draft.changes.ingredients
+      .filter((change) => change.plannedPurchaseUnits > 0)
+      .map((change) => [change.ingredientId, change]),
+  )
+
+  for (const [ingredientId, actualPurchaseUnits] of Object.entries(
+    actualPurchaseUnitsByIngredientId,
+  )) {
+    const planned = plannedByIngredientId.get(ingredientId)
+    if (!planned) {
+      throw new PlanApplicationActualPurchaseError(
+        'unexpected-ingredient',
+        ingredientId,
+        0,
+        actualPurchaseUnits,
+        `目前規劃沒有要求購買 ${ingredientId}；舊的實際採買草稿不能直接套到新的規劃。`,
+      )
+    }
+    if (
+      !Number.isInteger(actualPurchaseUnits) ||
+      actualPurchaseUnits < 0
+    ) {
+      throw new PlanApplicationActualPurchaseError(
+        'invalid-quantity',
+        ingredientId,
+        planned.plannedPurchaseUnits,
+        actualPurchaseUnits,
+        '實際採買量必須是 0 以上的整數。',
+      )
+    }
+  }
+
+  const ingredientUnits = {
+    ...draft.after.inventory.ingredientUnits,
+  }
+  const ingredients = draft.changes.ingredients.map((change) => {
+    const plannedPurchaseUnits = change.plannedPurchaseUnits
+    const actualPurchaseUnits =
+      plannedPurchaseUnits > 0
+        ? actualPurchaseUnitsByIngredientId[change.ingredientId] ??
+          plannedPurchaseUnits
+        : 0
+
+    if (actualPurchaseUnits < plannedPurchaseUnits) {
+      throw new PlanApplicationActualPurchaseError(
+        'insufficient-purchase',
+        change.ingredientId,
+        plannedPurchaseUnits,
+        actualPurchaseUnits,
+        `實際採買不足：${change.ingredientId} 規劃需購買 ${plannedPurchaseUnits} 單位，實際只有 ${actualPurchaseUnits} 單位。`,
+      )
+    }
+
+    const requiredUnits =
+      change.consumedFromInventory +
+      change.acquiredAndConsumedUnits
+    const afterUnits =
+      change.beforeUnits + actualPurchaseUnits - requiredUnits
+    if (afterUnits < 0) {
+      throw new PlanApplicationActualPurchaseError(
+        'insufficient-purchase',
+        change.ingredientId,
+        plannedPurchaseUnits,
+        actualPurchaseUnits,
+        `實際採買不足：${change.ingredientId} 無法完成本次規劃。`,
+      )
+    }
+
+    if (afterUnits > 0) {
+      ingredientUnits[change.ingredientId] = afterUnits
+    } else {
+      delete ingredientUnits[change.ingredientId]
+    }
+
+    return {
+      ...change,
+      afterUnits,
+      actualPurchaseUnits,
+      actualPurchaseCost: actualPurchaseUnits * change.unitPrice,
+    }
+  })
+
+  const after: PlanApplicationStateSnapshot = {
+    ...draft.after,
+    inventory: {
+      ...draft.after.inventory,
+      ingredientUnits,
+    },
+  }
+  const changes: PlanApplicationTransactionChanges = {
+    ...draft.changes,
+    ingredients,
+  }
+
+  return Object.freeze({
+    schemaVersion: draft.schemaVersion,
+    before: draft.before,
+    after: freezeStateSnapshot(after),
+    changes: freezeChanges(changes),
+  })
 }
 
 function buildIntermediateJuiceTransaction(
@@ -789,6 +962,7 @@ export function buildPlanApplicationTransactionDraft(
   const ingredientTransaction = buildIngredientTransaction(
     preparationShortfall,
     beforeInventory,
+    result,
   )
   const intermediateJuiceTransaction =
     buildIntermediateJuiceTransaction(
@@ -923,5 +1097,11 @@ export function buildPlanApplicationTransactionDraft(
     changes: freezeChanges(changes),
   }
 
-  return Object.freeze(draft)
+  const frozenDraft = Object.freeze(draft)
+  return input.actualPurchaseUnitsByIngredientId
+    ? withPlanApplicationActualPurchases(
+        frozenDraft,
+        input.actualPurchaseUnitsByIngredientId,
+      )
+    : frozenDraft
 }

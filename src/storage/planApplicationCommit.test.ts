@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   rebasePlanApplicationTransactionSuppliedCustomers,
+  withPlanApplicationActualPurchases,
   type PlanApplicationBasisState,
   type PlanApplicationTransactionDraft,
 } from '../domain/planApplicationTransaction'
@@ -151,13 +152,32 @@ function draftFromBasis(
     },
     changes: {
       intermediateJuice: [],
-      ingredients: [{
-        ingredientId: 'lemon',
-        beforeUnits: 3,
-        afterUnits: 1,
-        consumedFromInventory: 2,
-        acquiredAndConsumedUnits: 0,
-      }],
+      ingredients: [
+        {
+          ingredientId: 'lemon',
+          beforeUnits: 3,
+          afterUnits: 1,
+          consumedFromInventory: 2,
+          acquiredAndConsumedUnits: 0,
+          plannedPurchaseUnits: 0,
+          actualPurchaseUnits: 0,
+          unitPrice: 0,
+          plannedPurchaseCost: 0,
+          actualPurchaseCost: 0,
+        },
+        {
+          ingredientId: 'sugar',
+          beforeUnits: 0,
+          afterUnits: 0,
+          consumedFromInventory: 0,
+          acquiredAndConsumedUnits: 2,
+          plannedPurchaseUnits: 2,
+          actualPurchaseUnits: 2,
+          unitPrice: 4,
+          plannedPurchaseCost: 8,
+          actualPurchaseCost: 8,
+        },
+      ],
       water: {
         beforeUnits: 6,
         afterUnits: 2,
@@ -247,6 +267,56 @@ describe('plan application commit', () => {
     expect(storage.raw(PLANNER_SETTINGS_STORAGE_KEY)).toBe(
       JSON.stringify(source.plannerSettings),
     )
+  })
+
+  it('commits actual over-purchase into ending raw inventory', () => {
+    const storage = legacyStorage()
+    const draft = withPlanApplicationActualPurchases(
+      draftFromBasis(basis()),
+      { sugar: 4 },
+    )
+
+    const result = commitPlanApplicationTransaction(draft, storage)
+
+    expect(result.status).toBe('applied')
+    expect(readInventoryState(storage).ingredientUnits).toEqual({
+      lemon: 1,
+      mint: 2,
+      sugar: 2,
+    })
+    expect(
+      draft.changes.ingredients.find(
+        (change) => change.ingredientId === 'sugar',
+      ),
+    ).toMatchObject({
+      plannedPurchaseUnits: 2,
+      actualPurchaseUnits: 4,
+      actualPurchaseCost: 16,
+    })
+  })
+
+  it('keeps actual-purchase transactions protected by the canonical stale basis', () => {
+    const storage = legacyStorage()
+    const draft = withPlanApplicationActualPurchases(
+      draftFromBasis(basis()),
+      { sugar: 4 },
+    )
+    writeInventoryState(storage, {
+      ...initialInventory(),
+      ingredientUnits: {
+        ...initialInventory().ingredientUnits,
+        lemon: 4,
+      },
+    })
+    storage.writes = []
+
+    const result = commitPlanApplicationTransaction(draft, storage)
+
+    expect(result).toEqual({
+      status: 'stale',
+      mismatches: ['inventory'],
+    })
+    expect(storage.writes).toEqual([])
   })
 
   it('rejects stale basis without writing anything', () => {

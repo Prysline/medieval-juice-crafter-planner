@@ -111,6 +111,24 @@ describe('delivery checkbox and whole-plan application contract', () => {
     )
   })
 
+  it('keeps pending actual-purchase input session-only and resets it on a new solve/recovery scope', () => {
+    expect(optimizerToolsSource).toContain(
+      'actualPurchaseUnitsByIngredientId',
+    )
+    expect(optimizerToolsSource).toContain(
+      'planApplicationPlannedPurchaseUnits(transactionDraft)',
+    )
+    expect(optimizerToolsSource).toContain(
+      'withPlanApplicationActualPurchases(',
+    )
+    expect(optimizerToolsSource).toContain(
+      '}, [preparationShortfall])',
+    )
+    expect(optimizerToolsSource).not.toContain(
+      'ACTUAL_PURCHASE_STORAGE_KEY',
+    )
+  })
+
   it('keeps stale success reference when a new optimizer run fails', () => {
     const runStart = optimizerToolsSource.indexOf(
       'async function runOptimizer()',
