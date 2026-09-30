@@ -371,10 +371,7 @@ function buildHighsStage(
         group.key,
         model.intVar(
           0,
-          Math.max(
-            0,
-            Math.ceil(group.eligibleCustomerIds.length / 2),
-          ),
+          maxJuiceUnitsPerRecipe,
           `x_group_${groupIndex}`,
         ),
       )
