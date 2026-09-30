@@ -299,7 +299,7 @@ describe('minimum-waste equivalent-assignment grouping', () => {
     expect(result.machineOperations.finalizing).toBe(1)
   })
 
-  it('keeps the exact production-cost fallback after grouped maximum-cost assignments', async () => {
+  it('keeps the exact one-serving parity production-cost fallback after grouped maximum-cost assignments', async () => {
     const candidate = (id: string): RecipeCandidate => ({
       id,
       name: id,

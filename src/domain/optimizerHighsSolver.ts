@@ -105,6 +105,7 @@ interface HighsStageOptions {
   aggregateEquivalentAssignments?: boolean
   aggregateEquivalentMaximumCostAssignments?: boolean
   aggregateEquivalentMaximumCostProductionUnits?: boolean
+  maximumCostGroupedProductionSlackUpperBound?: number
   tightenRecipeBoundsFromMinimumCostFix?: boolean
   tightenOperationBoundsFromRecipeBounds?: boolean
   machineOperationKinds?: Set<ProductionStepKind>
@@ -160,6 +161,46 @@ function maximumIngredientCostGroupedProductionIsSafe(
     typeof maxJarFillOperations === 'number' &&
     Number.isFinite(maxJarFillOperations)
   )
+}
+
+function postMaximumIngredientCostGroupedProductionSlackUpperBound(
+  domain: BatchOptimizationModel,
+  fixes: ObjectiveFix[],
+): number | null {
+  if (!maximumIngredientCostGroupedProductionIsSafe(domain)) {
+    return null
+  }
+  if (
+    fixes.length !== 2 ||
+    fixes[0].objective !== 'productionUnits' ||
+    fixes[1].objective !== 'negativeAssignedIngredientCost'
+  ) {
+    return null
+  }
+  if (
+    domain.recipes.some(
+      (recipe) => (recipe.initialFinishedServings ?? 0) > 0,
+    )
+  ) {
+    return null
+  }
+
+  const productionUnits = fixes[0].value
+  if (!Number.isInteger(productionUnits) || productionUnits < 0) {
+    return null
+  }
+
+  const globalSlack =
+    productionUnits * 2 - domain.serviceableCustomerIds.length
+  if (
+    !Number.isInteger(globalSlack) ||
+    globalSlack < 0 ||
+    globalSlack > 1
+  ) {
+    return null
+  }
+
+  return globalSlack
 }
 
 function initialFinishedJarEmptyingThresholds(
@@ -273,6 +314,21 @@ function buildHighsStage(
   ) {
     throw new Error(
       'Maximum-cost production grouping requires maximum-cost assignment grouping',
+    )
+  }
+
+  if (
+    options.maximumCostGroupedProductionSlackUpperBound !== undefined &&
+    (
+      !options.aggregateEquivalentMaximumCostProductionUnits ||
+      !Number.isInteger(
+        options.maximumCostGroupedProductionSlackUpperBound,
+      ) ||
+      options.maximumCostGroupedProductionSlackUpperBound < 0
+    )
+  ) {
+    throw new Error(
+      'Maximum-cost grouped production slack tightening requires a non-negative integer grouped-production bound',
     )
   }
 
@@ -704,12 +760,33 @@ function buildHighsStage(
         0,
       )
 
+      const assignedServings = sum(...assignmentVars)
       model.addConstraint(
-        sum(...assignmentVars)
+        assignedServings
           .minus(sum(...capacityTerms))
           .leq(finishedServings),
         `capacity_${groupIndex}`,
       )
+
+      if (
+        groupedProductionUnits &&
+        options.maximumCostGroupedProductionSlackUpperBound !== undefined
+      ) {
+        if (finishedServings !== 0) {
+          throw new Error(
+            'Maximum-cost grouped production slack tightening requires zero initial finished servings',
+          )
+        }
+        model.addConstraint(
+          groupedProductionUnits
+            .times(2)
+            .minus(assignedServings)
+            .leq(
+              options.maximumCostGroupedProductionSlackUpperBound,
+            ),
+          `capacity_slack_${groupIndex}`,
+        )
+      }
     })
   } else {
     domain.serviceableCustomerIds.forEach(
@@ -1323,6 +1400,17 @@ export async function profilePostMaximumCostGenericContinuation(
     },
   ]
 
+  const productionCostSlackUpperBound =
+    postMaximumIngredientCostGroupedProductionSlackUpperBound(
+      domain,
+      fixes,
+    )
+  if (productionCostSlackUpperBound === null) {
+    throw new Error(
+      'Current profiling fixture does not satisfy exact production-cost parity preconditions',
+    )
+  }
+
   const productionCostBuildStartedAt = performance.now()
   const productionCostBuilt = buildHighsStage(
     domain,
@@ -1331,6 +1419,8 @@ export async function profilePostMaximumCostGenericContinuation(
     {
       aggregateEquivalentMaximumCostAssignments: true,
       aggregateEquivalentMaximumCostProductionUnits: true,
+      maximumCostGroupedProductionSlackUpperBound:
+        productionCostSlackUpperBound,
     },
   )
   const productionCostBuildMs =
@@ -2094,12 +2184,15 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
       let usingMaximumIngredientCostProductionGrouping =
         usingMaximumIngredientCostGrouping &&
         maximumIngredientCostGroupedProductionIsSafe(stageDomain)
+      const postMaximumIngredientCostProductionSlackUpperBound =
+        objectiveKey === 'cost'
+          ? postMaximumIngredientCostGroupedProductionSlackUpperBound(
+              stageDomain,
+              fixes,
+            )
+          : null
       let usingPostMaximumIngredientCostProductionGrouping =
-        objectiveKey === 'cost' &&
-        fixes.length === 2 &&
-        fixes[0].objective === 'productionUnits' &&
-        fixes[1].objective === 'negativeAssignedIngredientCost' &&
-        maximumIngredientCostGroupedProductionIsSafe(stageDomain)
+        postMaximumIngredientCostProductionSlackUpperBound !== null
 
       let built = buildHighsStage(
         stageDomain,
@@ -2115,6 +2208,10 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
           aggregateEquivalentMaximumCostProductionUnits:
             usingMaximumIngredientCostProductionGrouping ||
             usingPostMaximumIngredientCostProductionGrouping,
+          maximumCostGroupedProductionSlackUpperBound:
+            usingPostMaximumIngredientCostProductionGrouping
+              ? postMaximumIngredientCostProductionSlackUpperBound!
+              : undefined,
         },
       )
       let solution = await built.model.solve()
