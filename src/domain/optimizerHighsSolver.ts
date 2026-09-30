@@ -1281,6 +1281,210 @@ export async function profileGroupedMaximumIngredientCostStage(
   }
 }
 
+interface StageProfile {
+  assignmentVariableCount: number
+  groupedProductionVariableCount: number
+  recipeProductionVariableCount: number
+  buildMs: number
+  serializeMs: number
+  parseMs: number
+  solveMs: number
+  status: string
+  objectiveValue: number | null
+}
+
+
+export async function profileMaximumIngredientCostContinuationStages(
+  domain: BatchOptimizationModel,
+  timeLimitSeconds = 10.5,
+): Promise<{
+  productionUnits: number
+  maximumCostOptimum: number
+  costGeneric: StageProfile
+  costGrouped: StageProfile
+  machineGeneric: StageProfile | null
+  machineGrouped: StageProfile | null
+}> {
+  type BuiltStage = ReturnType<typeof buildHighsStage>
+  const profileStage = async (
+    build: () => BuiltStage,
+    timeLimit: number,
+  ): Promise<{ built: BuiltStage; profile: StageProfile }> => {
+    const buildStartedAt = performance.now()
+    const built = build()
+    const buildMs = performance.now() - buildStartedAt
+
+    const serializeStartedAt = performance.now()
+    const mps = built.model.print('mps')
+    const serializeMs = performance.now() - serializeStartedAt
+
+    const highs = await HiGHS.create()
+    let parseMs = 0
+    let solveMs = 0
+    let status = 'unknown'
+    let objectiveValue: number | null = null
+    try {
+      const parseStartedAt = performance.now()
+      await highs.parse(mps, 'mps')
+      parseMs = performance.now() - parseStartedAt
+      highs.setParam(
+        'time_limit',
+        Math.max(
+          0.1,
+          Number.isInteger(timeLimit)
+            ? timeLimit + 1e-6
+            : timeLimit,
+        ),
+      )
+      const solveStartedAt = performance.now()
+      const solution = await highs.solve()
+      solveMs = performance.now() - solveStartedAt
+      status = solution.status
+      objectiveValue =
+        typeof solution.objective === 'number' &&
+        Number.isFinite(solution.objective)
+          ? solution.objective
+          : null
+    } finally {
+      highs.free()
+    }
+
+    return {
+      built,
+      profile: {
+        assignmentVariableCount: built.yByCustomerRecipe.size,
+        groupedProductionVariableCount:
+          built.groupedProductionUnitsByAssignmentGroupKey.size,
+        recipeProductionVariableCount: built.xByRecipeId.size,
+        buildMs,
+        serializeMs,
+        parseMs,
+        solveMs,
+        status,
+        objectiveValue,
+      },
+    }
+  }
+
+  const wasteBuilt = buildHighsStage(
+    domain,
+    'productionUnits',
+    [],
+    { aggregateEquivalentAssignments: true },
+  )
+  const wasteSolution = await wasteBuilt.model.solve()
+  if (wasteSolution.status !== 'optimal') {
+    throw new Error(
+      `Grouped minimum-waste continuation profile ended with status: ${wasteSolution.status}`,
+    )
+  }
+  const productionUnits = Math.round(
+    requiredFiniteNumber(
+      wasteSolution.objective,
+      'grouped minimum-waste continuation objective',
+    ),
+  )
+
+  const maximumCost = await profileStage(
+    () => buildHighsStage(
+      domain,
+      'negativeAssignedIngredientCost',
+      [{ objective: 'productionUnits', value: productionUnits }],
+      {
+        aggregateEquivalentMaximumCostAssignments: true,
+        aggregateEquivalentMaximumCostProductionUnits: true,
+      },
+    ),
+    Math.max(20, timeLimitSeconds),
+  )
+  if (
+    maximumCost.profile.status !== 'optimal' ||
+    maximumCost.profile.objectiveValue === null
+  ) {
+    throw new Error(
+      `Grouped maximum-cost continuation profile ended with status: ${maximumCost.profile.status}`,
+    )
+  }
+  const maximumCostOptimum = Math.round(
+    maximumCost.profile.objectiveValue,
+  )
+  const maximumCostFixes: ObjectiveFix[] = [
+    { objective: 'productionUnits', value: productionUnits },
+    {
+      objective: 'negativeAssignedIngredientCost',
+      value: maximumCostOptimum,
+    },
+  ]
+
+  const costGeneric = await profileStage(
+    () => buildHighsStage(
+      domain,
+      'cost',
+      maximumCostFixes,
+    ),
+    timeLimitSeconds,
+  )
+  const costGrouped = await profileStage(
+    () => buildHighsStage(
+      domain,
+      'cost',
+      maximumCostFixes,
+      {
+        aggregateEquivalentMaximumCostAssignments: true,
+        aggregateEquivalentMaximumCostProductionUnits: true,
+      },
+    ),
+    timeLimitSeconds,
+  )
+
+  let machineGeneric: StageProfile | null = null
+  let machineGrouped: StageProfile | null = null
+  if (
+    costGrouped.profile.status === 'optimal' &&
+    costGrouped.profile.objectiveValue !== null
+  ) {
+    const machineFixes: ObjectiveFix[] = [
+      ...maximumCostFixes,
+      {
+        objective: 'cost',
+        value: Math.round(costGrouped.profile.objectiveValue),
+      },
+    ]
+    machineGeneric = (
+      await profileStage(
+        () => buildHighsStage(
+          domain,
+          'machineOperations',
+          machineFixes,
+        ),
+        timeLimitSeconds,
+      )
+    ).profile
+    machineGrouped = (
+      await profileStage(
+        () => buildHighsStage(
+          domain,
+          'machineOperations',
+          machineFixes,
+          {
+            aggregateEquivalentMaximumCostAssignments: true,
+          },
+        ),
+        timeLimitSeconds,
+      )
+    ).profile
+  }
+
+  return {
+    productionUnits,
+    maximumCostOptimum,
+    costGeneric: costGeneric.profile,
+    costGrouped: costGrouped.profile,
+    machineGeneric,
+    machineGrouped,
+  }
+}
+
 
 function selectedRecipeUnits(
   domain: BatchOptimizationModel,
