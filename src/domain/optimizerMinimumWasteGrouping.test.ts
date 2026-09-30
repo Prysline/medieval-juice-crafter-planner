@@ -151,7 +151,7 @@ describe('minimum-waste equivalent-assignment grouping', () => {
     ).toBe(false)
   })
 
-  it('uses the grouped waste optimum only as a fix before restoring recipe-specific maximum-cost assignment', async () => {
+  it('keeps different-cost recipe identities distinct while grouping exact maximum-cost assignments', async () => {
     const result = await optimizeBatchPlan(
       request(
         ['a', 'b'],
@@ -224,7 +224,10 @@ describe('minimum-waste equivalent-assignment grouping', () => {
 
     const allNonempty = await optimizeBatchPlan(
       {
-        ...request(['a']),
+        ...request(
+          ['a'],
+          ['minimum-waste', 'maximum-ingredient-cost'],
+        ),
         initialAvailableJuiceJars: [
           { recipeId: 'stocked', servings: 1 },
         ],
@@ -235,7 +238,10 @@ describe('minimum-waste equivalent-assignment grouping', () => {
 
     const hardLimit = await optimizeBatchPlan(
       {
-        ...request(['a']),
+        ...request(
+          ['a'],
+          ['minimum-waste', 'maximum-ingredient-cost'],
+        ),
         initialAvailableJuiceJars: [
           { recipeId: null, servings: 0 },
         ],
