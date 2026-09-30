@@ -1420,6 +1420,34 @@ function buildPostMaximumIngredientCostPairParityStage(
   }
 }
 
+async function tryPostMaximumIngredientCostPairParityOptimum(
+  domain: BatchOptimizationModel,
+  fixes: ObjectiveFix[],
+): Promise<number | null> {
+  if (
+    postMaximumIngredientCostGroupedProductionSlackUpperBound(
+      domain,
+      fixes,
+    ) === null
+  ) {
+    return null
+  }
+
+  const built = buildPostMaximumIngredientCostPairParityStage(
+    domain,
+    fixes,
+  )
+  const solution = await built.model.solve()
+  if (solution.status !== 'optimal') return null
+
+  return Math.round(
+    requiredFiniteNumber(
+      solution.objective,
+      'post-maximum-cost pair-parity objective',
+    ),
+  )
+}
+
 
 export async function profilePostMaximumCostGenericContinuation(
   domain: BatchOptimizationModel,
@@ -2329,6 +2357,22 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
         }
       }
 
+      if (objectiveKey === 'cost') {
+        const pairParityOptimum =
+          await tryPostMaximumIngredientCostPairParityOptimum(
+            stageDomain,
+            fixes,
+          )
+        if (pairParityOptimum !== null) {
+          fixes.push({
+            objective: objectiveKey,
+            value: pairParityOptimum,
+          })
+          currentDomain = continuationDomain
+          continue
+        }
+      }
+
       let usingMinimumWasteGrouping =
         objectiveIndex === 0 &&
         objectiveKey === 'productionUnits' &&
@@ -2343,16 +2387,6 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
       let usingMaximumIngredientCostProductionGrouping =
         usingMaximumIngredientCostGrouping &&
         maximumIngredientCostGroupedProductionIsSafe(stageDomain)
-      const postMaximumIngredientCostProductionSlackUpperBound =
-        objectiveKey === 'cost'
-          ? postMaximumIngredientCostGroupedProductionSlackUpperBound(
-              stageDomain,
-              fixes,
-            )
-          : null
-      let usingPostMaximumIngredientCostProductionGrouping =
-        postMaximumIngredientCostProductionSlackUpperBound !== null
-
       let built = buildHighsStage(
         stageDomain,
         objectiveKey,
@@ -2362,15 +2396,9 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
           aggregateEquivalentAssignments:
             usingMinimumWasteGrouping,
           aggregateEquivalentMaximumCostAssignments:
-            usingMaximumIngredientCostGrouping ||
-            usingPostMaximumIngredientCostProductionGrouping,
+            usingMaximumIngredientCostGrouping,
           aggregateEquivalentMaximumCostProductionUnits:
-            usingMaximumIngredientCostProductionGrouping ||
-            usingPostMaximumIngredientCostProductionGrouping,
-          maximumCostGroupedProductionExactSlack:
-            usingPostMaximumIngredientCostProductionGrouping
-              ? postMaximumIngredientCostProductionSlackUpperBound!
-              : undefined,
+            usingMaximumIngredientCostProductionGrouping,
         },
       )
       let solution = await built.model.solve()
@@ -2378,15 +2406,13 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
       if (
         (
           usingMinimumWasteGrouping ||
-          usingMaximumIngredientCostGrouping ||
-          usingPostMaximumIngredientCostProductionGrouping
+          usingMaximumIngredientCostGrouping
         ) &&
         solution.status !== 'optimal'
       ) {
         usingMinimumWasteGrouping = false
         usingMaximumIngredientCostGrouping = false
         usingMaximumIngredientCostProductionGrouping = false
-        usingPostMaximumIngredientCostProductionGrouping = false
         built = buildHighsStage(
           stageDomain,
           objectiveKey,
