@@ -1300,8 +1300,12 @@ export async function profileMaximumIngredientCostContinuationStages(
 ): Promise<{
   productionUnits: number
   maximumCostOptimum: number
-  costGeneric: StageProfile
-  costGrouped: StageProfile
+  assignedIngredientCost: number
+  slackServings: number
+  minimumRecipeCost: number
+  costLowerBound: number | null
+  witnessProductionCost: number
+  costCertificateCloses: boolean
   machineGeneric: StageProfile | null
   machineGrouped: StageProfile | null
 }> {
@@ -1408,46 +1412,69 @@ export async function profileMaximumIngredientCostContinuationStages(
   const maximumCostOptimum = Math.round(
     maximumCost.profile.objectiveValue,
   )
-  const maximumCostFixes: ObjectiveFix[] = [
-    { objective: 'productionUnits', value: productionUnits },
-    {
-      objective: 'negativeAssignedIngredientCost',
-      value: maximumCostOptimum,
-    },
-  ]
+  const assignedIngredientCost = -maximumCostOptimum
+  const slackServings =
+    productionUnits * 2 - domain.serviceableCustomerIds.length
+  const minimumRecipeCost = Math.min(
+    ...domain.recipes
+      .filter((recipe) => recipe.eligibleCustomerIds.length > 0)
+      .map((recipe) => recipe.juiceUnitIngredientCost),
+  )
+  const costLowerBound =
+    slackServings === 1 &&
+    domain.recipes.every(
+      (recipe) => (recipe.initialFinishedServings ?? 0) === 0,
+    )
+      ? (assignedIngredientCost + minimumRecipeCost) / 2
+      : null
 
-  const costGeneric = await profileStage(
-    () => buildHighsStage(
-      domain,
-      'cost',
-      maximumCostFixes,
-    ),
-    timeLimitSeconds,
-  )
-  const costGrouped = await profileStage(
-    () => buildHighsStage(
-      domain,
-      'cost',
-      maximumCostFixes,
-      {
-        aggregateEquivalentMaximumCostAssignments: true,
-        aggregateEquivalentMaximumCostProductionUnits: true,
-      },
-    ),
-    timeLimitSeconds,
-  )
+  const witnessSolution = await maximumCost.built.model.solve()
+  if (witnessSolution.status !== 'optimal') {
+    throw new Error(
+      `Grouped maximum-cost witness ended with status: ${witnessSolution.status}`,
+    )
+  }
+  let witnessProductionCost = 0
+  for (const [
+    groupKey,
+    variable,
+  ] of maximumCost.built.groupedProductionUnitsByAssignmentGroupKey) {
+    const separatorIndex = groupKey.lastIndexOf('\u001d')
+    if (separatorIndex < 0) {
+      throw new Error('Maximum-cost profiling group is missing cost identity')
+    }
+    const ingredientCost = Number(
+      groupKey.slice(separatorIndex + 1),
+    )
+    if (!Number.isFinite(ingredientCost)) {
+      throw new Error('Maximum-cost profiling group has invalid cost identity')
+    }
+    const units = Math.round(
+      requiredFiniteNumber(
+        witnessSolution.getValue(variable),
+        `grouped production units ${groupKey}`,
+      ),
+    )
+    witnessProductionCost += units * ingredientCost
+  }
+
+  const costCertificateCloses =
+    costLowerBound !== null &&
+    Number.isInteger(costLowerBound) &&
+    witnessProductionCost === costLowerBound
 
   let machineGeneric: StageProfile | null = null
   let machineGrouped: StageProfile | null = null
-  if (
-    costGrouped.profile.status === 'optimal' &&
-    costGrouped.profile.objectiveValue !== null
-  ) {
+  if (costCertificateCloses) {
     const machineFixes: ObjectiveFix[] = [
-      ...maximumCostFixes,
+      { objective: 'productionUnits', value: productionUnits },
+      {
+        objective: 'negativeAssignedIngredientCost',
+        value: maximumCostOptimum,
+      },
       {
         objective: 'cost',
-        value: Math.round(costGrouped.profile.objectiveValue),
+        value: witnessProductionCost,
       },
     ]
     machineGeneric = (
@@ -1478,13 +1505,16 @@ export async function profileMaximumIngredientCostContinuationStages(
   return {
     productionUnits,
     maximumCostOptimum,
-    costGeneric: costGeneric.profile,
-    costGrouped: costGrouped.profile,
+    assignedIngredientCost,
+    slackServings,
+    minimumRecipeCost,
+    costLowerBound,
+    witnessProductionCost,
+    costCertificateCloses,
     machineGeneric,
     machineGrouped,
   }
 }
-
 
 function selectedRecipeUnits(
   domain: BatchOptimizationModel,
