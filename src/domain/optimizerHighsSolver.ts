@@ -1278,6 +1278,124 @@ function buildHighsStage(
 
 
 
+function buildPostMaximumIngredientCostCompactParityStage(
+  domain: BatchOptimizationModel,
+  fixes: ObjectiveFix[],
+) {
+  const globalSlack =
+    postMaximumIngredientCostGroupedProductionSlackUpperBound(
+      domain,
+      fixes,
+    )
+  if (globalSlack === null) {
+    throw new Error(
+      'Post-maximum-cost compact parity preconditions are not satisfied',
+    )
+  }
+
+  const groups = new Map<
+    string,
+    {
+      key: string
+      eligibleCustomerIds: string[]
+      ingredientCost: number
+    }
+  >()
+  for (const recipe of domain.recipes) {
+    const eligibleCustomerIds = [
+      ...recipe.eligibleCustomerIds,
+    ].sort()
+    const ingredientCost = recipe.juiceUnitIngredientCost
+    const key =
+      `${eligibleCustomerIds.join('\\u001e')}\\u001d${ingredientCost}`
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        eligibleCustomerIds,
+        ingredientCost,
+      })
+    }
+  }
+
+  const groupList = [...groups.values()]
+  const model = new Model()
+  const assignmentsByGroupKey = new Map<
+    string,
+    BoolVariable[]
+  >(
+    groupList.map((group) => [group.key, []]),
+  )
+  const assignedCostTerms: ReturnType<BoolVariable['times']>[] = []
+
+  domain.serviceableCustomerIds.forEach(
+    (customerId, customerIndex) => {
+      const customerAssignments: BoolVariable[] = []
+      groupList.forEach((group, groupIndex) => {
+        if (!group.eligibleCustomerIds.includes(customerId)) return
+        const y = model.boolVar(
+          `compact_y_${customerIndex}_${groupIndex}`,
+        )
+        customerAssignments.push(y)
+        assignmentsByGroupKey.get(group.key)!.push(y)
+        assignedCostTerms.push(y.times(group.ingredientCost))
+      })
+      model.addConstraint(
+        sum(...customerAssignments).eq(1),
+        `compact_customer_${customerIndex}`,
+      )
+    },
+  )
+
+  const productionUnitVars: IntVariable[] = []
+  const oddSlackVars: BoolVariable[] = []
+  const oddCostTerms: ReturnType<BoolVariable['times']>[] = []
+
+  groupList.forEach((group, groupIndex) => {
+    const x = model.intVar(
+      0,
+      Math.ceil(group.eligibleCustomerIds.length / 2),
+      `compact_x_${groupIndex}`,
+    )
+    const odd = model.boolVar(`compact_odd_${groupIndex}`)
+    productionUnitVars.push(x)
+    oddSlackVars.push(odd)
+    oddCostTerms.push(odd.times(group.ingredientCost))
+
+    model.addConstraint(
+      x.times(2)
+        .minus(sum(...(assignmentsByGroupKey.get(group.key) ?? [])))
+        .minus(odd)
+        .eq(0),
+      `compact_parity_${groupIndex}`,
+    )
+  })
+
+  model.addConstraint(
+    sum(...productionUnitVars).eq(fixes[0].value),
+    'compact_production_units_fix',
+  )
+  model.addConstraint(
+    sum(...assignedCostTerms).eq(-fixes[1].value),
+    'compact_assigned_cost_fix',
+  )
+  model.addConstraint(
+    sum(...oddSlackVars).eq(globalSlack),
+    'compact_odd_slack_total',
+  )
+  model.minimize(sum(...oddCostTerms))
+
+  return {
+    model,
+    groupCount: groupList.length,
+    assignmentVariableCount:
+      [...assignmentsByGroupKey.values()].reduce(
+        (total, vars) => total + vars.length,
+        0,
+      ),
+  }
+}
+
+
 function buildPostMaximumIngredientCostPairParityStage(
   domain: BatchOptimizationModel,
   fixes: ObjectiveFix[],
@@ -1604,7 +1722,7 @@ export async function profilePostMaximumCostGenericContinuation(
 
   const productionCostBuildStartedAt = performance.now()
   const productionCostBuilt =
-    buildPostMaximumIngredientCostPairParityStage(
+    buildPostMaximumIngredientCostCompactParityStage(
       domain,
       fixes,
     )
@@ -1665,20 +1783,23 @@ export async function profilePostMaximumCostGenericContinuation(
     maximumCostAssignmentVariableCount:
       maximumCostBuilt.yByCustomerRecipe.size,
     productionCostAssignmentVariableCount:
-      productionCostBuilt.pairVariableCount +
-      productionCostBuilt.singletonVariableCount,
+      productionCostBuilt.assignmentVariableCount,
     productionCostGroupCount,
-    productionCostPairVariableCount:
-      productionCostBuilt.pairVariableCount,
+    productionCostPairVariableCount: 0,
     productionCostSingletonVariableCount:
-      productionCostBuilt.singletonVariableCount,
+      productionCostBuilt.assignmentVariableCount,
     productionCostBuildMs,
     productionCostSerializeMs: productionCostSolved.serializeMs,
     productionCostParseMs: productionCostSolved.parseMs,
     productionCostSolveMs: productionCostSolved.solveMs,
     productionCostStatus: productionCostSolved.status,
     productionCostObjectiveValue:
-      productionCostSolved.objectiveValue,
+      productionCostSolved.objectiveValue === null
+        ? null
+        : (
+            -maximumIngredientCostFix +
+            productionCostSolved.objectiveValue
+          ) / 2,
     machineAssignmentVariableCount,
     machineRecipeVariableCount,
     machineBuildMs,
