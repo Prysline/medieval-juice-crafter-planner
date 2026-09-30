@@ -1306,6 +1306,7 @@ export async function profileMaximumIngredientCostContinuationStages(
   costLowerBound: number | null
   witnessProductionCost: number
   costCertificateCloses: boolean
+  costGroupedLong: StageProfile
   machineGeneric: StageProfile | null
   machineGrouped: StageProfile | null
 }> {
@@ -1463,9 +1464,32 @@ export async function profileMaximumIngredientCostContinuationStages(
     Number.isInteger(costLowerBound) &&
     witnessProductionCost === costLowerBound
 
+  const maximumCostFixes: ObjectiveFix[] = [
+    { objective: 'productionUnits', value: productionUnits },
+    {
+      objective: 'negativeAssignedIngredientCost',
+      value: maximumCostOptimum,
+    },
+  ]
+  const costGroupedLongResult = await profileStage(
+    () => buildHighsStage(
+      domain,
+      'cost',
+      maximumCostFixes,
+      {
+        aggregateEquivalentMaximumCostAssignments: true,
+        aggregateEquivalentMaximumCostProductionUnits: true,
+      },
+    ),
+    Math.max(60, timeLimitSeconds),
+  )
+
   let machineGeneric: StageProfile | null = null
   let machineGrouped: StageProfile | null = null
-  if (costCertificateCloses) {
+  if (
+    costGroupedLongResult.profile.status === 'optimal' &&
+    costGroupedLongResult.profile.objectiveValue !== null
+  ) {
     const machineFixes: ObjectiveFix[] = [
       { objective: 'productionUnits', value: productionUnits },
       {
@@ -1474,7 +1498,9 @@ export async function profileMaximumIngredientCostContinuationStages(
       },
       {
         objective: 'cost',
-        value: witnessProductionCost,
+        value: Math.round(
+          costGroupedLongResult.profile.objectiveValue,
+        ),
       },
     ]
     machineGeneric = (
@@ -1511,6 +1537,7 @@ export async function profileMaximumIngredientCostContinuationStages(
     costLowerBound,
     witnessProductionCost,
     costCertificateCloses,
+    costGroupedLong: costGroupedLongResult.profile,
     machineGeneric,
     machineGrouped,
   }
