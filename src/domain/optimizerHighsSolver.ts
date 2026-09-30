@@ -1,4 +1,4 @@
-import { Model, sum } from '@bubblyworld/highs-ts'
+import { HiGHS, Model, sum } from '@bubblyworld/highs-ts'
 import { PROCESSING_STACK_CAPACITY } from './inventoryRules'
 import { juiceStateIdentity } from './juiceStateIdentity'
 import {
@@ -44,6 +44,271 @@ const PRODUCTION_CERTIFICATE_RECIPE_COUNT_GATE = 3000
 interface ObjectiveFix {
   objective: ObjectiveKey
   value: number
+}
+
+export interface OptimizerSolveStageProfile {
+  objective: string
+  fixCount: number
+  recipeCount: number
+  customerCount: number
+  assignmentVariableCount: number
+  variableCount: number
+  constraintCount: number
+  buildMs: number
+  serializeMs: number
+  wasmCreateMs: number
+  parseMs: number
+  solveMs: number
+  status: string
+  objectiveValue: number | null
+  usingMinimumCostCertificate: boolean
+  aggregateEquivalentAssignments: boolean
+}
+
+export interface OptimizerSolveProfile {
+  priorities: OptimizationCriterion[]
+  stages: OptimizerSolveStageProfile[]
+  totalMs: number
+  stoppedAtObjective: string | null
+}
+
+function mpsModelDimensions(mps: string): {
+  variableCount: number
+  constraintCount: number
+} {
+  const variables = new Set<string>()
+  let section = ''
+  let constraintCount = 0
+
+  for (const rawLine of mps.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!line) continue
+    if (
+      line === 'ROWS' ||
+      line === 'COLUMNS' ||
+      line === 'RHS' ||
+      line === 'BOUNDS' ||
+      line === 'RANGES' ||
+      line === 'ENDATA'
+    ) {
+      section = line
+      continue
+    }
+
+    const parts = line.split(/\s+/)
+    if (section === 'ROWS') {
+      if (parts[0] !== 'N') constraintCount += 1
+      continue
+    }
+
+    if (section === 'COLUMNS') {
+      if (parts.includes("'MARKER'")) continue
+      if (parts[0]) variables.add(parts[0])
+    }
+  }
+
+  return {
+    variableCount: variables.size,
+    constraintCount,
+  }
+}
+
+async function solveProfileStage(
+  built: ReturnType<typeof buildHighsStage>,
+  stageTimeLimitSeconds: number,
+): Promise<{
+  serializeMs: number
+  wasmCreateMs: number
+  parseMs: number
+  solveMs: number
+  status: string
+  objectiveValue: number | null
+  variableCount: number
+  constraintCount: number
+}> {
+  const serializeStartedAt = performance.now()
+  const mps = built.model.print('mps')
+  const serializeMs = performance.now() - serializeStartedAt
+  const dimensions = mpsModelDimensions(mps)
+
+  const wasmStartedAt = performance.now()
+  const highs = await HiGHS.create()
+  const wasmCreateMs = performance.now() - wasmStartedAt
+
+  let parseMs = 0
+  let solveMs = 0
+  let status = 'unknown'
+  let objectiveValue: number | null = null
+
+  try {
+    const parseStartedAt = performance.now()
+    await highs.parse(mps, 'mps')
+    parseMs = performance.now() - parseStartedAt
+
+    const realTimeLimit = Number.isInteger(stageTimeLimitSeconds)
+      ? stageTimeLimitSeconds + 1e-6
+      : stageTimeLimitSeconds
+    highs.setParam('time_limit', Math.max(0.1, realTimeLimit))
+
+    const solveStartedAt = performance.now()
+    const solution = await highs.solve()
+    solveMs = performance.now() - solveStartedAt
+    status = solution.status
+    objectiveValue =
+      typeof solution.objective === 'number' &&
+      Number.isFinite(solution.objective)
+        ? solution.objective
+        : null
+  } finally {
+    highs.free()
+  }
+
+  return {
+    serializeMs,
+    wasmCreateMs,
+    parseMs,
+    solveMs,
+    status,
+    objectiveValue,
+    ...dimensions,
+  }
+}
+
+export async function profileOptimizerSolveStages(
+  domain: BatchOptimizationModel,
+  priorities: OptimizationCriterion[],
+  options: {
+    stageTimeLimitSeconds?: number
+    maxStages?: number
+    aggregateEquivalentAssignmentsForProductionUnits?: boolean
+    initialProductionUnitsFix?: number
+  } = {},
+): Promise<OptimizerSolveProfile> {
+  const startedAt = performance.now()
+  const eligibleRecipeIds = new Set(
+    domain.recipes.map((recipe) => recipe.candidate.id),
+  )
+  const includeInitialJarReleaseTieBreak =
+    normalizedInitialCarriedJuiceJars(domain.request).some(
+      (jar) =>
+        Boolean(jar.recipeId) &&
+        jar.servings > 0 &&
+        eligibleRecipeIds.has(jar.recipeId ?? ''),
+    )
+  const allowPartialAssignments =
+    domain.request.materialSourceMode === 'inventory-only'
+  const objectives = objectiveOrder(
+    priorities,
+    includeInitialJarReleaseTieBreak,
+    allowPartialAssignments,
+  )
+  const stageTimeLimitSeconds =
+    options.stageTimeLimitSeconds ?? 12.5
+  const fixes: ObjectiveFix[] =
+    typeof options.initialProductionUnitsFix === 'number'
+      ? [{
+          objective: 'productionUnits',
+          value: Math.max(
+            0,
+            Math.round(options.initialProductionUnitsFix),
+          ),
+        }]
+      : []
+  const stages: OptimizerSolveStageProfile[] = []
+  let currentDomain = domain
+  let stoppedAtObjective: string | null = null
+
+  for (
+    let objectiveIndex = 0;
+    objectiveIndex < objectives.length;
+    objectiveIndex += 1
+  ) {
+    if (
+      typeof options.maxStages === 'number' &&
+      stages.length >= options.maxStages
+    ) {
+      break
+    }
+
+    const objectiveKey = objectives[objectiveIndex]
+    let stageDomain = currentDomain
+    let continuationDomain = currentDomain
+    let usingMinimumCostCertificate = false
+
+    if (objectiveIndex === 0 && objectiveKey === 'cost') {
+      const certificate = prepareMinimumCostStageCertificate(domain)
+      if (
+        certificate &&
+        certificate.representativeRecipeCount <
+          certificate.originalRecipeCount
+      ) {
+        stageDomain = certificate.stageDomain
+        continuationDomain = certificate.continuationDomain
+        usingMinimumCostCertificate = true
+      }
+    }
+
+    const aggregateEquivalentAssignments =
+      Boolean(
+        options.aggregateEquivalentAssignmentsForProductionUnits,
+      ) && objectiveKey === 'productionUnits'
+
+    const buildStartedAt = performance.now()
+    const built = buildHighsStage(
+      stageDomain,
+      objectiveKey,
+      fixes,
+      {
+        allowUnassignedCustomers: allowPartialAssignments,
+        aggregateEquivalentAssignments,
+      },
+    )
+    const buildMs = performance.now() - buildStartedAt
+    const solved = await solveProfileStage(
+      built,
+      stageTimeLimitSeconds,
+    )
+
+    stages.push({
+      objective: objectiveKey,
+      fixCount: fixes.length,
+      recipeCount: stageDomain.recipes.length,
+      customerCount: stageDomain.serviceableCustomerIds.length,
+      assignmentVariableCount: built.yByCustomerRecipe.size,
+      variableCount: solved.variableCount,
+      constraintCount: solved.constraintCount,
+      buildMs,
+      serializeMs: solved.serializeMs,
+      wasmCreateMs: solved.wasmCreateMs,
+      parseMs: solved.parseMs,
+      solveMs: solved.solveMs,
+      status: solved.status,
+      objectiveValue: solved.objectiveValue,
+      usingMinimumCostCertificate,
+      aggregateEquivalentAssignments,
+    })
+
+    if (
+      solved.status !== 'optimal' ||
+      solved.objectiveValue === null
+    ) {
+      stoppedAtObjective = objectiveKey
+      break
+    }
+
+    fixes.push({
+      objective: objectiveKey,
+      value: Math.round(solved.objectiveValue),
+    })
+    currentDomain = continuationDomain
+  }
+
+  return {
+    priorities: [...priorities],
+    stages,
+    totalMs: performance.now() - startedAt,
+    stoppedAtObjective,
+  }
 }
 
 function requiredFiniteNumber(
