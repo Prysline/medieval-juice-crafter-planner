@@ -272,21 +272,21 @@ function coarseNonfinalBucketKey(
 
   if (edge.kind === 'juicing') {
     return scheme === 'ingredient-aware'
-      ? \`juicing:\${edge.equipment}:\${edge.addedIngredientId ?? ''}\`
-      : \`juicing:\${edge.equipment}\`
+      ? `juicing:${edge.equipment}:${edge.addedIngredientId ?? ''}`
+      : `juicing:${edge.equipment}`
   }
 
   if (edge.kind === 'seasoning') {
     return scheme === 'ingredient-aware'
-      ? \`seasoning:\${edge.equipment}:len\${edge.toIngredientIds.length}:add:\${edge.addedIngredientId ?? ''}\`
-      : \`seasoning:\${edge.equipment}:len\${edge.toIngredientIds.length}\`
+      ? `seasoning:${edge.equipment}:len${edge.toIngredientIds.length}:add:${edge.addedIngredientId ?? ''}`
+      : `seasoning:${edge.equipment}:len${edge.toIngredientIds.length}`
   }
 
   const secondaryLength =
     edge.secondaryFromIngredientIds?.length ?? 0
   return scheme === 'ingredient-aware'
-    ? \`blending:\${edge.fromIngredientIds.length}+\${secondaryLength}->\${edge.toIngredientIds.length}:front:\${edge.fromIngredientIds[0] ?? ''}:back:\${edge.secondaryFromIngredientIds?.[0] ?? ''}\`
-    : \`blending:\${edge.fromIngredientIds.length}+\${secondaryLength}->\${edge.toIngredientIds.length}\`
+    ? `blending:${edge.fromIngredientIds.length}+${secondaryLength}->${edge.toIngredientIds.length}:front:${edge.fromIngredientIds[0] ?? ''}:back:${edge.secondaryFromIngredientIds?.[0] ?? ''}`
+    : `blending:${edge.fromIngredientIds.length}+${secondaryLength}->${edge.toIngredientIds.length}`
 }
 
 function coarseNonfinalSignature(
@@ -308,7 +308,7 @@ function coarseNonfinalSignature(
   return {
     signature: [...multiplicityByBucket.entries()]
       .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, count]) => \`\${key}*\${count}\`)
+      .map(([key, count]) => `${key}*${count}`)
       .join('\\u001f'),
     multiplicityByBucket,
   }
@@ -346,7 +346,7 @@ function buildCoarseNonfinalQuotient(
       })
     }
     const coarse = coarseNonfinalSignature(recipe, scheme)
-    const mKey = \`\${aKey}\\u001c\${coarse.signature}\`
+    const mKey = `${aKey}\\u001c${coarse.signature}`
     if (!machineGroups.has(mKey)) {
       machineGroups.set(mKey, {
         assignmentKey: aKey,
@@ -365,7 +365,7 @@ function buildCoarseNonfinalQuotient(
     const customerTerms: ReturnType<Model['numVar']>[] = []
     ;[...assignmentGroups.values()].forEach((group, groupIndex) => {
       if (!group.eligibleCustomerIds.includes(customerId)) return
-      const y = model.numVar(0, 1, \`y_\${customerIndex}_\${groupIndex}\`)
+      const y = model.numVar(0, 1, `y_${customerIndex}_${groupIndex}`)
       customerTerms.push(y)
       const groupTerms = assignmentsByGroup.get(group.key)
       if (groupTerms) groupTerms.push(y)
@@ -374,7 +374,7 @@ function buildCoarseNonfinalQuotient(
     })
     model.addConstraint(
       sum(...customerTerms).eq(1),
-      \`customer_\${customerIndex}\`,
+      `customer_${customerIndex}`,
     )
   })
 
@@ -386,7 +386,7 @@ function buildCoarseNonfinalQuotient(
     const x = model.intVar(
       0,
       Math.max(1, Math.ceil(group.eligibleCustomerIds.length / 2)),
-      \`x_\${index}\`,
+      `x_${index}`,
     )
     xByMachineGroup.set(key, x)
     productionUnitTerms.push(x)
@@ -401,7 +401,7 @@ function buildCoarseNonfinalQuotient(
       sum(...(assignmentsByGroup.get(group.key) ?? []))
         .minus(sum(...capacityTerms))
         .leq(0),
-      \`capacity_\${index}\`,
+      `capacity_${index}`,
     )
   })
 
@@ -426,15 +426,15 @@ function buildCoarseNonfinalQuotient(
   const operationTerms: ReturnType<Model['intVar']>[] = []
   ;[...quantityTermsByBucket.entries()].forEach(
     ([, quantityTerms], index) => {
-      const op = model.intVar(0, 69, \`coarse_op_\${index}\`)
+      const op = model.intVar(0, 69, `coarse_op_${index}`)
       const quantity = sum(...quantityTerms)
       model.addConstraint(
         quantity.minus(op.times(PROCESSING_STACK_CAPACITY)).leq(0),
-        \`coarse_op_capacity_\${index}\`,
+        `coarse_op_capacity_${index}`,
       )
       model.addConstraint(
         op.minus(quantity).leq(0),
-        \`coarse_op_usage_\${index}\`,
+        `coarse_op_usage_${index}`,
       )
       operationTerms.push(op)
     },
