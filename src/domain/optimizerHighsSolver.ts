@@ -5,6 +5,7 @@ import {
   finalizingEdgesAreRecipeIdentityUnique,
   machineOperationBreakdownForSelection,
   minimumRecipeKindsFromFinalizingBound,
+  prepareMaximumIngredientCostStageCertificate,
   prepareMinimumCostStageCertificate,
   repairMachineOperationWitness,
   type RecipeUnitSelection,
@@ -1823,6 +1824,27 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
         }
       }
 
+      let usingMaximumIngredientCostCertificate = false
+      let maximumIngredientCostUpperBound: number | null = null
+
+      if (
+        objectiveKey === 'negativeAssignedIngredientCost' &&
+        !allowPartialAssignments
+      ) {
+        const certificate =
+          prepareMaximumIngredientCostStageCertificate(stageDomain)
+        if (
+          certificate &&
+          certificate.certificateAssignmentCount <
+            certificate.originalAssignmentCount
+        ) {
+          stageDomain = certificate.stageDomain
+          continuationDomain = currentDomain
+          usingMaximumIngredientCostCertificate = true
+          maximumIngredientCostUpperBound = certificate.upperBound
+        }
+      }
+
       let usingMinimumWasteGrouping =
         objectiveIndex === 0 &&
         objectiveKey === 'productionUnits' &&
@@ -1840,6 +1862,39 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
         },
       )
       let solution = await built.model.solve()
+
+      if (usingMaximumIngredientCostCertificate) {
+        const certificateClosed =
+          solution.status === 'optimal' &&
+          maximumIngredientCostUpperBound !== null &&
+          Math.round(
+            requiredFiniteNumber(
+              solution.objective,
+              'maximum ingredient cost certificate objective',
+            ),
+          ) === -maximumIngredientCostUpperBound &&
+          verifiedAssignmentCount(
+            stageDomain,
+            built,
+            solution,
+          ) === stageDomain.serviceableCustomerIds.length
+
+        if (!certificateClosed) {
+          stageDomain = currentDomain
+          continuationDomain = currentDomain
+          usingMaximumIngredientCostCertificate = false
+          maximumIngredientCostUpperBound = null
+          built = buildHighsStage(
+            currentDomain,
+            objectiveKey,
+            fixes,
+            {
+              allowUnassignedCustomers: allowPartialAssignments,
+            },
+          )
+          solution = await built.model.solve()
+        }
+      }
 
       if (
         usingMinimumWasteGrouping &&
