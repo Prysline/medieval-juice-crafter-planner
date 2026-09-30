@@ -64,6 +64,53 @@ describe('delivery checkbox and whole-plan application contract', () => {
     )
   })
 
+  it('replans stale success through the current canonical input pipeline', () => {
+    expect(optimizerToolsSource).toContain(
+      'onReplan={runOptimizer}',
+    )
+    expect(optimizerToolsSource).toContain(
+      'materialSourceMode={materialSourceMode}',
+    )
+    expect(optimizerToolsSource).toContain(
+      'customerCount={customerIds.length}',
+    )
+
+    const runStart = optimizerToolsSource.indexOf(
+      'async function runOptimizer()',
+    )
+    const runEnd = optimizerToolsSource.indexOf(
+      'function cancelOptimizer()',
+      runStart,
+    )
+    const runSource = optimizerToolsSource.slice(runStart, runEnd)
+
+    expect(runStart).toBeGreaterThanOrEqual(0)
+    expect(runEnd).toBeGreaterThan(runStart)
+    expect(runSource).toContain('customerIds,')
+    expect(runSource).toContain('currentProgress,')
+    expect(runSource).toContain('suppliedCustomerIds,')
+    expect(runSource).toContain('satisfactionByVillage,')
+    expect(runSource).toContain('formalCustomerIds,')
+    expect(runSource).toContain(
+      'ingredientUnits: { ...inventoryState.ingredientUnits }',
+    )
+    expect(runSource).toContain(
+      '...(inventoryState.intermediateJuiceUnits ?? {})',
+    )
+    expect(runSource).toContain(
+      'initialAvailableJuiceJars: accessibleJuiceJars.map',
+    )
+    expect(runSource).toContain(
+      'buildPreparationShortfall(\n        preparationDemand,\n        inventoryState,',
+    )
+    expect(runSource).toContain(
+      'basis: {\n              inventory: inventoryState,\n              currentProgress,\n              satisfactionByVillage,\n              formalCustomerIds,\n              suppliedCustomerIds,',
+    )
+    expect(runSource).not.toContain(
+      'visibleStaleSuccessReference.run',
+    )
+  })
+
   it('keeps stale success reference when a new optimizer run fails', () => {
     const runStart = optimizerToolsSource.indexOf(
       'async function runOptimizer()',
