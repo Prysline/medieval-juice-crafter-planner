@@ -1543,6 +1543,174 @@ export async function profileMaximumIngredientCostContinuationStages(
   }
 }
 
+export async function profileMaximumIngredientCostParityCostStage(
+  domain: BatchOptimizationModel,
+  productionUnits: number,
+  maximumCostOptimum: number,
+  timeLimitSeconds = 20,
+): Promise<StageProfile & {
+  groupCount: number
+  oddSlackCount: number
+  productionCostObjective: number | null
+}> {
+  if (
+    domain.request.materialSourceMode === 'inventory-only' ||
+    domain.recipes.some(
+      (recipe) =>
+        recipe.maxProductionUnits !== undefined ||
+        (recipe.initialFinishedServings ?? 0) > 0,
+    )
+  ) {
+    throw new Error('Parity-cost profiling fixture is not safe')
+  }
+
+  const groups = new Map<
+    string,
+    {
+      key: string
+      eligibleCustomerIds: string[]
+      ingredientCost: number
+    }
+  >()
+  for (const recipe of domain.recipes) {
+    const eligibleCustomerIds = [...recipe.eligibleCustomerIds].sort()
+    const serviceKey = eligibleCustomerIds.join('\u001e')
+    const key =
+      `${serviceKey}\u001d${recipe.juiceUnitIngredientCost}`
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        eligibleCustomerIds,
+        ingredientCost: recipe.juiceUnitIngredientCost,
+      })
+    }
+  }
+  const assignmentGroups = [...groups.values()]
+  const model = new Model()
+  const yByCustomerGroup = new Map<string, BoolVariable>()
+  const oddByGroup = new Map<string, BoolVariable>()
+
+  const buildStartedAt = performance.now()
+  domain.serviceableCustomerIds.forEach(
+    (customerId, customerIndex) => {
+      const variables: BoolVariable[] = []
+      assignmentGroups.forEach((group, groupIndex) => {
+        if (!group.eligibleCustomerIds.includes(customerId)) return
+        const y = model.boolVar(
+          `parity_y_${customerIndex}_${groupIndex}`,
+        )
+        yByCustomerGroup.set(
+          `${customerId}\u001f${group.key}`,
+          y,
+        )
+        variables.push(y)
+      })
+      model.addConstraint(
+        sum(...variables).eq(1),
+        `parity_customer_${customerIndex}`,
+      )
+    },
+  )
+
+  const assignedCostTerms: ReturnType<BoolVariable['times']>[] = []
+  const oddCostTerms: ReturnType<BoolVariable['times']>[] = []
+  assignmentGroups.forEach((group, groupIndex) => {
+    const assignmentVars = group.eligibleCustomerIds.flatMap(
+      (customerId) => {
+        const y = yByCustomerGroup.get(
+          `${customerId}\u001f${group.key}`,
+        )
+        if (!y) return []
+        assignedCostTerms.push(y.times(group.ingredientCost))
+        return [y]
+      },
+    )
+    const half = model.intVar(
+      0,
+      Math.floor(group.eligibleCustomerIds.length / 2),
+      `parity_half_${groupIndex}`,
+    )
+    const odd = model.boolVar(`parity_odd_${groupIndex}`)
+    oddByGroup.set(group.key, odd)
+    oddCostTerms.push(odd.times(group.ingredientCost))
+    model.addConstraint(
+      sum(...assignmentVars)
+        .minus(half.times(2))
+        .minus(odd)
+        .eq(0),
+      `parity_group_${groupIndex}`,
+    )
+  })
+
+  const assignedIngredientCost = -maximumCostOptimum
+  model.addConstraint(
+    sum(...assignedCostTerms).eq(assignedIngredientCost),
+    'parity_maximum_cost_fix',
+  )
+  const oddSlackCount =
+    productionUnits * 2 - domain.serviceableCustomerIds.length
+  model.addConstraint(
+    sum(...oddByGroup.values()).eq(oddSlackCount),
+    'parity_slack_count',
+  )
+  model.minimize(sum(...oddCostTerms))
+  const buildMs = performance.now() - buildStartedAt
+
+  const serializeStartedAt = performance.now()
+  const mps = model.print('mps')
+  const serializeMs = performance.now() - serializeStartedAt
+
+  const highs = await HiGHS.create()
+  let parseMs = 0
+  let solveMs = 0
+  let status = 'unknown'
+  let objectiveValue: number | null = null
+  try {
+    const parseStartedAt = performance.now()
+    await highs.parse(mps, 'mps')
+    parseMs = performance.now() - parseStartedAt
+    highs.setParam(
+      'time_limit',
+      Math.max(
+        0.1,
+        Number.isInteger(timeLimitSeconds)
+          ? timeLimitSeconds + 1e-6
+          : timeLimitSeconds,
+      ),
+    )
+    const solveStartedAt = performance.now()
+    const solution = await highs.solve()
+    solveMs = performance.now() - solveStartedAt
+    status = solution.status
+    objectiveValue =
+      typeof solution.objective === 'number' &&
+      Number.isFinite(solution.objective)
+        ? solution.objective
+        : null
+  } finally {
+    highs.free()
+  }
+
+  return {
+    assignmentVariableCount: yByCustomerGroup.size,
+    groupedProductionVariableCount: 0,
+    recipeProductionVariableCount: 0,
+    groupCount: assignmentGroups.length,
+    oddSlackCount,
+    buildMs,
+    serializeMs,
+    parseMs,
+    solveMs,
+    status,
+    objectiveValue,
+    productionCostObjective:
+      objectiveValue === null
+        ? null
+        : (assignedIngredientCost + objectiveValue) / 2,
+  }
+}
+
+
 function selectedRecipeUnits(
   domain: BatchOptimizationModel,
   built: ReturnType<typeof buildHighsStage>,
