@@ -44,28 +44,20 @@ it(
     })
     const domainBuildMs = performance.now() - domainBuildStartedAt
 
+    const profileStartedAt = performance.now()
     const profile =
       await profilePostMaximumCostGenericContinuation(model, 10.5)
-
-    const { highsSolverAdapter } =
-      await import('./optimizerHighsSolver')
-    const fullStartedAt = performance.now()
-    let fullEndToEndStatus = 'optimal'
-    try {
-      await highsSolverAdapter.solve(
-        model,
-        request.priorities!,
-      )
-    } catch (error) {
-      fullEndToEndStatus =
-        error instanceof Error ? error.message : String(error)
-    }
-    const fullEndToEndMs = performance.now() - fullStartedAt
+    const boundedContinuationMs =
+      performance.now() - profileStartedAt
 
     console.info(
       '[post-maximum-cost-after]',
       JSON.stringify({
         domainBuildMs: Math.round(domainBuildMs),
+        boundedContinuationMs: Math.round(boundedContinuationMs),
+        boundedEndToEndThroughMachineBlockerMs: Math.round(
+          domainBuildMs + boundedContinuationMs,
+        ),
         ...profile,
         productionCostBuildMs:
           Math.round(profile.productionCostBuildMs),
@@ -91,8 +83,6 @@ it(
           profile.machineSolveMs === null
             ? null
             : Math.round(profile.machineSolveMs),
-        fullEndToEndMs: Math.round(fullEndToEndMs),
-        fullEndToEndStatus,
       }),
     )
 
