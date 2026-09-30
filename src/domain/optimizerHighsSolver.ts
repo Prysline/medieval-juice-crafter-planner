@@ -1306,7 +1306,7 @@ function buildPostMaximumIngredientCostPairParityStage(
     ].sort()
     const ingredientCost = recipe.juiceUnitIngredientCost
     const key =
-      \`\${eligibleCustomerIds.join('\u001e')}\u001d\${ingredientCost}\`
+      `${eligibleCustomerIds.join('\u001e')}\u001d${ingredientCost}`
     if (!groups.has(key)) {
       groups.set(key, {
         eligibleCustomerIds,
@@ -1339,7 +1339,7 @@ function buildPostMaximumIngredientCostPairParityStage(
     const terms = coverageTermsByCustomerId.get(customerId)
     if (!terms) {
       throw new Error(
-        \`Pair parity stage referenced unknown customer \${customerId}\`,
+        `Pair parity stage referenced unknown customer ${customerId}`,
       )
     }
     terms.push(variable)
@@ -1351,7 +1351,7 @@ function buildPostMaximumIngredientCostPairParityStage(
     if (globalSlack === 1) {
       eligibleCustomerIds.forEach((customerId, customerIndex) => {
         const singleton = model.boolVar(
-          \`single_\${groupIndex}_\${customerIndex}\`,
+          `single_${groupIndex}_${customerIndex}`,
         )
         singletonVars.push(singleton)
         productionUnitVars.push(singleton)
@@ -1373,7 +1373,7 @@ function buildPostMaximumIngredientCostPairParityStage(
         rightIndex += 1
       ) {
         const pair = model.boolVar(
-          \`pair_\${groupIndex}_\${leftIndex}_\${rightIndex}\`,
+          `pair_${groupIndex}_${leftIndex}_${rightIndex}`,
         )
         pairVariableCount += 1
         productionUnitVars.push(pair)
@@ -1390,7 +1390,7 @@ function buildPostMaximumIngredientCostPairParityStage(
       model.addConstraint(
         sum(...(coverageTermsByCustomerId.get(customerId) ?? []))
           .eq(1),
-        \`pair_cover_\${customerIndex}\`,
+        `pair_cover_${customerIndex}`,
       )
     },
   )
