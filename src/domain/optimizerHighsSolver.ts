@@ -315,6 +315,11 @@ function buildHighsStage(
     )
   }
 
+  // A maximum-cost assignment group is exact only when every member
+  // recipe has both the same service set and the same assignment-cost
+  // coefficient. Customer identities can then move freely between recipes
+  // inside the group without changing eligibility or the Stage 2 objective.
+  // Real recipe identities are restored by the next lexicographic stage.
   const shouldGroupAssignments =
     options.aggregateEquivalentAssignments ||
     options.aggregateEquivalentMaximumCostAssignments
@@ -360,6 +365,10 @@ function buildHighsStage(
     : null
 
   if (options.aggregateEquivalentMaximumCostProductionUnits) {
+    // With recipe-specific production constraints disabled, X_group is
+    // exactly the sum of the original integer recipe x variables in this
+    // equivalence class. The global productionUnits fix and pooled capacity
+    // preserve the same feasible set; later stages restore individual x.
     if (!assignmentGroups) {
       throw new Error(
         'Maximum-cost production grouping requires assignment groups',
