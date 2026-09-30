@@ -363,7 +363,7 @@ describe('minimum-waste equivalent-assignment grouping', () => {
     expect(result.metrics.totalIngredientCost).toBe(40)
   })
 
-  it('restores real recipe identity after grouped maximum-cost and production-cost stages', async () => {
+  it('restores real recipe identity for later machine-operation tie-breaks', async () => {
     const simple = recipe('simple', ['檸檬'], ['甜味'])
     const complex = recipe('complex', ['檸檬'], ['甜味'])
     const recipes: EligibleOptimizationRecipe[] = [

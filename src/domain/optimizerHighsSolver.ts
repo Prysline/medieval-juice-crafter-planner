@@ -1,4 +1,4 @@
-import { HiGHS, Model, sum } from '@bubblyworld/highs-ts'
+import { Model, sum } from '@bubblyworld/highs-ts'
 import { PROCESSING_STACK_CAPACITY } from './inventoryRules'
 import { juiceStateIdentity } from './juiceStateIdentity'
 import {
@@ -105,7 +105,6 @@ interface HighsStageOptions {
   aggregateEquivalentAssignments?: boolean
   aggregateEquivalentMaximumCostAssignments?: boolean
   aggregateEquivalentMaximumCostProductionUnits?: boolean
-  maximumCostGroupedProductionExactSlack?: number
   tightenRecipeBoundsFromMinimumCostFix?: boolean
   tightenOperationBoundsFromRecipeBounds?: boolean
   machineOperationKinds?: Set<ProductionStepKind>
@@ -163,7 +162,7 @@ function maximumIngredientCostGroupedProductionIsSafe(
   )
 }
 
-function postMaximumIngredientCostGroupedProductionSlackUpperBound(
+function postMaximumIngredientCostPairParitySlack(
   domain: BatchOptimizationModel,
   fixes: ObjectiveFix[],
 ): number | null {
@@ -314,22 +313,6 @@ function buildHighsStage(
   ) {
     throw new Error(
       'Maximum-cost production grouping requires maximum-cost assignment grouping',
-    )
-  }
-
-  if (
-    options.maximumCostGroupedProductionExactSlack !== undefined &&
-    (
-      !options.aggregateEquivalentMaximumCostProductionUnits ||
-      !Number.isInteger(
-        options.maximumCostGroupedProductionExactSlack,
-      ) ||
-      options.maximumCostGroupedProductionExactSlack < 0 ||
-      options.maximumCostGroupedProductionExactSlack > 1
-    )
-  ) {
-    throw new Error(
-      'Maximum-cost grouped production parity requires grouped production and an exact global slack of zero or one',
     )
   }
 
@@ -700,8 +683,6 @@ function buildHighsStage(
   }
 
   if (assignmentGroups) {
-    const groupedProductionParitySlackVars: BoolVariable[] = []
-
     domain.serviceableCustomerIds.forEach(
       (customerId, customerIndex) => {
         const assignmentVars: BoolVariable[] = []
@@ -763,48 +744,13 @@ function buildHighsStage(
         0,
       )
 
-      const assignedServings = sum(...assignmentVars)
       model.addConstraint(
-        assignedServings
+        sum(...assignmentVars)
           .minus(sum(...capacityTerms))
           .leq(finishedServings),
         `capacity_${groupIndex}`,
       )
-
-      if (
-        groupedProductionUnits &&
-        options.maximumCostGroupedProductionExactSlack !== undefined
-      ) {
-        if (finishedServings !== 0) {
-          throw new Error(
-            'Maximum-cost grouped production parity requires zero initial finished servings',
-          )
-        }
-        const paritySlack = model.boolVar(
-          `capacity_parity_slack_${groupIndex}`,
-        )
-        groupedProductionParitySlackVars.push(paritySlack)
-        model.addConstraint(
-          groupedProductionUnits
-            .times(2)
-            .minus(assignedServings)
-            .minus(paritySlack)
-            .eq(0),
-          `capacity_parity_${groupIndex}`,
-        )
-      }
     })
-
-    if (
-      options.maximumCostGroupedProductionExactSlack !== undefined
-    ) {
-      model.addConstraint(
-        sum(...groupedProductionParitySlackVars).eq(
-          options.maximumCostGroupedProductionExactSlack,
-        ),
-        'capacity_parity_slack_total',
-      )
-    }
   } else {
     domain.serviceableCustomerIds.forEach(
       (customerId, customerIndex) => {
@@ -969,23 +915,10 @@ function buildHighsStage(
     'negativeKnownGrossProfit',
   )
     ? sum(
-        ...(groupedProductionUnitsByAssignmentGroupKey.size > 0 &&
-        assignmentGroups
-          ? assignmentGroups.flatMap((group) => {
-              const x =
-                groupedProductionUnitsByAssignmentGroupKey.get(
-                  group.key,
-                )
-              return x && group.ingredientCost !== undefined
-                ? [x.times(group.ingredientCost)]
-                : []
-            })
-          : domain.recipes.flatMap((recipe) => {
-              const x = xByRecipeId.get(recipe.candidate.id)
-              return x
-                ? [x.times(recipe.juiceUnitIngredientCost)]
-                : []
-            })),
+        ...domain.recipes.flatMap((recipe) => {
+          const x = xByRecipeId.get(recipe.candidate.id)
+          return x ? [x.times(recipe.juiceUnitIngredientCost)] : []
+        }),
       )
     : undefined
 
@@ -1276,135 +1209,12 @@ function buildHighsStage(
 }
 
 
-
-
-function buildPostMaximumIngredientCostCompactParityStage(
-  domain: BatchOptimizationModel,
-  fixes: ObjectiveFix[],
-) {
-  const globalSlack =
-    postMaximumIngredientCostGroupedProductionSlackUpperBound(
-      domain,
-      fixes,
-    )
-  if (globalSlack === null) {
-    throw new Error(
-      'Post-maximum-cost compact parity preconditions are not satisfied',
-    )
-  }
-
-  const groups = new Map<
-    string,
-    {
-      key: string
-      eligibleCustomerIds: string[]
-      ingredientCost: number
-    }
-  >()
-  for (const recipe of domain.recipes) {
-    const eligibleCustomerIds = [
-      ...recipe.eligibleCustomerIds,
-    ].sort()
-    const ingredientCost = recipe.juiceUnitIngredientCost
-    const key =
-      `${eligibleCustomerIds.join('\\u001e')}\\u001d${ingredientCost}`
-    if (!groups.has(key)) {
-      groups.set(key, {
-        key,
-        eligibleCustomerIds,
-        ingredientCost,
-      })
-    }
-  }
-
-  const groupList = [...groups.values()]
-  const model = new Model()
-  const assignmentsByGroupKey = new Map<
-    string,
-    BoolVariable[]
-  >(
-    groupList.map((group) => [group.key, []]),
-  )
-  const assignedCostTerms: ReturnType<BoolVariable['times']>[] = []
-
-  domain.serviceableCustomerIds.forEach(
-    (customerId, customerIndex) => {
-      const customerAssignments: BoolVariable[] = []
-      groupList.forEach((group, groupIndex) => {
-        if (!group.eligibleCustomerIds.includes(customerId)) return
-        const y = model.boolVar(
-          `compact_y_${customerIndex}_${groupIndex}`,
-        )
-        customerAssignments.push(y)
-        assignmentsByGroupKey.get(group.key)!.push(y)
-        assignedCostTerms.push(y.times(group.ingredientCost))
-      })
-      model.addConstraint(
-        sum(...customerAssignments).eq(1),
-        `compact_customer_${customerIndex}`,
-      )
-    },
-  )
-
-  const productionUnitVars: IntVariable[] = []
-  const oddSlackVars: BoolVariable[] = []
-  const oddCostTerms: ReturnType<BoolVariable['times']>[] = []
-
-  groupList.forEach((group, groupIndex) => {
-    const x = model.intVar(
-      0,
-      Math.ceil(group.eligibleCustomerIds.length / 2),
-      `compact_x_${groupIndex}`,
-    )
-    const odd = model.boolVar(`compact_odd_${groupIndex}`)
-    productionUnitVars.push(x)
-    oddSlackVars.push(odd)
-    oddCostTerms.push(odd.times(group.ingredientCost))
-
-    model.addConstraint(
-      x.times(2)
-        .minus(sum(...(assignmentsByGroupKey.get(group.key) ?? [])))
-        .minus(odd)
-        .eq(0),
-      `compact_parity_${groupIndex}`,
-    )
-  })
-
-  model.addConstraint(
-    sum(...productionUnitVars).eq(fixes[0].value),
-    'compact_production_units_fix',
-  )
-  model.addConstraint(
-    sum(...assignedCostTerms).eq(-fixes[1].value),
-    'compact_assigned_cost_fix',
-  )
-  model.addConstraint(
-    sum(...oddSlackVars).eq(globalSlack),
-    'compact_odd_slack_total',
-  )
-  model.minimize(sum(...oddCostTerms))
-
-  return {
-    model,
-    groupCount: groupList.length,
-    assignmentVariableCount:
-      [...assignmentsByGroupKey.values()].reduce(
-        (total, vars) => total + vars.length,
-        0,
-      ),
-  }
-}
-
-
 function buildPostMaximumIngredientCostPairParityStage(
   domain: BatchOptimizationModel,
   fixes: ObjectiveFix[],
 ) {
   const globalSlack =
-    postMaximumIngredientCostGroupedProductionSlackUpperBound(
-      domain,
-      fixes,
-    )
+    postMaximumIngredientCostPairParitySlack(domain, fixes)
   if (globalSlack === null) {
     throw new Error(
       'Post-maximum-cost pair parity preconditions are not satisfied',
@@ -1447,8 +1257,6 @@ function buildPostMaximumIngredientCostPairParityStage(
   const assignedCostTerms: ReturnType<BoolVariable['times']>[] = []
   const singletonVars: BoolVariable[] = []
   const productionUnitVars: BoolVariable[] = []
-  let pairVariableCount = 0
-  let singletonVariableCount = 0
 
   const addCoverage = (
     customerId: string,
@@ -1473,7 +1281,6 @@ function buildPostMaximumIngredientCostPairParityStage(
         )
         singletonVars.push(singleton)
         productionUnitVars.push(singleton)
-        singletonVariableCount += 1
         addCoverage(customerId, singleton)
         assignedCostTerms.push(singleton.times(ingredientCost))
         productionCostTerms.push(singleton.times(ingredientCost))
@@ -1493,7 +1300,6 @@ function buildPostMaximumIngredientCostPairParityStage(
         const pair = model.boolVar(
           `pair_${groupIndex}_${leftIndex}_${rightIndex}`,
         )
-        pairVariableCount += 1
         productionUnitVars.push(pair)
         addCoverage(eligibleCustomerIds[leftIndex], pair)
         addCoverage(eligibleCustomerIds[rightIndex], pair)
@@ -1530,12 +1336,7 @@ function buildPostMaximumIngredientCostPairParityStage(
   )
   model.minimize(sum(...productionCostTerms))
 
-  return {
-    model,
-    groupCount: groups.size,
-    pairVariableCount,
-    singletonVariableCount,
-  }
+  return { model }
 }
 
 async function tryPostMaximumIngredientCostPairParityOptimum(
@@ -1543,10 +1344,7 @@ async function tryPostMaximumIngredientCostPairParityOptimum(
   fixes: ObjectiveFix[],
 ): Promise<number | null> {
   if (
-    postMaximumIngredientCostGroupedProductionSlackUpperBound(
-      domain,
-      fixes,
-    ) === null
+    postMaximumIngredientCostPairParitySlack(domain, fixes) === null
   ) {
     return null
   }
@@ -1564,250 +1362,6 @@ async function tryPostMaximumIngredientCostPairParityOptimum(
       'post-maximum-cost pair-parity objective',
     ),
   )
-}
-
-
-export async function profilePostMaximumCostGenericContinuation(
-  domain: BatchOptimizationModel,
-  timeLimitSeconds = 10.5,
-): Promise<{
-  recipeCount: number
-  customerCount: number
-  minimumWasteOptimum: number
-  maximumIngredientCostOptimum: number
-  maximumCostAssignmentVariableCount: number
-  productionCostAssignmentVariableCount: number
-  productionCostGroupCount: number
-  productionCostPairVariableCount: number
-  productionCostSingletonVariableCount: number
-  productionCostBuildMs: number
-  productionCostSerializeMs: number
-  productionCostParseMs: number
-  productionCostSolveMs: number
-  productionCostStatus: string
-  productionCostObjectiveValue: number | null
-  machineAssignmentVariableCount: number
-  machineRecipeVariableCount: number
-  machineBuildMs: number | null
-  machineSerializeMs: number | null
-  machineParseMs: number | null
-  machineSolveMs: number | null
-  machineStatus: string | null
-  machineObjectiveValue: number | null
-}> {
-  if (!maximumIngredientCostGroupedProductionIsSafe(domain)) {
-    throw new Error(
-      'Current profiling fixture is not safe for grouped continuation',
-    )
-  }
-
-  async function solveBounded(
-    built: { model: Model },
-  ): Promise<{
-    serializeMs: number
-    parseMs: number
-    solveMs: number
-    status: string
-    objectiveValue: number | null
-  }> {
-    const serializeStartedAt = performance.now()
-    const mps = built.model.print('mps')
-    const serializeMs = performance.now() - serializeStartedAt
-    const highs = await HiGHS.create()
-    let parseMs = 0
-    let solveMs = 0
-    let status = 'unknown'
-    let objectiveValue: number | null = null
-
-    try {
-      const parseStartedAt = performance.now()
-      await highs.parse(mps, 'mps')
-      parseMs = performance.now() - parseStartedAt
-      highs.setParam(
-        'time_limit',
-        Math.max(
-          0.1,
-          Number.isInteger(timeLimitSeconds)
-            ? timeLimitSeconds + 1e-6
-            : timeLimitSeconds,
-        ),
-      )
-      const solveStartedAt = performance.now()
-      const solution = await highs.solve()
-      solveMs = performance.now() - solveStartedAt
-      status = solution.status
-      objectiveValue =
-        typeof solution.objective === 'number' &&
-        Number.isFinite(solution.objective)
-          ? solution.objective
-          : null
-    } finally {
-      highs.free()
-    }
-
-    return {
-      serializeMs,
-      parseMs,
-      solveMs,
-      status,
-      objectiveValue,
-    }
-  }
-
-  const wasteBuilt = buildHighsStage(
-    domain,
-    'productionUnits',
-    [],
-    { aggregateEquivalentAssignments: true },
-  )
-  const wasteSolution = await wasteBuilt.model.solve()
-  if (wasteSolution.status !== 'optimal') {
-    throw new Error(
-      `Grouped minimum-waste profiling stage ended with status: ${wasteSolution.status}`,
-    )
-  }
-  const minimumWasteOptimum = Math.round(
-    requiredFiniteNumber(
-      wasteSolution.objective,
-      'grouped minimum-waste profiling objective',
-    ),
-  )
-
-  const maximumCostBuilt = buildHighsStage(
-    domain,
-    'negativeAssignedIngredientCost',
-    [{
-      objective: 'productionUnits',
-      value: minimumWasteOptimum,
-    }],
-    {
-      aggregateEquivalentMaximumCostAssignments: true,
-      aggregateEquivalentMaximumCostProductionUnits: true,
-    },
-  )
-  const maximumCostSolution = await maximumCostBuilt.model.solve()
-  if (maximumCostSolution.status !== 'optimal') {
-    throw new Error(
-      `Grouped maximum-cost profiling stage ended with status: ${maximumCostSolution.status}`,
-    )
-  }
-  const maximumIngredientCostFix = Math.round(
-    requiredFiniteNumber(
-      maximumCostSolution.objective,
-      'grouped maximum-cost profiling objective',
-    ),
-  )
-
-  const fixes: ObjectiveFix[] = [
-    {
-      objective: 'productionUnits',
-      value: minimumWasteOptimum,
-    },
-    {
-      objective: 'negativeAssignedIngredientCost',
-      value: maximumIngredientCostFix,
-    },
-  ]
-
-  const productionCostSlackUpperBound =
-    postMaximumIngredientCostGroupedProductionSlackUpperBound(
-      domain,
-      fixes,
-    )
-  if (productionCostSlackUpperBound === null) {
-    throw new Error(
-      'Current profiling fixture does not satisfy exact production-cost parity preconditions',
-    )
-  }
-
-  const productionCostBuildStartedAt = performance.now()
-  const productionCostBuilt =
-    buildPostMaximumIngredientCostCompactParityStage(
-      domain,
-      fixes,
-    )
-  const productionCostBuildMs =
-    performance.now() - productionCostBuildStartedAt
-  const productionCostSolved = await solveBounded(
-    productionCostBuilt,
-  )
-
-  const productionCostGroupCount =
-    productionCostBuilt.groupCount
-  const productionCostObjectiveValue =
-    productionCostSolved.objectiveValue === null
-      ? null
-      : (
-          -maximumIngredientCostFix +
-          productionCostSolved.objectiveValue
-        ) / 2
-
-  let machineAssignmentVariableCount = 0
-  let machineRecipeVariableCount = 0
-  let machineBuildMs: number | null = null
-  let machineSerializeMs: number | null = null
-  let machineParseMs: number | null = null
-  let machineSolveMs: number | null = null
-  let machineStatus: string | null = null
-  let machineObjectiveValue: number | null = null
-
-  if (
-    productionCostSolved.status === 'optimal' &&
-    productionCostObjectiveValue !== null
-  ) {
-    const machineFixes: ObjectiveFix[] = [
-      ...fixes,
-      {
-        objective: 'cost',
-        value: Math.round(productionCostObjectiveValue),
-      },
-    ]
-    const machineBuildStartedAt = performance.now()
-    const machineBuilt = buildHighsStage(
-      domain,
-      'machineOperations',
-      machineFixes,
-    )
-    machineBuildMs = performance.now() - machineBuildStartedAt
-    machineAssignmentVariableCount =
-      machineBuilt.yByCustomerRecipe.size
-    machineRecipeVariableCount = machineBuilt.xByRecipeId.size
-    const machineSolved = await solveBounded(machineBuilt)
-    machineSerializeMs = machineSolved.serializeMs
-    machineParseMs = machineSolved.parseMs
-    machineSolveMs = machineSolved.solveMs
-    machineStatus = machineSolved.status
-    machineObjectiveValue = machineSolved.objectiveValue
-  }
-
-  return {
-    recipeCount: domain.recipes.length,
-    customerCount: domain.serviceableCustomerIds.length,
-    minimumWasteOptimum,
-    maximumIngredientCostOptimum: -maximumIngredientCostFix,
-    maximumCostAssignmentVariableCount:
-      maximumCostBuilt.yByCustomerRecipe.size,
-    productionCostAssignmentVariableCount:
-      productionCostBuilt.assignmentVariableCount,
-    productionCostGroupCount,
-    productionCostPairVariableCount: 0,
-    productionCostSingletonVariableCount:
-      productionCostBuilt.assignmentVariableCount,
-    productionCostBuildMs,
-    productionCostSerializeMs: productionCostSolved.serializeMs,
-    productionCostParseMs: productionCostSolved.parseMs,
-    productionCostSolveMs: productionCostSolved.solveMs,
-    productionCostStatus: productionCostSolved.status,
-    productionCostObjectiveValue,
-    machineAssignmentVariableCount,
-    machineRecipeVariableCount,
-    machineBuildMs,
-    machineSerializeMs,
-    machineParseMs,
-    machineSolveMs,
-    machineStatus,
-    machineObjectiveValue,
-  }
 }
 
 
@@ -2507,6 +2061,7 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
       let usingMaximumIngredientCostProductionGrouping =
         usingMaximumIngredientCostGrouping &&
         maximumIngredientCostGroupedProductionIsSafe(stageDomain)
+
       let built = buildHighsStage(
         stageDomain,
         objectiveKey,
