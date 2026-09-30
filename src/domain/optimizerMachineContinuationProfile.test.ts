@@ -19,8 +19,6 @@ const GLOBAL_SERVING_SLACK =
   PRODUCTION_UNITS_FIX * 2 - SERVICEABLE_CUSTOMER_COUNT
 const SINGLETON_RECIPE_COST =
   PRODUCTION_COST_FIX * 2 - ASSIGNED_INGREDIENT_COST_FIX
-const CERTIFIED_THROUGH_SEASONING_RELAXED_LB = 26
-const CERTIFIED_FINALIZING_RELAXED_LB = 30
 
 function canonicalDomain(): BatchOptimizationModel {
   const currentProgress = 'liquid-blender-unlocked'
@@ -52,56 +50,15 @@ function canonicalDomain(): BatchOptimizationModel {
   })
 }
 
-function blendCount(
-  recipe: EligibleOptimizationRecipe,
-): 0 | 1 | 2 {
-  const count = recipe.productionPath.edges.filter(
-    (edge) => edge.kind === 'blending',
-  ).length
-  if (count < 0 || count > 2) {
-    throw new Error(
-      `Unexpected blend count ${count} for ${recipe.candidate.id}`,
-    )
-  }
-  return count as 0 | 1 | 2
-}
-
-function finalBlendEdgesAreRecipeIdentityUnique(
-  domain: BatchOptimizationModel,
-): boolean {
-  const seen = new Set<string>()
-
-  for (const recipe of domain.recipes) {
-    const blends = recipe.productionPath.edges.filter(
-      (edge) => edge.kind === 'blending',
-    )
-    if (blends.length === 0) continue
-    const finalBlend = blends.at(-1)
-    if (!finalBlend) return false
-    if (
-      finalBlend.toIngredientIds.join('\u001f') !==
-      recipe.productionPath.ingredientIds.join('\u001f')
-    ) {
-      return false
-    }
-    if (seen.has(finalBlend.key)) return false
-    seen.add(finalBlend.key)
-  }
-
-  return true
-}
-
-interface AssignmentGroup {
+interface PairGroup {
   key: string
+  recipes: EligibleOptimizationRecipe[]
   eligibleCustomerIds: string[]
   ingredientCost: number
-  availableBlendCounts: Set<0 | 1 | 2>
 }
 
-function assignmentGroups(
-  domain: BatchOptimizationModel,
-): AssignmentGroup[] {
-  const groups = new Map<string, AssignmentGroup>()
+function pairGroups(domain: BatchOptimizationModel): PairGroup[] {
+  const groups = new Map<string, PairGroup>()
 
   for (const recipe of domain.recipes) {
     const eligibleCustomerIds = [
@@ -111,14 +68,13 @@ function assignmentGroups(
     const key =
       `${eligibleCustomerIds.join('\u001e')}\u001d${ingredientCost}`
     const current = groups.get(key)
-    if (current) {
-      current.availableBlendCounts.add(blendCount(recipe))
-    } else {
+    if (current) current.recipes.push(recipe)
+    else {
       groups.set(key, {
         key,
+        recipes: [recipe],
         eligibleCustomerIds,
         ingredientCost,
-        availableBlendCounts: new Set([blendCount(recipe)]),
       })
     }
   }
@@ -126,136 +82,238 @@ function assignmentGroups(
   return [...groups.values()]
 }
 
-function buildBlendClassificationBound(
+async function findCostOptimalPairFeasibility(
   domain: BatchOptimizationModel,
-  includedBlendCounts: ReadonlySet<0 | 1 | 2>,
-) {
-  const groups = assignmentGroups(domain)
+): Promise<{
+  unitsByGroupKey: Map<string, number>
+  solveMs: number
+}> {
+  const groups = pairGroups(domain)
   const model = new Model()
-  const assignmentVarsByGroupKey = new Map<
+  const coverageByCustomerId = new Map<
     string,
-    ReturnType<Model['numVar']>[]
+    ReturnType<Model['boolVar']>[]
+  >(
+    domain.serviceableCustomerIds.map((customerId) => [
+      customerId,
+      [],
+    ]),
+  )
+  const unitVarsByGroupKey = new Map<
+    string,
+    ReturnType<Model['boolVar']>[]
   >(
     groups.map((group) => [group.key, []]),
   )
-  const assignedCostTerms: ReturnType<
-    ReturnType<Model['numVar']>['times']
-  >[] = []
-
-  domain.serviceableCustomerIds.forEach(
-    (customerId, customerIndex) => {
-      const customerTerms: ReturnType<Model['numVar']>[] = []
-      groups.forEach((group, groupIndex) => {
-        if (!group.eligibleCustomerIds.includes(customerId)) return
-        const y = model.numVar(
-          0,
-          1,
-          `y_${customerIndex}_${groupIndex}`,
-        )
-        customerTerms.push(y)
-        assignmentVarsByGroupKey.get(group.key)!.push(y)
-        assignedCostTerms.push(y.times(group.ingredientCost))
-      })
-      model.addConstraint(
-        sum(...customerTerms).eq(1),
-        `customer_${customerIndex}`,
-      )
-    },
-  )
-
-  const productionUnitTerms: ReturnType<Model['intVar']>[] = []
-  const productionCostTerms: ReturnType<
-    ReturnType<Model['intVar']>['times']
-  >[] = []
-  const includedUnitTerms: ReturnType<Model['intVar']>[] = []
+  const allUnitVars: ReturnType<Model['boolVar']>[] = []
   const singletonVars: ReturnType<Model['boolVar']>[] = []
-  let categoryVariableCount = 0
+  const assignedCostTerms: ReturnType<
+    ReturnType<Model['boolVar']>['times']
+  >[] = []
+
+  const addCoverage = (
+    customerId: string,
+    variable: ReturnType<Model['boolVar']>,
+  ) => {
+    const terms = coverageByCustomerId.get(customerId)
+    if (!terms) throw new Error(`Unknown customer ${customerId}`)
+    terms.push(variable)
+  }
 
   groups.forEach((group, groupIndex) => {
-    const xByBlendCount = new Map<
-      0 | 1 | 2,
-      ReturnType<Model['intVar']>
-    >()
-    const upperBound = Math.max(
-      1,
-      Math.ceil(group.eligibleCustomerIds.length / 2),
-    )
-
-    for (const count of [0, 1, 2] as const) {
-      if (!group.availableBlendCounts.has(count)) continue
-      const x = model.intVar(
-        0,
-        upperBound,
-        `x_${groupIndex}_b${count}`,
+    if (group.ingredientCost === SINGLETON_RECIPE_COST) {
+      group.eligibleCustomerIds.forEach(
+        (customerId, customerIndex) => {
+          const singleton = model.boolVar(
+            `single_${groupIndex}_${customerIndex}`,
+          )
+          singletonVars.push(singleton)
+          allUnitVars.push(singleton)
+          unitVarsByGroupKey.get(group.key)!.push(singleton)
+          addCoverage(customerId, singleton)
+          assignedCostTerms.push(
+            singleton.times(group.ingredientCost),
+          )
+        },
       )
-      xByBlendCount.set(count, x)
-      productionUnitTerms.push(x)
-      productionCostTerms.push(
-        x.times(group.ingredientCost),
-      )
-      if (includedBlendCounts.has(count)) {
-        includedUnitTerms.push(x)
-      }
-      categoryVariableCount += 1
     }
 
-    const groupUnits = sum(...xByBlendCount.values())
-    const assignedCustomers = sum(
-      ...(assignmentVarsByGroupKey.get(group.key) ?? []),
-    )
-
-    if (group.ingredientCost === SINGLETON_RECIPE_COST) {
-      const singleton = model.boolVar(
-        `singleton_${groupIndex}`,
-      )
-      singletonVars.push(singleton)
-      model.addConstraint(
-        groupUnits
-          .times(2)
-          .minus(assignedCustomers)
-          .minus(singleton)
-          .eq(0),
-        `group_capacity_${groupIndex}`,
-      )
-    } else {
-      model.addConstraint(
-        groupUnits
-          .times(2)
-          .minus(assignedCustomers)
-          .eq(0),
-        `group_capacity_${groupIndex}`,
-      )
+    for (
+      let leftIndex = 0;
+      leftIndex < group.eligibleCustomerIds.length;
+      leftIndex += 1
+    ) {
+      for (
+        let rightIndex = leftIndex + 1;
+        rightIndex < group.eligibleCustomerIds.length;
+        rightIndex += 1
+      ) {
+        const pair = model.boolVar(
+          `pair_${groupIndex}_${leftIndex}_${rightIndex}`,
+        )
+        allUnitVars.push(pair)
+        unitVarsByGroupKey.get(group.key)!.push(pair)
+        addCoverage(group.eligibleCustomerIds[leftIndex], pair)
+        addCoverage(group.eligibleCustomerIds[rightIndex], pair)
+        assignedCostTerms.push(
+          pair.times(group.ingredientCost * 2),
+        )
+      }
     }
   })
 
+  domain.serviceableCustomerIds.forEach(
+    (customerId, customerIndex) => {
+      model.addConstraint(
+        sum(...(coverageByCustomerId.get(customerId) ?? []))
+          .eq(1),
+        `cover_${customerIndex}`,
+      )
+    },
+  )
   model.addConstraint(
     sum(...singletonVars).eq(1),
     'singleton_total',
   )
   model.addConstraint(
-    sum(...productionUnitTerms).eq(PRODUCTION_UNITS_FIX),
+    sum(...allUnitVars).eq(PRODUCTION_UNITS_FIX),
     'production_units_fix',
-  )
-  model.addConstraint(
-    sum(...productionCostTerms).eq(PRODUCTION_COST_FIX),
-    'production_cost_fix',
   )
   model.addConstraint(
     sum(...assignedCostTerms).eq(ASSIGNED_INGREDIENT_COST_FIX),
     'assigned_cost_fix',
   )
+  // The fixed assigned cost plus the unique cost-43 singleton imply
+  // production cost (3853 + 43) / 2 = 1948 exactly. Keep the
+  // objective constant so this stage is pure feasibility.
+  model.minimize(sum(...allUnitVars))
 
-  model.maximize(sum(...includedUnitTerms))
+  const startedAt = performance.now()
+  const solution = await model.solve()
+  const solveMs = performance.now() - startedAt
+  if (solution.status !== 'optimal') {
+    throw new Error(
+      `Cost-optimal pair feasibility ended with ${solution.status}`,
+    )
+  }
+  expect(Math.round(solution.objective)).toBe(PRODUCTION_UNITS_FIX)
+
+  const unitsByGroupKey = new Map(
+    groups.map((group) => [
+      group.key,
+      (unitVarsByGroupKey.get(group.key) ?? []).reduce(
+        (total, variable) =>
+          total + (solution.getValue(variable) > 0.5 ? 1 : 0),
+        0,
+      ),
+    ]),
+  )
+  const productionCost = groups.reduce(
+    (total, group) =>
+      total +
+      (unitsByGroupKey.get(group.key) ?? 0) *
+        group.ingredientCost,
+    0,
+  )
+  expect(productionCost).toBe(PRODUCTION_COST_FIX)
+
+  return { unitsByGroupKey, solveMs }
+}
+
+function buildFixedGroupMachineStage(
+  domain: BatchOptimizationModel,
+  unitsByGroupKey: Map<string, number>,
+) {
+  const groups = pairGroups(domain)
+    .filter((group) => (unitsByGroupKey.get(group.key) ?? 0) > 0)
+  const model = new Model()
+  const xByRecipeId = new Map<string, ReturnType<Model['intVar']>>()
+  const quantityTermsByEdgeKey = new Map<
+    string,
+    ReturnType<ReturnType<Model['intVar']>['times']>[]
+  >()
+  const quantityUpperBoundByEdgeKey = new Map<string, number>()
+
+  let recipeVariableIndex = 0
+  for (const group of groups) {
+    const groupUnits = unitsByGroupKey.get(group.key) ?? 0
+    const groupRecipeVars: ReturnType<Model['intVar']>[] = []
+
+    for (const recipe of group.recipes) {
+      const x = model.intVar(
+        0,
+        groupUnits,
+        `x_${recipeVariableIndex}`,
+      )
+      recipeVariableIndex += 1
+      xByRecipeId.set(recipe.candidate.id, x)
+      groupRecipeVars.push(x)
+
+      const multiplicityByEdgeKey = new Map<string, number>()
+      for (const edge of recipe.productionPath.edges) {
+        multiplicityByEdgeKey.set(
+          edge.key,
+          (multiplicityByEdgeKey.get(edge.key) ?? 0) + 1,
+        )
+      }
+      for (const [edgeKey, multiplicity] of multiplicityByEdgeKey) {
+        const terms = quantityTermsByEdgeKey.get(edgeKey)
+        const term = x.times(multiplicity)
+        if (terms) terms.push(term)
+        else quantityTermsByEdgeKey.set(edgeKey, [term])
+        quantityUpperBoundByEdgeKey.set(
+          edgeKey,
+          (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) +
+            groupUnits * multiplicity,
+        )
+      }
+    }
+
+    model.addConstraint(
+      sum(...groupRecipeVars).eq(groupUnits),
+      `group_units_${groups.indexOf(group)}`,
+    )
+  }
+
+  const operationByEdgeKey = new Map<
+    string,
+    ReturnType<Model['intVar']>
+  >()
+  ;[...quantityTermsByEdgeKey.entries()].forEach(
+    ([edgeKey, quantityTerms], edgeIndex) => {
+      const operation = model.intVar(
+        0,
+        Math.max(
+          1,
+          Math.ceil(
+            (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) /
+              PROCESSING_STACK_CAPACITY,
+          ),
+        ),
+        `op_${edgeIndex}`,
+      )
+      operationByEdgeKey.set(edgeKey, operation)
+      const quantity = sum(...quantityTerms)
+      model.addConstraint(
+        quantity
+          .minus(operation.times(PROCESSING_STACK_CAPACITY))
+          .leq(0),
+        `op_capacity_${edgeIndex}`,
+      )
+      model.addConstraint(
+        operation.minus(quantity).leq(0),
+        `op_usage_${edgeIndex}`,
+      )
+    },
+  )
+
+  model.minimize(sum(...operationByEdgeKey.values()))
 
   return {
     model,
-    groupCount: groups.length,
-    assignmentVariableCount:
-      [...assignmentVarsByGroupKey.values()].reduce(
-        (total, vars) => total + vars.length,
-        0,
-      ),
-    categoryVariableCount,
+    selectedGroupCount: groups.length,
+    recipeVariableCount: xByRecipeId.size,
+    operationEdgeCount: operationByEdgeKey.size,
   }
 }
 
@@ -298,7 +356,7 @@ async function solveBounded(
 }
 
 it(
-  'profiles blend-classification bounds from unique final-blend edges',
+  'profiles exact recipe identity choice for one cost-optimal pair matching',
   async () => {
     const domain = canonicalDomain()
 
@@ -308,94 +366,31 @@ it(
     )
     expect(GLOBAL_SERVING_SLACK).toBe(1)
     expect(SINGLETON_RECIPE_COST).toBe(43)
-    expect(
-      finalBlendEdgesAreRecipeIdentityUnique(domain),
-    ).toBe(true)
 
-    const nonblendBuilt = buildBlendClassificationBound(
+    const pairing =
+      await findCostOptimalPairFeasibility(domain)
+
+    const buildStartedAt = performance.now()
+    const built = buildFixedGroupMachineStage(
       domain,
-      new Set([0]),
+      pairing.unitsByGroupKey,
     )
-    const nonblend = await solveBounded(nonblendBuilt.model)
-
-    const atMostOneBlendBuilt = buildBlendClassificationBound(
-      domain,
-      new Set([0, 1]),
-    )
-    const atMostOneBlend =
-      await solveBounded(atMostOneBlendBuilt.model)
-
-    const maxNonblendUnits =
-      nonblend.status === 'optimal' && nonblend.objective !== null
-        ? Math.round(nonblend.objective)
-        : null
-    const maxAtMostOneBlendUnits =
-      atMostOneBlend.status === 'optimal' &&
-      atMostOneBlend.objective !== null
-        ? Math.round(atMostOneBlend.objective)
-        : null
-    const finalBlendLowerBound =
-      maxNonblendUnits === null
-        ? null
-        : Math.max(
-            0,
-            CERTIFIED_FINALIZING_RELAXED_LB -
-              maxNonblendUnits,
-          )
-    const threeSegmentUnitLowerBound =
-      maxAtMostOneBlendUnits === null
-        ? null
-        : Math.max(
-            0,
-            PRODUCTION_UNITS_FIX -
-              maxAtMostOneBlendUnits,
-          )
-    const firstBlendLowerBound =
-      threeSegmentUnitLowerBound === null
-        ? null
-        : Math.ceil(
-            threeSegmentUnitLowerBound /
-              PROCESSING_STACK_CAPACITY,
-          )
-    const totalMachineLowerBound =
-      finalBlendLowerBound === null ||
-      firstBlendLowerBound === null
-        ? null
-        : (
-            CERTIFIED_THROUGH_SEASONING_RELAXED_LB +
-            CERTIFIED_FINALIZING_RELAXED_LB +
-            finalBlendLowerBound +
-            firstBlendLowerBound
-          )
+    const buildMs = performance.now() - buildStartedAt
+    const solved = await solveBounded(built.model)
 
     console.info(
-      '[machine-blend-classification-bound]',
+      '[machine-fixed-pair-groups]',
       JSON.stringify({
-        groupCount: nonblendBuilt.groupCount,
-        assignmentVariableCount:
-          nonblendBuilt.assignmentVariableCount,
-        categoryVariableCount:
-          nonblendBuilt.categoryVariableCount,
-        maxNonblend: {
-          status: nonblend.status,
-          objective: nonblend.objective,
-          solveMs: Math.round(nonblend.solveMs),
-        },
-        maxAtMostOneBlend: {
-          status: atMostOneBlend.status,
-          objective: atMostOneBlend.objective,
-          solveMs: Math.round(atMostOneBlend.solveMs),
-        },
-        maxNonblendUnits,
-        maxAtMostOneBlendUnits,
-        finalBlendLowerBound,
-        threeSegmentUnitLowerBound,
-        firstBlendLowerBound,
-        throughSeasoningLowerBound:
-          CERTIFIED_THROUGH_SEASONING_RELAXED_LB,
-        finalizingLowerBound:
-          CERTIFIED_FINALIZING_RELAXED_LB,
-        totalMachineLowerBound,
+        pairFeasibilitySolveMs: Math.round(pairing.solveMs),
+        selectedGroupCount: built.selectedGroupCount,
+        recipeVariableCount: built.recipeVariableCount,
+        operationEdgeCount: built.operationEdgeCount,
+        machineBuildMs: Math.round(buildMs),
+        serializeMs: Math.round(solved.serializeMs),
+        parseMs: Math.round(solved.parseMs),
+        solveMs: Math.round(solved.solveMs),
+        status: solved.status,
+        objective: solved.objective,
       }),
     )
   },
