@@ -1,7 +1,10 @@
 import { expect, it } from 'vitest'
 import { customers as canonicalCustomers } from '../data/customers'
 import { customerVillageIsAvailable } from './availability'
-import { profileGroupedMaximumIngredientCostStage } from './optimizerHighsSolver'
+import {
+  profileGroupedMaximumIngredientCostStage,
+  profileMaximumIngredientCostContinuationStages,
+} from './optimizerHighsSolver'
 import { buildOptimizationModel, type OptimizationRequest } from './optimizerModel'
 import { buildRecipeCandidatePool } from './recipeCandidatePool'
 
@@ -55,13 +58,61 @@ it(
     )
 
     expect(stageProfile.recipeCount).toBeGreaterThan(7000)
-    expect(stageProfile.customerCount).toBe(customerIds.length)
+    expect(stageProfile.customerCount).toBe(
+      model.serviceableCustomerIds.length,
+    )
     expect(stageProfile.minimumWasteOptimum).toBeGreaterThan(0)
     expect(stageProfile.assignmentVariableCount).toBeLessThan(49756)
     expect(stageProfile.groupedProductionVariableCount).toBeLessThan(
       stageProfile.recipeCount,
     )
     expect(stageProfile.status).toBe('optimal')
+
+    const continuation =
+      await profileMaximumIngredientCostContinuationStages(
+        model,
+        10.5,
+      )
+    console.info(
+      '[maximum-cost-continuation-profile]',
+      JSON.stringify({
+        productionUnits: continuation.productionUnits,
+        maximumCostOptimum: continuation.maximumCostOptimum,
+        costGeneric: {
+          ...continuation.costGeneric,
+          buildMs: Math.round(continuation.costGeneric.buildMs),
+          serializeMs: Math.round(continuation.costGeneric.serializeMs),
+          parseMs: Math.round(continuation.costGeneric.parseMs),
+          solveMs: Math.round(continuation.costGeneric.solveMs),
+        },
+        costGrouped: {
+          ...continuation.costGrouped,
+          buildMs: Math.round(continuation.costGrouped.buildMs),
+          serializeMs: Math.round(continuation.costGrouped.serializeMs),
+          parseMs: Math.round(continuation.costGrouped.parseMs),
+          solveMs: Math.round(continuation.costGrouped.solveMs),
+        },
+        machineGeneric: continuation.machineGeneric
+          ? {
+              ...continuation.machineGeneric,
+              buildMs: Math.round(continuation.machineGeneric.buildMs),
+              serializeMs: Math.round(continuation.machineGeneric.serializeMs),
+              parseMs: Math.round(continuation.machineGeneric.parseMs),
+              solveMs: Math.round(continuation.machineGeneric.solveMs),
+            }
+          : null,
+        machineGrouped: continuation.machineGrouped
+          ? {
+              ...continuation.machineGrouped,
+              buildMs: Math.round(continuation.machineGrouped.buildMs),
+              serializeMs: Math.round(continuation.machineGrouped.serializeMs),
+              parseMs: Math.round(continuation.machineGrouped.parseMs),
+              solveMs: Math.round(continuation.machineGrouped.solveMs),
+            }
+          : null,
+      }),
+    )
+    expect(continuation.costGrouped.status).toBe('optimal')
   },
   120000,
 )
