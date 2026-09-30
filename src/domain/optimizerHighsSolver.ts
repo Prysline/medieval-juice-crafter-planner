@@ -1059,6 +1059,14 @@ export async function profileMaximumIngredientCostAfterGroupedMinimumWaste(
   maximumCostSolveMs: number
   maximumCostStatus: string
   maximumCostObjectiveValue: number | null
+  certificateAssignmentVariableCount: number
+  certificateUpperBound: number
+  certificateBuildMs: number
+  certificateSerializeMs: number
+  certificateParseMs: number
+  certificateSolveMs: number
+  certificateStatus: string
+  certificateObjectiveValue: number | null
 }> {
   if (!minimumWasteEquivalentAssignmentGroupingIsSafe(domain)) {
     throw new Error('Current profiling fixture is not safe for grouped minimum-waste')
@@ -1087,15 +1095,66 @@ export async function profileMaximumIngredientCostAfterGroupedMinimumWaste(
       'grouped minimum-waste profiling objective',
     ),
   )
+  const fixes: ObjectiveFix[] = [{
+    objective: 'productionUnits',
+    value: minimumWasteOptimum,
+  }]
+
+  const certificate =
+    prepareMaximumIngredientCostStageCertificate(domain)
+  if (!certificate) {
+    throw new Error('Fresh-main profiling fixture did not produce a maximum-cost certificate domain')
+  }
+
+  const certificateBuildStartedAt = performance.now()
+  const certificateBuilt = buildHighsStage(
+    certificate.stageDomain,
+    'negativeAssignedIngredientCost',
+    fixes,
+  )
+  const certificateBuildMs =
+    performance.now() - certificateBuildStartedAt
+  const certificateSerializeStartedAt = performance.now()
+  const certificateMps = certificateBuilt.model.print('mps')
+  const certificateSerializeMs =
+    performance.now() - certificateSerializeStartedAt
+  const certificateHighs = await HiGHS.create()
+  let certificateParseMs = 0
+  let certificateSolveMs = 0
+  let certificateStatus = 'unknown'
+  let certificateObjectiveValue: number | null = null
+
+  try {
+    const parseStartedAt = performance.now()
+    await certificateHighs.parse(certificateMps, 'mps')
+    certificateParseMs = performance.now() - parseStartedAt
+    certificateHighs.setParam(
+      'time_limit',
+      Math.max(
+        0.1,
+        Number.isInteger(timeLimitSeconds)
+          ? timeLimitSeconds + 1e-6
+          : timeLimitSeconds,
+      ),
+    )
+    const solveStartedAt = performance.now()
+    const solution = await certificateHighs.solve()
+    certificateSolveMs = performance.now() - solveStartedAt
+    certificateStatus = solution.status
+    certificateObjectiveValue =
+      typeof solution.objective === 'number' &&
+      Number.isFinite(solution.objective)
+        ? solution.objective
+        : null
+  } finally {
+    certificateHighs.free()
+  }
 
   const maximumCostBuildStartedAt = performance.now()
   const maximumCostBuilt = buildHighsStage(
     domain,
     'negativeAssignedIngredientCost',
-    [{
-      objective: 'productionUnits',
-      value: minimumWasteOptimum,
-    }],
+    fixes,
   )
   const maximumCostBuildMs =
     performance.now() - maximumCostBuildStartedAt
@@ -1155,6 +1214,15 @@ export async function profileMaximumIngredientCostAfterGroupedMinimumWaste(
     maximumCostSolveMs,
     maximumCostStatus,
     maximumCostObjectiveValue,
+    certificateAssignmentVariableCount:
+      certificateBuilt.yByCustomerRecipe.size,
+    certificateUpperBound: certificate.upperBound,
+    certificateBuildMs,
+    certificateSerializeMs,
+    certificateParseMs,
+    certificateSolveMs,
+    certificateStatus,
+    certificateObjectiveValue,
   }
 }
 
