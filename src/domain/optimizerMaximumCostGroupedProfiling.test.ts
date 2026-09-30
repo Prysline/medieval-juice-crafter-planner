@@ -43,11 +43,23 @@ it(
     const stageProfile =
       await profileGroupedMaximumIngredientCostStage(model, 20)
 
+    console.info(
+      '[maximum-cost-grouped-stage-profile]',
+      JSON.stringify({
+        domainBuildMs: Math.round(domainBuildMs),
+        ...stageProfile,
+        buildMs: Math.round(stageProfile.buildMs),
+        serializeMs: Math.round(stageProfile.serializeMs),
+        parseMs: Math.round(stageProfile.parseMs),
+        solveMs: Math.round(stageProfile.solveMs),
+      }),
+    )
+
     const endToEndStartedAt = performance.now()
     const result = await optimizeBatchPlan(request, {
       source: {
         customers: canonicalCustomers,
-        candidates: candidatePool,
+        candidatePool,
       },
     })
     const endToEndMs = performance.now() - endToEndStartedAt
