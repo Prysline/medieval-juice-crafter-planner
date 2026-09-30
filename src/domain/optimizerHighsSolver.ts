@@ -1277,6 +1277,150 @@ function buildHighsStage(
 
 
 
+
+function buildPostMaximumIngredientCostPairParityStage(
+  domain: BatchOptimizationModel,
+  fixes: ObjectiveFix[],
+) {
+  const globalSlack =
+    postMaximumIngredientCostGroupedProductionSlackUpperBound(
+      domain,
+      fixes,
+    )
+  if (globalSlack === null) {
+    throw new Error(
+      'Post-maximum-cost pair parity preconditions are not satisfied',
+    )
+  }
+
+  const groups = new Map<
+    string,
+    {
+      eligibleCustomerIds: string[]
+      ingredientCost: number
+    }
+  >()
+  for (const recipe of domain.recipes) {
+    const eligibleCustomerIds = [
+      ...recipe.eligibleCustomerIds,
+    ].sort()
+    const ingredientCost = recipe.juiceUnitIngredientCost
+    const key =
+      \`\${eligibleCustomerIds.join('\u001e')}\u001d\${ingredientCost}\`
+    if (!groups.has(key)) {
+      groups.set(key, {
+        eligibleCustomerIds,
+        ingredientCost,
+      })
+    }
+  }
+
+  const model = new Model()
+  const coverageTermsByCustomerId = new Map<
+    string,
+    BoolVariable[]
+  >(
+    domain.serviceableCustomerIds.map((customerId) => [
+      customerId,
+      [],
+    ]),
+  )
+  const productionCostTerms: ReturnType<BoolVariable['times']>[] = []
+  const assignedCostTerms: ReturnType<BoolVariable['times']>[] = []
+  const singletonVars: BoolVariable[] = []
+  const productionUnitVars: BoolVariable[] = []
+  let pairVariableCount = 0
+  let singletonVariableCount = 0
+
+  const addCoverage = (
+    customerId: string,
+    variable: BoolVariable,
+  ) => {
+    const terms = coverageTermsByCustomerId.get(customerId)
+    if (!terms) {
+      throw new Error(
+        \`Pair parity stage referenced unknown customer \${customerId}\`,
+      )
+    }
+    terms.push(variable)
+  }
+
+  ;[...groups.values()].forEach((group, groupIndex) => {
+    const { eligibleCustomerIds, ingredientCost } = group
+
+    if (globalSlack === 1) {
+      eligibleCustomerIds.forEach((customerId, customerIndex) => {
+        const singleton = model.boolVar(
+          \`single_\${groupIndex}_\${customerIndex}\`,
+        )
+        singletonVars.push(singleton)
+        productionUnitVars.push(singleton)
+        singletonVariableCount += 1
+        addCoverage(customerId, singleton)
+        assignedCostTerms.push(singleton.times(ingredientCost))
+        productionCostTerms.push(singleton.times(ingredientCost))
+      })
+    }
+
+    for (
+      let leftIndex = 0;
+      leftIndex < eligibleCustomerIds.length;
+      leftIndex += 1
+    ) {
+      for (
+        let rightIndex = leftIndex + 1;
+        rightIndex < eligibleCustomerIds.length;
+        rightIndex += 1
+      ) {
+        const pair = model.boolVar(
+          \`pair_\${groupIndex}_\${leftIndex}_\${rightIndex}\`,
+        )
+        pairVariableCount += 1
+        productionUnitVars.push(pair)
+        addCoverage(eligibleCustomerIds[leftIndex], pair)
+        addCoverage(eligibleCustomerIds[rightIndex], pair)
+        assignedCostTerms.push(pair.times(ingredientCost * 2))
+        productionCostTerms.push(pair.times(ingredientCost))
+      }
+    }
+  })
+
+  domain.serviceableCustomerIds.forEach(
+    (customerId, customerIndex) => {
+      model.addConstraint(
+        sum(...(coverageTermsByCustomerId.get(customerId) ?? []))
+          .eq(1),
+        \`pair_cover_\${customerIndex}\`,
+      )
+    },
+  )
+
+  if (globalSlack === 1) {
+    model.addConstraint(
+      sum(...singletonVars).eq(1),
+      'pair_singleton_total',
+    )
+  }
+
+  model.addConstraint(
+    sum(...productionUnitVars).eq(fixes[0].value),
+    'pair_production_units_fix',
+  )
+  model.addConstraint(
+    sum(...assignedCostTerms).eq(-fixes[1].value),
+    'pair_assigned_cost_fix',
+  )
+  model.minimize(sum(...productionCostTerms))
+
+  return {
+    model,
+    groupCount: groups.size,
+    pairVariableCount,
+    singletonVariableCount,
+  }
+}
+
+
 export async function profilePostMaximumCostGenericContinuation(
   domain: BatchOptimizationModel,
   timeLimitSeconds = 10.5,
@@ -1288,6 +1432,8 @@ export async function profilePostMaximumCostGenericContinuation(
   maximumCostAssignmentVariableCount: number
   productionCostAssignmentVariableCount: number
   productionCostGroupCount: number
+  productionCostPairVariableCount: number
+  productionCostSingletonVariableCount: number
   productionCostBuildMs: number
   productionCostSerializeMs: number
   productionCostParseMs: number
@@ -1310,7 +1456,7 @@ export async function profilePostMaximumCostGenericContinuation(
   }
 
   async function solveBounded(
-    built: ReturnType<typeof buildHighsStage>,
+    built: { model: Model },
   ): Promise<{
     serializeMs: number
     parseMs: number
@@ -1429,28 +1575,19 @@ export async function profilePostMaximumCostGenericContinuation(
   }
 
   const productionCostBuildStartedAt = performance.now()
-  const productionCostBuilt = buildHighsStage(
-    domain,
-    'cost',
-    fixes,
-    {
-      aggregateEquivalentMaximumCostAssignments: true,
-      aggregateEquivalentMaximumCostProductionUnits: true,
-      maximumCostGroupedProductionExactSlack:
-        productionCostSlackUpperBound,
-    },
-  )
+  const productionCostBuilt =
+    buildPostMaximumIngredientCostPairParityStage(
+      domain,
+      fixes,
+    )
   const productionCostBuildMs =
     performance.now() - productionCostBuildStartedAt
   const productionCostSolved = await solveBounded(
     productionCostBuilt,
   )
 
-  const productionCostGroupCount = new Set(
-    domain.recipes.map((recipe) =>
-      `${[...recipe.eligibleCustomerIds].sort().join('\\u001e')}\\u001d${recipe.juiceUnitIngredientCost}`,
-    ),
-  ).size
+  const productionCostGroupCount =
+    productionCostBuilt.groupCount
 
   let machineAssignmentVariableCount = 0
   let machineRecipeVariableCount = 0
@@ -1502,6 +1639,10 @@ export async function profilePostMaximumCostGenericContinuation(
     productionCostAssignmentVariableCount:
       productionCostBuilt.yByCustomerRecipe.size,
     productionCostGroupCount,
+    productionCostPairVariableCount:
+      productionCostBuilt.pairVariableCount,
+    productionCostSingletonVariableCount:
+      productionCostBuilt.singletonVariableCount,
     productionCostBuildMs,
     productionCostSerializeMs: productionCostSolved.serializeMs,
     productionCostParseMs: productionCostSolved.parseMs,
