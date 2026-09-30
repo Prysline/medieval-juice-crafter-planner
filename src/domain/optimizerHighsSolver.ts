@@ -1798,6 +1798,79 @@ export async function profileMaximumIngredientCostMachineStages(
 }
 
 
+export async function profileMaximumIngredientCostGroupedMachineLong(
+  domain: BatchOptimizationModel,
+  productionUnits: number,
+  maximumCostOptimum: number,
+  productionCostOptimum: number,
+  timeLimitSeconds = 60,
+): Promise<StageProfile> {
+  const fixes: ObjectiveFix[] = [
+    { objective: 'productionUnits', value: productionUnits },
+    {
+      objective: 'negativeAssignedIngredientCost',
+      value: maximumCostOptimum,
+    },
+    { objective: 'cost', value: productionCostOptimum },
+  ]
+  const buildStartedAt = performance.now()
+  const built = buildHighsStage(
+    domain,
+    'machineOperations',
+    fixes,
+    { aggregateEquivalentMaximumCostAssignments: true },
+  )
+  const buildMs = performance.now() - buildStartedAt
+  const serializeStartedAt = performance.now()
+  const mps = built.model.print('mps')
+  const serializeMs = performance.now() - serializeStartedAt
+
+  const highs = await HiGHS.create()
+  let parseMs = 0
+  let solveMs = 0
+  let status = 'unknown'
+  let objectiveValue: number | null = null
+  try {
+    const parseStartedAt = performance.now()
+    await highs.parse(mps, 'mps')
+    parseMs = performance.now() - parseStartedAt
+    highs.setParam(
+      'time_limit',
+      Math.max(
+        0.1,
+        Number.isInteger(timeLimitSeconds)
+          ? timeLimitSeconds + 1e-6
+          : timeLimitSeconds,
+      ),
+    )
+    const solveStartedAt = performance.now()
+    const solution = await highs.solve()
+    solveMs = performance.now() - solveStartedAt
+    status = solution.status
+    objectiveValue =
+      typeof solution.objective === 'number' &&
+      Number.isFinite(solution.objective)
+        ? solution.objective
+        : null
+  } finally {
+    highs.free()
+  }
+
+  return {
+    assignmentVariableCount: built.yByCustomerRecipe.size,
+    groupedProductionVariableCount:
+      built.groupedProductionUnitsByAssignmentGroupKey.size,
+    recipeProductionVariableCount: built.xByRecipeId.size,
+    buildMs,
+    serializeMs,
+    parseMs,
+    solveMs,
+    status,
+    objectiveValue,
+  }
+}
+
+
 function selectedRecipeUnits(
   domain: BatchOptimizationModel,
   built: ReturnType<typeof buildHighsStage>,
