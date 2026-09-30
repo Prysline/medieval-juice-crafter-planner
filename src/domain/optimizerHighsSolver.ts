@@ -1,4 +1,4 @@
-import { Model, sum } from '@bubblyworld/highs-ts'
+import { HiGHS, Model, sum } from '@bubblyworld/highs-ts'
 import { PROCESSING_STACK_CAPACITY } from './inventoryRules'
 import { juiceStateIdentity } from './juiceStateIdentity'
 import {
@@ -1168,6 +1168,151 @@ function buildHighsStage(
   }
 }
 
+
+
+export async function profilePostMaximumCostGenericContinuation(
+  domain: BatchOptimizationModel,
+  timeLimitSeconds = 10.5,
+): Promise<{
+  recipeCount: number
+  customerCount: number
+  minimumWasteOptimum: number
+  maximumIngredientCostOptimum: number
+  maximumCostAssignmentVariableCount: number
+  productionCostAssignmentVariableCount: number
+  productionCostRecipeVariableCount: number
+  productionCostBuildMs: number
+  productionCostSerializeMs: number
+  productionCostParseMs: number
+  productionCostSolveMs: number
+  productionCostStatus: string
+  productionCostObjectiveValue: number | null
+}> {
+  if (!minimumWasteEquivalentAssignmentGroupingIsSafe(domain)) {
+    throw new Error(
+      'Current profiling fixture is not safe for grouped minimum-waste',
+    )
+  }
+
+  const wasteBuilt = buildHighsStage(
+    domain,
+    'productionUnits',
+    [],
+    { aggregateEquivalentAssignments: true },
+  )
+  const wasteSolution = await wasteBuilt.model.solve()
+  if (wasteSolution.status !== 'optimal') {
+    throw new Error(
+      `Grouped minimum-waste profiling stage ended with status: ${wasteSolution.status}`,
+    )
+  }
+  const minimumWasteOptimum = Math.round(
+    requiredFiniteNumber(
+      wasteSolution.objective,
+      'grouped minimum-waste profiling objective',
+    ),
+  )
+
+  const maximumCostBuilt = buildHighsStage(
+    domain,
+    'negativeAssignedIngredientCost',
+    [{
+      objective: 'productionUnits',
+      value: minimumWasteOptimum,
+    }],
+    {
+      aggregateEquivalentMaximumCostAssignments: true,
+      aggregateEquivalentMaximumCostProductionUnits: true,
+    },
+  )
+  const maximumCostSolution = await maximumCostBuilt.model.solve()
+  if (maximumCostSolution.status !== 'optimal') {
+    throw new Error(
+      `Grouped maximum-cost profiling stage ended with status: ${maximumCostSolution.status}`,
+    )
+  }
+  const maximumIngredientCostFix = Math.round(
+    requiredFiniteNumber(
+      maximumCostSolution.objective,
+      'grouped maximum-cost profiling objective',
+    ),
+  )
+
+  const productionCostBuildStartedAt = performance.now()
+  const productionCostBuilt = buildHighsStage(
+    domain,
+    'cost',
+    [
+      {
+        objective: 'productionUnits',
+        value: minimumWasteOptimum,
+      },
+      {
+        objective: 'negativeAssignedIngredientCost',
+        value: maximumIngredientCostFix,
+      },
+    ],
+  )
+  const productionCostBuildMs =
+    performance.now() - productionCostBuildStartedAt
+
+  const serializeStartedAt = performance.now()
+  const mps = productionCostBuilt.model.print('mps')
+  const productionCostSerializeMs =
+    performance.now() - serializeStartedAt
+
+  const highs = await HiGHS.create()
+  let productionCostParseMs = 0
+  let productionCostSolveMs = 0
+  let productionCostStatus = 'unknown'
+  let productionCostObjectiveValue: number | null = null
+
+  try {
+    const parseStartedAt = performance.now()
+    await highs.parse(mps, 'mps')
+    productionCostParseMs = performance.now() - parseStartedAt
+    highs.setParam(
+      'time_limit',
+      Math.max(
+        0.1,
+        Number.isInteger(timeLimitSeconds)
+          ? timeLimitSeconds + 1e-6
+          : timeLimitSeconds,
+      ),
+    )
+
+    const solveStartedAt = performance.now()
+    const solution = await highs.solve()
+    productionCostSolveMs = performance.now() - solveStartedAt
+    productionCostStatus = solution.status
+    productionCostObjectiveValue =
+      typeof solution.objective === 'number' &&
+      Number.isFinite(solution.objective)
+        ? solution.objective
+        : null
+  } finally {
+    highs.free()
+  }
+
+  return {
+    recipeCount: domain.recipes.length,
+    customerCount: domain.serviceableCustomerIds.length,
+    minimumWasteOptimum,
+    maximumIngredientCostOptimum: -maximumIngredientCostFix,
+    maximumCostAssignmentVariableCount:
+      maximumCostBuilt.yByCustomerRecipe.size,
+    productionCostAssignmentVariableCount:
+      productionCostBuilt.yByCustomerRecipe.size,
+    productionCostRecipeVariableCount:
+      productionCostBuilt.xByRecipeId.size,
+    productionCostBuildMs,
+    productionCostSerializeMs,
+    productionCostParseMs,
+    productionCostSolveMs,
+    productionCostStatus,
+    productionCostObjectiveValue,
+  }
+}
 
 function selectedRecipeUnits(
   domain: BatchOptimizationModel,
