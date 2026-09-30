@@ -1637,7 +1637,8 @@ export async function profilePostMaximumCostGenericContinuation(
     maximumCostAssignmentVariableCount:
       maximumCostBuilt.yByCustomerRecipe.size,
     productionCostAssignmentVariableCount:
-      productionCostBuilt.yByCustomerRecipe.size,
+      productionCostBuilt.pairVariableCount +
+      productionCostBuilt.singletonVariableCount,
     productionCostGroupCount,
     productionCostPairVariableCount:
       productionCostBuilt.pairVariableCount,
