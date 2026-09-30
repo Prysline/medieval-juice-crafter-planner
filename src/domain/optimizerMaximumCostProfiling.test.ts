@@ -2,6 +2,7 @@ import { expect, it } from 'vitest'
 import { customers as canonicalCustomers } from '../data/customers'
 import { customerVillageIsAvailable } from './availability'
 import { buildRecipeCandidatePool } from './recipeCandidatePool'
+import { optimizeBatchPlan } from './optimizer'
 import { buildOptimizationModel, type OptimizationRequest } from './optimizerModel'
 import { profileMaximumIngredientCostAfterGroupedMinimumWaste } from './optimizerHighsSolver'
 
@@ -72,6 +73,27 @@ it(
     expect(profile.groupedMaximumCostAssignmentVariableCount).toBeLessThan(
       profile.maximumCostAssignmentVariableCount,
     )
+
+    const endToEndStartedAt = performance.now()
+    const result = await optimizeBatchPlan(request, {
+      source: {
+        customers: canonicalCustomers,
+        candidatePool,
+      },
+    })
+    const endToEndMs = performance.now() - endToEndStartedAt
+    console.info(
+      '[maximum-cost-end-to-end-profile]',
+      JSON.stringify({
+        endToEndMs: Math.round(endToEndMs),
+        assignmentCount: result.assignments.length,
+        totalProductionUnits: result.recipePlans.reduce(
+          (total, plan) => total + plan.juiceUnits,
+          0,
+        ),
+        totalIngredientCost: result.totalIngredientCost,
+      }),
+    )
   },
-  90000,
+  300000,
 )
