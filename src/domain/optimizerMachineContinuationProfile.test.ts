@@ -1,12 +1,8 @@
-import { Model, sum } from '@bubblyworld/highs-ts'
+import { HiGHS, Model, sum } from '@bubblyworld/highs-ts'
 import { expect, it } from 'vitest'
 import { customers as canonicalCustomers } from '../data/customers'
 import { customerVillageIsAvailable } from './availability'
-import {
-  machineOperationBreakdownForSelection,
-  repairMachineOperationWitness,
-  type RecipeUnitSelection,
-} from './optimizerCertificates'
+import { PROCESSING_STACK_CAPACITY } from './inventoryRules'
 import { buildRecipeCandidatePool } from './recipeCandidatePool'
 import {
   buildOptimizationModel,
@@ -23,7 +19,7 @@ const GLOBAL_SERVING_SLACK =
   PRODUCTION_UNITS_FIX * 2 - SERVICEABLE_CUSTOMER_COUNT
 const SINGLETON_RECIPE_COST =
   PRODUCTION_COST_FIX * 2 - ASSIGNED_INGREDIENT_COST_FIX
-const CERTIFIED_RELAXED_MACHINE_LOWER_BOUND = 56
+const CERTIFIED_THROUGH_SEASONING_RELAXED_LB = 26
 
 function canonicalDomain(): BatchOptimizationModel {
   const currentProgress = 'liquid-blender-unlocked'
@@ -55,17 +51,56 @@ function canonicalDomain(): BatchOptimizationModel {
   })
 }
 
-interface PairParityGroup {
-  key: string
-  recipes: EligibleOptimizationRecipe[]
-  eligibleCustomerIds: string[]
-  ingredientCost: number
+function blendCount(
+  recipe: EligibleOptimizationRecipe,
+): 0 | 1 | 2 {
+  const count = recipe.productionPath.edges.filter(
+    (edge) => edge.kind === 'blending',
+  ).length
+  if (count < 0 || count > 2) {
+    throw new Error(
+      `Unexpected blend count ${count} for ${recipe.candidate.id}`,
+    )
+  }
+  return count as 0 | 1 | 2
 }
 
-function pairParityGroups(
+function finalBlendEdgesAreRecipeIdentityUnique(
   domain: BatchOptimizationModel,
-): PairParityGroup[] {
-  const groups = new Map<string, PairParityGroup>()
+): boolean {
+  const seen = new Set<string>()
+
+  for (const recipe of domain.recipes) {
+    const blends = recipe.productionPath.edges.filter(
+      (edge) => edge.kind === 'blending',
+    )
+    if (blends.length === 0) continue
+    const finalBlend = blends.at(-1)
+    if (!finalBlend) return false
+    if (
+      finalBlend.toIngredientIds.join('\u001f') !==
+      recipe.productionPath.ingredientIds.join('\u001f')
+    ) {
+      return false
+    }
+    if (seen.has(finalBlend.key)) return false
+    seen.add(finalBlend.key)
+  }
+
+  return true
+}
+
+interface AssignmentGroup {
+  key: string
+  eligibleCustomerIds: string[]
+  ingredientCost: number
+  availableBlendCounts: Set<0 | 1 | 2>
+}
+
+function assignmentGroups(
+  domain: BatchOptimizationModel,
+): AssignmentGroup[] {
+  const groups = new Map<string, AssignmentGroup>()
 
   for (const recipe of domain.recipes) {
     const eligibleCustomerIds = [
@@ -75,13 +110,14 @@ function pairParityGroups(
     const key =
       `${eligibleCustomerIds.join('\u001e')}\u001d${ingredientCost}`
     const current = groups.get(key)
-    if (current) current.recipes.push(recipe)
-    else {
+    if (current) {
+      current.availableBlendCounts.add(blendCount(recipe))
+    } else {
       groups.set(key, {
         key,
-        recipes: [recipe],
         eligibleCustomerIds,
         ingredientCost,
+        availableBlendCounts: new Set([blendCount(recipe)]),
       })
     }
   }
@@ -89,194 +125,246 @@ function pairParityGroups(
   return [...groups.values()]
 }
 
-async function solvePairParityGroupUnits(
-  domain: BatchOptimizationModel,
-): Promise<Map<string, number>> {
-  if (GLOBAL_SERVING_SLACK !== 1) {
-    throw new Error('Profiler expects exactly one global slack serving')
-  }
-
-  const groups = pairParityGroups(domain)
-  const model = new Model()
-  const coverageTermsByCustomerId = new Map<
-    string,
-    ReturnType<Model['boolVar']>[]
-  >(
-    domain.serviceableCustomerIds.map((customerId) => [
-      customerId,
-      [],
-    ]),
+function addCeilOperation(
+  model: Model,
+  quantity: ReturnType<typeof sum>,
+  upperBound: number,
+  name: string,
+) {
+  const operation = model.intVar(
+    0,
+    Math.max(1, upperBound),
+    name,
   )
-  const unitVarsByGroupKey = new Map<
+  model.addConstraint(
+    quantity
+      .minus(operation.times(PROCESSING_STACK_CAPACITY))
+      .leq(0),
+    `${name}_capacity`,
+  )
+  model.addConstraint(
+    operation.minus(quantity).leq(0),
+    `${name}_usage`,
+  )
+  return operation
+}
+
+function buildUniqueTailLowerBound(
+  domain: BatchOptimizationModel,
+) {
+  const groups = assignmentGroups(domain)
+  const model = new Model()
+  const assignmentVarsByGroupKey = new Map<
     string,
-    ReturnType<Model['boolVar']>[]
+    ReturnType<Model['numVar']>[]
   >(
     groups.map((group) => [group.key, []]),
   )
   const assignedCostTerms: ReturnType<
-    ReturnType<Model['boolVar']>['times']
+    ReturnType<Model['numVar']>['times']
   >[] = []
-  const productionCostTerms: ReturnType<
-    ReturnType<Model['boolVar']>['times']
-  >[] = []
-  const singletonVars: ReturnType<Model['boolVar']>[] = []
-  const allUnitVars: ReturnType<Model['boolVar']>[] = []
-
-  const addCoverage = (
-    customerId: string,
-    variable: ReturnType<Model['boolVar']>,
-  ) => {
-    const terms = coverageTermsByCustomerId.get(customerId)
-    if (!terms) {
-      throw new Error(`Unknown customer ${customerId}`)
-    }
-    terms.push(variable)
-  }
-
-  groups.forEach((group, groupIndex) => {
-    group.eligibleCustomerIds.forEach(
-      (customerId, customerIndex) => {
-        const singleton = model.boolVar(
-          `single_${groupIndex}_${customerIndex}`,
-        )
-        singletonVars.push(singleton)
-        allUnitVars.push(singleton)
-        unitVarsByGroupKey.get(group.key)!.push(singleton)
-        addCoverage(customerId, singleton)
-        assignedCostTerms.push(
-          singleton.times(group.ingredientCost),
-        )
-        productionCostTerms.push(
-          singleton.times(group.ingredientCost),
-        )
-      },
-    )
-
-    for (
-      let leftIndex = 0;
-      leftIndex < group.eligibleCustomerIds.length;
-      leftIndex += 1
-    ) {
-      for (
-        let rightIndex = leftIndex + 1;
-        rightIndex < group.eligibleCustomerIds.length;
-        rightIndex += 1
-      ) {
-        const pair = model.boolVar(
-          `pair_${groupIndex}_${leftIndex}_${rightIndex}`,
-        )
-        allUnitVars.push(pair)
-        unitVarsByGroupKey.get(group.key)!.push(pair)
-        addCoverage(group.eligibleCustomerIds[leftIndex], pair)
-        addCoverage(group.eligibleCustomerIds[rightIndex], pair)
-        assignedCostTerms.push(
-          pair.times(group.ingredientCost * 2),
-        )
-        productionCostTerms.push(
-          pair.times(group.ingredientCost),
-        )
-      }
-    }
-  })
 
   domain.serviceableCustomerIds.forEach(
     (customerId, customerIndex) => {
+      const customerTerms: ReturnType<Model['numVar']>[] = []
+      groups.forEach((group, groupIndex) => {
+        if (!group.eligibleCustomerIds.includes(customerId)) return
+        const y = model.numVar(
+          0,
+          1,
+          `y_${customerIndex}_${groupIndex}`,
+        )
+        customerTerms.push(y)
+        assignmentVarsByGroupKey.get(group.key)!.push(y)
+        assignedCostTerms.push(y.times(group.ingredientCost))
+      })
       model.addConstraint(
-        sum(...(coverageTermsByCustomerId.get(customerId) ?? []))
-          .eq(1),
-        `cover_${customerIndex}`,
+        sum(...customerTerms).eq(1),
+        `customer_${customerIndex}`,
       )
     },
   )
+
+  const productionUnitTerms: ReturnType<Model['intVar']>[] = []
+  const productionCostTerms: ReturnType<
+    ReturnType<Model['intVar']>['times']
+  >[] = []
+  const singletonVars: ReturnType<Model['boolVar']>[] = []
+  const finalizingOperationTerms: ReturnType<Model['intVar']>[] = []
+  const finalBlendOperationTerms: ReturnType<Model['intVar']>[] = []
+  const threeSegmentUnitTerms: ReturnType<Model['intVar']>[] = []
+  let categoryVariableCount = 0
+
+  groups.forEach((group, groupIndex) => {
+    const xByBlendCount = new Map<
+      0 | 1 | 2,
+      ReturnType<Model['intVar']>
+    >()
+    const upperBound = Math.max(
+      1,
+      Math.ceil(group.eligibleCustomerIds.length / 2),
+    )
+
+    for (const count of [0, 1, 2] as const) {
+      if (!group.availableBlendCounts.has(count)) continue
+      const x = model.intVar(
+        0,
+        upperBound,
+        `x_${groupIndex}_b${count}`,
+      )
+      xByBlendCount.set(count, x)
+      productionUnitTerms.push(x)
+      productionCostTerms.push(
+        x.times(group.ingredientCost),
+      )
+      categoryVariableCount += 1
+      if (count === 2) threeSegmentUnitTerms.push(x)
+    }
+
+    const groupUnits = sum(...xByBlendCount.values())
+    const assignedCustomers = sum(
+      ...(assignmentVarsByGroupKey.get(group.key) ?? []),
+    )
+
+    if (group.ingredientCost === SINGLETON_RECIPE_COST) {
+      const singleton = model.boolVar(
+        `singleton_${groupIndex}`,
+      )
+      singletonVars.push(singleton)
+      model.addConstraint(
+        groupUnits
+          .times(2)
+          .minus(assignedCustomers)
+          .minus(singleton)
+          .eq(0),
+        `group_capacity_${groupIndex}`,
+      )
+    } else {
+      model.addConstraint(
+        groupUnits
+          .times(2)
+          .minus(assignedCustomers)
+          .eq(0),
+        `group_capacity_${groupIndex}`,
+      )
+    }
+
+    finalizingOperationTerms.push(
+      addCeilOperation(
+        model,
+        groupUnits,
+        upperBound,
+        `finish_op_${groupIndex}`,
+      ),
+    )
+
+    const blendedUnits = sum(
+      ...[1, 2].flatMap((count) => {
+        const variable = xByBlendCount.get(count as 1 | 2)
+        return variable ? [variable] : []
+      }),
+    )
+    if (xByBlendCount.has(1) || xByBlendCount.has(2)) {
+      finalBlendOperationTerms.push(
+        addCeilOperation(
+          model,
+          blendedUnits,
+          upperBound,
+          `final_blend_op_${groupIndex}`,
+        ),
+      )
+    }
+  })
+
   model.addConstraint(
     sum(...singletonVars).eq(1),
     'singleton_total',
   )
   model.addConstraint(
-    sum(...allUnitVars).eq(PRODUCTION_UNITS_FIX),
+    sum(...productionUnitTerms).eq(PRODUCTION_UNITS_FIX),
     'production_units_fix',
+  )
+  model.addConstraint(
+    sum(...productionCostTerms).eq(PRODUCTION_COST_FIX),
+    'production_cost_fix',
   )
   model.addConstraint(
     sum(...assignedCostTerms).eq(ASSIGNED_INGREDIENT_COST_FIX),
     'assigned_cost_fix',
   )
-  model.minimize(sum(...productionCostTerms))
 
-  const solution = await model.solve()
-  if (solution.status !== 'optimal') {
-    throw new Error(
-      `Pair parity witness stage ended with ${solution.status}`,
+  const firstBlendCollapsedOperation =
+    addCeilOperation(
+      model,
+      sum(...threeSegmentUnitTerms),
+      PRODUCTION_UNITS_FIX,
+      'first_blend_collapsed_op',
     )
-  }
-  expect(Math.round(solution.objective)).toBe(PRODUCTION_COST_FIX)
 
-  return new Map(
-    groups.map((group) => [
-      group.key,
-      (unitVarsByGroupKey.get(group.key) ?? []).reduce(
-        (total, variable) =>
-          total + (solution.getValue(variable) > 0.5 ? 1 : 0),
+  model.minimize(
+    sum(
+      ...finalizingOperationTerms,
+      ...finalBlendOperationTerms,
+      firstBlendCollapsedOperation,
+    ),
+  )
+
+  return {
+    model,
+    groupCount: groups.length,
+    assignmentVariableCount:
+      [...assignmentVarsByGroupKey.values()].reduce(
+        (total, vars) => total + vars.length,
         0,
       ),
-    ]),
-  )
+    categoryVariableCount,
+    finalizingOperationCount:
+      finalizingOperationTerms.length,
+    finalBlendOperationCount:
+      finalBlendOperationTerms.length,
+  }
 }
 
-function greedyRecipeWitness(
-  domain: BatchOptimizationModel,
-  unitsByGroupKey: Map<string, number>,
-): RecipeUnitSelection[] {
-  const selected: RecipeUnitSelection[] = []
-  const groups = pairParityGroups(domain)
-    .filter((group) => (unitsByGroupKey.get(group.key) ?? 0) > 0)
-    .sort(
-      (left, right) =>
-        (unitsByGroupKey.get(right.key) ?? 0) -
-          (unitsByGroupKey.get(left.key) ?? 0) ||
-        left.key.localeCompare(right.key),
-    )
-
-  for (const group of groups) {
-    const units = unitsByGroupKey.get(group.key) ?? 0
-    let bestRecipeId: string | null = null
-    let bestTotal = Number.POSITIVE_INFINITY
-
-    for (const recipe of group.recipes) {
-      const candidate = [
-        ...selected,
-        { recipeId: recipe.candidate.id, units },
-      ]
-      const total =
-        machineOperationBreakdownForSelection(
-          domain,
-          candidate,
-        ).total
-      if (
-        total < bestTotal ||
-        (
-          total === bestTotal &&
-          (
-            bestRecipeId === null ||
-            recipe.candidate.id.localeCompare(bestRecipeId) < 0
-          )
-        )
-      ) {
-        bestTotal = total
-        bestRecipeId = recipe.candidate.id
-      }
+async function solveBounded(
+  model: Model,
+  timeLimitSeconds = 20,
+): Promise<{
+  status: string
+  objective: number | null
+  serializeMs: number
+  parseMs: number
+  solveMs: number
+}> {
+  const serializeStartedAt = performance.now()
+  const mps = model.print('mps')
+  const serializeMs = performance.now() - serializeStartedAt
+  const highs = await HiGHS.create()
+  try {
+    const parseStartedAt = performance.now()
+    await highs.parse(mps, 'mps')
+    const parseMs = performance.now() - parseStartedAt
+    highs.setParam('time_limit', timeLimitSeconds)
+    const solveStartedAt = performance.now()
+    const solution = await highs.solve()
+    const solveMs = performance.now() - solveStartedAt
+    return {
+      status: solution.status,
+      objective:
+        typeof solution.objective === 'number' &&
+        Number.isFinite(solution.objective)
+          ? solution.objective
+          : null,
+      serializeMs,
+      parseMs,
+      solveMs,
     }
-
-    if (!bestRecipeId) {
-      throw new Error(`No witness recipe for group ${group.key}`)
-    }
-    selected.push({ recipeId: bestRecipeId, units })
+  } finally {
+    highs.free()
   }
-
-  return selected
 }
 
 it(
-  'lifts exact pair parity to a real-recipe machine witness',
+  'profiles joint finalizing and unique final-blend lower bound',
   async () => {
     const domain = canonicalDomain()
 
@@ -286,73 +374,37 @@ it(
     )
     expect(GLOBAL_SERVING_SLACK).toBe(1)
     expect(SINGLETON_RECIPE_COST).toBe(43)
+    expect(
+      finalBlendEdgesAreRecipeIdentityUnique(domain),
+    ).toBe(true)
 
-    const pairStartedAt = performance.now()
-    const unitsByGroupKey =
-      await solvePairParityGroupUnits(domain)
-    const pairSolveMs = performance.now() - pairStartedAt
-
-    const initialWitness = greedyRecipeWitness(
-      domain,
-      unitsByGroupKey,
-    )
-    const initialBreakdown =
-      machineOperationBreakdownForSelection(
-        domain,
-        initialWitness,
-      )
-
-    const repairStartedAt = performance.now()
-    const repaired = repairMachineOperationWitness(
-      domain,
-      initialWitness,
-      PRODUCTION_COST_FIX,
-      CERTIFIED_RELAXED_MACHINE_LOWER_BOUND,
-      100,
-    )
-    const repairMs = performance.now() - repairStartedAt
-
-    const totalUnits = repaired.selections.reduce(
-      (total, selection) => total + selection.units,
-      0,
-    )
-    const totalCost = repaired.selections.reduce(
-      (total, selection) => {
-        const recipe = domain.recipes.find(
-          (entry) => entry.candidate.id === selection.recipeId,
-        )
-        return (
-          total +
-          selection.units *
-            (recipe?.juiceUnitIngredientCost ?? 0)
-        )
-      },
-      0,
-    )
+    const buildStartedAt = performance.now()
+    const built = buildUniqueTailLowerBound(domain)
+    const buildMs = performance.now() - buildStartedAt
+    const solved = await solveBounded(built.model)
 
     console.info(
-      '[machine-real-recipe-witness]',
+      '[machine-unique-tail-lower-bound]',
       JSON.stringify({
-        pairSolveMs: Math.round(pairSolveMs),
-        selectedGroupCount: [...unitsByGroupKey.values()]
-          .filter((units) => units > 0).length,
-        initialRecipeCount: initialWitness.length,
-        initialBreakdown,
-        repairedRecipeCount: repaired.selections.length,
-        repairedBreakdown: repaired.breakdown,
-        repairSteps: repaired.steps.length,
-        repairMs: Math.round(repairMs),
-        certifiedRelaxedLowerBound:
-          CERTIFIED_RELAXED_MACHINE_LOWER_BOUND,
-        totalUnits,
-        totalCost,
+        buildMs: Math.round(buildMs),
+        groupCount: built.groupCount,
+        assignmentVariableCount: built.assignmentVariableCount,
+        categoryVariableCount: built.categoryVariableCount,
+        finalizingOperationCount:
+          built.finalizingOperationCount,
+        finalBlendOperationCount:
+          built.finalBlendOperationCount,
+        serializeMs: Math.round(solved.serializeMs),
+        parseMs: Math.round(solved.parseMs),
+        solveMs: Math.round(solved.solveMs),
+        status: solved.status,
+        uniqueTailObjective: solved.objective,
+        totalWithThroughSeasoning26:
+          solved.objective === null
+            ? null
+            : solved.objective +
+              CERTIFIED_THROUGH_SEASONING_RELAXED_LB,
       }),
-    )
-
-    expect(totalUnits).toBe(PRODUCTION_UNITS_FIX)
-    expect(totalCost).toBe(PRODUCTION_COST_FIX)
-    expect(repaired.breakdown.total).toBeLessThanOrEqual(
-      initialBreakdown.total,
     )
   },
   120000,
