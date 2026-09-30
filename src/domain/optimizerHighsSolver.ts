@@ -105,6 +105,7 @@ interface HighsStageOptions {
   aggregateEquivalentAssignments?: boolean
   aggregateEquivalentMaximumCostAssignments?: boolean
   aggregateEquivalentMaximumCostProductionUnits?: boolean
+  enforceMaximumCostMinimumWasteParity?: boolean
   tightenRecipeBoundsFromMinimumCostFix?: boolean
   tightenOperationBoundsFromRecipeBounds?: boolean
   machineOperationKinds?: Set<ProductionStepKind>
@@ -265,6 +266,18 @@ function buildHighsStage(
     options.aggregateEquivalentMaximumCostAssignments
   ) {
     throw new Error('Only one assignment grouping mode may be active')
+  }
+
+  if (
+    options.enforceMaximumCostMinimumWasteParity &&
+    (
+      !options.aggregateEquivalentMaximumCostAssignments ||
+      options.aggregateEquivalentMaximumCostProductionUnits
+    )
+  ) {
+    throw new Error(
+      'Maximum-cost minimum-waste parity requires grouped assignments with recipe-specific production',
+    )
   }
 
   if (
@@ -682,6 +695,7 @@ function buildHighsStage(
       },
     )
 
+    const maximumCostParityVars: BoolVariable[] = []
     assignmentGroups.forEach((group, groupIndex) => {
       const assignmentVars = group.eligibleCustomerIds.flatMap(
         (customerId) => {
@@ -693,24 +707,73 @@ function buildHighsStage(
       )
       const groupedProductionUnits =
         groupedProductionUnitsByAssignmentGroupKey.get(group.key)
+      const recipeProductionVariables = group.recipes.flatMap(
+        (recipe) => {
+          const x = xByRecipeId.get(recipe.candidate.id)
+          return x ? [x] : []
+        },
+      )
       const capacityTerms = groupedProductionUnits
         ? [groupedProductionUnits.times(2)]
-        : group.recipes.flatMap((recipe) => {
-            const x = xByRecipeId.get(recipe.candidate.id)
-            return x ? [x.times(2)] : []
-          })
+        : recipeProductionVariables.map((x) => x.times(2))
       const finishedServings = group.recipes.reduce(
         (sum, recipe) => sum + (recipe.initialFinishedServings ?? 0),
         0,
       )
+      const assignedServings = sum(...assignmentVars)
+      const productionCapacity = sum(...capacityTerms)
 
       model.addConstraint(
-        sum(...assignmentVars)
-          .minus(sum(...capacityTerms))
+        assignedServings
+          .minus(productionCapacity)
           .leq(finishedServings),
         `capacity_${groupIndex}`,
       )
+
+      if (options.enforceMaximumCostMinimumWasteParity) {
+        const oddSlack = model.boolVar(
+          `maximum_cost_group_odd_${groupIndex}`,
+        )
+        maximumCostParityVars.push(oddSlack)
+        model.addConstraint(
+          productionCapacity
+            .minus(assignedServings)
+            .minus(oddSlack)
+            .eq(0),
+          `maximum_cost_group_parity_${groupIndex}`,
+        )
+      }
     })
+
+    if (options.enforceMaximumCostMinimumWasteParity) {
+      const fixedProductionUnits = fixes.find(
+        (fix) => fix.objective === 'productionUnits',
+      )?.value
+      if (
+        typeof fixedProductionUnits !== 'number' ||
+        domain.recipes.some(
+          (recipe) =>
+            recipe.maxProductionUnits !== undefined ||
+            (recipe.initialFinishedServings ?? 0) > 0,
+        )
+      ) {
+        throw new Error(
+          'Maximum-cost minimum-waste parity requires fixed production units without recipe-specific production stock or caps',
+        )
+      }
+      const slackServings =
+        fixedProductionUnits * 2 -
+        domain.serviceableCustomerIds.length
+      if (slackServings !== 0 && slackServings !== 1) {
+        throw new Error(
+          'Maximum-cost minimum-waste parity requires zero or one global slack serving',
+        )
+      }
+      model.addConstraint(
+        sum(...maximumCostParityVars).eq(slackServings),
+        'maximum_cost_global_parity',
+      )
+    }
   } else {
     domain.serviceableCustomerIds.forEach(
       (customerId, customerIndex) => {
@@ -1818,7 +1881,10 @@ export async function profileMaximumIngredientCostGroupedMachineLong(
     domain,
     'machineOperations',
     fixes,
-    { aggregateEquivalentMaximumCostAssignments: true },
+    {
+      aggregateEquivalentMaximumCostAssignments: true,
+      enforceMaximumCostMinimumWasteParity: true,
+    },
   )
   const buildMs = performance.now() - buildStartedAt
   const serializeStartedAt = performance.now()
