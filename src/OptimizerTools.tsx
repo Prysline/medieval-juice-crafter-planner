@@ -511,6 +511,53 @@ export function OptimizerRunSummary({
   )
 }
 
+export function OptimizerRecoveryAction({
+  reason,
+  materialSourceMode,
+  customerCount,
+  disabled,
+  loading,
+  onReplan,
+}: {
+  reason: OptimizerStaleReason
+  materialSourceMode: OptimizationMaterialSourceMode
+  customerCount: number
+  disabled: boolean
+  loading: boolean
+  onReplan: () => void
+}) {
+  return (
+    <div
+      className="optimizer-result-note optimizer-recovery-action"
+      role="status"
+    >
+      <strong>從目前狀態重新規劃</strong>
+      <span>
+        {reason === 'canonical-state-changed'
+          ? '目前庫存或今日已供應已和上一份規劃不同。'
+          : '目前規劃輸入已和上一份規劃不同。'}
+        重新規劃會使用目前主線進度、滿意度、今日已供應與目前庫存（原料、中間果汁、水、杯具與果汁罐內容），只安排目前仍可規劃的顧客；不會重播上一份規劃的物資消耗或交付進度。
+      </span>
+      <span>
+        {materialSourceMode === 'inventory-only'
+          ? '目前採「僅使用現有庫存」：商店原料新增取得固定為 0；庫存只能服務部分顧客時，仍保留可執行的部分規劃。'
+          : '目前採「一般規劃」：缺少的商店原料可列入採買需求。'}
+      </span>
+      <span>目前可重新規劃 {customerCount} 位顧客。</span>
+      <div className="optimizer-run-actions">
+        <button
+          type="button"
+          className="optimizer-run-button"
+          disabled={disabled}
+          onClick={onReplan}
+        >
+          {loading ? '正在重新規劃…' : '從目前狀態重新規劃'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export function recipePreparationSourceSummary(
   plan: Pick<
     RecipeProductionPlan,
@@ -3109,6 +3156,12 @@ function OptimizerTools({
             : 'solver-input-changed',
         )
       : staleSuccessReference
+  const optimizerRunDisabled =
+    customerIds.length === 0 ||
+    runState.status === 'loading' ||
+    capacitySummary.physicalJuiceJarCount < 1 ||
+    capacitySummary.jarStorageCapacityExceeded ||
+    capacitySummary.maxJuiceJarSlotsPerTrip < 1
 
   return (
     <section className="optimizer-tools" aria-label="最佳化規劃">
@@ -3777,13 +3830,7 @@ function OptimizerTools({
           <button
             type="button"
             className="optimizer-run-button"
-            disabled={
-              customerIds.length === 0 ||
-              runState.status === 'loading' ||
-              capacitySummary.physicalJuiceJarCount < 1 ||
-              capacitySummary.jarStorageCapacityExceeded ||
-              capacitySummary.maxJuiceJarSlotsPerTrip < 1
-            }
+            disabled={optimizerRunDisabled}
             onClick={runOptimizer}
           >
             {runState.status === 'loading'
@@ -3940,6 +3987,14 @@ function OptimizerTools({
               這份結果只保留作本次頁面工作階段的參考，不會被當成目前輸入下仍有效的規劃，也不能整份套用。
             </span>
           </div>
+          <OptimizerRecoveryAction
+            reason={visibleStaleSuccessReference.reason}
+            materialSourceMode={materialSourceMode}
+            customerCount={customerIds.length}
+            disabled={optimizerRunDisabled}
+            loading={runState.status === 'loading'}
+            onReplan={runOptimizer}
+          />
           <OptimizerRunSummary
             elapsedMs={visibleStaleSuccessReference.run.elapsedMs}
             candidatePolicy={visibleStaleSuccessReference.run.candidatePolicy}

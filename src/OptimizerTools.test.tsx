@@ -37,6 +37,7 @@ import {
   SeasoningStepStageUsageNote,
   OptimizerRunStatus,
   OptimizerRunSummary,
+  OptimizerRecoveryAction,
   PreProductionStorageCard,
   OptimizerSummaryMetrics,
   PlanApplicationPreview,
@@ -437,6 +438,54 @@ describe('optimizer stale success lifecycle', () => {
         'canonical-b',
       ),
     ).toBe(false)
+  })
+})
+
+describe('optimizer current-state recovery UI', () => {
+  it('explains canonical current-state replanning and inventory-only partial semantics', () => {
+    const html = renderToStaticMarkup(
+      <OptimizerRecoveryAction
+        reason="canonical-state-changed"
+        materialSourceMode="inventory-only"
+        customerCount={3}
+        disabled={false}
+        loading={false}
+        onReplan={() => {}}
+      />,
+    )
+
+    expect(html).toContain('從目前狀態重新規劃')
+    expect(html).toContain(
+      '目前庫存或今日已供應已和上一份規劃不同。',
+    )
+    expect(html).toContain(
+      '目前庫存（原料、中間果汁、水、杯具與果汁罐內容）',
+    )
+    expect(html).toContain(
+      '不會重播上一份規劃的物資消耗或交付進度',
+    )
+    expect(html).toContain('商店原料新增取得固定為 0')
+    expect(html).toContain('仍保留可執行的部分規劃')
+    expect(html).toContain('目前可重新規劃 3 位顧客')
+    expect(html).not.toContain('disabled=""')
+  })
+
+  it('uses the current normal material-source copy and shares the disabled run gate', () => {
+    const html = renderToStaticMarkup(
+      <OptimizerRecoveryAction
+        reason="solver-input-changed"
+        materialSourceMode="normal"
+        customerCount={0}
+        disabled
+        loading={false}
+        onReplan={() => {}}
+      />,
+    )
+
+    expect(html).toContain('目前規劃輸入已和上一份規劃不同。')
+    expect(html).toContain('缺少的商店原料可列入採買需求')
+    expect(html).toContain('目前可重新規劃 0 位顧客')
+    expect(html).toContain('disabled=""')
   })
 })
 
