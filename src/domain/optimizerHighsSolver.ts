@@ -1871,6 +1871,111 @@ export async function profileMaximumIngredientCostGroupedMachineLong(
 }
 
 
+export async function profileMaximumIngredientCostMachinePartitions(
+  domain: BatchOptimizationModel,
+  productionUnits: number,
+  maximumCostOptimum: number,
+  productionCostOptimum: number,
+  timeLimitSeconds = 20,
+): Promise<Record<string, StageProfile & { recipeUnitWitness: RecipeUnitSelection[] }>> {
+  const fixes: ObjectiveFix[] = [
+    { objective: 'productionUnits', value: productionUnits },
+    {
+      objective: 'negativeAssignedIngredientCost',
+      value: maximumCostOptimum,
+    },
+    { objective: 'cost', value: productionCostOptimum },
+  ]
+  const partitions: Array<{
+    key: string
+    kinds: ProductionStepKind[]
+  }> = [
+    { key: 'throughSeasoning', kinds: ['juicing', 'seasoning'] },
+    { key: 'blending', kinds: ['blending'] },
+    { key: 'finalizing', kinds: ['finalizing'] },
+  ]
+  const result: Record<
+    string,
+    StageProfile & { recipeUnitWitness: RecipeUnitSelection[] }
+  > = {}
+
+  for (const partition of partitions) {
+    const buildStartedAt = performance.now()
+    const built = buildHighsStage(
+      domain,
+      'machineOperations',
+      fixes,
+      {
+        relaxAssignmentVariables: true,
+        aggregateEquivalentMaximumCostAssignments: true,
+        tightenRecipeBoundsFromMinimumCostFix: true,
+        tightenOperationBoundsFromRecipeBounds: true,
+        machineOperationKinds: new Set(partition.kinds),
+      },
+    )
+    const buildMs = performance.now() - buildStartedAt
+    const serializeStartedAt = performance.now()
+    const mps = built.model.print('mps')
+    const serializeMs = performance.now() - serializeStartedAt
+
+    const highs = await HiGHS.create()
+    let parseMs = 0
+    let solveMs = 0
+    let status = 'unknown'
+    let objectiveValue: number | null = null
+    let recipeUnitWitness: RecipeUnitSelection[] = []
+    try {
+      const parseStartedAt = performance.now()
+      await highs.parse(mps, 'mps')
+      parseMs = performance.now() - parseStartedAt
+      highs.setParam(
+        'time_limit',
+        Math.max(
+          0.1,
+          Number.isInteger(timeLimitSeconds)
+            ? timeLimitSeconds + 1e-6
+            : timeLimitSeconds,
+        ),
+      )
+      const solveStartedAt = performance.now()
+      const solution = await highs.solve()
+      solveMs = performance.now() - solveStartedAt
+      status = solution.status
+      objectiveValue =
+        typeof solution.objective === 'number' &&
+        Number.isFinite(solution.objective)
+          ? solution.objective
+          : null
+      if (solution.status === 'optimal') {
+        recipeUnitWitness = selectedRecipeUnits(
+          domain,
+          built,
+          solution as Awaited<ReturnType<Model['solve']>>,
+        )
+      }
+    } finally {
+      highs.free()
+    }
+
+    result[partition.key] = {
+      assignmentVariableCount: built.yByCustomerRecipe.size,
+      groupedProductionVariableCount:
+        built.groupedProductionUnitsByAssignmentGroupKey.size,
+      recipeProductionVariableCount: built.xByRecipeId.size,
+      buildMs,
+      serializeMs,
+      parseMs,
+      solveMs,
+      status,
+      objectiveValue,
+      recipeUnitWitness,
+    }
+  }
+
+  return result
+}
+
+
 function selectedRecipeUnits(
   domain: BatchOptimizationModel,
   built: ReturnType<typeof buildHighsStage>,
