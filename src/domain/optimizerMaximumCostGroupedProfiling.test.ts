@@ -4,7 +4,7 @@ import { customerVillageIsAvailable } from './availability'
 import {
   profileGroupedMaximumIngredientCostStage,
   profileMaximumIngredientCostParityCostStage,
-  profileMaximumIngredientCostGroupedMachineLong,
+  profileMaximumIngredientCostMachinePartitions,
 } from './optimizerHighsSolver'
 import { buildOptimizationModel, type OptimizationRequest } from './optimizerModel'
 import { buildRecipeCandidatePool } from './recipeCandidatePool'
@@ -92,24 +92,42 @@ it(
     const productionCostOptimum =
       parityProfile.productionCostObjective
     expect(productionCostOptimum).not.toBeNull()
-    const machineProfile =
-      await profileMaximumIngredientCostGroupedMachineLong(
+    const machinePartitions =
+      await profileMaximumIngredientCostMachinePartitions(
         model,
         stageProfile.minimumWasteOptimum,
         Math.round(stageProfile.objectiveValue ?? 0),
         Math.round(productionCostOptimum ?? 0),
-        60,
+        20,
       )
     console.info(
-      '[maximum-cost-machine-long-profile]',
-      JSON.stringify({
-        ...machineProfile,
-        buildMs: Math.round(machineProfile.buildMs),
-        serializeMs: Math.round(machineProfile.serializeMs),
-        parseMs: Math.round(machineProfile.parseMs),
-        solveMs: Math.round(machineProfile.solveMs),
-      }),
+      '[maximum-cost-machine-partition-profile]',
+      JSON.stringify(
+        Object.fromEntries(
+          Object.entries(machinePartitions).map(([key, profile]) => [
+            key,
+            {
+              assignmentVariableCount: profile.assignmentVariableCount,
+              recipeProductionVariableCount:
+                profile.recipeProductionVariableCount,
+              buildMs: Math.round(profile.buildMs),
+              serializeMs: Math.round(profile.serializeMs),
+              parseMs: Math.round(profile.parseMs),
+              solveMs: Math.round(profile.solveMs),
+              status: profile.status,
+              objectiveValue: profile.objectiveValue,
+              witnessRecipeKinds: profile.recipeUnitWitness.length,
+              fullMachineOperations: profile.fullMachineOperations,
+            },
+          ]),
+        ),
+      ),
     )
+    expect(
+      Object.values(machinePartitions).every(
+        (profile) => profile.status === 'optimal',
+      ),
+    ).toBe(true)
   },
   180000,
 )
