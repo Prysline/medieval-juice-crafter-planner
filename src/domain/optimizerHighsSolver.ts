@@ -367,8 +367,11 @@ function buildHighsStage(
   if (options.aggregateEquivalentMaximumCostProductionUnits) {
     // With recipe-specific production constraints disabled, X_group is
     // exactly the sum of the original integer recipe x variables in this
-    // equivalence class. The global productionUnits fix and pooled capacity
-    // preserve the same feasible set; later stages restore individual x.
+    // equivalence class. This mode is only entered after Stage 1 has fixed
+    // the global minimum productionUnits. Therefore producing more units in
+    // a group than all of its eligible customers could consume would
+    // contradict that minimum; the customer-capacity upper bound is exact.
+    // Later stages restore individual x.
     if (!assignmentGroups) {
       throw new Error(
         'Maximum-cost production grouping requires assignment groups',
@@ -380,7 +383,10 @@ function buildHighsStage(
         group.key,
         model.intVar(
           0,
-          maxJuiceUnitsPerRecipe,
+          Math.max(
+            0,
+            Math.ceil(group.eligibleCustomerIds.length / 2),
+          ),
           `x_group_${groupIndex}`,
         ),
       )
@@ -1835,6 +1841,7 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
         fixes.length === 0 &&
         minimumWasteEquivalentAssignmentGroupingIsSafe(stageDomain)
       let usingMaximumIngredientCostGrouping =
+        objectiveIndex === 1 &&
         objectiveKey === 'negativeAssignedIngredientCost' &&
         fixes.length === 1 &&
         fixes[0].objective === 'productionUnits' &&
