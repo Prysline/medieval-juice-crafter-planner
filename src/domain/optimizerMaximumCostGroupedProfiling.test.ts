@@ -84,6 +84,13 @@ it(
         costLowerBound: continuation.costLowerBound,
         witnessProductionCost: continuation.witnessProductionCost,
         costCertificateCloses: continuation.costCertificateCloses,
+        costGroupedLong: {
+          ...continuation.costGroupedLong,
+          buildMs: Math.round(continuation.costGroupedLong.buildMs),
+          serializeMs: Math.round(continuation.costGroupedLong.serializeMs),
+          parseMs: Math.round(continuation.costGroupedLong.parseMs),
+          solveMs: Math.round(continuation.costGroupedLong.solveMs),
+        },
         machineGeneric: continuation.machineGeneric
           ? {
               ...continuation.machineGeneric,
