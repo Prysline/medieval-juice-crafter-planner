@@ -17,7 +17,9 @@ import {
 } from './productionLogistics'
 import {
   PLAN_APPLICATION_TRANSACTION_SCHEMA,
+  PlanApplicationActualPurchaseError,
   buildPlanApplicationTransactionDraft,
+  withPlanApplicationActualPurchases,
   type PlanApplicationBasisState,
 } from './planApplicationTransaction'
 
@@ -122,7 +124,22 @@ function optimizationResult(): OptimizationResult {
     },
     jarTypeSwitches: 1,
     availableJuiceJarCount: 1,
-    shoppingList: [],
+    shoppingList: [
+      {
+        ingredientId: 'lemon',
+        name: '檸檬',
+        quantity: 2,
+        unitPrice: 1,
+        totalCost: 2,
+      },
+      {
+        ingredientId: 'sugar',
+        name: '糖',
+        quantity: 2,
+        unitPrice: 4,
+        totalCost: 8,
+      },
+    ],
     unresolvedCustomers: [],
     totalIngredientCost: 4,
     knownSalesRevenue: 0,
@@ -499,6 +516,11 @@ describe('plan application transaction', () => {
         afterUnits: 2,
         consumedFromInventory: 1,
         acquiredAndConsumedUnits: 0,
+        plannedPurchaseUnits: 0,
+        actualPurchaseUnits: 0,
+        unitPrice: 1,
+        plannedPurchaseCost: 0,
+        actualPurchaseCost: 0,
       },
       {
         ingredientId: 'sugar',
@@ -506,6 +528,11 @@ describe('plan application transaction', () => {
         afterUnits: 0,
         consumedFromInventory: 0,
         acquiredAndConsumedUnits: 2,
+        plannedPurchaseUnits: 2,
+        actualPurchaseUnits: 2,
+        unitPrice: 4,
+        plannedPurchaseCost: 8,
+        actualPurchaseCost: 8,
       },
     ])
     expect(draft.changes.water).toEqual({
@@ -558,6 +585,96 @@ describe('plan application transaction', () => {
     expect(Object.isFrozen(draft.changes)).toBe(true)
   })
 
+
+  it('keeps planned purchase authority separate from actual purchase and preserves over-purchase in ending inventory', () => {
+    const preparation = shortfall()
+    const preparationBefore = JSON.stringify(preparation)
+    const draft = buildPlanApplicationTransactionDraft({
+      basis: basis(),
+      result: optimizationResult(),
+      preparationShortfall: preparation,
+      productionLogistics: productionLogistics(),
+      salesPlan: salesPlan(),
+      actualPurchaseUnitsByIngredientId: {
+        sugar: 4,
+      },
+    })
+
+    expect(JSON.stringify(preparation)).toBe(preparationBefore)
+    expect(
+      preparation.ingredients.find(
+        (item) => item.ingredientId === 'sugar',
+      )?.purchaseUnits,
+    ).toBe(2)
+    expect(draft.after.inventory.ingredientUnits).toEqual({
+      lemon: 2,
+      sugar: 2,
+    })
+    expect(
+      draft.changes.ingredients.find(
+        (change) => change.ingredientId === 'sugar',
+      ),
+    ).toMatchObject({
+      acquiredAndConsumedUnits: 2,
+      plannedPurchaseUnits: 2,
+      actualPurchaseUnits: 4,
+      unitPrice: 4,
+      plannedPurchaseCost: 8,
+      actualPurchaseCost: 16,
+      afterUnits: 2,
+    })
+  })
+
+  it('rejects under-purchase before a transaction can produce negative inventory', () => {
+    expect(() =>
+      buildPlanApplicationTransactionDraft({
+        basis: basis(),
+        result: optimizationResult(),
+        preparationShortfall: shortfall(),
+        productionLogistics: productionLogistics(),
+        salesPlan: salesPlan(),
+        actualPurchaseUnitsByIngredientId: {
+          sugar: 1,
+        },
+      }),
+    ).toThrowError(PlanApplicationActualPurchaseError)
+
+    try {
+      buildPlanApplicationTransactionDraft({
+        basis: basis(),
+        result: optimizationResult(),
+        preparationShortfall: shortfall(),
+        productionLogistics: productionLogistics(),
+        salesPlan: salesPlan(),
+        actualPurchaseUnitsByIngredientId: {
+          sugar: 1,
+        },
+      })
+    } catch (error) {
+      expect(error).toMatchObject({
+        reason: 'insufficient-purchase',
+        ingredientId: 'sugar',
+        plannedPurchaseUnits: 2,
+        actualPurchaseUnits: 1,
+      })
+    }
+  })
+
+  it('does not carry an incompatible actual-purchase draft into a new plan', () => {
+    const draft = buildPlanApplicationTransactionDraft({
+      basis: basis(),
+      result: optimizationResult(),
+      preparationShortfall: shortfall(),
+      productionLogistics: productionLogistics(),
+      salesPlan: salesPlan(),
+    })
+
+    expect(() =>
+      withPlanApplicationActualPurchases(draft, {
+        mint: 3,
+      }),
+    ).toThrowError(PlanApplicationActualPurchaseError)
+  })
 
   it('applies only assigned customers when an inventory-only plan leaves others uncovered', () => {
     const result = optimizationResult()
