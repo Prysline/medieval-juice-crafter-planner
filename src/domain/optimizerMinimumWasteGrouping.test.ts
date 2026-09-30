@@ -299,7 +299,71 @@ describe('minimum-waste equivalent-assignment grouping', () => {
     expect(result.machineOperations.finalizing).toBe(1)
   })
 
-  it('restores real recipe identity for later machine-operation tie-breaks', async () => {
+  it('keeps the exact production-cost fallback after grouped maximum-cost assignments', async () => {
+    const candidate = (id: string): RecipeCandidate => ({
+      id,
+      name: id,
+      source: 'observed',
+      unlockedAt: 'seasoner-unlocked',
+      salePrice: 10,
+      ingredients: ['檸檬'],
+      effects: [{ name: '甜味', value: 5 }],
+      equipment: [],
+    })
+    const eligible = (
+      id: string,
+      cost: number,
+      eligibleCustomerIds: string[],
+    ): EligibleOptimizationRecipe => ({
+      candidate: candidate(id),
+      juiceUnitIngredientCost: cost,
+      eligibleCustomerIds,
+      productionPath: {
+        ingredientIds: [id],
+        edges: [{
+          key: \`finish:\${id}\`,
+          kind: 'finalizing',
+          equipment: '果汁成品台',
+          fromIngredientIds: [id],
+          toIngredientIds: [id],
+        }],
+      },
+    })
+    const domain: BatchOptimizationModel = {
+      request: request(
+        ['a', 'b', 'c'],
+        ['minimum-waste', 'maximum-ingredient-cost'],
+      ),
+      serviceableCustomerIds: ['a', 'b', 'c'],
+      unresolvedCustomerIds: [],
+      excludedSuppliedCustomerIds: [],
+      recipes: [
+        eligible('pair-ac-20', 20, ['a', 'c']),
+        eligible('b-20', 20, ['b']),
+        eligible('pair-ab-10', 10, ['a', 'b']),
+        eligible('c-40', 40, ['c']),
+      ],
+    }
+
+    const result = await highsSolverAdapter.solve(
+      domain,
+      domain.request.priorities!,
+    )
+
+    expect(result.metrics.totalProductionUnits).toBe(2)
+    expect(result.assignments.reduce(
+      (total, assignment) => {
+        const selected = domain.recipes.find(
+          (entry) => entry.candidate.id === assignment.recipeId,
+        )
+        return total + (selected?.juiceUnitIngredientCost ?? 0)
+      },
+      0,
+    )).toBe(60)
+    expect(result.metrics.totalIngredientCost).toBe(40)
+  })
+
+  it('restores real recipe identity after grouped maximum-cost and production-cost stages', async () => {
     const simple = recipe('simple', ['檸檬'], ['甜味'])
     const complex = recipe('complex', ['檸檬'], ['甜味'])
     const recipes: EligibleOptimizationRecipe[] = [

@@ -47,8 +47,23 @@ it(
     const profile =
       await profilePostMaximumCostGenericContinuation(model, 10.5)
 
+    const { highsSolverAdapter } =
+      await import('./optimizerHighsSolver')
+    const fullStartedAt = performance.now()
+    let fullEndToEndStatus = 'optimal'
+    try {
+      await highsSolverAdapter.solve(
+        model,
+        request.priorities!,
+      )
+    } catch (error) {
+      fullEndToEndStatus =
+        error instanceof Error ? error.message : String(error)
+    }
+    const fullEndToEndMs = performance.now() - fullStartedAt
+
     console.info(
-      '[post-maximum-cost-baseline]',
+      '[post-maximum-cost-after]',
       JSON.stringify({
         domainBuildMs: Math.round(domainBuildMs),
         ...profile,
@@ -60,6 +75,24 @@ it(
           Math.round(profile.productionCostParseMs),
         productionCostSolveMs:
           Math.round(profile.productionCostSolveMs),
+        machineBuildMs:
+          profile.machineBuildMs === null
+            ? null
+            : Math.round(profile.machineBuildMs),
+        machineSerializeMs:
+          profile.machineSerializeMs === null
+            ? null
+            : Math.round(profile.machineSerializeMs),
+        machineParseMs:
+          profile.machineParseMs === null
+            ? null
+            : Math.round(profile.machineParseMs),
+        machineSolveMs:
+          profile.machineSolveMs === null
+            ? null
+            : Math.round(profile.machineSolveMs),
+        fullEndToEndMs: Math.round(fullEndToEndMs),
+        fullEndToEndStatus,
       }),
     )
 
@@ -67,12 +100,16 @@ it(
     expect(profile.customerCount).toBeGreaterThan(60)
     expect(profile.minimumWasteOptimum).toBe(35)
     expect(profile.maximumIngredientCostOptimum).toBe(3853)
-    expect(profile.maximumCostAssignmentVariableCount).toBeLessThan(
+    expect(profile.maximumCostAssignmentVariableCount).toBe(
       profile.productionCostAssignmentVariableCount,
     )
-    expect(profile.productionCostRecipeVariableCount).toBeGreaterThan(
-      7000,
+    expect(profile.productionCostGroupCount).toBeGreaterThan(1000)
+    expect(profile.productionCostStatus).toBe('optimal')
+    expect(profile.productionCostObjectiveValue).toBe(1948)
+    expect(profile.machineAssignmentVariableCount).toBeGreaterThan(
+      40000,
     )
+    expect(profile.machineRecipeVariableCount).toBeGreaterThan(7000)
   },
-  120000,
+  180000,
 )

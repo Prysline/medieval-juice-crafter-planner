@@ -875,10 +875,23 @@ function buildHighsStage(
     'negativeKnownGrossProfit',
   )
     ? sum(
-        ...domain.recipes.flatMap((recipe) => {
-          const x = xByRecipeId.get(recipe.candidate.id)
-          return x ? [x.times(recipe.juiceUnitIngredientCost)] : []
-        }),
+        ...(groupedProductionUnitsByAssignmentGroupKey.size > 0 &&
+        assignmentGroups
+          ? assignmentGroups.flatMap((group) => {
+              const x =
+                groupedProductionUnitsByAssignmentGroupKey.get(
+                  group.key,
+                )
+              return x && group.ingredientCost !== undefined
+                ? [x.times(group.ingredientCost)]
+                : []
+            })
+          : domain.recipes.flatMap((recipe) => {
+              const x = xByRecipeId.get(recipe.candidate.id)
+              return x
+                ? [x.times(recipe.juiceUnitIngredientCost)]
+                : []
+            })),
       )
     : undefined
 
@@ -1180,18 +1193,79 @@ export async function profilePostMaximumCostGenericContinuation(
   maximumIngredientCostOptimum: number
   maximumCostAssignmentVariableCount: number
   productionCostAssignmentVariableCount: number
-  productionCostRecipeVariableCount: number
+  productionCostGroupCount: number
   productionCostBuildMs: number
   productionCostSerializeMs: number
   productionCostParseMs: number
   productionCostSolveMs: number
   productionCostStatus: string
   productionCostObjectiveValue: number | null
+  machineAssignmentVariableCount: number
+  machineRecipeVariableCount: number
+  machineBuildMs: number | null
+  machineSerializeMs: number | null
+  machineParseMs: number | null
+  machineSolveMs: number | null
+  machineStatus: string | null
+  machineObjectiveValue: number | null
 }> {
-  if (!minimumWasteEquivalentAssignmentGroupingIsSafe(domain)) {
+  if (!maximumIngredientCostGroupedProductionIsSafe(domain)) {
     throw new Error(
-      'Current profiling fixture is not safe for grouped minimum-waste',
+      'Current profiling fixture is not safe for grouped continuation',
     )
+  }
+
+  async function solveBounded(
+    built: ReturnType<typeof buildHighsStage>,
+  ): Promise<{
+    serializeMs: number
+    parseMs: number
+    solveMs: number
+    status: string
+    objectiveValue: number | null
+  }> {
+    const serializeStartedAt = performance.now()
+    const mps = built.model.print('mps')
+    const serializeMs = performance.now() - serializeStartedAt
+    const highs = await HiGHS.create()
+    let parseMs = 0
+    let solveMs = 0
+    let status = 'unknown'
+    let objectiveValue: number | null = null
+
+    try {
+      const parseStartedAt = performance.now()
+      await highs.parse(mps, 'mps')
+      parseMs = performance.now() - parseStartedAt
+      highs.setParam(
+        'time_limit',
+        Math.max(
+          0.1,
+          Number.isInteger(timeLimitSeconds)
+            ? timeLimitSeconds + 1e-6
+            : timeLimitSeconds,
+        ),
+      )
+      const solveStartedAt = performance.now()
+      const solution = await highs.solve()
+      solveMs = performance.now() - solveStartedAt
+      status = solution.status
+      objectiveValue =
+        typeof solution.objective === 'number' &&
+        Number.isFinite(solution.objective)
+          ? solution.objective
+          : null
+    } finally {
+      highs.free()
+    }
+
+    return {
+      serializeMs,
+      parseMs,
+      solveMs,
+      status,
+      objectiveValue,
+    }
   }
 
   const wasteBuilt = buildHighsStage(
@@ -1203,7 +1277,7 @@ export async function profilePostMaximumCostGenericContinuation(
   const wasteSolution = await wasteBuilt.model.solve()
   if (wasteSolution.status !== 'optimal') {
     throw new Error(
-      `Grouped minimum-waste profiling stage ended with status: ${wasteSolution.status}`,
+      \`Grouped minimum-waste profiling stage ended with status: \${wasteSolution.status}\`,
     )
   }
   const minimumWasteOptimum = Math.round(
@@ -1228,7 +1302,7 @@ export async function profilePostMaximumCostGenericContinuation(
   const maximumCostSolution = await maximumCostBuilt.model.solve()
   if (maximumCostSolution.status !== 'optimal') {
     throw new Error(
-      `Grouped maximum-cost profiling stage ended with status: ${maximumCostSolution.status}`,
+      \`Grouped maximum-cost profiling stage ended with status: \${maximumCostSolution.status}\`,
     )
   }
   const maximumIngredientCostFix = Math.round(
@@ -1238,60 +1312,77 @@ export async function profilePostMaximumCostGenericContinuation(
     ),
   )
 
+  const fixes: ObjectiveFix[] = [
+    {
+      objective: 'productionUnits',
+      value: minimumWasteOptimum,
+    },
+    {
+      objective: 'negativeAssignedIngredientCost',
+      value: maximumIngredientCostFix,
+    },
+  ]
+
   const productionCostBuildStartedAt = performance.now()
   const productionCostBuilt = buildHighsStage(
     domain,
     'cost',
-    [
-      {
-        objective: 'productionUnits',
-        value: minimumWasteOptimum,
-      },
-      {
-        objective: 'negativeAssignedIngredientCost',
-        value: maximumIngredientCostFix,
-      },
-    ],
+    fixes,
+    {
+      aggregateEquivalentMaximumCostAssignments: true,
+      aggregateEquivalentMaximumCostProductionUnits: true,
+    },
   )
   const productionCostBuildMs =
     performance.now() - productionCostBuildStartedAt
+  const productionCostSolved = await solveBounded(
+    productionCostBuilt,
+  )
 
-  const serializeStartedAt = performance.now()
-  const mps = productionCostBuilt.model.print('mps')
-  const productionCostSerializeMs =
-    performance.now() - serializeStartedAt
+  const productionCostGroupCount = new Set(
+    domain.recipes.map((recipe) =>
+      \`\${[...recipe.eligibleCustomerIds].sort().join('\\u001e')}\\u001d\${recipe.juiceUnitIngredientCost}\`,
+    ),
+  ).size
 
-  const highs = await HiGHS.create()
-  let productionCostParseMs = 0
-  let productionCostSolveMs = 0
-  let productionCostStatus = 'unknown'
-  let productionCostObjectiveValue: number | null = null
+  let machineAssignmentVariableCount = 0
+  let machineRecipeVariableCount = 0
+  let machineBuildMs: number | null = null
+  let machineSerializeMs: number | null = null
+  let machineParseMs: number | null = null
+  let machineSolveMs: number | null = null
+  let machineStatus: string | null = null
+  let machineObjectiveValue: number | null = null
 
-  try {
-    const parseStartedAt = performance.now()
-    await highs.parse(mps, 'mps')
-    productionCostParseMs = performance.now() - parseStartedAt
-    highs.setParam(
-      'time_limit',
-      Math.max(
-        0.1,
-        Number.isInteger(timeLimitSeconds)
-          ? timeLimitSeconds + 1e-6
-          : timeLimitSeconds,
-      ),
+  if (
+    productionCostSolved.status === 'optimal' &&
+    productionCostSolved.objectiveValue !== null
+  ) {
+    const machineFixes: ObjectiveFix[] = [
+      ...fixes,
+      {
+        objective: 'cost',
+        value: Math.round(
+          productionCostSolved.objectiveValue,
+        ),
+      },
+    ]
+    const machineBuildStartedAt = performance.now()
+    const machineBuilt = buildHighsStage(
+      domain,
+      'machineOperations',
+      machineFixes,
     )
-
-    const solveStartedAt = performance.now()
-    const solution = await highs.solve()
-    productionCostSolveMs = performance.now() - solveStartedAt
-    productionCostStatus = solution.status
-    productionCostObjectiveValue =
-      typeof solution.objective === 'number' &&
-      Number.isFinite(solution.objective)
-        ? solution.objective
-        : null
-  } finally {
-    highs.free()
+    machineBuildMs = performance.now() - machineBuildStartedAt
+    machineAssignmentVariableCount =
+      machineBuilt.yByCustomerRecipe.size
+    machineRecipeVariableCount = machineBuilt.xByRecipeId.size
+    const machineSolved = await solveBounded(machineBuilt)
+    machineSerializeMs = machineSolved.serializeMs
+    machineParseMs = machineSolved.parseMs
+    machineSolveMs = machineSolved.solveMs
+    machineStatus = machineSolved.status
+    machineObjectiveValue = machineSolved.objectiveValue
   }
 
   return {
@@ -1303,16 +1394,25 @@ export async function profilePostMaximumCostGenericContinuation(
       maximumCostBuilt.yByCustomerRecipe.size,
     productionCostAssignmentVariableCount:
       productionCostBuilt.yByCustomerRecipe.size,
-    productionCostRecipeVariableCount:
-      productionCostBuilt.xByRecipeId.size,
+    productionCostGroupCount,
     productionCostBuildMs,
-    productionCostSerializeMs,
-    productionCostParseMs,
-    productionCostSolveMs,
-    productionCostStatus,
-    productionCostObjectiveValue,
+    productionCostSerializeMs: productionCostSolved.serializeMs,
+    productionCostParseMs: productionCostSolved.parseMs,
+    productionCostSolveMs: productionCostSolved.solveMs,
+    productionCostStatus: productionCostSolved.status,
+    productionCostObjectiveValue:
+      productionCostSolved.objectiveValue,
+    machineAssignmentVariableCount,
+    machineRecipeVariableCount,
+    machineBuildMs,
+    machineSerializeMs,
+    machineParseMs,
+    machineSolveMs,
+    machineStatus,
+    machineObjectiveValue,
   }
 }
+
 
 function selectedRecipeUnits(
   domain: BatchOptimizationModel,
@@ -1994,6 +2094,12 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
       let usingMaximumIngredientCostProductionGrouping =
         usingMaximumIngredientCostGrouping &&
         maximumIngredientCostGroupedProductionIsSafe(stageDomain)
+      let usingPostMaximumIngredientCostProductionGrouping =
+        objectiveKey === 'cost' &&
+        fixes.length === 2 &&
+        fixes[0].objective === 'productionUnits' &&
+        fixes[1].objective === 'negativeAssignedIngredientCost' &&
+        maximumIngredientCostGroupedProductionIsSafe(stageDomain)
 
       let built = buildHighsStage(
         stageDomain,
@@ -2004,9 +2110,11 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
           aggregateEquivalentAssignments:
             usingMinimumWasteGrouping,
           aggregateEquivalentMaximumCostAssignments:
-            usingMaximumIngredientCostGrouping,
+            usingMaximumIngredientCostGrouping ||
+            usingPostMaximumIngredientCostProductionGrouping,
           aggregateEquivalentMaximumCostProductionUnits:
-            usingMaximumIngredientCostProductionGrouping,
+            usingMaximumIngredientCostProductionGrouping ||
+            usingPostMaximumIngredientCostProductionGrouping,
         },
       )
       let solution = await built.model.solve()
@@ -2014,13 +2122,15 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
       if (
         (
           usingMinimumWasteGrouping ||
-          usingMaximumIngredientCostGrouping
+          usingMaximumIngredientCostGrouping ||
+          usingPostMaximumIngredientCostProductionGrouping
         ) &&
         solution.status !== 'optimal'
       ) {
         usingMinimumWasteGrouping = false
         usingMaximumIngredientCostGrouping = false
         usingMaximumIngredientCostProductionGrouping = false
+        usingPostMaximumIngredientCostProductionGrouping = false
         built = buildHighsStage(
           stageDomain,
           objectiveKey,
