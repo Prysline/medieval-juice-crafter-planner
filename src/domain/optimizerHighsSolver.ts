@@ -162,6 +162,46 @@ function maximumIngredientCostGroupedProductionIsSafe(
   )
 }
 
+function postMaximumIngredientCostPairParitySlack(
+  domain: BatchOptimizationModel,
+  fixes: ObjectiveFix[],
+): number | null {
+  if (!maximumIngredientCostGroupedProductionIsSafe(domain)) {
+    return null
+  }
+  if (
+    fixes.length !== 2 ||
+    fixes[0].objective !== 'productionUnits' ||
+    fixes[1].objective !== 'negativeAssignedIngredientCost'
+  ) {
+    return null
+  }
+  if (
+    domain.recipes.some(
+      (recipe) => (recipe.initialFinishedServings ?? 0) > 0,
+    )
+  ) {
+    return null
+  }
+
+  const productionUnits = fixes[0].value
+  if (!Number.isInteger(productionUnits) || productionUnits < 0) {
+    return null
+  }
+
+  const globalSlack =
+    productionUnits * 2 - domain.serviceableCustomerIds.length
+  if (
+    !Number.isInteger(globalSlack) ||
+    globalSlack < 0 ||
+    globalSlack > 1
+  ) {
+    return null
+  }
+
+  return globalSlack
+}
+
 function initialFinishedJarEmptyingThresholds(
   jars: readonly { recipeId: string | null; servings: number }[],
 ): Map<string, number[]> {
@@ -1169,6 +1209,162 @@ function buildHighsStage(
 }
 
 
+function buildPostMaximumIngredientCostPairParityStage(
+  domain: BatchOptimizationModel,
+  fixes: ObjectiveFix[],
+) {
+  const globalSlack =
+    postMaximumIngredientCostPairParitySlack(domain, fixes)
+  if (globalSlack === null) {
+    throw new Error(
+      'Post-maximum-cost pair parity preconditions are not satisfied',
+    )
+  }
+
+  const groups = new Map<
+    string,
+    {
+      eligibleCustomerIds: string[]
+      ingredientCost: number
+    }
+  >()
+  for (const recipe of domain.recipes) {
+    const eligibleCustomerIds = [
+      ...recipe.eligibleCustomerIds,
+    ].sort()
+    const ingredientCost = recipe.juiceUnitIngredientCost
+    const key =
+      `${eligibleCustomerIds.join('\u001e')}\u001d${ingredientCost}`
+    if (!groups.has(key)) {
+      groups.set(key, {
+        eligibleCustomerIds,
+        ingredientCost,
+      })
+    }
+  }
+
+  const model = new Model()
+  const coverageTermsByCustomerId = new Map<
+    string,
+    BoolVariable[]
+  >(
+    domain.serviceableCustomerIds.map((customerId) => [
+      customerId,
+      [],
+    ]),
+  )
+  const productionCostTerms: ReturnType<BoolVariable['times']>[] = []
+  const assignedCostTerms: ReturnType<BoolVariable['times']>[] = []
+  const singletonVars: BoolVariable[] = []
+  const productionUnitVars: BoolVariable[] = []
+
+  const addCoverage = (
+    customerId: string,
+    variable: BoolVariable,
+  ) => {
+    const terms = coverageTermsByCustomerId.get(customerId)
+    if (!terms) {
+      throw new Error(
+        `Pair parity stage referenced unknown customer ${customerId}`,
+      )
+    }
+    terms.push(variable)
+  }
+
+  ;[...groups.values()].forEach((group, groupIndex) => {
+    const { eligibleCustomerIds, ingredientCost } = group
+
+    if (globalSlack === 1) {
+      eligibleCustomerIds.forEach((customerId, customerIndex) => {
+        const singleton = model.boolVar(
+          `single_${groupIndex}_${customerIndex}`,
+        )
+        singletonVars.push(singleton)
+        productionUnitVars.push(singleton)
+        addCoverage(customerId, singleton)
+        assignedCostTerms.push(singleton.times(ingredientCost))
+        productionCostTerms.push(singleton.times(ingredientCost))
+      })
+    }
+
+    for (
+      let leftIndex = 0;
+      leftIndex < eligibleCustomerIds.length;
+      leftIndex += 1
+    ) {
+      for (
+        let rightIndex = leftIndex + 1;
+        rightIndex < eligibleCustomerIds.length;
+        rightIndex += 1
+      ) {
+        const pair = model.boolVar(
+          `pair_${groupIndex}_${leftIndex}_${rightIndex}`,
+        )
+        productionUnitVars.push(pair)
+        addCoverage(eligibleCustomerIds[leftIndex], pair)
+        addCoverage(eligibleCustomerIds[rightIndex], pair)
+        assignedCostTerms.push(pair.times(ingredientCost * 2))
+        productionCostTerms.push(pair.times(ingredientCost))
+      }
+    }
+  })
+
+  domain.serviceableCustomerIds.forEach(
+    (customerId, customerIndex) => {
+      model.addConstraint(
+        sum(...(coverageTermsByCustomerId.get(customerId) ?? []))
+          .eq(1),
+        `pair_cover_${customerIndex}`,
+      )
+    },
+  )
+
+  if (globalSlack === 1) {
+    model.addConstraint(
+      sum(...singletonVars).eq(1),
+      'pair_singleton_total',
+    )
+  }
+
+  model.addConstraint(
+    sum(...productionUnitVars).eq(fixes[0].value),
+    'pair_production_units_fix',
+  )
+  model.addConstraint(
+    sum(...assignedCostTerms).eq(-fixes[1].value),
+    'pair_assigned_cost_fix',
+  )
+  model.minimize(sum(...productionCostTerms))
+
+  return { model }
+}
+
+async function tryPostMaximumIngredientCostPairParityOptimum(
+  domain: BatchOptimizationModel,
+  fixes: ObjectiveFix[],
+): Promise<number | null> {
+  if (
+    postMaximumIngredientCostPairParitySlack(domain, fixes) === null
+  ) {
+    return null
+  }
+
+  const built = buildPostMaximumIngredientCostPairParityStage(
+    domain,
+    fixes,
+  )
+  const solution = await built.model.solve()
+  if (solution.status !== 'optimal') return null
+
+  return Math.round(
+    requiredFiniteNumber(
+      solution.objective,
+      'post-maximum-cost pair-parity objective',
+    ),
+  )
+}
+
+
 function selectedRecipeUnits(
   domain: BatchOptimizationModel,
   built: ReturnType<typeof buildHighsStage>,
@@ -1831,6 +2027,22 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
           ) {
             break
           }
+          continue
+        }
+      }
+
+      if (objectiveKey === 'cost') {
+        const pairParityOptimum =
+          await tryPostMaximumIngredientCostPairParityOptimum(
+            stageDomain,
+            fixes,
+          )
+        if (pairParityOptimum !== null) {
+          fixes.push({
+            objective: objectiveKey,
+            value: pairParityOptimum,
+          })
+          currentDomain = continuationDomain
           continue
         }
       }
