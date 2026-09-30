@@ -1877,7 +1877,10 @@ export async function profileMaximumIngredientCostMachinePartitions(
   maximumCostOptimum: number,
   productionCostOptimum: number,
   timeLimitSeconds = 20,
-): Promise<Record<string, StageProfile & { recipeUnitWitness: RecipeUnitSelection[] }>> {
+): Promise<Record<string, StageProfile & {
+  recipeUnitWitness: RecipeUnitSelection[]
+  fullMachineOperations: number | null
+}>> {
   const fixes: ObjectiveFix[] = [
     { objective: 'productionUnits', value: productionUnits },
     {
@@ -1896,7 +1899,10 @@ export async function profileMaximumIngredientCostMachinePartitions(
   ]
   const result: Record<
     string,
-    StageProfile & { recipeUnitWitness: RecipeUnitSelection[] }
+    StageProfile & {
+      recipeUnitWitness: RecipeUnitSelection[]
+      fullMachineOperations: number | null
+    }
   > = {}
 
   for (const partition of partitions) {
@@ -1969,6 +1975,13 @@ export async function profileMaximumIngredientCostMachinePartitions(
       status,
       objectiveValue,
       recipeUnitWitness,
+      fullMachineOperations:
+        recipeUnitWitness.length > 0
+          ? machineOperationBreakdownForSelection(
+              domain,
+              recipeUnitWitness,
+            ).total
+          : null,
     }
   }
 
