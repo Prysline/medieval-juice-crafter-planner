@@ -4,7 +4,7 @@ import { customerVillageIsAvailable } from './availability'
 import {
   profileGroupedMaximumIngredientCostStage,
   profileMaximumIngredientCostParityCostStage,
-  profileMaximumIngredientCostMachinePartitions,
+  profileMaximumIngredientCostGroupedMachineLong,
 } from './optimizerHighsSolver'
 import { buildOptimizationModel, type OptimizationRequest } from './optimizerModel'
 import { buildRecipeCandidatePool } from './recipeCandidatePool'
@@ -92,42 +92,25 @@ it(
     const productionCostOptimum =
       parityProfile.productionCostObjective
     expect(productionCostOptimum).not.toBeNull()
-    const machinePartitions =
-      await profileMaximumIngredientCostMachinePartitions(
+    const machineProfile =
+      await profileMaximumIngredientCostGroupedMachineLong(
         model,
         stageProfile.minimumWasteOptimum,
         Math.round(stageProfile.objectiveValue ?? 0),
         Math.round(productionCostOptimum ?? 0),
-        20,
+        60,
       )
     console.info(
-      '[maximum-cost-machine-partition-profile]',
-      JSON.stringify(
-        Object.fromEntries(
-          Object.entries(machinePartitions).map(([key, profile]) => [
-            key,
-            {
-              assignmentVariableCount: profile.assignmentVariableCount,
-              recipeProductionVariableCount:
-                profile.recipeProductionVariableCount,
-              buildMs: Math.round(profile.buildMs),
-              serializeMs: Math.round(profile.serializeMs),
-              parseMs: Math.round(profile.parseMs),
-              solveMs: Math.round(profile.solveMs),
-              status: profile.status,
-              objectiveValue: profile.objectiveValue,
-              witnessRecipeKinds: profile.recipeUnitWitness.length,
-              fullMachineOperations: profile.fullMachineOperations,
-            },
-          ]),
-        ),
-      ),
+      '[maximum-cost-machine-parity-profile]',
+      JSON.stringify({
+        ...machineProfile,
+        buildMs: Math.round(machineProfile.buildMs),
+        serializeMs: Math.round(machineProfile.serializeMs),
+        parseMs: Math.round(machineProfile.parseMs),
+        solveMs: Math.round(machineProfile.solveMs),
+      }),
     )
-    expect(
-      Object.values(machinePartitions).every(
-        (profile) => profile.status === 'optimal',
-      ),
-    ).toBe(true)
+    expect(machineProfile.status).toBe('optimal')
   },
   180000,
 )
