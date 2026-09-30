@@ -2,11 +2,18 @@ import { describe, expect, it } from 'vitest'
 import {
   assertCustomSalesTripPlan,
   buildCustomSalesTripBaseline,
+  buildCustomSalesTripEditorDraft,
+  clearEmptyCustomTripEditorDraftTrips,
   cloneCustomSalesTripPlan,
   customerIdsForCustomTrip,
+  customerIdsForCustomTripEditorDraft,
   mergeCustomSalesTrips,
   moveCustomTripCustomers,
+  moveCustomTripEditorDraftCustomers,
+  moveCustomTripEditorDraftCustomersToNewTrip,
   moveCustomTripCustomersToNewTrip,
+  normalizeCustomSalesTripEditorDraft,
+  removeEmptyCustomTripEditorDraftTrip,
   reorderCustomSalesTrips,
   swapCustomTripCustomers,
 } from './customSalesTripPlan'
@@ -153,6 +160,91 @@ describe('custom sales trip plan', () => {
       'auto-trip-2',
       'auto-trip-2',
     ])
+  })
+
+
+  it('keeps an emptied source trip only in the editor draft until execution normalization', () => {
+    const draft = buildCustomSalesTripEditorDraft(baseline())
+    const moved = moveCustomTripEditorDraftCustomers(
+      draft,
+      ['east-a', 'east-b'],
+      'auto-trip-2',
+    )
+
+    expect(moved.editorTripOrder).toEqual([
+      'auto-trip-1',
+      'auto-trip-2',
+    ])
+    expect(
+      customerIdsForCustomTripEditorDraft(
+        moved,
+        'auto-trip-1',
+      ),
+    ).toEqual([])
+    expect(
+      Object.values(moved.tripByCustomerId),
+    ).toEqual([
+      'auto-trip-2',
+      'auto-trip-2',
+      'auto-trip-2',
+      'auto-trip-2',
+    ])
+
+    const normalized =
+      normalizeCustomSalesTripEditorDraft(moved)
+    expect(normalized.tripOrder).toEqual(['auto-trip-2'])
+    expect(Object.keys(normalized.customersById).sort()).toEqual(
+      Object.keys(normalized.tripByCustomerId).sort(),
+    )
+  })
+
+  it('removes one empty editor placeholder but refuses to remove a non-empty trip', () => {
+    const draft = buildCustomSalesTripEditorDraft(baseline())
+    const moved = moveCustomTripEditorDraftCustomers(
+      draft,
+      ['east-a', 'east-b'],
+      'auto-trip-2',
+    )
+    const removed = removeEmptyCustomTripEditorDraftTrip(
+      moved,
+      'auto-trip-1',
+    )
+
+    expect(removed.editorTripOrder).toEqual(['auto-trip-2'])
+    expect(() =>
+      removeEmptyCustomTripEditorDraftTrip(
+        draft,
+        'auto-trip-1',
+      ),
+    ).toThrow(/cannot be removed while it has customers/)
+  })
+
+  it('clears every empty editor placeholder without changing customer assignments', () => {
+    const draft = buildCustomSalesTripEditorDraft(baseline())
+    const firstMove = moveCustomTripEditorDraftCustomers(
+      draft,
+      ['east-a', 'east-b'],
+      'auto-trip-2',
+    )
+    const secondMove =
+      moveCustomTripEditorDraftCustomersToNewTrip(
+        firstMove,
+        ['east-a', 'east-b', 'fountain-a', 'ibex-a'],
+        'custom-trip-3',
+        'auto-trip-2',
+      )
+    const cleared =
+      clearEmptyCustomTripEditorDraftTrips(secondMove)
+
+    expect(secondMove.editorTripOrder).toEqual([
+      'auto-trip-1',
+      'auto-trip-2',
+      'custom-trip-3',
+    ])
+    expect(cleared.editorTripOrder).toEqual(['custom-trip-3'])
+    expect(cleared.tripByCustomerId).toEqual(
+      secondMove.tripByCustomerId,
+    )
   })
 
   it('creates a stable new trip immediately after the chosen insertion point', () => {
