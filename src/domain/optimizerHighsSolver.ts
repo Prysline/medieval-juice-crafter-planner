@@ -103,6 +103,8 @@ function objectiveOrder(
 interface HighsStageOptions {
   relaxAssignmentVariables?: boolean
   aggregateEquivalentAssignments?: boolean
+  aggregateEquivalentMaximumCostAssignments?: boolean
+  aggregateEquivalentMaximumCostProductionUnits?: boolean
   tightenRecipeBoundsFromMinimumCostFix?: boolean
   tightenOperationBoundsFromRecipeBounds?: boolean
   machineOperationKinds?: Set<ProductionStepKind>
@@ -143,6 +145,21 @@ export function minimumWasteEquivalentAssignmentGroupingIsSafe(
   }
 
   return true
+}
+
+function maximumIngredientCostGroupedProductionIsSafe(
+  domain: BatchOptimizationModel,
+): boolean {
+  if (!minimumWasteEquivalentAssignmentGroupingIsSafe(domain)) {
+    return false
+  }
+
+  const maxJarFillOperations =
+    domain.request.constraints?.maxJarFillOperations
+  return !(
+    typeof maxJarFillOperations === 'number' &&
+    Number.isFinite(maxJarFillOperations)
+  )
 }
 
 function initialFinishedJarEmptyingThresholds(
@@ -191,6 +208,8 @@ function buildHighsStage(
     (fix) => fix.objective === 'cost',
   )?.value
   const xByRecipeId = new Map<string, IntVariable>()
+  const groupedProductionUnitsByAssignmentGroupKey =
+    new Map<string, IntVariable>()
   const recipeUpperBoundById = new Map<string, number>()
   const zByRecipeId = new Map<string, BoolVariable>()
   const yByCustomerRecipe = new Map<string, BoolVariable>()
@@ -243,6 +262,36 @@ function buildHighsStage(
 
   if (
     options.aggregateEquivalentAssignments &&
+    options.aggregateEquivalentMaximumCostAssignments
+  ) {
+    throw new Error('Only one assignment grouping mode may be active')
+  }
+
+  if (
+    options.aggregateEquivalentMaximumCostProductionUnits &&
+    !options.aggregateEquivalentMaximumCostAssignments
+  ) {
+    throw new Error(
+      'Maximum-cost production grouping requires maximum-cost assignment grouping',
+    )
+  }
+
+  if (
+    options.aggregateEquivalentMaximumCostProductionUnits &&
+    (
+      domain.request.materialSourceMode === 'inventory-only' ||
+      needsProductionOperations ||
+      needsRecipeUsageStructure ||
+      options.fixedRecipeUnits
+    )
+  ) {
+    throw new Error(
+      'Maximum-cost production grouping requires recipe-insensitive production feasibility',
+    )
+  }
+
+  if (
+    options.aggregateEquivalentAssignments &&
     (needsRecipeSpecificAssignments || needsJarStructure)
   ) {
     throw new Error(
@@ -250,7 +299,31 @@ function buildHighsStage(
     )
   }
 
-  const assignmentGroups = options.aggregateEquivalentAssignments
+  if (
+    options.aggregateEquivalentMaximumCostAssignments &&
+    (
+      needsAnyObjective(
+        'negativeKnownRevenue',
+        'negativeKnownGrossProfit',
+        'negativeEmptiedInitialJars',
+      ) ||
+      needsJarStructure
+    )
+  ) {
+    throw new Error(
+      'Maximum-cost grouping requires assignment equivalence for every active fix',
+    )
+  }
+
+  // A maximum-cost assignment group is exact only when every member
+  // recipe has both the same service set and the same assignment-cost
+  // coefficient. Customer identities can then move freely between recipes
+  // inside the group without changing eligibility or the Stage 2 objective.
+  // Real recipe identities are restored by the next lexicographic stage.
+  const shouldGroupAssignments =
+    options.aggregateEquivalentAssignments ||
+    options.aggregateEquivalentMaximumCostAssignments
+  const assignmentGroups = shouldGroupAssignments
     ? (() => {
         const groups = new Map<
           string,
@@ -258,13 +331,22 @@ function buildHighsStage(
             key: string
             recipes: typeof domain.recipes
             eligibleCustomerIds: string[]
+            ingredientCost?: number
           }
         >()
         for (const recipe of domain.recipes) {
           const eligibleCustomerIds = [
             ...recipe.eligibleCustomerIds,
           ].sort()
-          const key = eligibleCustomerIds.join('\u001e')
+          const serviceKey = eligibleCustomerIds.join('\u001e')
+          const ingredientCost =
+            options.aggregateEquivalentMaximumCostAssignments
+              ? recipe.juiceUnitIngredientCost
+              : undefined
+          const key =
+            ingredientCost === undefined
+              ? serviceKey
+              : `${serviceKey}\u001d${ingredientCost}`
           const group = groups.get(key)
           if (group) group.recipes.push(recipe)
           else {
@@ -272,6 +354,9 @@ function buildHighsStage(
               key,
               recipes: [recipe],
               eligibleCustomerIds,
+              ...(ingredientCost === undefined
+                ? {}
+                : { ingredientCost }),
             })
           }
         }
@@ -279,64 +364,93 @@ function buildHighsStage(
       })()
     : null
 
-  domain.recipes.forEach((recipe, recipeIndex) => {
-    const customerCapacityUpperBound = Math.max(
-      1,
-      Math.ceil(recipe.eligibleCustomerIds.length / 2),
-    )
-    const costUpperBound =
-      options.tightenRecipeBoundsFromMinimumCostFix &&
-      typeof fixedMinimumCost === 'number' &&
-      fixedMinimumCost >= 0 &&
-      recipe.juiceUnitIngredientCost > 0
-        ? Math.floor(
-            fixedMinimumCost / recipe.juiceUnitIngredientCost,
-          )
-        : maxJuiceUnitsPerRecipe
-    const computedRecipeUpperBound =
-      options.tightenRecipeBoundsFromMinimumCostFix
-        ? Math.max(
+  if (options.aggregateEquivalentMaximumCostProductionUnits) {
+    // With recipe-specific production constraints disabled, X_group is
+    // exactly the sum of the original integer recipe x variables in this
+    // equivalence class. This mode is only entered after Stage 1 has fixed
+    // the global minimum productionUnits. Therefore producing more units in
+    // a group than all of its eligible customers could consume would
+    // contradict that minimum; the customer-capacity upper bound is exact.
+    // Later stages restore individual x.
+    if (!assignmentGroups) {
+      throw new Error(
+        'Maximum-cost production grouping requires assignment groups',
+      )
+    }
+
+    assignmentGroups.forEach((group, groupIndex) => {
+      groupedProductionUnitsByAssignmentGroupKey.set(
+        group.key,
+        model.intVar(
+          0,
+          Math.max(
             0,
-            Math.min(
-              maxJuiceUnitsPerRecipe,
-              customerCapacityUpperBound,
-              costUpperBound,
-            ),
-          )
-        : maxJuiceUnitsPerRecipe
-    const recipeUpperBound = Math.min(
-      computedRecipeUpperBound,
-      recipe.maxProductionUnits === undefined
-        ? computedRecipeUpperBound
-        : Math.max(0, Math.floor(recipe.maxProductionUnits)),
-    )
-    const x = model.intVar(
-      0,
-      recipeUpperBound,
-      `x_${recipeIndex}`,
-    )
-    xByRecipeId.set(recipe.candidate.id, x)
-    recipeUpperBoundById.set(
-      recipe.candidate.id,
-      recipeUpperBound,
-    )
-
-    if (options.fixedRecipeUnits) {
-      model.addConstraint(
-        x.eq(
-          options.fixedRecipeUnits.get(recipe.candidate.id) ?? 0,
+            Math.ceil(group.eligibleCustomerIds.length / 2),
+          ),
+          `x_group_${groupIndex}`,
         ),
-        `fixed_recipe_units_${recipeIndex}`,
       )
-    }
-
-    if (needsRecipeUsageStructure) {
-      zByRecipeId.set(
+    })
+  } else {
+    domain.recipes.forEach((recipe, recipeIndex) => {
+      const customerCapacityUpperBound = Math.max(
+        1,
+        Math.ceil(recipe.eligibleCustomerIds.length / 2),
+      )
+      const costUpperBound =
+        options.tightenRecipeBoundsFromMinimumCostFix &&
+        typeof fixedMinimumCost === 'number' &&
+        fixedMinimumCost >= 0 &&
+        recipe.juiceUnitIngredientCost > 0
+          ? Math.floor(
+              fixedMinimumCost / recipe.juiceUnitIngredientCost,
+            )
+          : maxJuiceUnitsPerRecipe
+      const computedRecipeUpperBound =
+        options.tightenRecipeBoundsFromMinimumCostFix
+          ? Math.max(
+              0,
+              Math.min(
+                maxJuiceUnitsPerRecipe,
+                customerCapacityUpperBound,
+                costUpperBound,
+              ),
+            )
+          : maxJuiceUnitsPerRecipe
+      const recipeUpperBound = Math.min(
+        computedRecipeUpperBound,
+        recipe.maxProductionUnits === undefined
+          ? computedRecipeUpperBound
+          : Math.max(0, Math.floor(recipe.maxProductionUnits)),
+      )
+      const x = model.intVar(
+        0,
+        recipeUpperBound,
+        `x_${recipeIndex}`,
+      )
+      xByRecipeId.set(recipe.candidate.id, x)
+      recipeUpperBoundById.set(
         recipe.candidate.id,
-        model.boolVar(`z_${recipeIndex}`),
+        recipeUpperBound,
       )
-    }
-  })
+
+      if (options.fixedRecipeUnits) {
+        model.addConstraint(
+          x.eq(
+            options.fixedRecipeUnits.get(recipe.candidate.id) ?? 0,
+          ),
+          `fixed_recipe_units_${recipeIndex}`,
+        )
+      }
+
+      if (needsRecipeUsageStructure) {
+        zByRecipeId.set(
+          recipe.candidate.id,
+          model.boolVar(`z_${recipeIndex}`),
+        )
+      }
+    })
+  }
 
   if (domain.request.materialSourceMode === 'inventory-only') {
     const rawInventory =
@@ -543,10 +657,18 @@ function buildHighsStage(
                 `y_${customerIndex}_${groupIndex}`,
               )
             : model.boolVar(`y_${customerIndex}_${groupIndex}`)
-          yByCustomerRecipe.set(
-            `${customerId}\u001f${group.key}`,
-            y,
-          )
+          const assignmentKey =
+            `${customerId}\u001f${group.key}`
+          yByCustomerRecipe.set(assignmentKey, y)
+          if (
+            options.aggregateEquivalentMaximumCostAssignments &&
+            group.ingredientCost !== undefined
+          ) {
+            assignedIngredientCostByAssignmentKey.set(
+              assignmentKey,
+              group.ingredientCost,
+            )
+          }
           assignmentVars.push(y)
         })
 
@@ -569,10 +691,14 @@ function buildHighsStage(
           return y ? [y] : []
         },
       )
-      const capacityTerms = group.recipes.flatMap((recipe) => {
-        const x = xByRecipeId.get(recipe.candidate.id)
-        return x ? [x.times(2)] : []
-      })
+      const groupedProductionUnits =
+        groupedProductionUnitsByAssignmentGroupKey.get(group.key)
+      const capacityTerms = groupedProductionUnits
+        ? [groupedProductionUnits.times(2)]
+        : group.recipes.flatMap((recipe) => {
+            const x = xByRecipeId.get(recipe.candidate.id)
+            return x ? [x.times(2)] : []
+          })
       const finishedServings = group.recipes.reduce(
         (sum, recipe) => sum + (recipe.initialFinishedServings ?? 0),
         0,
@@ -760,10 +886,12 @@ function buildHighsStage(
     needsAnyObjective('productionUnits') ||
     typeof options.productionUnitsLowerBound === 'number'
       ? sum(
-          ...domain.recipes.flatMap((recipe) => {
-            const x = xByRecipeId.get(recipe.candidate.id)
-            return x ? [x] : []
-          }),
+          ...(groupedProductionUnitsByAssignmentGroupKey.size > 0
+            ? [...groupedProductionUnitsByAssignmentGroupKey.values()]
+            : domain.recipes.flatMap((recipe) => {
+                const x = xByRecipeId.get(recipe.candidate.id)
+                return x ? [x] : []
+              })),
         )
       : undefined
 
@@ -1039,6 +1167,7 @@ function buildHighsStage(
     inventoryShortfallByIngredientId,
   }
 }
+
 
 function selectedRecipeUnits(
   domain: BatchOptimizationModel,
@@ -1711,6 +1840,15 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
         objectiveKey === 'productionUnits' &&
         fixes.length === 0 &&
         minimumWasteEquivalentAssignmentGroupingIsSafe(stageDomain)
+      let usingMaximumIngredientCostGrouping =
+        objectiveIndex === 1 &&
+        objectiveKey === 'negativeAssignedIngredientCost' &&
+        fixes.length === 1 &&
+        fixes[0].objective === 'productionUnits' &&
+        minimumWasteEquivalentAssignmentGroupingIsSafe(stageDomain)
+      let usingMaximumIngredientCostProductionGrouping =
+        usingMaximumIngredientCostGrouping &&
+        maximumIngredientCostGroupedProductionIsSafe(stageDomain)
 
       let built = buildHighsStage(
         stageDomain,
@@ -1720,15 +1858,24 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
           allowUnassignedCustomers: allowPartialAssignments,
           aggregateEquivalentAssignments:
             usingMinimumWasteGrouping,
+          aggregateEquivalentMaximumCostAssignments:
+            usingMaximumIngredientCostGrouping,
+          aggregateEquivalentMaximumCostProductionUnits:
+            usingMaximumIngredientCostProductionGrouping,
         },
       )
       let solution = await built.model.solve()
 
       if (
-        usingMinimumWasteGrouping &&
+        (
+          usingMinimumWasteGrouping ||
+          usingMaximumIngredientCostGrouping
+        ) &&
         solution.status !== 'optimal'
       ) {
         usingMinimumWasteGrouping = false
+        usingMaximumIngredientCostGrouping = false
+        usingMaximumIngredientCostProductionGrouping = false
         built = buildHighsStage(
           stageDomain,
           objectiveKey,

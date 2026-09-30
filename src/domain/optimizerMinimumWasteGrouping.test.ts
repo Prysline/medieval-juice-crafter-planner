@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest'
 import type { Customer, RecipeCandidate } from '../types'
 import { optimizeBatchPlan } from './optimizer'
 import {
+  highsSolverAdapter,
   minimumWasteEquivalentAssignmentGroupingIsSafe,
 } from './optimizerHighsSolver'
 import type {
   BatchOptimizationModel,
+  EligibleOptimizationRecipe,
   OptimizationRequest,
 } from './optimizerModel'
 
@@ -151,7 +153,7 @@ describe('minimum-waste equivalent-assignment grouping', () => {
     ).toBe(false)
   })
 
-  it('uses the grouped waste optimum only as a fix before restoring recipe-specific maximum-cost assignment', async () => {
+  it('keeps different-cost recipe identities distinct while grouping exact maximum-cost assignments', async () => {
     const result = await optimizeBatchPlan(
       request(
         ['a', 'b'],
@@ -224,7 +226,10 @@ describe('minimum-waste equivalent-assignment grouping', () => {
 
     const allNonempty = await optimizeBatchPlan(
       {
-        ...request(['a']),
+        ...request(
+          ['a'],
+          ['minimum-waste', 'maximum-ingredient-cost'],
+        ),
         initialAvailableJuiceJars: [
           { recipeId: 'stocked', servings: 1 },
         ],
@@ -235,7 +240,10 @@ describe('minimum-waste equivalent-assignment grouping', () => {
 
     const hardLimit = await optimizeBatchPlan(
       {
-        ...request(['a']),
+        ...request(
+          ['a'],
+          ['minimum-waste', 'maximum-ingredient-cost'],
+        ),
         initialAvailableJuiceJars: [
           { recipeId: null, servings: 0 },
         ],
@@ -246,6 +254,121 @@ describe('minimum-waste equivalent-assignment grouping', () => {
     expect(hardLimit.assignments).toEqual([
       { customerId: 'a', recipeId: 'stocked' },
     ])
+  })
+
+  it('keeps jar-fill hard constraints recipe-specific during maximum-cost Stage 2', async () => {
+    const result = await optimizeBatchPlan(
+      {
+        ...request(
+          ['a', 'b', 'c', 'd'],
+          ['minimum-waste', 'maximum-ingredient-cost'],
+        ),
+        constraints: { maxJarFillOperations: 1 },
+      },
+      {
+        source: {
+          customers: [
+            customer('a', '甜味'),
+            customer('b', '甜味'),
+            customer('c', '清新口氣'),
+            customer('d', '清新口氣'),
+          ],
+          candidates: [
+            recipe('shared', ['檸檬'], ['甜味', '清新口氣']),
+            recipe(
+              'sweet-expensive',
+              ['檸檬', '糖', '薄荷'],
+              ['甜味'],
+            ),
+            recipe(
+              'fresh-expensive',
+              ['橙子', '糖', '薄荷'],
+              ['清新口氣'],
+            ),
+          ],
+        },
+      },
+    )
+
+    expect(result.assignments).toEqual([
+      { customerId: 'a', recipeId: 'shared' },
+      { customerId: 'b', recipeId: 'shared' },
+      { customerId: 'c', recipeId: 'shared' },
+      { customerId: 'd', recipeId: 'shared' },
+    ])
+    expect(result.machineOperations.finalizing).toBe(1)
+  })
+
+  it('restores real recipe identity for later machine-operation tie-breaks', async () => {
+    const simple = recipe('simple', ['檸檬'], ['甜味'])
+    const complex = recipe('complex', ['檸檬'], ['甜味'])
+    const recipes: EligibleOptimizationRecipe[] = [
+      {
+        candidate: simple,
+        juiceUnitIngredientCost: 10,
+        eligibleCustomerIds: ['a', 'b'],
+        productionPath: {
+          ingredientIds: ['lemon'],
+          edges: [{
+            key: 'finish:simple',
+            kind: 'finalizing',
+            equipment: '果汁成品台',
+            fromIngredientIds: ['lemon'],
+            toIngredientIds: ['lemon'],
+          }],
+        },
+      },
+      {
+        candidate: complex,
+        juiceUnitIngredientCost: 10,
+        eligibleCustomerIds: ['a', 'b'],
+        productionPath: {
+          ingredientIds: ['lemon'],
+          edges: [
+            {
+              key: 'juice:complex',
+              kind: 'juicing',
+              equipment: '柑橘榨汁機',
+              fromIngredientIds: [],
+              toIngredientIds: ['lemon'],
+            },
+            {
+              key: 'finish:complex',
+              kind: 'finalizing',
+              equipment: '果汁成品台',
+              fromIngredientIds: ['lemon'],
+              toIngredientIds: ['lemon'],
+            },
+          ],
+        },
+      },
+    ]
+    const domain: BatchOptimizationModel = {
+      request: request(
+        ['a', 'b'],
+        [
+          'minimum-waste',
+          'maximum-ingredient-cost',
+          'minimum-machine-operations',
+        ],
+      ),
+      serviceableCustomerIds: ['a', 'b'],
+      unresolvedCustomerIds: [],
+      excludedSuppliedCustomerIds: [],
+      recipes,
+    }
+
+    const result = await highsSolverAdapter.solve(
+      domain,
+      domain.request.priorities!,
+    )
+
+    expect(result.assignments).toEqual([
+      { customerId: 'a', recipeId: 'simple' },
+      { customerId: 'b', recipeId: 'simple' },
+    ])
+    expect(result.productionUnitsByRecipeId).toEqual({ simple: 1 })
+    expect(result.metrics.machineOperations).toBe(1)
   })
 
   it('does not group a later minimum-waste stage after an assignment-sensitive objective', async () => {

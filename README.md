@@ -99,7 +99,7 @@ src/
     optimizerCertificates.ts # Debug-DP1/P2/P3：Stage 1 cost certificate；Stage 2 machine witness helpers；Stage 3 finalizing identity / distinct-kind proof helpers
     jarSwitches.ts      # initial-content-aware optimizer lower bound + PR #98 terminal-aware physical sequence exact planner
     optimizerSolver.ts # 可替換的 async solver adapter contract
-    optimizerHighsSolver.ts # HiGHS WASM lexicographic MIP adapter；Debug-DP1 Stage 1 exact cost certificate；DP2 exact machine certificate；DP3 在 cost→machine→jar 且 proof gate 閉合時用 production-unit / finalizing / jar LB=UB certificate + fixed-x verification；其他情況 generic fallback
+    optimizerHighsSolver.ts # HiGHS WASM lexicographic MIP adapter；Stage 1 minimum-waste equivalent-service grouping；maximum-ingredient-cost Stage 2 同 service-set＋同 cost exact grouping；Debug-DP1/2/3 certificates；不符合 proof gate 或 grouped solve 未 optimal 時 generic exact fallback
     optimizerWorkerProtocol.ts # P4：Worker request/result/error 序列化契約；PlanningUserError 可跨執行緒還原
     optimizerWorker.ts # P4：背景執行 optimizeBatchPlan / HiGHS
     optimizerWorkerClient.ts # P4：建立／終止 Worker、AbortSignal 取消與 stale-run 防護
@@ -181,7 +181,7 @@ HiGHS solver 使用真正的 lexicographic repeated solve，不使用隱藏權�
 - `minimum-machine-operations`
 - `minimum-jar-fill-operations`
 
-`maximum-ingredient-cost` 是研究／擴充實測配方用 criterion：solver 以實際 customer → recipe 的 assignment 變數乘上所選配方原料成本來計分，不直接最大化 production `x × ingredientCost`。因此額外製作沒有顧客需求的果汁不會提高此目標；主要目標固定後仍沿用既有 lexicographic fallback，優先壓低實際 production cost／production units。此 criterion 不推導售價，也不等同最高已知銷售額或最高已知毛利。
+`maximum-ingredient-cost` 是研究／擴充實測配方用 criterion：solver 以實際 customer → recipe 的 assignment 變數乘上所選配方原料成本來計分，不直接最大化 production `x × ingredientCost`。因此額外製作沒有顧客需求的果汁不會提高此目標；主要目標固定後仍沿用既有 lexicographic fallback，優先壓低實際 production cost／production units。此 criterion 不推導售價，也不等同最高已知銷售額或最高已知毛利。 `minimum-waste → maximum-ingredient-cost` 的安全路徑會在 Stage 2 只合併「可服務顧客集合完全相同且原料成本係數完全相同」的 assignment；沒有 recipe-specific production hard constraint 時，production units 也只以等價群組的 `X_group = Σx_recipe` 表示。這不裁切候選、不放寬 objective，Stage 2 exact optimum 固定後下一 lexicographic stage 立即恢復完整 recipe identity；安全條件不成立或 grouped solve 未得到 `optimal` 時仍回退完整 recipe-specific exact model。
 
 PR #206 後，**玩家操作成本與 physical jar 內容種類切換已分離**。玩家-facing 的「裝罐操作」計算實際把成品裝入罐子的次數：`initial-fill`、`refill-same-type`、`type-switch` 各算 1 次，`use-existing`、`continue-loaded` 算 0；因此同種補裝與空罐改裝另一種果汁的操作成本相同。底層 `jarTypeSwitches` 仍只表示同一 physical jar 的 recipe identity transition，用於不可混裝、terminal-leftover、previous-recipe state 與排程一致性檢查，不再當成玩家成本。Correctness-1 / PR #64 後，optimizer 與販售排程會讀取本日可用的所有實體果汁罐初始 `recipeId / servings`：有果汁罐架時，可在返家後把整罐放回架上並換另一罐出門；未喝空內容仍不能為了降低操作數而自動倒掉或跨罐轉移。相同配方未滿罐可直接補裝至容量上限；不同配方仍必須先讓舊內容合法耗盡。現行玩家 hard limit 為 `maxJarFillOperations`；`maxJarTypeSwitches` 僅保留內部 correctness / diagnostics。
 
