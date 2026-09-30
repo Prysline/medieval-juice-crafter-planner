@@ -1277,7 +1277,7 @@ export async function profilePostMaximumCostGenericContinuation(
   const wasteSolution = await wasteBuilt.model.solve()
   if (wasteSolution.status !== 'optimal') {
     throw new Error(
-      \`Grouped minimum-waste profiling stage ended with status: \${wasteSolution.status}\`,
+      `Grouped minimum-waste profiling stage ended with status: ${wasteSolution.status}`,
     )
   }
   const minimumWasteOptimum = Math.round(
@@ -1302,7 +1302,7 @@ export async function profilePostMaximumCostGenericContinuation(
   const maximumCostSolution = await maximumCostBuilt.model.solve()
   if (maximumCostSolution.status !== 'optimal') {
     throw new Error(
-      \`Grouped maximum-cost profiling stage ended with status: \${maximumCostSolution.status}\`,
+      `Grouped maximum-cost profiling stage ended with status: ${maximumCostSolution.status}`,
     )
   }
   const maximumIngredientCostFix = Math.round(
@@ -1341,7 +1341,7 @@ export async function profilePostMaximumCostGenericContinuation(
 
   const productionCostGroupCount = new Set(
     domain.recipes.map((recipe) =>
-      \`\${[...recipe.eligibleCustomerIds].sort().join('\\u001e')}\\u001d\${recipe.juiceUnitIngredientCost}\`,
+      `${[...recipe.eligibleCustomerIds].sort().join('\\u001e')}\\u001d${recipe.juiceUnitIngredientCost}`,
     ),
   ).size
 

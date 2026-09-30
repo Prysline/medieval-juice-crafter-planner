@@ -321,7 +321,7 @@ describe('minimum-waste equivalent-assignment grouping', () => {
       productionPath: {
         ingredientIds: [id],
         edges: [{
-          key: \`finish:\${id}\`,
+          key: `finish:${id}`,
           kind: 'finalizing',
           equipment: '果汁成品台',
           fromIngredientIds: [id],
