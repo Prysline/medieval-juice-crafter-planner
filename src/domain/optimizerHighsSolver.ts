@@ -1105,14 +1105,13 @@ export async function profileMaximumIngredientCostAfterGroupedMinimumWaste(
   maximumCostSolveMs: number
   maximumCostStatus: string
   maximumCostObjectiveValue: number | null
-  certificateAssignmentVariableCount: number
-  certificateUpperBound: number
-  certificateBuildMs: number
-  certificateSerializeMs: number
-  certificateParseMs: number
-  certificateSolveMs: number
-  certificateStatus: string
-  certificateObjectiveValue: number | null
+  groupedMaximumCostAssignmentVariableCount: number
+  groupedMaximumCostBuildMs: number
+  groupedMaximumCostSerializeMs: number
+  groupedMaximumCostParseMs: number
+  groupedMaximumCostSolveMs: number
+  groupedMaximumCostStatus: string
+  groupedMaximumCostObjectiveValue: number | null
 }> {
   if (!minimumWasteEquivalentAssignmentGroupingIsSafe(domain)) {
     throw new Error('Current profiling fixture is not safe for grouped minimum-waste')
@@ -1146,35 +1145,32 @@ export async function profileMaximumIngredientCostAfterGroupedMinimumWaste(
     value: minimumWasteOptimum,
   }]
 
-  const certificate =
-    prepareMaximumIngredientCostStageCertificate(domain)
-  if (!certificate) {
-    throw new Error('Fresh-main profiling fixture did not produce a maximum-cost certificate domain')
-  }
-
-  const certificateBuildStartedAt = performance.now()
-  const certificateBuilt = buildHighsStage(
-    certificate.stageDomain,
+  const groupedBuildStartedAt = performance.now()
+  const groupedBuilt = buildHighsStage(
+    domain,
     'negativeAssignedIngredientCost',
     fixes,
+    { aggregateEquivalentMaximumCostAssignments: true },
   )
-  const certificateBuildMs =
-    performance.now() - certificateBuildStartedAt
-  const certificateSerializeStartedAt = performance.now()
-  const certificateMps = certificateBuilt.model.print('mps')
-  const certificateSerializeMs =
-    performance.now() - certificateSerializeStartedAt
-  const certificateHighs = await HiGHS.create()
-  let certificateParseMs = 0
-  let certificateSolveMs = 0
-  let certificateStatus = 'unknown'
-  let certificateObjectiveValue: number | null = null
+  const groupedMaximumCostBuildMs =
+    performance.now() - groupedBuildStartedAt
+
+  const groupedSerializeStartedAt = performance.now()
+  const groupedMps = groupedBuilt.model.print('mps')
+  const groupedMaximumCostSerializeMs =
+    performance.now() - groupedSerializeStartedAt
+
+  const groupedHighs = await HiGHS.create()
+  let groupedMaximumCostParseMs = 0
+  let groupedMaximumCostSolveMs = 0
+  let groupedMaximumCostStatus = 'unknown'
+  let groupedMaximumCostObjectiveValue: number | null = null
 
   try {
     const parseStartedAt = performance.now()
-    await certificateHighs.parse(certificateMps, 'mps')
-    certificateParseMs = performance.now() - parseStartedAt
-    certificateHighs.setParam(
+    await groupedHighs.parse(groupedMps, 'mps')
+    groupedMaximumCostParseMs = performance.now() - parseStartedAt
+    groupedHighs.setParam(
       'time_limit',
       Math.max(
         0.1,
@@ -1184,16 +1180,16 @@ export async function profileMaximumIngredientCostAfterGroupedMinimumWaste(
       ),
     )
     const solveStartedAt = performance.now()
-    const solution = await certificateHighs.solve()
-    certificateSolveMs = performance.now() - solveStartedAt
-    certificateStatus = solution.status
-    certificateObjectiveValue =
+    const solution = await groupedHighs.solve()
+    groupedMaximumCostSolveMs = performance.now() - solveStartedAt
+    groupedMaximumCostStatus = solution.status
+    groupedMaximumCostObjectiveValue =
       typeof solution.objective === 'number' &&
       Number.isFinite(solution.objective)
         ? solution.objective
         : null
   } finally {
-    certificateHighs.free()
+    groupedHighs.free()
   }
 
   const maximumCostBuildStartedAt = performance.now()
@@ -1260,15 +1256,14 @@ export async function profileMaximumIngredientCostAfterGroupedMinimumWaste(
     maximumCostSolveMs,
     maximumCostStatus,
     maximumCostObjectiveValue,
-    certificateAssignmentVariableCount:
-      certificateBuilt.yByCustomerRecipe.size,
-    certificateUpperBound: certificate.upperBound,
-    certificateBuildMs,
-    certificateSerializeMs,
-    certificateParseMs,
-    certificateSolveMs,
-    certificateStatus,
-    certificateObjectiveValue,
+    groupedMaximumCostAssignmentVariableCount:
+      groupedBuilt.yByCustomerRecipe.size,
+    groupedMaximumCostBuildMs,
+    groupedMaximumCostSerializeMs,
+    groupedMaximumCostParseMs,
+    groupedMaximumCostSolveMs,
+    groupedMaximumCostStatus,
+    groupedMaximumCostObjectiveValue,
   }
 }
 
