@@ -78,20 +78,12 @@ it(
       JSON.stringify({
         productionUnits: continuation.productionUnits,
         maximumCostOptimum: continuation.maximumCostOptimum,
-        costGeneric: {
-          ...continuation.costGeneric,
-          buildMs: Math.round(continuation.costGeneric.buildMs),
-          serializeMs: Math.round(continuation.costGeneric.serializeMs),
-          parseMs: Math.round(continuation.costGeneric.parseMs),
-          solveMs: Math.round(continuation.costGeneric.solveMs),
-        },
-        costGrouped: {
-          ...continuation.costGrouped,
-          buildMs: Math.round(continuation.costGrouped.buildMs),
-          serializeMs: Math.round(continuation.costGrouped.serializeMs),
-          parseMs: Math.round(continuation.costGrouped.parseMs),
-          solveMs: Math.round(continuation.costGrouped.solveMs),
-        },
+        assignedIngredientCost: continuation.assignedIngredientCost,
+        slackServings: continuation.slackServings,
+        minimumRecipeCost: continuation.minimumRecipeCost,
+        costLowerBound: continuation.costLowerBound,
+        witnessProductionCost: continuation.witnessProductionCost,
+        costCertificateCloses: continuation.costCertificateCloses,
         machineGeneric: continuation.machineGeneric
           ? {
               ...continuation.machineGeneric,
@@ -112,7 +104,7 @@ it(
           : null,
       }),
     )
-    expect(continuation.costGrouped.status).toBe('optimal')
+    expect(continuation.slackServings).toBe(1)
   },
   120000,
 )
