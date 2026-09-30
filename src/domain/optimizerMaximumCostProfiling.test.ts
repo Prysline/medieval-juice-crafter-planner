@@ -56,6 +56,10 @@ it(
         maximumCostSerializeMs: Math.round(profile.maximumCostSerializeMs),
         maximumCostParseMs: Math.round(profile.maximumCostParseMs),
         maximumCostSolveMs: Math.round(profile.maximumCostSolveMs),
+        certificateBuildMs: Math.round(profile.certificateBuildMs),
+        certificateSerializeMs: Math.round(profile.certificateSerializeMs),
+        certificateParseMs: Math.round(profile.certificateParseMs),
+        certificateSolveMs: Math.round(profile.certificateSolveMs),
       }),
     )
 
@@ -65,6 +69,9 @@ it(
     )
     expect(profile.minimumWasteOptimum).toBeGreaterThan(0)
     expect(profile.maximumCostAssignmentVariableCount).toBeGreaterThan(40000)
+    expect(profile.certificateAssignmentVariableCount).toBeLessThan(
+      profile.maximumCostAssignmentVariableCount,
+    )
   },
   90000,
 )
