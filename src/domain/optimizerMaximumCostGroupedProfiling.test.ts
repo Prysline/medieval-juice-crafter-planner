@@ -3,7 +3,7 @@ import { customers as canonicalCustomers } from '../data/customers'
 import { customerVillageIsAvailable } from './availability'
 import {
   profileGroupedMaximumIngredientCostStage,
-  profileMaximumIngredientCostContinuationStages,
+  profileMaximumIngredientCostParityCostStage,
 } from './optimizerHighsSolver'
 import { buildOptimizationModel, type OptimizationRequest } from './optimizerModel'
 import { buildRecipeCandidatePool } from './recipeCandidatePool'
@@ -68,50 +68,25 @@ it(
     )
     expect(stageProfile.status).toBe('optimal')
 
-    const continuation =
-      await profileMaximumIngredientCostContinuationStages(
+    const parityProfile =
+      await profileMaximumIngredientCostParityCostStage(
         model,
-        10.5,
+        stageProfile.minimumWasteOptimum,
+        Math.round(stageProfile.objectiveValue ?? 0),
+        20,
       )
     console.info(
-      '[maximum-cost-continuation-profile]',
+      '[maximum-cost-parity-cost-profile]',
       JSON.stringify({
-        productionUnits: continuation.productionUnits,
-        maximumCostOptimum: continuation.maximumCostOptimum,
-        assignedIngredientCost: continuation.assignedIngredientCost,
-        slackServings: continuation.slackServings,
-        minimumRecipeCost: continuation.minimumRecipeCost,
-        costLowerBound: continuation.costLowerBound,
-        witnessProductionCost: continuation.witnessProductionCost,
-        costCertificateCloses: continuation.costCertificateCloses,
-        costGroupedLong: {
-          ...continuation.costGroupedLong,
-          buildMs: Math.round(continuation.costGroupedLong.buildMs),
-          serializeMs: Math.round(continuation.costGroupedLong.serializeMs),
-          parseMs: Math.round(continuation.costGroupedLong.parseMs),
-          solveMs: Math.round(continuation.costGroupedLong.solveMs),
-        },
-        machineGeneric: continuation.machineGeneric
-          ? {
-              ...continuation.machineGeneric,
-              buildMs: Math.round(continuation.machineGeneric.buildMs),
-              serializeMs: Math.round(continuation.machineGeneric.serializeMs),
-              parseMs: Math.round(continuation.machineGeneric.parseMs),
-              solveMs: Math.round(continuation.machineGeneric.solveMs),
-            }
-          : null,
-        machineGrouped: continuation.machineGrouped
-          ? {
-              ...continuation.machineGrouped,
-              buildMs: Math.round(continuation.machineGrouped.buildMs),
-              serializeMs: Math.round(continuation.machineGrouped.serializeMs),
-              parseMs: Math.round(continuation.machineGrouped.parseMs),
-              solveMs: Math.round(continuation.machineGrouped.solveMs),
-            }
-          : null,
+        ...parityProfile,
+        buildMs: Math.round(parityProfile.buildMs),
+        serializeMs: Math.round(parityProfile.serializeMs),
+        parseMs: Math.round(parityProfile.parseMs),
+        solveMs: Math.round(parityProfile.solveMs),
       }),
     )
-    expect(continuation.slackServings).toBe(1)
+    expect(parityProfile.oddSlackCount).toBe(1)
+    expect(parityProfile.status).toBe('optimal')
   },
   120000,
 )
