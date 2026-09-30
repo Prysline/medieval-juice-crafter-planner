@@ -1,4 +1,4 @@
-import { Model, sum } from '@bubblyworld/highs-ts'
+import { HiGHS, Model, sum } from '@bubblyworld/highs-ts'
 import { PROCESSING_STACK_CAPACITY } from './inventoryRules'
 import { juiceStateIdentity } from './juiceStateIdentity'
 import {
@@ -1037,6 +1037,123 @@ function buildHighsStage(
     yByCustomerRecipe,
     operationByEdgeKey,
     inventoryShortfallByIngredientId,
+  }
+}
+
+
+export async function profileMaximumIngredientCostAfterGroupedMinimumWaste(
+  domain: BatchOptimizationModel,
+  timeLimitSeconds = 10.5,
+): Promise<{
+  recipeCount: number
+  customerCount: number
+  minimumWasteAssignmentVariableCount: number
+  minimumWasteBuildMs: number
+  minimumWasteSolveMs: number
+  minimumWasteOptimum: number
+  maximumCostAssignmentVariableCount: number
+  maximumCostBuildMs: number
+  maximumCostSerializeMs: number
+  maximumCostParseMs: number
+  maximumCostSolveMs: number
+  maximumCostStatus: string
+  maximumCostObjectiveValue: number | null
+}> {
+  if (!minimumWasteEquivalentAssignmentGroupingIsSafe(domain)) {
+    throw new Error('Current profiling fixture is not safe for grouped minimum-waste')
+  }
+
+  const wasteBuildStartedAt = performance.now()
+  const wasteBuilt = buildHighsStage(
+    domain,
+    'productionUnits',
+    [],
+    { aggregateEquivalentAssignments: true },
+  )
+  const minimumWasteBuildMs = performance.now() - wasteBuildStartedAt
+
+  const wasteSolveStartedAt = performance.now()
+  const wasteSolution = await wasteBuilt.model.solve()
+  const minimumWasteSolveMs = performance.now() - wasteSolveStartedAt
+  if (wasteSolution.status !== 'optimal') {
+    throw new Error(
+      `Grouped minimum-waste profiling stage ended with status: ${wasteSolution.status}`,
+    )
+  }
+  const minimumWasteOptimum = Math.round(
+    requiredFiniteNumber(
+      wasteSolution.objective,
+      'grouped minimum-waste profiling objective',
+    ),
+  )
+
+  const maximumCostBuildStartedAt = performance.now()
+  const maximumCostBuilt = buildHighsStage(
+    domain,
+    'negativeAssignedIngredientCost',
+    [{
+      objective: 'productionUnits',
+      value: minimumWasteOptimum,
+    }],
+  )
+  const maximumCostBuildMs =
+    performance.now() - maximumCostBuildStartedAt
+
+  const serializeStartedAt = performance.now()
+  const mps = maximumCostBuilt.model.print('mps')
+  const maximumCostSerializeMs =
+    performance.now() - serializeStartedAt
+
+  const highs = await HiGHS.create()
+  let maximumCostParseMs = 0
+  let maximumCostSolveMs = 0
+  let maximumCostStatus = 'unknown'
+  let maximumCostObjectiveValue: number | null = null
+
+  try {
+    const parseStartedAt = performance.now()
+    await highs.parse(mps, 'mps')
+    maximumCostParseMs = performance.now() - parseStartedAt
+
+    highs.setParam(
+      'time_limit',
+      Math.max(
+        0.1,
+        Number.isInteger(timeLimitSeconds)
+          ? timeLimitSeconds + 1e-6
+          : timeLimitSeconds,
+      ),
+    )
+
+    const solveStartedAt = performance.now()
+    const solution = await highs.solve()
+    maximumCostSolveMs = performance.now() - solveStartedAt
+    maximumCostStatus = solution.status
+    maximumCostObjectiveValue =
+      typeof solution.objective === 'number' &&
+      Number.isFinite(solution.objective)
+        ? solution.objective
+        : null
+  } finally {
+    highs.free()
+  }
+
+  return {
+    recipeCount: domain.recipes.length,
+    customerCount: domain.serviceableCustomerIds.length,
+    minimumWasteAssignmentVariableCount:
+      wasteBuilt.yByCustomerRecipe.size,
+    minimumWasteBuildMs,
+    minimumWasteSolveMs,
+    minimumWasteOptimum,
+    maximumCostAssignmentVariableCount:
+      maximumCostBuilt.yByCustomerRecipe.size,
+    maximumCostBuildMs,
+    maximumCostSerializeMs,
+    maximumCostParseMs,
+    maximumCostSolveMs,
+    maximumCostStatus,
+    maximumCostObjectiveValue,
   }
 }
 
