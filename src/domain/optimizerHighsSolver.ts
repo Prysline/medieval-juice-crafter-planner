@@ -1734,6 +1734,13 @@ export async function profilePostMaximumCostGenericContinuation(
 
   const productionCostGroupCount =
     productionCostBuilt.groupCount
+  const productionCostObjectiveValue =
+    productionCostSolved.objectiveValue === null
+      ? null
+      : (
+          -maximumIngredientCostFix +
+          productionCostSolved.objectiveValue
+        ) / 2
 
   let machineAssignmentVariableCount = 0
   let machineRecipeVariableCount = 0
@@ -1746,15 +1753,13 @@ export async function profilePostMaximumCostGenericContinuation(
 
   if (
     productionCostSolved.status === 'optimal' &&
-    productionCostSolved.objectiveValue !== null
+    productionCostObjectiveValue !== null
   ) {
     const machineFixes: ObjectiveFix[] = [
       ...fixes,
       {
         objective: 'cost',
-        value: Math.round(
-          productionCostSolved.objectiveValue,
-        ),
+        value: Math.round(productionCostObjectiveValue),
       },
     ]
     const machineBuildStartedAt = performance.now()
@@ -1793,13 +1798,7 @@ export async function profilePostMaximumCostGenericContinuation(
     productionCostParseMs: productionCostSolved.parseMs,
     productionCostSolveMs: productionCostSolved.solveMs,
     productionCostStatus: productionCostSolved.status,
-    productionCostObjectiveValue:
-      productionCostSolved.objectiveValue === null
-        ? null
-        : (
-            -maximumIngredientCostFix +
-            productionCostSolved.objectiveValue
-          ) / 2,
+    productionCostObjectiveValue,
     machineAssignmentVariableCount,
     machineRecipeVariableCount,
     machineBuildMs,

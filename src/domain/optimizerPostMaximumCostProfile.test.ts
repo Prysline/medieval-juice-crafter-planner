@@ -90,13 +90,12 @@ it(
     expect(profile.customerCount).toBeGreaterThan(60)
     expect(profile.minimumWasteOptimum).toBe(35)
     expect(profile.maximumIngredientCostOptimum).toBe(3853)
-    expect(profile.productionCostSingletonVariableCount).toBe(
+    expect(profile.productionCostAssignmentVariableCount).toBe(
       profile.maximumCostAssignmentVariableCount,
     )
-    expect(profile.productionCostPairVariableCount).toBeGreaterThan(0)
-    expect(profile.productionCostAssignmentVariableCount).toBe(
-      profile.productionCostPairVariableCount +
-        profile.productionCostSingletonVariableCount,
+    expect(profile.productionCostPairVariableCount).toBe(0)
+    expect(profile.productionCostSingletonVariableCount).toBe(
+      profile.maximumCostAssignmentVariableCount,
     )
     expect(profile.productionCostGroupCount).toBeGreaterThan(1000)
     expect(profile.productionCostStatus).toBe('optimal')
