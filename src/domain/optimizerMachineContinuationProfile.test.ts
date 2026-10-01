@@ -11415,6 +11415,65 @@ hallSignatureProfileIt(
         cuts: cutRows,
       }),
     )
+
+    const fixedGroupIndex = 1279
+    const fixedCustomers = new Set(
+      groups[fixedGroupIndex]?.eligibleCustomerIds ?? [],
+    )
+    const extraOneCandidates = groups.flatMap((group, groupIndex) => {
+      if (groupIndex === fixedGroupIndex) return []
+      const residualCustomerIds = group.eligibleCustomerIds.filter(
+        (customerId) => !fixedCustomers.has(customerId),
+      )
+      return residualCustomerIds.length >= 4
+        ? [{
+            groupIndex,
+            ingredientCost: group.ingredientCost,
+            residualCustomerIds,
+          }]
+        : []
+    })
+    let pairCount = 0
+    const pairCostSums = new Map<number, number>()
+    let tightPairCount = 0
+    for (let leftIndex = 0; leftIndex < extraOneCandidates.length; leftIndex += 1) {
+      const left = extraOneCandidates[leftIndex]
+      for (
+        let rightIndex = leftIndex + 1;
+        rightIndex < extraOneCandidates.length;
+        rightIndex += 1
+      ) {
+        const right = extraOneCandidates[rightIndex]
+        const union = new Set([
+          ...left.residualCustomerIds,
+          ...right.residualCustomerIds,
+        ])
+        if (union.size < 8) continue
+        pairCount += 1
+        if (union.size === 8) tightPairCount += 1
+        const costSum = left.ingredientCost + right.ingredientCost
+        pairCostSums.set(costSum, (pairCostSums.get(costSum) ?? 0) + 1)
+      }
+    }
+    console.info(
+      '[machine-extra1-pair-summary]',
+      JSON.stringify({
+        fixedGroupIndex,
+        fixedCustomerCount: fixedCustomers.size,
+        extraOneCandidateCount: extraOneCandidates.length,
+        pairCount,
+        tightPairCount,
+        costSumCaseCount: pairCostSums.size,
+        smallestPairCostSums: [...pairCostSums.entries()]
+          .sort(([left], [right]) => left - right)
+          .slice(0, 20)
+          .map(([costSum, count]) => ({ costSum, count })),
+        largestPairCostBuckets: [...pairCostSums.entries()]
+          .sort((left, right) => right[1] - left[1])
+          .slice(0, 20)
+          .map(([costSum, count]) => ({ costSum, count })),
+      }),
+    )
   },
   120000,
 )
