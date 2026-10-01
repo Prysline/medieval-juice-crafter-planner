@@ -9839,10 +9839,56 @@ extraSumProfileIt(
     const sharedHallCutKeys = new Set(
       sharedHallCuts.map((cut) => cut.join(',')),
     )
+    const hallCustomerSets = sharedHallCuts.map((cut) => {
+      const customerIds = new Set<string>()
+      for (const groupIndex of cut) {
+        for (const customerId of groups[groupIndex].eligibleCustomerIds) {
+          customerIds.add(customerId)
+        }
+      }
+      return customerIds
+    })
+    let nestedHallPairs = 0
+    let disjointHallPairs = 0
+    let crossingHallPairs = 0
+    for (
+      let leftIndex = 0;
+      leftIndex < hallCustomerSets.length;
+      leftIndex += 1
+    ) {
+      for (
+        let rightIndex = leftIndex + 1;
+        rightIndex < hallCustomerSets.length;
+        rightIndex += 1
+      ) {
+        const left = hallCustomerSets[leftIndex]
+        const right = hallCustomerSets[rightIndex]
+        const intersectionSize = [...left].filter((customerId) =>
+          right.has(customerId),
+        ).length
+        if (intersectionSize === 0) {
+          disjointHallPairs += 1
+          continue
+        }
+        if (
+          intersectionSize === left.size ||
+          intersectionSize === right.size
+        ) {
+          nestedHallPairs += 1
+          continue
+        }
+        crossingHallPairs += 1
+      }
+    }
     console.info(
       '[machine-extra-sum-bootstrap-hall]',
       JSON.stringify({
         hallCuts: sharedHallCuts.length,
+        groupSizes: sharedHallCuts.map((cut) => cut.length),
+        customerSizes: hallCustomerSets.map((set) => set.size),
+        nestedHallPairs,
+        disjointHallPairs,
+        crossingHallPairs,
       }),
     )
     let globalWitness:
