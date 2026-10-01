@@ -3860,6 +3860,398 @@ function buildFinalizing30ConditionalSeasoningStage(
   }
 }
 
+
+function buildFinalizing30DoubleCompressedSeasoningStage(
+  domain: BatchOptimizationModel,
+  blendingFix: number,
+) {
+  const groups = pairGroups(domain)
+  const model = new Model()
+  const flowByGroupKey = new Map<
+    string,
+    ReturnType<Model['numVar']>[]
+  >(groups.map((group) => [group.key, []]))
+
+  domain.serviceableCustomerIds.forEach(
+    (customerId, customerIndex) => {
+      const terms: ReturnType<Model['numVar']>[] = []
+      groups.forEach((group, groupIndex) => {
+        if (!group.eligibleCustomerIds.includes(customerId)) return
+        const y = model.numVar(
+          0,
+          1,
+          `y_${customerIndex}_${groupIndex}`,
+        )
+        terms.push(y)
+        flowByGroupKey.get(group.key)!.push(y)
+      })
+      model.addConstraint(
+        sum(...terms).eq(1),
+        `customer_${customerIndex}`,
+      )
+    },
+  )
+
+  const ownersByKind = {
+    seasoning: new Map<string, Set<number>>(),
+    blending: new Map<string, Set<number>>(),
+  }
+
+  groups.forEach((group, groupIndex) => {
+    for (const recipe of group.recipes) {
+      for (const edge of recipe.productionPath.edges) {
+        if (edge.kind !== 'seasoning' && edge.kind !== 'blending') {
+          continue
+        }
+        const map = ownersByKind[edge.kind]
+        const owners = map.get(edge.key) ?? new Set<number>()
+        owners.add(groupIndex)
+        map.set(edge.key, owners)
+      }
+    }
+  })
+
+  const sharedSeasoningEdgeKeys = new Set(
+    [...ownersByKind.seasoning.entries()]
+      .filter(([, owners]) => owners.size > 1)
+      .map(([edgeKey]) => edgeKey),
+  )
+  const sharedBlendEdgeKeys = new Set(
+    [...ownersByKind.blending.entries()]
+      .filter(([, owners]) => owners.size > 1)
+      .map(([edgeKey]) => edgeKey),
+  )
+
+  const productionVars: ReturnType<Model['intVar']>[] = []
+  const productionCostTerms: ReturnType<
+    ReturnType<Model['intVar']>['times']
+  >[] = []
+  const slackVars: ReturnType<Model['boolVar']>[] = []
+  const usedGroupVars: ReturnType<Model['boolVar']>[] = []
+
+  const sharedSeasoningQuantityTermsByEdgeKey = new Map<
+    string,
+    ReturnType<ReturnType<Model['intVar']>['times']>[]
+  >()
+  const sharedSeasoningQuantityUpperBoundByEdgeKey =
+    new Map<string, number>()
+  const sharedBlendQuantityTermsByEdgeKey = new Map<
+    string,
+    ReturnType<ReturnType<Model['intVar']>['times']>[]
+  >()
+  const sharedBlendQuantityUpperBoundByEdgeKey =
+    new Map<string, number>()
+
+  const privateSeasoningOperationTerms: ReturnType<
+    ReturnType<Model['boolVar']>['times']
+  >[] = []
+  const privateBlendOperationTerms: ReturnType<
+    ReturnType<Model['boolVar']>['times']
+  >[] = []
+
+  let classVariableCount = 0
+  let classUseVariableCount = 0
+
+  groups.forEach((group, groupIndex) => {
+    const classes = new Map<
+      string,
+      {
+        sharedSeasoning: Map<string, number>
+        privateSeasoningCount: number
+        sharedBlend: Map<string, number>
+        privateBlendCount: number
+      }
+    >()
+
+    for (const recipe of group.recipes) {
+      const sharedSeasoning = new Map<string, number>()
+      const sharedBlend = new Map<string, number>()
+      let privateSeasoningCount = 0
+      let privateBlendCount = 0
+
+      const seasoningMultiplicity = new Map<string, number>()
+      const blendMultiplicity = new Map<string, number>()
+
+      for (const edge of recipe.productionPath.edges) {
+        if (edge.kind === 'seasoning') {
+          seasoningMultiplicity.set(
+            edge.key,
+            (seasoningMultiplicity.get(edge.key) ?? 0) + 1,
+          )
+        } else if (edge.kind === 'blending') {
+          blendMultiplicity.set(
+            edge.key,
+            (blendMultiplicity.get(edge.key) ?? 0) + 1,
+          )
+        }
+      }
+
+      for (const [edgeKey, multiplicity] of seasoningMultiplicity) {
+        if (sharedSeasoningEdgeKeys.has(edgeKey)) {
+          sharedSeasoning.set(edgeKey, multiplicity)
+        } else {
+          if (multiplicity !== 1) {
+            throw new Error(
+              `Private seasoning edge multiplicity ${multiplicity} is not safely reducible`,
+            )
+          }
+          privateSeasoningCount += 1
+        }
+      }
+
+      for (const [edgeKey, multiplicity] of blendMultiplicity) {
+        if (sharedBlendEdgeKeys.has(edgeKey)) {
+          sharedBlend.set(edgeKey, multiplicity)
+        } else {
+          if (multiplicity !== 1) {
+            throw new Error(
+              `Private blending edge multiplicity ${multiplicity} is not safely reducible`,
+            )
+          }
+          privateBlendCount += 1
+        }
+      }
+
+      const signature = JSON.stringify({
+        ss: [...sharedSeasoning.entries()].sort(([a], [b]) =>
+          a.localeCompare(b),
+        ),
+        ps: privateSeasoningCount,
+        sb: [...sharedBlend.entries()].sort(([a], [b]) =>
+          a.localeCompare(b),
+        ),
+        pb: privateBlendCount,
+      })
+
+      if (!classes.has(signature)) {
+        classes.set(signature, {
+          sharedSeasoning,
+          privateSeasoningCount,
+          sharedBlend,
+          privateBlendCount,
+        })
+      }
+    }
+
+    const groupUpperBound = Math.min(
+      PROCESSING_STACK_CAPACITY,
+      Math.max(
+        1,
+        Math.ceil(group.eligibleCustomerIds.length / 2),
+      ),
+    )
+    const groupProductionVars: ReturnType<Model['intVar']>[] = []
+    const groupUseVars: ReturnType<Model['boolVar']>[] = []
+
+    for (const recipeClass of classes.values()) {
+      const x = model.intVar(
+        0,
+        groupUpperBound,
+        `dx_${classVariableCount}`,
+      )
+      classVariableCount += 1
+      const used = model.boolVar(
+        `du_${classUseVariableCount}`,
+      )
+      classUseVariableCount += 1
+
+      groupProductionVars.push(x)
+      groupUseVars.push(used)
+      productionVars.push(x)
+      productionCostTerms.push(x.times(group.ingredientCost))
+
+      model.addConstraint(
+        x.minus(used.times(groupUpperBound)).leq(0),
+        `class_use_upper_${classVariableCount}`,
+      )
+      model.addConstraint(
+        used.minus(x).leq(0),
+        `class_use_lower_${classVariableCount}`,
+      )
+
+      for (
+        const [edgeKey, multiplicity]
+        of recipeClass.sharedSeasoning
+      ) {
+        const terms =
+          sharedSeasoningQuantityTermsByEdgeKey.get(edgeKey)
+        const term = x.times(multiplicity)
+        if (terms) terms.push(term)
+        else sharedSeasoningQuantityTermsByEdgeKey.set(
+          edgeKey,
+          [term],
+        )
+        sharedSeasoningQuantityUpperBoundByEdgeKey.set(
+          edgeKey,
+          (sharedSeasoningQuantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) +
+            groupUpperBound * multiplicity,
+        )
+      }
+
+      for (
+        const [edgeKey, multiplicity]
+        of recipeClass.sharedBlend
+      ) {
+        const terms =
+          sharedBlendQuantityTermsByEdgeKey.get(edgeKey)
+        const term = x.times(multiplicity)
+        if (terms) terms.push(term)
+        else sharedBlendQuantityTermsByEdgeKey.set(
+          edgeKey,
+          [term],
+        )
+        sharedBlendQuantityUpperBoundByEdgeKey.set(
+          edgeKey,
+          (sharedBlendQuantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) +
+            groupUpperBound * multiplicity,
+        )
+      }
+
+      if (recipeClass.privateSeasoningCount > 0) {
+        privateSeasoningOperationTerms.push(
+          used.times(recipeClass.privateSeasoningCount),
+        )
+      }
+      if (recipeClass.privateBlendCount > 0) {
+        privateBlendOperationTerms.push(
+          used.times(recipeClass.privateBlendCount),
+        )
+      }
+    }
+
+    const groupProduction = sum(...groupProductionVars)
+    const served = sum(...(flowByGroupKey.get(group.key) ?? []))
+    if (group.ingredientCost === SLACK_RECIPE_COST) {
+      const slack = model.boolVar(`slack_${groupIndex}`)
+      slackVars.push(slack)
+      model.addConstraint(
+        groupProduction
+          .times(2)
+          .minus(served)
+          .minus(slack)
+          .eq(0),
+        `parity_${groupIndex}`,
+      )
+    } else {
+      model.addConstraint(
+        groupProduction.times(2).minus(served).eq(0),
+        `parity_${groupIndex}`,
+      )
+    }
+
+    const usedGroup = model.boolVar(`ug_${groupIndex}`)
+    usedGroupVars.push(usedGroup)
+    model.addConstraint(
+      sum(...groupUseVars).minus(usedGroup).eq(0),
+      `one_class_per_used_group_${groupIndex}`,
+    )
+  })
+
+  model.addConstraint(
+    sum(...slackVars).eq(GLOBAL_SERVING_SLACK),
+    'global_slack',
+  )
+  model.addConstraint(
+    sum(...productionVars).eq(PRODUCTION_UNITS_FIX),
+    'production_units_fix',
+  )
+  model.addConstraint(
+    sum(...productionCostTerms).eq(PRODUCTION_COST_FIX),
+    'production_cost_fix',
+  )
+  model.addConstraint(
+    sum(...usedGroupVars).eq(30),
+    'finalizing30_used_groups',
+  )
+
+  const sharedSeasoningOps: ReturnType<Model['intVar']>[] = []
+  ;[...sharedSeasoningQuantityTermsByEdgeKey.entries()].forEach(
+    ([edgeKey, terms], edgeIndex) => {
+      const operation = model.intVar(
+        0,
+        Math.max(
+          1,
+          Math.ceil(
+            (sharedSeasoningQuantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) /
+              PROCESSING_STACK_CAPACITY,
+          ),
+        ),
+        `sop_${edgeIndex}`,
+      )
+      const quantity = sum(...terms)
+      model.addConstraint(
+        quantity
+          .minus(operation.times(PROCESSING_STACK_CAPACITY))
+          .leq(0),
+        `sop_capacity_${edgeIndex}`,
+      )
+      model.addConstraint(
+        operation.minus(quantity).leq(0),
+        `sop_usage_${edgeIndex}`,
+      )
+      sharedSeasoningOps.push(operation)
+    },
+  )
+
+  const sharedBlendOps: ReturnType<Model['intVar']>[] = []
+  ;[...sharedBlendQuantityTermsByEdgeKey.entries()].forEach(
+    ([edgeKey, terms], edgeIndex) => {
+      const operation = model.intVar(
+        0,
+        Math.max(
+          1,
+          Math.ceil(
+            (sharedBlendQuantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) /
+              PROCESSING_STACK_CAPACITY,
+          ),
+        ),
+        `bop_${edgeIndex}`,
+      )
+      const quantity = sum(...terms)
+      model.addConstraint(
+        quantity
+          .minus(operation.times(PROCESSING_STACK_CAPACITY))
+          .leq(0),
+        `bop_capacity_${edgeIndex}`,
+      )
+      model.addConstraint(
+        operation.minus(quantity).leq(0),
+        `bop_usage_${edgeIndex}`,
+      )
+      sharedBlendOps.push(operation)
+    },
+  )
+
+  const seasoning = sum(
+    ...sharedSeasoningOps,
+    ...privateSeasoningOperationTerms,
+  )
+  const blending = sum(
+    ...sharedBlendOps,
+    ...privateBlendOperationTerms,
+  )
+
+  model.addConstraint(
+    blending.eq(blendingFix),
+    'blending_frontier_fix',
+  )
+  model.minimize(seasoning)
+
+  return {
+    model,
+    groupCount: groups.length,
+    classVariableCount,
+    classUseVariableCount,
+    sharedSeasoningOperationEdgeCount:
+      sharedSeasoningOps.length,
+    privateSeasoningOperationTermCount:
+      privateSeasoningOperationTerms.length,
+    sharedBlendOperationEdgeCount: sharedBlendOps.length,
+    privateBlendOperationTermCount:
+      privateBlendOperationTerms.length,
+  }
+}
+
 async function solveBounded(
   model: Model,
   timeLimitSeconds: number,
@@ -3907,69 +4299,43 @@ async function solveBounded(
 }
 
 profileIt(
-  'profiles seasoning edge sharing for finalizing-30 compression',
+  'proves blend35 seasoning with private-edge compression',
   async () => {
     const domain = canonicalDomain()
-    const groups = pairGroups(domain)
-    const ownersByEdge = new Map<string, Set<string>>()
-    const multiplicityHistogram = new Map<number, number>()
-
-    for (const group of groups) {
-      for (const recipe of group.recipes) {
-        const multiplicityByEdge = new Map<string, number>()
-        for (const edge of recipe.productionPath.edges) {
-          if (edge.kind !== 'seasoning') continue
-          multiplicityByEdge.set(
-            edge.key,
-            (multiplicityByEdge.get(edge.key) ?? 0) + 1,
-          )
-          const owners =
-            ownersByEdge.get(edge.key) ?? new Set<string>()
-          owners.add(group.key)
-          ownersByEdge.set(edge.key, owners)
-        }
-        for (const multiplicity of multiplicityByEdge.values()) {
-          multiplicityHistogram.set(
-            multiplicity,
-            (multiplicityHistogram.get(multiplicity) ?? 0) + 1,
-          )
-        }
-      }
-    }
-
-    const sharingHistogram = new Map<number, number>()
-    for (const owners of ownersByEdge.values()) {
-      sharingHistogram.set(
-        owners.size,
-        (sharingHistogram.get(owners.size) ?? 0) + 1,
+    const buildStartedAt = performance.now()
+    const built =
+      buildFinalizing30DoubleCompressedSeasoningStage(
+        domain,
+        35,
       )
-    }
+    const buildMs = performance.now() - buildStartedAt
+    const solved = await solveBounded(built.model, 120)
 
     console.info(
-      '[machine-seasoning-edge-structure]',
+      '[machine-finalizing30-blend35-double-compressed-seasoning]',
       JSON.stringify({
-        seasoningEdgeCount: ownersByEdge.size,
-        privateSeasoningEdgeCount:
-          [...ownersByEdge.values()].filter(
-            (owners) => owners.size === 1,
-          ).length,
-        sharedSeasoningEdgeCount:
-          [...ownersByEdge.values()].filter(
-            (owners) => owners.size > 1,
-          ).length,
-        sharingHistogram: Object.fromEntries(
-          [...sharingHistogram.entries()].sort(
-            ([a], [b]) => a - b,
-          ),
-        ),
-        multiplicityHistogram: Object.fromEntries(
-          [...multiplicityHistogram.entries()].sort(
-            ([a], [b]) => a - b,
-          ),
-        ),
+        finalizing: 30,
+        blending: 35,
+        juicingGlobalLowerBound: 20,
+        seasoningNeededFor106OrBetter: 21,
+        groupCount: built.groupCount,
+        classVariableCount: built.classVariableCount,
+        classUseVariableCount: built.classUseVariableCount,
+        sharedSeasoningOperationEdgeCount:
+          built.sharedSeasoningOperationEdgeCount,
+        privateSeasoningOperationTermCount:
+          built.privateSeasoningOperationTermCount,
+        sharedBlendOperationEdgeCount:
+          built.sharedBlendOperationEdgeCount,
+        privateBlendOperationTermCount:
+          built.privateBlendOperationTermCount,
+        buildMs: Math.round(buildMs),
+        status: solved.status,
+        seasoningObjective: solved.objective,
+        solveMs: Math.round(solved.solveMs),
       }),
     )
   },
-  30000,
+  140000,
 )
 
