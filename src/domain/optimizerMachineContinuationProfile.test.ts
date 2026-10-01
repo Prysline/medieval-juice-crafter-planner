@@ -8831,6 +8831,10 @@ profileIt(
             groupIndex: number
             status: string
             solveMs: number
+            supportSize: number | null
+            exactSupportStatus: string | null
+            exactSupportObjective: number | null
+            exactSupportSolveMs: number
           }> = []
           for (const groupIndex of candidateGroupIndexes) {
             const built = buildFinalizing30GroupSupportMaster(
@@ -8850,10 +8854,56 @@ profileIt(
               },
             )
             const solved = await solveBounded(built.model, 0.75)
+            let supportSize: number | null = null
+            let exactSupportStatus: string | null = null
+            let exactSupportObjective: number | null = null
+            let exactSupportSolveMs = 0
+            if (
+              solved.status !== 'infeasible' &&
+              solved.namedSolution
+            ) {
+              const support = groups.flatMap(
+                (_group, supportGroupIndex) => {
+                  const raw = solved.namedSolution!.get(
+                    `sgu_${supportGroupIndex}`,
+                  )
+                  return typeof raw === 'number' &&
+                    Number.isFinite(raw) &&
+                    raw > 0.5
+                    ? [supportGroupIndex]
+                    : []
+                },
+              )
+              supportSize = support.length
+              if (support.length === 30) {
+                const exact = buildFinalizing30MaskPartitionStage(
+                  domain,
+                  new Set<ProductionStepKind>([
+                    'juicing',
+                    'seasoning',
+                    'blending',
+                  ]),
+                  thresholdCounts,
+                  { max: 76 },
+                  slackExtraCount,
+                  new Set(support),
+                )
+                const exactSolved = await solveBounded(exact.model, 4)
+                exactSupportStatus = exactSolved.status
+                exactSupportObjective = exactSolved.objective
+                exactSupportSolveMs = Math.round(exactSolved.solveMs)
+              } else {
+                exactSupportStatus = 'invalid-support-size'
+              }
+            }
             identityResults.push({
               groupIndex,
               status: solved.status,
               solveMs: Math.round(solved.solveMs),
+              supportSize,
+              exactSupportStatus,
+              exactSupportObjective,
+              exactSupportSolveMs,
             })
           }
           groupIdentitySplit = {
@@ -8871,8 +8921,31 @@ profileIt(
                   entry.status !== 'optimal',
               )
               .map((entry) => entry.groupIndex),
+            incumbentSupports: identityResults.filter(
+              (entry) => entry.supportSize === 30,
+            ).length,
+            exactInfeasibleIncumbentSupports: identityResults.filter(
+              (entry) => entry.exactSupportStatus === 'infeasible',
+            ).length,
+            exactOptimalIncumbentSupports: identityResults
+              .filter((entry) => entry.exactSupportStatus === 'optimal')
+              .map((entry) => ({
+                groupIndex: entry.groupIndex,
+                objective: entry.exactSupportObjective,
+              })),
+            invalidIncumbentSupports: identityResults
+              .filter(
+                (entry) =>
+                  entry.supportSize !== null &&
+                  entry.supportSize !== 30,
+              )
+              .map((entry) => ({
+                groupIndex: entry.groupIndex,
+                supportSize: entry.supportSize,
+              })),
             solveMs: identityResults.reduce(
-              (total, entry) => total + entry.solveMs,
+              (total, entry) =>
+                total + entry.solveMs + entry.exactSupportSolveMs,
               0,
             ),
           }
