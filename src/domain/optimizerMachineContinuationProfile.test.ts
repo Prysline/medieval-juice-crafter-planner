@@ -2558,24 +2558,7 @@ function buildConditionalThroughCapFeasibility(
         partitionOperationVars.blending.push(operation)
       } else if (kind === 'finalizing') {
         partitionOperationVars.finalizing.push(operation)
-        const groupIndex =
-          finalizingGroupIndexByEdgeKey.get(edgeKey)
-        if (typeof groupIndex !== 'number') {
-          throw new Error(
-            `Missing finalizing group index for ${edgeKey}`,
-          )
-        }
-        finalizingOperationVarsByGroup[groupIndex].push(operation)
       }
-    },
-  )
-
-  finalizingOperationVarsByGroup.forEach(
-    (groupOperations, groupIndex) => {
-      model.addConstraint(
-        sum(...groupOperations).leq(1),
-        `finalizing_single_identity_${groupIndex}`,
-      )
     },
   )
 
