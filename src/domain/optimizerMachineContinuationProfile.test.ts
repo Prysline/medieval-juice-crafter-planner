@@ -10426,14 +10426,7 @@ function exact311SupportArithmeticReachability(
   if (!fixedGroup) {
     return { reachable: false, stateCount: 0, classCount: 0 }
   }
-  const fixedUpperBound = Math.min(
-    PROCESSING_STACK_CAPACITY,
-    Math.max(
-      1,
-      Math.ceil(fixedGroup.eligibleCustomerIds.length / 2),
-    ),
-  )
-  if (fixedUpperBound < 4) {
+  if (fixedGroup.eligibleCustomerIds.length < 8) {
     return { reachable: false, stateCount: 0, classCount: 0 }
   }
 
@@ -10441,27 +10434,29 @@ function exact311SupportArithmeticReachability(
     string,
     {
       ingredientCost: number
+      normalEligible: boolean
       extraOneEligible: boolean
+      slackEligible: boolean
       count: number
     }
   >()
   groups.forEach((group, groupIndex) => {
     if (groupIndex === fixedExtra3GroupIndex) return
-    const upperBound = Math.min(
-      PROCESSING_STACK_CAPACITY,
-      Math.max(
-        1,
-        Math.ceil(group.eligibleCustomerIds.length / 2),
-      ),
-    )
-    const extraOneEligible = upperBound >= 2
-    const key = `${group.ingredientCost}|${extraOneEligible ? 1 : 0}`
+    const normalEligible = group.eligibleCustomerIds.length >= 2
+    const extraOneEligible = group.eligibleCustomerIds.length >= 4
+    const slackEligible =
+      group.ingredientCost === SLACK_RECIPE_COST &&
+      group.eligibleCustomerIds.length >= 1
+    const key =
+      `${group.ingredientCost}|${normalEligible ? 1 : 0}|${extraOneEligible ? 1 : 0}|${slackEligible ? 1 : 0}`
     const current = classCounts.get(key)
     if (current) current.count += 1
     else {
       classCounts.set(key, {
         ingredientCost: group.ingredientCost,
+        normalEligible,
         extraOneEligible,
+        slackEligible,
         count: 1,
       })
     }
@@ -10492,19 +10487,19 @@ function exact311SupportArithmeticReachability(
       extraOneCount <= Math.min(maxExtraOne, groupClass.count);
       extraOneCount += 1
     ) {
-      const maxSlack =
-        groupClass.ingredientCost === SLACK_RECIPE_COST ? 1 : 0
+      const maxSlack = groupClass.slackEligible ? 1 : 0
       for (
         let slackCount = 0;
         slackCount <=
         Math.min(maxSlack, groupClass.count - extraOneCount);
         slackCount += 1
       ) {
-        const maxNormal =
-          Math.min(
-            30,
-            groupClass.count - extraOneCount - slackCount,
-          )
+        const maxNormal = groupClass.normalEligible
+          ? Math.min(
+              30,
+              groupClass.count - extraOneCount - slackCount,
+            )
+          : 0
         for (
           let normalCount = 0;
           normalCount <= maxNormal;
@@ -10599,14 +10594,10 @@ supportDpProfileIt(
     const results = targetGroupIndexes.map((groupIndex) => {
       const group = groups[groupIndex]
       expect(group).toBeDefined()
-      const upperBound = Math.min(
-        PROCESSING_STACK_CAPACITY,
-        Math.max(
-          1,
-          Math.ceil(group.eligibleCustomerIds.length / 2),
-        ),
-      )
-      const cacheKey = `${group.ingredientCost}|${upperBound >= 2 ? 1 : 0}`
+      const fixedCapacityFeasible =
+        group.eligibleCustomerIds.length >= 8
+      const cacheKey =
+        `${group.ingredientCost}|${fixedCapacityFeasible ? 1 : 0}`
       let counted = cache.get(cacheKey)
       if (!counted) {
         const startedAt = performance.now()
@@ -10624,6 +10615,8 @@ supportDpProfileIt(
         groupIndex,
         groupCost: group.ingredientCost,
         arithmeticClass: cacheKey,
+        eligibleCustomers: group.eligibleCustomerIds.length,
+        fixedCapacityFeasible,
         ...counted,
       }
     })
