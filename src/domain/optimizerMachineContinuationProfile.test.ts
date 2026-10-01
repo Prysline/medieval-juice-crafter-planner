@@ -7278,7 +7278,7 @@ it.skip(
 )
 
 
-it.skip(
+profileIt(
   'summarizes exact extra-bearing group eligibility',
   async () => {
     const domain = canonicalDomain()
@@ -7327,7 +7327,7 @@ it.skip(
 )
 
 
-it.skip(
+profileIt(
   'summarizes exact customer-mask equivalence classes',
   async () => {
     const domain = canonicalDomain()
