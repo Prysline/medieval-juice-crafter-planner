@@ -7450,49 +7450,12 @@ forcedResidualProfileIt(
       )
     }
 
-    const results = []
-    for (let branchIndex = 0; branchIndex < branches.length; branchIndex += 1) {
-      const branch = branches[branchIndex]
-      const built = build311ExtraCostSumSupportMaster(
-        domain,
-        groupIndex,
-        undefined,
-        {
-          includeCustomerFlow: true,
-          forcedCustomerIds: groups[groupIndex].eligibleCustomerIds,
-          requiredUsedGroupIndexes: branch.requiredUsedGroupIndexes,
-          requiredSlackGroupIndexes: branch.requiredSlackGroupIndexes,
-        },
-      )
-      const solved = await solveBounded(built.model, 0.5)
-      results.push({
-        branchIndex,
-        choices: branch.choices,
-        status: solved.status,
-        solveMs: Math.round(solved.solveMs),
-      })
-    }
-
     console.info(
-      '[machine-forced-residual-branch-summary]',
+      '[machine-forced-residual-branch-shape]',
       JSON.stringify({
         groupIndex,
         branchCustomerCount: branchCustomers.length,
         branchCount: branches.length,
-        infeasibleBranches: results
-          .filter((entry) => entry.status === 'infeasible')
-          .map((entry) => entry.branchIndex),
-        optimalBranches: results
-          .filter((entry) => entry.status === 'optimal')
-          .map((entry) => entry.branchIndex),
-        unresolvedBranches: results
-          .filter(
-            (entry) =>
-              entry.status !== 'infeasible' &&
-              entry.status !== 'optimal',
-          )
-          .map((entry) => entry.branchIndex),
-        results,
       }),
     )
 
@@ -7592,6 +7555,104 @@ forcedResidualProfileIt(
           ),
         ],
         results: hugoResults,
+      }),
+    )
+
+    const patricia = nextSparseCustomers.find(
+      (entry) => entry.customerId === 'patricia',
+    )
+    const unresolvedHugoResults = hugoResults.filter(
+      (entry) =>
+        entry.status !== 'infeasible' &&
+        entry.status !== 'optimal',
+    )
+    const patriciaResults = []
+    if (hugo && patricia) {
+      for (const unresolved of unresolvedHugoResults) {
+        const parent = branches[unresolved.branchIndex]
+        const hugoChoice =
+          hugo.candidates[unresolved.hugoChoiceIndex]
+        for (
+          let patriciaChoiceIndex = 0;
+          patriciaChoiceIndex < patricia.candidates.length;
+          patriciaChoiceIndex += 1
+        ) {
+          const patriciaChoice =
+            patricia.candidates[patriciaChoiceIndex]
+          const built = build311ExtraCostSumSupportMaster(
+            domain,
+            groupIndex,
+            undefined,
+            {
+              includeCustomerFlow: true,
+              forcedCustomerIds:
+                groups[groupIndex].eligibleCustomerIds,
+              requiredUsedGroupIndexes: [
+                ...parent.requiredUsedGroupIndexes,
+                hugoChoice.groupIndex,
+                patriciaChoice.groupIndex,
+              ],
+              requiredSlackGroupIndexes: [
+                ...parent.requiredSlackGroupIndexes,
+                ...(hugoChoice.slackOnly
+                  ? [hugoChoice.groupIndex]
+                  : []),
+                ...(patriciaChoice.slackOnly
+                  ? [patriciaChoice.groupIndex]
+                  : []),
+              ],
+            },
+          )
+          const solved = await solveBounded(built.model, 0.5)
+          patriciaResults.push({
+            branchIndex: unresolved.branchIndex,
+            hugoChoiceIndex: unresolved.hugoChoiceIndex,
+            hugoGroupIndex: hugoChoice.groupIndex,
+            patriciaChoiceIndex,
+            patriciaGroupIndex: patriciaChoice.groupIndex,
+            status: solved.status,
+            solveMs: Math.round(solved.solveMs),
+          })
+        }
+      }
+    }
+
+    const unresolvedPatriciaKeys = new Set(
+      patriciaResults
+        .filter((entry) => entry.status !== 'infeasible')
+        .map(
+          (entry) =>
+            `${entry.branchIndex}|${entry.hugoChoiceIndex}`,
+        ),
+    )
+    const identityClosed =
+      hugoResults.every((entry) => {
+        if (entry.status === 'infeasible') return true
+        if (entry.status === 'optimal') return false
+        return !unresolvedPatriciaKeys.has(
+          `${entry.branchIndex}|${entry.hugoChoiceIndex}`,
+        )
+      })
+
+    console.info(
+      '[machine-forced-residual-patricia-summary]',
+      JSON.stringify({
+        unresolvedHugoBranches: unresolvedHugoResults.length,
+        patriciaChoiceCount: patricia?.candidates.length ?? 0,
+        totalBranches: patriciaResults.length,
+        infeasibleCount: patriciaResults.filter(
+          (entry) => entry.status === 'infeasible',
+        ).length,
+        optimalCount: patriciaResults.filter(
+          (entry) => entry.status === 'optimal',
+        ).length,
+        unresolvedCount: patriciaResults.filter(
+          (entry) =>
+            entry.status !== 'infeasible' &&
+            entry.status !== 'optimal',
+        ).length,
+        identityClosed,
+        results: patriciaResults,
       }),
     )
   },
