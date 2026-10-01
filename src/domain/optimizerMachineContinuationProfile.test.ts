@@ -3224,73 +3224,131 @@ async function solveBounded(
 }
 
 profileIt(
-  'searches the finalizing30 blending35 frontier by bounded raw through work',
+  'profiles finalizing-30 recipe identity structure',
   async () => {
     const domain = canonicalDomain()
-    expect(domain.recipes).toHaveLength(7892)
+    const groups = pairGroups(domain)
 
-    const built =
-      buildFinalizing30Blending35RawThroughStage(domain)
-    const solved = await solveBounded(built.model, 90)
+    const blendGroupsByEdge = new Map<string, Set<string>>()
+    const throughGroupsByEdge = new Map<string, Set<string>>()
+    const recipeShapeHistogram = new Map<string, number>()
+    const groupMinShapeHistogram = new Map<string, number>()
+    let groupsWithSingleRecipe = 0
+    let groupsWithAnyZeroBlend = 0
+    let groupsWithAnyOneBlend = 0
+    let groupsWithAllBlendEdgesPrivate = 0
 
-    if (
-      solved.objective === null ||
-      solved.namedSolution === null
-    ) {
-      console.info(
-        '[machine-finalizing30-blending35-raw-through]',
-        JSON.stringify({
-          status: solved.status,
-          objective: solved.objective,
-          solveMs: Math.round(solved.solveMs),
-          namedSolution: false,
-          recipeVariableCount: built.recipeVariableCount,
-          recipeUseVariableCount:
-            built.recipeUseVariableCount,
-          blendingOperationEdgeCount:
-            built.blendingOperationEdgeCount,
-        }),
+    for (const group of groups) {
+      if (group.recipes.length === 1) groupsWithSingleRecipe += 1
+
+      let minThrough = Number.POSITIVE_INFINITY
+      let minBlend = Number.POSITIVE_INFINITY
+      let hasZeroBlend = false
+      let hasOneBlend = false
+
+      for (const recipe of group.recipes) {
+        let through = 0
+        let blending = 0
+        const blendEdges = new Set<string>()
+
+        for (const edge of recipe.productionPath.edges) {
+          if (edge.kind === 'juicing' || edge.kind === 'seasoning') {
+            through += 1
+            const owners =
+              throughGroupsByEdge.get(edge.key) ?? new Set<string>()
+            owners.add(group.key)
+            throughGroupsByEdge.set(edge.key, owners)
+          } else if (edge.kind === 'blending') {
+            blending += 1
+            blendEdges.add(edge.key)
+            const owners =
+              blendGroupsByEdge.get(edge.key) ?? new Set<string>()
+            owners.add(group.key)
+            blendGroupsByEdge.set(edge.key, owners)
+          }
+        }
+
+        minThrough = Math.min(minThrough, through)
+        minBlend = Math.min(minBlend, blending)
+        if (blending === 0) hasZeroBlend = true
+        if (blending === 1) hasOneBlend = true
+        const shape = `t${through}:b${blending}`
+        recipeShapeHistogram.set(
+          shape,
+          (recipeShapeHistogram.get(shape) ?? 0) + 1,
+        )
+      }
+
+      if (hasZeroBlend) groupsWithAnyZeroBlend += 1
+      if (hasOneBlend) groupsWithAnyOneBlend += 1
+      groupMinShapeHistogram.set(
+        `t${minThrough}:b${minBlend}`,
+        (groupMinShapeHistogram.get(
+          `t${minThrough}:b${minBlend}`,
+        ) ?? 0) + 1,
       )
-      return
     }
 
-    const selections = domain.recipes.flatMap((recipe) => {
-      const variableName = built.xNameByRecipeId.get(
-        recipe.candidate.id,
+    for (const group of groups) {
+      const allPrivate = group.recipes.every((recipe) =>
+        recipe.productionPath.edges
+          .filter((edge) => edge.kind === 'blending')
+          .every(
+            (edge) =>
+              (blendGroupsByEdge.get(edge.key)?.size ?? 0) <= 1,
+          ),
       )
-      if (!variableName) return []
-      const value = solved.namedSolution?.get(variableName)
-      if (typeof value !== 'number' || !Number.isFinite(value)) {
-        return []
-      }
-      const units = Math.round(value)
-      return units > 0
-        ? [{ recipeId: recipe.candidate.id, units }]
-        : []
-    })
+      if (allPrivate) groupsWithAllBlendEdgesPrivate += 1
+    }
 
-    const breakdown = machineOperationBreakdownForSelection(
-      domain,
-      selections,
-    )
+    const blendSharingHistogram = new Map<number, number>()
+    for (const owners of blendGroupsByEdge.values()) {
+      blendSharingHistogram.set(
+        owners.size,
+        (blendSharingHistogram.get(owners.size) ?? 0) + 1,
+      )
+    }
+    const throughSharingHistogram = new Map<number, number>()
+    for (const owners of throughGroupsByEdge.values()) {
+      throughSharingHistogram.set(
+        owners.size,
+        (throughSharingHistogram.get(owners.size) ?? 0) + 1,
+      )
+    }
 
     console.info(
-      '[machine-finalizing30-blending35-raw-through]',
+      '[machine-finalizing30-identity-structure]',
       JSON.stringify({
-        status: solved.status,
-        rawThroughObjective: solved.objective,
-        solveMs: Math.round(solved.solveMs),
-        selectedRecipeCount: selections.length,
-        totalSelectedUnits: selections.reduce(
-          (total, selection) => total + selection.units,
-          0,
+        recipeCount: domain.recipes.length,
+        groupCount: groups.length,
+        groupsWithSingleRecipe,
+        maxRecipesPerGroup: Math.max(
+          ...groups.map((group) => group.recipes.length),
         ),
-        breakdown,
-        knownUpperBound: 107,
-        globalLowerBound: 103,
+        groupsWithAnyZeroBlend,
+        groupsWithAnyOneBlend,
+        groupsWithAllBlendEdgesPrivate,
+        blendEdgeCount: blendGroupsByEdge.size,
+        throughEdgeCount: throughGroupsByEdge.size,
+        blendSharingHistogram: Object.fromEntries(
+          [...blendSharingHistogram.entries()].sort(
+            ([a], [b]) => a - b,
+          ),
+        ),
+        throughSharingHistogram: Object.fromEntries(
+          [...throughSharingHistogram.entries()].sort(
+            ([a], [b]) => a - b,
+          ),
+        ),
+        recipeShapeHistogram: Object.fromEntries(
+          [...recipeShapeHistogram.entries()].sort(),
+        ),
+        groupMinShapeHistogram: Object.fromEntries(
+          [...groupMinShapeHistogram.entries()].sort(),
+        ),
       }),
     )
   },
-  110000,
+  30000,
 )
 
