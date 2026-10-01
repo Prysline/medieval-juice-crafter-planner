@@ -3907,38 +3907,69 @@ async function solveBounded(
 }
 
 profileIt(
-  'proves the finalizing30 blending35 conditional seasoning minimum',
+  'profiles seasoning edge sharing for finalizing-30 compression',
   async () => {
     const domain = canonicalDomain()
-    const buildStartedAt = performance.now()
-    const built =
-      buildFinalizing30ConditionalSeasoningStage(domain, 35)
-    const buildMs = performance.now() - buildStartedAt
-    const solved = await solveBounded(built.model, 120)
+    const groups = pairGroups(domain)
+    const ownersByEdge = new Map<string, Set<string>>()
+    const multiplicityHistogram = new Map<number, number>()
+
+    for (const group of groups) {
+      for (const recipe of group.recipes) {
+        const multiplicityByEdge = new Map<string, number>()
+        for (const edge of recipe.productionPath.edges) {
+          if (edge.kind !== 'seasoning') continue
+          multiplicityByEdge.set(
+            edge.key,
+            (multiplicityByEdge.get(edge.key) ?? 0) + 1,
+          )
+          const owners =
+            ownersByEdge.get(edge.key) ?? new Set<string>()
+          owners.add(group.key)
+          ownersByEdge.set(edge.key, owners)
+        }
+        for (const multiplicity of multiplicityByEdge.values()) {
+          multiplicityHistogram.set(
+            multiplicity,
+            (multiplicityHistogram.get(multiplicity) ?? 0) + 1,
+          )
+        }
+      }
+    }
+
+    const sharingHistogram = new Map<number, number>()
+    for (const owners of ownersByEdge.values()) {
+      sharingHistogram.set(
+        owners.size,
+        (sharingHistogram.get(owners.size) ?? 0) + 1,
+      )
+    }
 
     console.info(
-      '[machine-finalizing30-blend35-seasoning-min]',
+      '[machine-seasoning-edge-structure]',
       JSON.stringify({
-        finalizing: 30,
-        blending: 35,
-        juicingGlobalLowerBound: 20,
-        seasoningNeededFor106OrBetter: 21,
-        groupCount: built.groupCount,
-        classVariableCount: built.classVariableCount,
-        classUseVariableCount: built.classUseVariableCount,
-        sharedBlendOperationEdgeCount:
-          built.sharedBlendOperationEdgeCount,
-        privateBlendOperationTermCount:
-          built.privateBlendOperationTermCount,
-        seasoningOperationEdgeCount:
-          built.seasoningOperationEdgeCount,
-        buildMs: Math.round(buildMs),
-        status: solved.status,
-        seasoningObjective: solved.objective,
-        solveMs: Math.round(solved.solveMs),
+        seasoningEdgeCount: ownersByEdge.size,
+        privateSeasoningEdgeCount:
+          [...ownersByEdge.values()].filter(
+            (owners) => owners.size === 1,
+          ).length,
+        sharedSeasoningEdgeCount:
+          [...ownersByEdge.values()].filter(
+            (owners) => owners.size > 1,
+          ).length,
+        sharingHistogram: Object.fromEntries(
+          [...sharingHistogram.entries()].sort(
+            ([a], [b]) => a - b,
+          ),
+        ),
+        multiplicityHistogram: Object.fromEntries(
+          [...multiplicityHistogram.entries()].sort(
+            ([a], [b]) => a - b,
+          ),
+        ),
       }),
     )
   },
-  140000,
+  30000,
 )
 
