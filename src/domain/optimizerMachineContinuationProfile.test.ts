@@ -1377,6 +1377,280 @@ function crossGroupDominatedRecipeIds(
 }
 
 
+
+function exactIntegralAssignmentForGroupUnits(
+  domain: BatchOptimizationModel,
+  unitsByGroupKey: ReadonlyMap<string, number>,
+): {
+  assignedGroupIndexByCustomerId: Map<string, number>
+  slackGroupIndex: number
+} {
+  const groups = pairGroups(domain)
+  const slots: Array<{ groupIndex: number }> = []
+
+  groups.forEach((group, groupIndex) => {
+    const units = unitsByGroupKey.get(group.key) ?? 0
+    for (let slotIndex = 0; slotIndex < units * 2; slotIndex += 1) {
+      slots.push({ groupIndex })
+    }
+  })
+
+  const realDemands = domain.serviceableCustomerIds.map(
+    (customerId) => ({
+      id: customerId,
+      eligibleGroupIndexes: groups.flatMap((group, groupIndex) =>
+        group.eligibleCustomerIds.includes(customerId) &&
+        (unitsByGroupKey.get(group.key) ?? 0) > 0
+          ? [groupIndex]
+          : [],
+      ),
+    }),
+  )
+  const slackDemand = {
+    id: '__slack__',
+    eligibleGroupIndexes: groups.flatMap((group, groupIndex) =>
+      group.ingredientCost === SLACK_RECIPE_COST &&
+      (unitsByGroupKey.get(group.key) ?? 0) > 0
+        ? [groupIndex]
+        : [],
+    ),
+  }
+
+  expect(slots).toHaveLength(
+    domain.serviceableCustomerIds.length + GLOBAL_SERVING_SLACK,
+  )
+  expect(slackDemand.eligibleGroupIndexes.length).toBeGreaterThan(0)
+
+  const demands = [slackDemand, ...realDemands].sort(
+    (left, right) =>
+      left.eligibleGroupIndexes.length -
+      right.eligibleGroupIndexes.length,
+  )
+  const slotOwner = new Array<number>(slots.length).fill(-1)
+
+  const tryAssign = (
+    demandIndex: number,
+    visitedSlots: Set<number>,
+  ): boolean => {
+    const demand = demands[demandIndex]
+    for (let slotIndex = 0; slotIndex < slots.length; slotIndex += 1) {
+      if (visitedSlots.has(slotIndex)) continue
+      if (
+        !demand.eligibleGroupIndexes.includes(
+          slots[slotIndex].groupIndex,
+        )
+      ) {
+        continue
+      }
+      visitedSlots.add(slotIndex)
+      const previousOwner = slotOwner[slotIndex]
+      if (
+        previousOwner < 0 ||
+        tryAssign(previousOwner, visitedSlots)
+      ) {
+        slotOwner[slotIndex] = demandIndex
+        return true
+      }
+    }
+    return false
+  }
+
+  for (let demandIndex = 0; demandIndex < demands.length; demandIndex += 1) {
+    if (!tryAssign(demandIndex, new Set())) {
+      throw new Error(
+        `Unable to lift group units into an integral assignment for ${demands[demandIndex].id}`,
+      )
+    }
+  }
+
+  const assignedGroupIndexByCustomerId = new Map<string, number>()
+  let slackGroupIndex = -1
+  slotOwner.forEach((demandIndex, slotIndex) => {
+    if (demandIndex < 0) return
+    const demand = demands[demandIndex]
+    const groupIndex = slots[slotIndex].groupIndex
+    if (demand.id === '__slack__') slackGroupIndex = groupIndex
+    else assignedGroupIndexByCustomerId.set(demand.id, groupIndex)
+  })
+
+  expect(assignedGroupIndexByCustomerId.size).toBe(
+    domain.serviceableCustomerIds.length,
+  )
+  if (slackGroupIndex < 0) {
+    throw new Error('No slack group was assigned')
+  }
+
+  return {
+    assignedGroupIndexByCustomerId,
+    slackGroupIndex,
+  }
+}
+
+function mipStartValuesForNonfinalWitness(
+  domain: BatchOptimizationModel,
+  selectedUnitsByRecipeId: ReadonlyMap<string, number>,
+): Map<string, number> {
+  const groups = pairGroups(domain)
+  const unitsByGroupKey = new Map<string, number>()
+
+  for (const group of groups) {
+    unitsByGroupKey.set(
+      group.key,
+      group.recipes.reduce(
+        (total, recipe) =>
+          total +
+          (selectedUnitsByRecipeId.get(recipe.candidate.id) ?? 0),
+        0,
+      ),
+    )
+  }
+
+  const assignment = exactIntegralAssignmentForGroupUnits(
+    domain,
+    unitsByGroupKey,
+  )
+  const values = new Map<string, number>()
+
+  domain.serviceableCustomerIds.forEach(
+    (customerId, customerIndex) => {
+      const groupIndex =
+        assignment.assignedGroupIndexByCustomerId.get(customerId)
+      if (typeof groupIndex !== 'number') {
+        throw new Error(
+          `Missing integral assignment for ${customerId}`,
+        )
+      }
+      values.set(`y_${customerIndex}_${groupIndex}`, 1)
+    },
+  )
+  values.set(`slack_${assignment.slackGroupIndex}`, 1)
+
+  const quantityByEdgeKey = new Map<string, number>()
+  const edgeIndexByKey = new Map<string, number>()
+  let recipeVariableIndex = 0
+
+  for (const group of groups) {
+    for (const recipe of group.recipes) {
+      const units =
+        selectedUnitsByRecipeId.get(recipe.candidate.id) ?? 0
+      if (units > 0) {
+        values.set(`x_${recipeVariableIndex}`, units)
+      }
+      recipeVariableIndex += 1
+
+      const multiplicityByEdgeKey = new Map<string, number>()
+      for (const edge of recipe.productionPath.edges) {
+        if (edge.kind === 'finalizing') continue
+        if (!edgeIndexByKey.has(edge.key)) {
+          edgeIndexByKey.set(edge.key, edgeIndexByKey.size)
+        }
+        multiplicityByEdgeKey.set(
+          edge.key,
+          (multiplicityByEdgeKey.get(edge.key) ?? 0) + 1,
+        )
+      }
+      if (units <= 0) continue
+      for (const [edgeKey, multiplicity] of multiplicityByEdgeKey) {
+        quantityByEdgeKey.set(
+          edgeKey,
+          (quantityByEdgeKey.get(edgeKey) ?? 0) +
+            units * multiplicity,
+        )
+      }
+    }
+  }
+
+  for (const [edgeKey, quantity] of quantityByEdgeKey) {
+    if (quantity <= 0) continue
+    const edgeIndex = edgeIndexByKey.get(edgeKey)
+    if (typeof edgeIndex !== 'number') {
+      throw new Error(`Missing operation index for ${edgeKey}`)
+    }
+    values.set(
+      `op_${edgeIndex}`,
+      Math.ceil(quantity / PROCESSING_STACK_CAPACITY),
+    )
+  }
+
+  return values
+}
+
+function miplibSolutionText(
+  objective: number,
+  values: ReadonlyMap<string, number>,
+): string {
+  return [
+    `=obj= ${objective}`,
+    ...[...values.entries()]
+      .filter(([, value]) => value !== 0)
+      .map(([name, value]) => `${name} ${value}`),
+    '',
+  ].join('\n')
+}
+
+async function solveBoundedWithMIPStart(
+  model: Model,
+  startValues: ReadonlyMap<string, number>,
+  startObjective: number,
+  timeLimitSeconds: number,
+): Promise<{
+  status: string
+  objective: number | null
+  solveMs: number
+  progressTail: string[]
+}> {
+  const progress: string[] = []
+  const highs = await HiGHS.create({
+    console: {
+      log: (message: string) => progress.push(message),
+      error: (message: string) => progress.push(message),
+    },
+  })
+  const startPath = '/tmp/machine-start.sol'
+  const runtime = highs as unknown as {
+    module: {
+      FS: {
+        writeFile(path: string, content: string): void
+        unlink(path: string): void
+      }
+    }
+  }
+
+  try {
+    await highs.parse(model.print('mps'), 'mps')
+    runtime.module.FS.writeFile(
+      startPath,
+      miplibSolutionText(startObjective, startValues),
+    )
+    highs.setParam('read_solution_file', startPath)
+    highs.setParam('time_limit', timeLimitSeconds)
+    highs.setParam('mip_rel_gap', 0)
+    highs.setParam('mip_abs_gap', 0)
+
+    const startedAt = performance.now()
+    const solution = await highs.solve()
+    const solveMs = performance.now() - startedAt
+    return {
+      status: solution.status,
+      objective:
+        typeof solution.objective === 'number' &&
+        Number.isFinite(solution.objective)
+          ? solution.objective
+          : null,
+      solveMs,
+      progressTail: progress.slice(-60),
+    }
+  } finally {
+    try {
+      runtime.module.FS.unlink(startPath)
+    } catch {
+      // The solver may have failed before the file was written.
+    }
+    highs.free()
+  }
+}
+
+
 async function solveBoundedWithProgress(
   model: Model,
   timeLimitSeconds: number,
@@ -1460,34 +1734,106 @@ async function solveBounded(
 }
 
 profileIt(
-  'tests exact search heuristics on the blending-optimal machine slice',
+  'proves whether a known 77 non-final witness unlocks the exact MIP proof',
   async () => {
     const domain = canonicalDomain()
     expect(domain.recipes).toHaveLength(7892)
 
-    const built = buildFlowProjectedNonfinalStage(domain, {
+    const blendingBuilt = buildPartitionOptimalPairStage(
+      domain,
+      new Set<ProductionStepKind>(['blending']),
+    )
+    const blendingStartedAt = performance.now()
+    const blendingSolution = await blendingBuilt.model.solve()
+    const blendingSolveMs =
+      performance.now() - blendingStartedAt
+    if (blendingSolution.status !== 'optimal') {
+      throw new Error(
+        `Blending witness stage ended with ${blendingSolution.status}`,
+      )
+    }
+
+    const unitsByGroupKey = new Map<string, number>()
+    for (const group of blendingBuilt.groups) {
+      let units = 0
+      for (const variable of (
+        blendingBuilt.unitVarsByGroupKey.get(group.key) ?? []
+      )) {
+        const value = blendingSolution.getValue(variable)
+        if (typeof value !== 'number' || !Number.isFinite(value)) {
+          throw new Error('Invalid blending pair variable value')
+        }
+        if (value > 0.5) units += 1
+      }
+      unitsByGroupKey.set(group.key, units)
+    }
+
+    const fullBuilt = buildFixedGroupFullMachineStage(
+      domain,
+      unitsByGroupKey,
+    )
+    const fullSolution = await fullBuilt.model.solve()
+    if (fullSolution.status !== 'optimal') {
+      throw new Error(
+        `Fixed-group full-machine witness ended with ${fullSolution.status}`,
+      )
+    }
+
+    const selectedUnitsByRecipeId = new Map<string, number>()
+    for (const recipe of domain.recipes) {
+      const variable = fullBuilt.xByRecipeId.get(recipe.candidate.id)
+      if (!variable) continue
+      const value = fullSolution.getValue(variable)
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
+        throw new Error('Invalid fixed-group recipe value')
+      }
+      const units = Math.round(value)
+      if (units > 0) {
+        selectedUnitsByRecipeId.set(recipe.candidate.id, units)
+      }
+    }
+
+    const selections = [...selectedUnitsByRecipeId].map(
+      ([recipeId, units]) => ({ recipeId, units }),
+    )
+    const breakdown = machineOperationBreakdownForSelection(
+      domain,
+      selections,
+    )
+    expect(breakdown.total).toBe(107)
+    expect(
+      breakdown.juicing + breakdown.seasoning + breakdown.blending,
+    ).toBe(77)
+    expect(breakdown.blending).toBe(35)
+
+    const startValues = mipStartValuesForNonfinalWitness(
+      domain,
+      selectedUnitsByRecipeId,
+    )
+    const target = buildFlowProjectedNonfinalStage(domain, {
       blendingCap: 35,
     })
-    const params = {
-      mip_heuristic_effort: 1,
-      mip_heuristic_run_zi_round: true,
-      mip_heuristic_run_shifting: true,
-      mip_detect_symmetry: false,
-    } as const
-    const solved = await solveBoundedWithProgress(
-      built.model,
+    const solved = await solveBoundedWithMIPStart(
+      target.model,
+      startValues,
+      77,
       75,
-      params,
     )
 
     console.info(
-      '[machine-blending35-search-tuning]',
+      '[machine-nonfinal-mip-start]',
       JSON.stringify({
-        exactness: 'unchanged',
-        blendingExactLowerBound: 35,
-        throughExactLowerBound: 38,
-        knownNonfinalWitness: 77,
-        params,
+        witnessBuild: {
+          blendingSolveMs: Math.round(blendingSolveMs),
+          selectedRecipeCount: selectedUnitsByRecipeId.size,
+          startNonzeroValueCount: startValues.size,
+          breakdown,
+        },
+        exactBounds: {
+          throughSeasoning: 38,
+          blending: 35,
+          nonfinal: 73,
+        },
         status: solved.status,
         objective: solved.objective,
         solveMs: Math.round(solved.solveMs),
@@ -1495,6 +1841,6 @@ profileIt(
       }),
     )
   },
-  100000,
+  180000,
 )
 
