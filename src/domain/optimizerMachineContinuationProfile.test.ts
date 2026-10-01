@@ -3392,7 +3392,7 @@ function buildFinalizing30CompressedFrontierStage(
     }
 
     const groupProduction = sum(...groupProductionVars)
-    const served = sum(...(flowByGroupKey.get(group.key) ?? [])
+    const served = sum(...(flowByGroupKey.get(group.key) ?? []))
     if (group.ingredientCost === SLACK_RECIPE_COST) {
       const slack = model.boolVar(`slack_${groupIndex}`)
       slackVars.push(slack)
