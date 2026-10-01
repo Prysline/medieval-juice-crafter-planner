@@ -2719,7 +2719,11 @@ function buildFinalizingOptimalGroupCountStage(
 
 function buildFinalizing30ReducedStage(
   domain: BatchOptimizationModel,
-  objective: 'through' | 'blending' | 'nonfinal-cap',
+  objective: 'through' | 'blending' | 'nonfinal-cap' | 'frontier',
+  frontier?: {
+    blending: number
+    throughCap: number
+  },
 ) {
   const groups = pairGroups(domain)
   const model = new Model()
@@ -2924,6 +2928,19 @@ function buildFinalizing30ReducedStage(
       'nonfinal_cap_for_total106',
     )
     model.minimize(sum(...productionVars))
+  } else if (objective === 'frontier') {
+    if (!frontier) {
+      throw new Error('Missing finalizing-30 frontier constraints')
+    }
+    model.addConstraint(
+      blending.eq(frontier.blending),
+      'blending_frontier_fix',
+    )
+    model.addConstraint(
+      through.leq(frontier.throughCap),
+      'through_frontier_cap',
+    )
+    model.minimize(sum(...productionVars))
   } else if (objective === 'through') {
     model.minimize(through)
   } else {
@@ -2984,51 +3001,51 @@ async function solveBounded(
 }
 
 profileIt(
-  'proves conditional partition minima on the finalizing-30 frontier',
+  'checks every finalizing-30 branch that could beat 107',
   async () => {
     const domain = canonicalDomain()
     expect(domain.recipes).toHaveLength(7892)
 
+    const branches = [
+      { blending: 35, throughCap: 41 },
+      { blending: 36, throughCap: 40 },
+      { blending: 37, throughCap: 39 },
+      { blending: 38, throughCap: 38 },
+    ]
+
     const results: Array<{
-      objective: 'through' | 'blending'
+      blending: number
+      throughCap: number
       status: string
-      value: number | null
+      objective: number | null
       solveMs: number
-      buildMs: number
     }> = []
 
-    for (const objective of ['through', 'blending'] as const) {
-      const buildStartedAt = performance.now()
+    for (const branchCase of branches) {
       const built = buildFinalizing30ReducedStage(
         domain,
-        objective,
+        'frontier',
+        branchCase,
       )
-      const buildMs = performance.now() - buildStartedAt
-      const solved = await solveBounded(built.model, 90)
+      const solved = await solveBounded(built.model, 50)
 
       results.push({
-        objective,
+        ...branchCase,
         status: solved.status,
-        value:
-          solved.status === 'optimal'
-            ? solved.objective
-            : null,
+        objective: solved.objective,
         solveMs: Math.round(solved.solveMs),
-        buildMs: Math.round(buildMs),
       })
 
       console.info(
-        '[machine-finalizing30-conditional-minimum]',
+        '[machine-finalizing30-frontier-branch]',
         JSON.stringify({
-          objective,
           finalizing: 30,
           usedGroups: 30,
-          globalLowerBounds: {
-            through: 38,
-            blending: 35,
-          },
+          totalCap: 106,
+          ...branchCase,
           status: solved.status,
-          value: solved.objective,
+          objective: solved.objective,
+          solveMs: Math.round(solved.solveMs),
           groupCount: built.groupCount,
           customerFlowVariableCount:
             built.customerFlowVariableCount,
@@ -3039,21 +3056,17 @@ profileIt(
             built.throughOperationEdgeCount,
           blendingOperationEdgeCount:
             built.blendingOperationEdgeCount,
-          buildMs: Math.round(buildMs),
-          solveMs: Math.round(solved.solveMs),
         }),
       )
+
+      if (solved.status === 'optimal') break
     }
 
     console.info(
-      '[machine-finalizing30-conditional-summary]',
-      JSON.stringify({
-        finalizing: 30,
-        usedGroups: 30,
-        results,
-      }),
+      '[machine-finalizing30-frontier-summary]',
+      JSON.stringify({ results }),
     )
   },
-  200000,
+  230000,
 )
 
