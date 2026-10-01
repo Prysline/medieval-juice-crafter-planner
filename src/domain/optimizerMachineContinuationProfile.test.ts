@@ -9820,6 +9820,8 @@ extraSumProfileIt(
     )
 
     const identityResults = []
+    const sharedHallCuts: number[][] = []
+    const sharedHallCutKeys = new Set<string>()
     let globalWitness:
       | {
           groupIndex: number
