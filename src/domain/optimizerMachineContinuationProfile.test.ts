@@ -82,6 +82,11 @@ const forcedResidualProfileIt =
     ? it
     : it.skip
 
+const patriciaShardProfileIt =
+  Boolean(machineContinuationEnv.MACHINE_CONTINUATION_1279_BASE_BRANCHES)
+    ? it
+    : it.skip
+
 const singleSupportMasterProfileIt =
   Boolean(machineContinuationEnv.MACHINE_CONTINUATION_SINGLE_MASTER_GROUPS)
     ? it
@@ -7216,6 +7221,173 @@ function build311ExtraCostSumSupportMaster(
   return { model, groups }
 }
 
+
+patriciaShardProfileIt(
+  'checks sharded exact Hugo + Patricia branches for identity 1279',
+  async () => {
+    const domain = canonicalDomain()
+    const groups = pairGroups(domain)
+    const groupIndex = 1279
+    const fixedCustomers = new Set(
+      groups[groupIndex].eligibleCustomerIds,
+    )
+    const residualCustomerIds =
+      domain.serviceableCustomerIds.filter(
+        (customerId) => !fixedCustomers.has(customerId),
+      )
+
+    const candidatesForCustomer = (customerId: string) =>
+      groups.flatMap((group, candidateGroupIndex) => {
+        if (candidateGroupIndex === groupIndex) return []
+        const residualEligible = group.eligibleCustomerIds.filter(
+          (eligibleCustomerId) =>
+            !fixedCustomers.has(eligibleCustomerId),
+        )
+        if (!residualEligible.includes(customerId)) return []
+        const normal = residualEligible.length >= 2
+        const slack =
+          group.ingredientCost === SLACK_RECIPE_COST &&
+          residualEligible.length >= 1
+        return normal || slack
+          ? [{
+              groupIndex: candidateGroupIndex,
+              slackOnly: !normal && slack,
+            }]
+          : []
+      })
+
+    const branchCustomers = residualCustomerIds.flatMap(
+      (customerId) => {
+        const candidates = candidatesForCustomer(customerId)
+        return candidates.length <= 3
+          ? [{ customerId, candidates }]
+          : []
+      },
+    )
+    expect(branchCustomers.length).toBe(4)
+
+    let baseBranches: Array<{
+      requiredUsedGroupIndexes: number[]
+      requiredSlackGroupIndexes: number[]
+      choices: Array<{ customerId: string; groupIndex: number }>
+    }> = [{
+      requiredUsedGroupIndexes: [],
+      requiredSlackGroupIndexes: [],
+      choices: [],
+    }]
+    for (const branchCustomer of branchCustomers) {
+      baseBranches = baseBranches.flatMap((branch) =>
+        branchCustomer.candidates.map((candidate) => ({
+          requiredUsedGroupIndexes: [
+            ...branch.requiredUsedGroupIndexes,
+            candidate.groupIndex,
+          ],
+          requiredSlackGroupIndexes: candidate.slackOnly
+            ? [...branch.requiredSlackGroupIndexes, candidate.groupIndex]
+            : branch.requiredSlackGroupIndexes,
+          choices: [
+            ...branch.choices,
+            {
+              customerId: branchCustomer.customerId,
+              groupIndex: candidate.groupIndex,
+            },
+          ],
+        })),
+      )
+    }
+    expect(baseBranches.length).toBe(24)
+
+    const hugoCandidates = candidatesForCustomer('hugo')
+    const patriciaCandidates = candidatesForCustomer('patricia')
+    expect(hugoCandidates.length).toBe(5)
+    expect(patriciaCandidates.length).toBe(6)
+
+    const requestedBaseBranches =
+      (
+        machineContinuationEnv.MACHINE_CONTINUATION_1279_BASE_BRANCHES ??
+        ''
+      )
+        .split(',')
+        .map((value) => Number(value.trim()))
+        .filter(
+          (value) =>
+            Number.isInteger(value) &&
+            value >= 0 &&
+            value < baseBranches.length,
+        )
+    expect(requestedBaseBranches.length).toBeGreaterThan(0)
+
+    const results = []
+    for (const branchIndex of requestedBaseBranches) {
+      const branch = baseBranches[branchIndex]
+      for (
+        let hugoChoiceIndex = 0;
+        hugoChoiceIndex < hugoCandidates.length;
+        hugoChoiceIndex += 1
+      ) {
+        const hugoChoice = hugoCandidates[hugoChoiceIndex]
+        for (
+          let patriciaChoiceIndex = 0;
+          patriciaChoiceIndex < patriciaCandidates.length;
+          patriciaChoiceIndex += 1
+        ) {
+          const patriciaChoice =
+            patriciaCandidates[patriciaChoiceIndex]
+          const built = build311ExtraCostSumSupportMaster(
+            domain,
+            groupIndex,
+            undefined,
+            {
+              includeCustomerFlow: true,
+              forcedCustomerIds:
+                groups[groupIndex].eligibleCustomerIds,
+              requiredUsedGroupIndexes: [
+                ...branch.requiredUsedGroupIndexes,
+                hugoChoice.groupIndex,
+                patriciaChoice.groupIndex,
+              ],
+              requiredSlackGroupIndexes: [
+                ...branch.requiredSlackGroupIndexes,
+                ...(hugoChoice.slackOnly
+                  ? [hugoChoice.groupIndex]
+                  : []),
+                ...(patriciaChoice.slackOnly
+                  ? [patriciaChoice.groupIndex]
+                  : []),
+              ],
+            },
+          )
+          const solved = await solveBounded(built.model, 0.5)
+          results.push({
+            branchIndex,
+            hugoChoiceIndex,
+            hugoGroupIndex: hugoChoice.groupIndex,
+            patriciaChoiceIndex,
+            patriciaGroupIndex: patriciaChoice.groupIndex,
+            status: solved.status,
+            solveMs: Math.round(solved.solveMs),
+          })
+        }
+      }
+    }
+
+    const unresolved = results.filter(
+      (entry) => entry.status !== 'infeasible',
+    )
+    console.info(
+      '[machine-1279-patricia-shard-summary]',
+      JSON.stringify({
+        requestedBaseBranches,
+        totalBranches: results.length,
+        infeasibleCount: results.length - unresolved.length,
+        unresolvedCount: unresolved.length,
+        unresolved,
+      }),
+    )
+    expect(unresolved).toEqual([])
+  },
+  120000,
+)
 
 forcedResidualProfileIt(
   'profiles forced-customer residual graph structure',
