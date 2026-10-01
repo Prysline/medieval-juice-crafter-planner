@@ -7299,8 +7299,10 @@ patriciaShardProfileIt(
 
     const hugoCandidates = candidatesForCustomer('hugo')
     const patriciaCandidates = candidatesForCustomer('patricia')
+    const tiffanyCandidates = candidatesForCustomer('tiffany')
     expect(hugoCandidates.length).toBe(5)
     expect(patriciaCandidates.length).toBe(6)
+    expect(tiffanyCandidates.length).toBe(7)
 
     const requestedBaseBranches =
       (
@@ -7384,7 +7386,79 @@ patriciaShardProfileIt(
         unresolved,
       }),
     )
-    expect(unresolved).toEqual([])
+
+    const tiffanyResults = []
+    for (const parent of unresolved) {
+      const branch = baseBranches[parent.branchIndex]
+      const hugoChoice = hugoCandidates[parent.hugoChoiceIndex]
+      const patriciaChoice =
+        patriciaCandidates[parent.patriciaChoiceIndex]
+      for (
+        let tiffanyChoiceIndex = 0;
+        tiffanyChoiceIndex < tiffanyCandidates.length;
+        tiffanyChoiceIndex += 1
+      ) {
+        const tiffanyChoice =
+          tiffanyCandidates[tiffanyChoiceIndex]
+        const built = build311ExtraCostSumSupportMaster(
+          domain,
+          groupIndex,
+          undefined,
+          {
+            includeCustomerFlow: true,
+            forcedCustomerIds:
+              groups[groupIndex].eligibleCustomerIds,
+            requiredUsedGroupIndexes: [
+              ...branch.requiredUsedGroupIndexes,
+              hugoChoice.groupIndex,
+              patriciaChoice.groupIndex,
+              tiffanyChoice.groupIndex,
+            ],
+            requiredSlackGroupIndexes: [
+              ...branch.requiredSlackGroupIndexes,
+              ...(hugoChoice.slackOnly
+                ? [hugoChoice.groupIndex]
+                : []),
+              ...(patriciaChoice.slackOnly
+                ? [patriciaChoice.groupIndex]
+                : []),
+              ...(tiffanyChoice.slackOnly
+                ? [tiffanyChoice.groupIndex]
+                : []),
+            ],
+          },
+        )
+        const solved = await solveBounded(built.model, 0.5)
+        tiffanyResults.push({
+          branchIndex: parent.branchIndex,
+          hugoChoiceIndex: parent.hugoChoiceIndex,
+          hugoGroupIndex: hugoChoice.groupIndex,
+          patriciaChoiceIndex: parent.patriciaChoiceIndex,
+          patriciaGroupIndex: patriciaChoice.groupIndex,
+          tiffanyChoiceIndex,
+          tiffanyGroupIndex: tiffanyChoice.groupIndex,
+          status: solved.status,
+          solveMs: Math.round(solved.solveMs),
+        })
+      }
+    }
+
+    const unresolvedTiffany = tiffanyResults.filter(
+      (entry) => entry.status !== 'infeasible',
+    )
+    console.info(
+      '[machine-1279-tiffany-shard-summary]',
+      JSON.stringify({
+        requestedBaseBranches,
+        parentBranches: unresolved.length,
+        totalBranches: tiffanyResults.length,
+        infeasibleCount:
+          tiffanyResults.length - unresolvedTiffany.length,
+        unresolvedCount: unresolvedTiffany.length,
+        unresolved: unresolvedTiffany,
+      }),
+    )
+    expect(unresolvedTiffany).toEqual([])
   },
   120000,
 )
