@@ -7516,7 +7516,7 @@ function maximumAssignmentFlowForGroupCapacities(
   return { flow, violatingGroupIndexes }
 }
 
-profileIt(
+it.skip(
   'checks Hall-cut decomposition of finalizing-30 extra frontiers',
   async () => {
     const domain = canonicalDomain()
@@ -7772,4 +7772,143 @@ profileIt(
     )
   },
   120000,
+)
+
+
+profileIt(
+  'checks shared Hall-cut pool across finalizing-30 extra frontiers',
+  async () => {
+    const domain = canonicalDomain()
+    const cases = [
+      { pattern: '3+1+1', thresholds: [3, 1, 1, 0] as const },
+      { pattern: '2+2+1', thresholds: [3, 2, 0, 0] as const },
+      { pattern: '2+1+1+1', thresholds: [4, 1, 0, 0] as const },
+      { pattern: '1+1+1+1+1', thresholds: [5, 0, 0, 0] as const },
+    ]
+    const hallCuts: number[][] = []
+    const hallCutKeys = new Set<string>()
+    const states = cases.map((entry) => ({
+      pattern: entry.pattern,
+      status: 'unresolved',
+      assignmentFlow: 0,
+      solves: 0,
+      solveMs: 0,
+    }))
+
+    for (let round = 0; round < 25; round += 1) {
+      let addedCutThisRound = false
+
+      for (let caseIndex = 0; caseIndex < cases.length; caseIndex += 1) {
+        const state = states[caseIndex]
+        if (
+          state.status === 'infeasible' ||
+          state.status === 'assignment-feasible-relaxation'
+        ) {
+          continue
+        }
+
+        const extraCase = cases[caseIndex]
+        const built = buildOptimisticGroupOnlyFrontierMaster(
+          domain,
+          extraCase.thresholds,
+          { includeCustomerFlow: false, hallCuts },
+        )
+        const solved = await solveBounded(built.model, 1.5)
+        state.solves += 1
+        state.solveMs += solved.solveMs
+
+        if (solved.status === 'infeasible') {
+          state.status = 'infeasible'
+          continue
+        }
+        if (solved.status !== 'optimal' || !solved.namedSolution) {
+          state.status = solved.status
+          continue
+        }
+
+        const capacities = built.groups.map((group, groupIndex) => {
+          const unitsRaw = solved.namedSolution!.get(
+            `gox_${groupIndex}`,
+          )
+          if (
+            typeof unitsRaw !== 'number' ||
+            !Number.isFinite(unitsRaw)
+          ) {
+            throw new Error(
+              `Missing shared-Hall group production ${groupIndex}`,
+            )
+          }
+          const units = Math.round(unitsRaw)
+          let slackValue = 0
+          if (group.ingredientCost === SLACK_RECIPE_COST) {
+            const slackRaw = solved.namedSolution!.get(
+              `gos_${groupIndex}`,
+            )
+            if (
+              typeof slackRaw !== 'number' ||
+              !Number.isFinite(slackRaw)
+            ) {
+              throw new Error(
+                `Missing shared-Hall group slack ${groupIndex}`,
+              )
+            }
+            slackValue = Math.round(slackRaw)
+          }
+          return units * 2 - slackValue
+        })
+        const checked = maximumAssignmentFlowForGroupCapacities(
+          built.groups,
+          domain.serviceableCustomerIds,
+          capacities,
+        )
+        state.assignmentFlow = checked.flow
+        if (checked.flow === domain.serviceableCustomerIds.length) {
+          state.status = 'assignment-feasible-relaxation'
+          continue
+        }
+        if (checked.violatingGroupIndexes.length === 0) {
+          state.status = 'invalid-empty-cut'
+          continue
+        }
+
+        const cutKey = checked.violatingGroupIndexes.join(',')
+        if (!hallCutKeys.has(cutKey)) {
+          hallCutKeys.add(cutKey)
+          hallCuts.push(checked.violatingGroupIndexes)
+          addedCutThisRound = true
+        }
+        state.status = 'cut-added'
+      }
+
+      console.info(
+        '[machine-shared-hall-round]',
+        JSON.stringify({
+          round: round + 1,
+          hallCuts: hallCuts.length,
+          states: states.map((state) => ({
+            pattern: state.pattern,
+            status: state.status,
+            assignmentFlow: state.assignmentFlow,
+          })),
+        }),
+      )
+
+      if (!addedCutThisRound) break
+    }
+
+    console.info(
+      '[machine-shared-hall-summary]',
+      JSON.stringify({
+        hallCuts: hallCuts.length,
+        states: states.map((state) => ({
+          pattern: state.pattern,
+          status: state.status,
+          assignmentFlow: state.assignmentFlow,
+          solves: state.solves,
+          solveMs: Math.round(state.solveMs),
+        })),
+      }),
+    )
+  },
+  180000,
 )
