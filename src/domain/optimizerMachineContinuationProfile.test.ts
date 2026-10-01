@@ -5126,42 +5126,88 @@ async function solveBounded(
 }
 
 profileIt(
-  'proves an aggregate seasoning lower bound on the blend35 frontier',
+  'profiles recipe-level ownership of non-juicing machine edges',
   async () => {
     const domain = canonicalDomain()
-    const buildStartedAt = performance.now()
-    const built =
-      buildAggregateSeasoningLowerBoundStage(domain, 35)
-    const buildMs = performance.now() - buildStartedAt
-    const solved = await solveBoundedWithProgress(
-      built.model,
-      90,
-    )
+    const groups = pairGroups(domain)
+    const recipeOwnersByEdge = new Map<string, Set<string>>()
+    const groupOwnersByEdge = new Map<string, Set<string>>()
+    const kindByEdge = new Map<string, ProductionStepKind>()
+
+    for (const group of groups) {
+      for (const recipe of group.recipes) {
+        const seen = new Set<string>()
+        for (const edge of recipe.productionPath.edges) {
+          if (
+            edge.kind !== 'seasoning' &&
+            edge.kind !== 'blending' &&
+            edge.kind !== 'finalizing'
+          ) {
+            continue
+          }
+          if (seen.has(edge.key)) continue
+          seen.add(edge.key)
+          const recipeOwners =
+            recipeOwnersByEdge.get(edge.key) ?? new Set<string>()
+          recipeOwners.add(recipe.candidate.id)
+          recipeOwnersByEdge.set(edge.key, recipeOwners)
+          const groupOwners =
+            groupOwnersByEdge.get(edge.key) ?? new Set<string>()
+          groupOwners.add(group.key)
+          groupOwnersByEdge.set(edge.key, groupOwners)
+          kindByEdge.set(edge.key, edge.kind)
+        }
+      }
+    }
+
+    const summary: Record<string, unknown> = {}
+    for (const kind of [
+      'seasoning',
+      'blending',
+      'finalizing',
+    ] as const) {
+      const edges = [...kindByEdge.entries()]
+        .filter(([, edgeKind]) => edgeKind === kind)
+        .map(([edgeKey]) => edgeKey)
+      const groupPrivate = edges.filter(
+        (edgeKey) =>
+          (groupOwnersByEdge.get(edgeKey)?.size ?? 0) === 1,
+      )
+      const recipeUnique = edges.filter(
+        (edgeKey) =>
+          (recipeOwnersByEdge.get(edgeKey)?.size ?? 0) === 1,
+      )
+      const groupPrivateButMultiRecipe = groupPrivate.filter(
+        (edgeKey) =>
+          (recipeOwnersByEdge.get(edgeKey)?.size ?? 0) > 1,
+      )
+      const multiRecipeHistogram = new Map<number, number>()
+      for (const edgeKey of groupPrivateButMultiRecipe) {
+        const count = recipeOwnersByEdge.get(edgeKey)?.size ?? 0
+        multiRecipeHistogram.set(
+          count,
+          (multiRecipeHistogram.get(count) ?? 0) + 1,
+        )
+      }
+      summary[kind] = {
+        edgeCount: edges.length,
+        groupPrivateCount: groupPrivate.length,
+        recipeUniqueCount: recipeUnique.length,
+        groupPrivateButMultiRecipeCount:
+          groupPrivateButMultiRecipe.length,
+        multiRecipeHistogram: Object.fromEntries(
+          [...multiRecipeHistogram.entries()].sort(
+            ([a], [b]) => a - b,
+          ),
+        ),
+      }
+    }
 
     console.info(
-      '[machine-blend35-aggregate-seasoning-bound]',
-      JSON.stringify({
-        finalizing: 30,
-        blending: 35,
-        seasoningThresholdFor107Proof: 22,
-        serviceMaskCount: built.serviceMaskCount,
-        groupCount: built.groupCount,
-        classVariableCount: built.classVariableCount,
-        classUseVariableCount: built.classUseVariableCount,
-        sharedBlendOperationEdgeCount:
-          built.sharedBlendOperationEdgeCount,
-        privateBlendOperationTermCount:
-          built.privateBlendOperationTermCount,
-        privateSeasoningOperationTermCount:
-          built.privateSeasoningOperationTermCount,
-        buildMs: Math.round(buildMs),
-        status: solved.status,
-        seasoningLowerBoundObjective: solved.objective,
-        solveMs: Math.round(solved.solveMs),
-        progressTail: solved.progressTail,
-      }),
+      '[machine-edge-recipe-ownership]',
+      JSON.stringify(summary),
     )
   },
-  110000,
+  30000,
 )
 
