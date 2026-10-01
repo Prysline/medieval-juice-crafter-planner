@@ -491,8 +491,6 @@ function buildPartitionOptimalPairStage(
   )
 
   const operationVars: ReturnType<Model['intVar']>[] = []
-  const throughOperationVars: ReturnType<Model['intVar']>[] = []
-  const blendingOperationVars: ReturnType<Model['intVar']>[] = []
   ;[...quantityTermsByEdgeKey.entries()].forEach(
     ([edgeKey, terms], edgeIndex) => {
       const operation = model.intVar(
@@ -518,22 +516,7 @@ function buildPartitionOptimalPairStage(
         `op_usage_${edgeIndex}`,
       )
       operationVars.push(operation)
-      const kind = kindByEdgeKey.get(edgeKey)
-      if (kind === 'juicing' || kind === 'seasoning') {
-        throughOperationVars.push(operation)
-      } else if (kind === 'blending') {
-        blendingOperationVars.push(operation)
-      }
     },
-  )
-
-  model.addConstraint(
-    sum(...throughOperationVars).geq(38),
-    'through_lower_bound',
-  )
-  model.addConstraint(
-    sum(...blendingOperationVars).geq(35),
-    'blending_lower_bound',
   )
 
   model.minimize(sum(...operationVars))
