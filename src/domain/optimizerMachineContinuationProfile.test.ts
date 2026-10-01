@@ -77,6 +77,11 @@ const hallSignatureProfileIt =
     ? it
     : it.skip
 
+const forcedResidualProfileIt =
+  machineContinuationEnv.MACHINE_CONTINUATION_FORCED_RESIDUAL === '1'
+    ? it
+    : it.skip
+
 const singleSupportMasterProfileIt =
   Boolean(machineContinuationEnv.MACHINE_CONTINUATION_SINGLE_MASTER_GROUPS)
     ? it
@@ -6908,21 +6913,35 @@ function build311ExtraCostSumSupportMaster(
     supportCuts?: readonly (readonly number[])[]
     hallCuts?: readonly (readonly number[])[]
     includeCustomerFlow?: boolean
+    forcedCustomerIds?: readonly string[]
   } = {},
 ) {
   const supportCuts = options.supportCuts ?? []
   const hallCuts = options.hallCuts ?? []
   const includeCustomerFlow = options.includeCustomerFlow ?? true
+  const forcedCustomerIds = new Set(options.forcedCustomerIds ?? [])
   const groups = pairGroups(domain)
   const model = new Model()
-  const maskKeyForGroup = (group: PairGroup) =>
-    group.eligibleCustomerIds.join('\u001e')
+  const effectiveEligibleCustomerIds = groups.map((group, groupIndex) =>
+    groupIndex === fixedExtra3GroupIndex && forcedCustomerIds.size > 0
+      ? []
+      : group.eligibleCustomerIds.filter(
+          (customerId) => !forcedCustomerIds.has(customerId),
+        ),
+  )
+  const residualServiceableCustomerIds =
+    domain.serviceableCustomerIds.filter(
+      (customerId) => !forcedCustomerIds.has(customerId),
+    )
+  const maskKeyForIds = (customerIds: readonly string[]) =>
+    customerIds.join('\u001e')
   const maskCustomerIds = new Map<string, string[]>()
   const groupIndexesByMask = new Map<string, number[]>()
-  groups.forEach((group, groupIndex) => {
-    const maskKey = maskKeyForGroup(group)
+  groups.forEach((_group, groupIndex) => {
+    const eligibleCustomerIds = effectiveEligibleCustomerIds[groupIndex]
+    const maskKey = maskKeyForIds(eligibleCustomerIds)
     if (!maskCustomerIds.has(maskKey)) {
-      maskCustomerIds.set(maskKey, group.eligibleCustomerIds)
+      maskCustomerIds.set(maskKey, eligibleCustomerIds)
     }
     const indexes = groupIndexesByMask.get(maskKey)
     if (indexes) indexes.push(groupIndex)
@@ -6935,7 +6954,7 @@ function build311ExtraCostSumSupportMaster(
   >([...maskCustomerIds.keys()].map((maskKey) => [maskKey, []]))
   if (includeCustomerFlow) {
     customerMaskFlowTypes(
-      domain.serviceableCustomerIds,
+      residualServiceableCustomerIds,
       maskCustomerIds,
     ).forEach((customerType, typeIndex) => {
       const demand = customerType.customerIds.length
@@ -6978,13 +6997,21 @@ function build311ExtraCostSumSupportMaster(
   >()
 
   groups.forEach((group, groupIndex) => {
-    const upperBound = Math.min(
-      PROCESSING_STACK_CAPACITY,
-      Math.max(
-        1,
-        Math.ceil(group.eligibleCustomerIds.length / 2),
-      ),
-    )
+    const residualEligibleCount =
+      effectiveEligibleCustomerIds[groupIndex].length
+    const upperBound =
+      groupIndex === fixedExtra3GroupIndex
+        ? Math.min(
+            PROCESSING_STACK_CAPACITY,
+            Math.max(
+              1,
+              Math.ceil(group.eligibleCustomerIds.length / 2),
+            ),
+          )
+        : Math.min(
+            PROCESSING_STACK_CAPACITY,
+            Math.ceil(residualEligibleCount / 2),
+          )
     const used = model.boolVar(`s31su_${groupIndex}`)
     usedGroupVars.push(used)
 
@@ -7008,6 +7035,12 @@ function build311ExtraCostSumSupportMaster(
       return
     }
 
+    if (upperBound === 0) {
+      model.addConstraint(
+        used.eq(0),
+        `s31s_residual_ineligible_${groupIndex}`,
+      )
+    }
     productionCostTerms.push(used.times(group.ingredientCost))
     const capacityTerms = [used.times(2)]
     let extraOne:
@@ -7075,7 +7108,10 @@ function build311ExtraCostSumSupportMaster(
     for (const [maskKey, groupIndexes] of groupIndexesByMask) {
       const capacityTerms = groupIndexes.flatMap(
         (groupIndex) =>
-          capacityTermsByGroupIndex.get(groupIndex) ?? [],
+          forcedCustomerIds.size > 0 &&
+          groupIndex === fixedExtra3GroupIndex
+            ? []
+            : capacityTermsByGroupIndex.get(groupIndex) ?? [],
       )
       model.addConstraint(
         sum(...capacityTerms)
@@ -7090,8 +7126,14 @@ function build311ExtraCostSumSupportMaster(
   hallCuts.forEach((groupIndexes, cutIndex) => {
     const customerIds = new Set<string>()
     const capacityTerms = groupIndexes.flatMap((groupIndex) => {
-      for (const customerId of groups[groupIndex].eligibleCustomerIds) {
+      for (const customerId of effectiveEligibleCustomerIds[groupIndex]) {
         customerIds.add(customerId)
+      }
+      if (
+        forcedCustomerIds.size > 0 &&
+        groupIndex === fixedExtra3GroupIndex
+      ) {
+        return []
       }
       return capacityTermsByGroupIndex.get(groupIndex) ?? []
     })
@@ -7115,6 +7157,98 @@ function build311ExtraCostSumSupportMaster(
   model.minimize(sum(...usedGroupVars))
   return { model, groups }
 }
+
+
+forcedResidualProfileIt(
+  'checks exact forced-customer residual support for tight extra3 identities',
+  async () => {
+    const domain = canonicalDomain()
+    const groups = pairGroups(domain)
+    const targetGroupIndexes = [
+      187, 223, 247, 307, 344, 457, 609, 666, 1279,
+    ] as const
+    const thresholdCounts = [3, 1, 1, 0] as const
+    const results = []
+
+    for (const groupIndex of targetGroupIndexes) {
+      const fixedGroup = groups[groupIndex]
+      expect(fixedGroup?.eligibleCustomerIds.length).toBe(8)
+      const built = build311ExtraCostSumSupportMaster(
+        domain,
+        groupIndex,
+        undefined,
+        {
+          includeCustomerFlow: true,
+          forcedCustomerIds: fixedGroup.eligibleCustomerIds,
+        },
+      )
+      const solved = await solveBounded(built.model, 0.5)
+      let exactStatus: string | null = null
+      let supportSize = 0
+      if (solved.status === 'optimal' && solved.namedSolution) {
+        const support = groups.flatMap((_group, supportGroupIndex) => {
+          const raw = solved.namedSolution!.get(
+            `s31su_${supportGroupIndex}`,
+          )
+          return typeof raw === 'number' &&
+            Number.isFinite(raw) &&
+            raw > 0.5
+            ? [supportGroupIndex]
+            : []
+        })
+        supportSize = support.length
+        if (support.length !== 30) {
+          throw new Error(
+            `Expected 30 residual support groups for identity ${groupIndex}, got ${support.length}`,
+          )
+        }
+        const exact = buildFinalizing30MaskPartitionStage(
+          domain,
+          new Set<ProductionStepKind>([
+            'juicing',
+            'seasoning',
+            'blending',
+          ]),
+          thresholdCounts,
+          { max: 76 },
+          0,
+          new Set(support),
+        )
+        const exactSolved = await solveBounded(exact.model, 3)
+        exactStatus = exactSolved.status
+      }
+      results.push({
+        groupIndex,
+        groupCost: fixedGroup.ingredientCost,
+        status: solved.status,
+        solveMs: Math.round(solved.solveMs),
+        supportSize,
+        exactStatus,
+      })
+    }
+
+    console.info(
+      '[machine-forced-residual-summary]',
+      JSON.stringify({
+        closedByResidualSupport: results
+          .filter((entry) => entry.status === 'infeasible')
+          .map((entry) => entry.groupIndex),
+        customerFeasibleSupports: results
+          .filter((entry) => entry.status === 'optimal')
+          .map((entry) => entry.groupIndex),
+        unresolved: results
+          .filter(
+            (entry) =>
+              entry.status !== 'infeasible' &&
+              entry.status !== 'optimal',
+          )
+          .map((entry) => entry.groupIndex),
+        results,
+      }),
+    )
+  },
+  120000,
+)
 
 function build311FixedIdentitySupportMaster(
   domain: BatchOptimizationModel,
