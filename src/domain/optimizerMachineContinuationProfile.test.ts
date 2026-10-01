@@ -7619,3 +7619,5 @@ profileIt(
   },
   90000,
 )
+
+// CI trigger: structural-signature exact frontier profile
