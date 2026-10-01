@@ -606,20 +606,7 @@ function buildPartitionOptimalPairStage(
     },
   )
 
-  const operations = sum(...operationVars)
-  if (typeof operationBounds?.min === 'number') {
-    model.addConstraint(
-      operations.geq(operationBounds.min),
-      'mp_operation_min',
-    )
-  }
-  if (typeof operationBounds?.max === 'number') {
-    model.addConstraint(
-      operations.leq(operationBounds.max),
-      'mp_operation_max',
-    )
-  }
-  model.minimize(operations)
+  model.minimize(sum(...operationVars))
   return {
     model,
     groups,
