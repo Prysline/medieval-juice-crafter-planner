@@ -98,6 +98,5 @@ jobs:
       - run: npm install
       - name: Count exact 3+1+1 support arithmetic
         env:
-          MACHINE_CONTINUATION_PROFILE: '1'
           MACHINE_CONTINUATION_SUPPORT_DP_GROUPS: '23,26,43,45,46,129,140,142,146,162,182,187,212,214,217,223,247,253,260,262,264,276,296,297,307,313,344,399,403,406,456,457,460,461,462,547,609,624,651,654,656,666,966,1083,1279'
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
