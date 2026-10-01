@@ -7139,3 +7139,52 @@ profileIt(
   },
   90000,
 )
+
+
+profileIt(
+  'summarizes exact extra-bearing group eligibility',
+  async () => {
+    const domain = canonicalDomain()
+    const groups = pairGroups(domain)
+    const rows = groups.map((group) => ({
+      key: group.key,
+      eligibleCustomers: group.eligibleCustomerIds.length,
+      upperBound: Math.min(
+        PROCESSING_STACK_CAPACITY,
+        Math.max(1, Math.ceil(group.eligibleCustomerIds.length / 2)),
+      ),
+      ingredientCost: group.ingredientCost,
+      recipeCount: group.recipes.length,
+    }))
+    const summary = {
+      groupCount: rows.length,
+      upperBoundAtLeast2: rows.filter((row) => row.upperBound >= 2).length,
+      upperBoundAtLeast3: rows.filter((row) => row.upperBound >= 3).length,
+      upperBoundAtLeast4: rows.filter((row) => row.upperBound >= 4).length,
+      upperBoundAtLeast5: rows.filter((row) => row.upperBound >= 5).length,
+      slackCostGroups: rows.filter((row) => row.ingredientCost === SLACK_RECIPE_COST).length,
+      slackCostUpperBounds: rows
+        .filter((row) => row.ingredientCost === SLACK_RECIPE_COST)
+        .reduce<Record<number, number>>((counts, row) => {
+          counts[row.upperBound] = (counts[row.upperBound] ?? 0) + 1
+          return counts
+        }, {}),
+      largestGroups: rows
+        .filter((row) => row.upperBound >= 3)
+        .sort((a, b) =>
+          b.upperBound - a.upperBound ||
+          b.eligibleCustomers - a.eligibleCustomers ||
+          a.ingredientCost - b.ingredientCost,
+        )
+        .slice(0, 80)
+        .map(({ eligibleCustomers, upperBound, ingredientCost, recipeCount }) => ({
+          eligibleCustomers,
+          upperBound,
+          ingredientCost,
+          recipeCount,
+        })),
+    }
+    console.info('[machine-extra-eligibility]', JSON.stringify(summary))
+  },
+  90000,
+)
