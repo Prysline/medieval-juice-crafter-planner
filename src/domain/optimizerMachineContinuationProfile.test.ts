@@ -1353,33 +1353,40 @@ async function solveBounded(
 }
 
 profileIt(
-  'proves the exact seasoning-only machine lower bound',
+  'measures exact quotient size for seasoning and blending together',
   async () => {
     const domain = canonicalDomain()
-    expect(domain.recipes).toHaveLength(7892)
+    const kinds = new Set<ProductionStepKind>([
+      'seasoning',
+      'blending',
+    ])
+    let quotientVariableCount = 0
+    let maxGroupSignatures = 0
 
-    const built = buildFlowProjectedKindsStage(
-      domain,
-      new Set<ProductionStepKind>(['seasoning']),
-    )
-    const solved = await solveBoundedWithProgress(
-      built.model,
-      60,
-    )
+    for (const group of pairGroups(domain)) {
+      const signatures = new Set(
+        group.recipes.map(
+          (recipe) => partitionSignature(recipe, kinds).key,
+        ),
+      )
+      quotientVariableCount += signatures.size
+      maxGroupSignatures = Math.max(
+        maxGroupSignatures,
+        signatures.size,
+      )
+    }
 
     console.info(
-      '[machine-seasoning-bound]',
+      '[machine-seasoning-blending-quotient-shape]',
       JSON.stringify({
-        expectedFor107Certificate: 18,
-        recipeVariableCount: built.recipeVariableCount,
-        operationEdgeCount: built.operationEdgeCount,
-        status: solved.status,
-        objective: solved.objective,
-        solveMs: Math.round(solved.solveMs),
-        progressTail: solved.progressTail,
+        recipeCount: domain.recipes.length,
+        groupCount: pairGroups(domain).length,
+        quotientVariableCount,
+        reduction: domain.recipes.length - quotientVariableCount,
+        maxGroupSignatures,
       }),
     )
   },
-  80000,
+  30000,
 )
 
