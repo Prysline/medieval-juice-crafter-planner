@@ -7421,30 +7421,25 @@ profileIt(
           extraCase.thresholds,
           { includeCustomerFlow: false, hallCuts },
         )
-        const solved = await solveBoundedWithProgress(built.model, 3)
+        const solved = await solveBounded(built.model, 3)
         solveMs += solved.solveMs
-        if (solved.status !== 'optimal') {
+        if (solved.status !== 'optimal' || !solved.namedSolution) {
           finalStatus = solved.status
           break
         }
 
-        const capacities = built.groups.map((_, groupIndex) => {
+        const capacities = built.groups.map((group, groupIndex) => {
           const units = Math.round(
-            solved.solution
-              ? requiredFiniteNumber(
-                  solved.solution.getValue(
-                    built.groupProductionByIndex.get(groupIndex)!,
-                  ),
-                  `hall group production ${groupIndex}`,
-                )
-              : 0,
+            requiredFiniteNumber(
+              solved.namedSolution!.get(`gox_${groupIndex}`),
+              `hall group production ${groupIndex}`,
+            ),
           )
-          const slack = built.slackByGroupIndex.get(groupIndex)
           const slackValue =
-            slack && solved.solution
+            group.ingredientCost === SLACK_RECIPE_COST
               ? Math.round(
                   requiredFiniteNumber(
-                    solved.solution.getValue(slack),
+                    solved.namedSolution!.get(`gos_${groupIndex}`),
                     `hall group slack ${groupIndex}`,
                   ),
                 )
