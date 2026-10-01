@@ -5790,48 +5790,77 @@ function buildServiceMaskCompressedNonfinalStage(
 }
 
 profileIt(
-  'proves the exact global non-final lower bound with service-mask recipe-class compression',
+  'proves the finalizing-30 frontier by exact extra-unit partition cases',
   async () => {
     const domain = canonicalDomain()
-    const buildStartedAt = performance.now()
-    const built = buildServiceMaskCompressedNonfinalStage(domain)
-    const buildMs = performance.now() - buildStartedAt
-    const solved = await solveBoundedWithProgress(
-      built.model,
-      120,
-    )
+    const cases = [
+      { pattern: '5', thresholds: [1, 1, 1, 1] as const },
+      { pattern: '4+1', thresholds: [2, 1, 1, 1] as const },
+      { pattern: '3+2', thresholds: [2, 2, 1, 0] as const },
+      { pattern: '3+1+1', thresholds: [3, 1, 1, 0] as const },
+      { pattern: '2+2+1', thresholds: [3, 2, 0, 0] as const },
+      { pattern: '2+1+1+1', thresholds: [4, 1, 0, 0] as const },
+      { pattern: '1+1+1+1+1', thresholds: [5, 0, 0, 0] as const },
+    ]
 
-    console.info(
-      '[machine-global-nonfinal-compressed]',
-      JSON.stringify({
+    const results = []
+    for (const extraCase of cases) {
+      const buildStartedAt = performance.now()
+      const built = buildFinalizing30CompressedFrontierStage(
+        domain,
+        extraCase.thresholds,
+      )
+      const buildMs = performance.now() - buildStartedAt
+      const solved = await solveBoundedWithProgress(
+        built.model,
+        30,
+      )
+
+      const result = {
+        pattern: extraCase.pattern,
+        thresholds: extraCase.thresholds,
         targetFor107Certificate: 77,
-        finalizingExactLowerBound: 30,
+        finalizingExact: 30,
         knownFullWitness: 107,
-        globalPartitionLowerBounds: {
-          through: 38,
-          blending: 35,
-          nonFinal: 73,
-        },
         serviceMaskCount: built.serviceMaskCount,
         customerFlowVariableCount:
           built.customerFlowVariableCount,
         groupCount: built.groupCount,
         classVariableCount: built.classVariableCount,
-        collapsedRecipeCount: built.collapsedRecipeCount,
-        singletonSlackVariableCount:
-          built.singletonSlackVariableCount,
+        classUseVariableCount: built.classUseVariableCount,
+        sharedBlendEdgeCount: built.sharedBlendEdgeCount,
+        sharedBlendOperationEdgeCount:
+          built.sharedBlendOperationEdgeCount,
+        privateBlendOperationTermCount:
+          built.privateBlendOperationTermCount,
         throughOperationEdgeCount:
           built.throughOperationEdgeCount,
-        blendingOperationEdgeCount:
-          built.blendingOperationEdgeCount,
+        maxPrivateBlendMultiplicity:
+          built.maxPrivateBlendMultiplicity,
+        extraThresholdVariableCount:
+          built.extraThresholdVariableCount,
         buildMs: Math.round(buildMs),
         status: solved.status,
         nonFinalObjective: solved.objective,
         solveMs: Math.round(solved.solveMs),
         progressTail: solved.progressTail,
-      }),
+      }
+      results.push(result)
+      console.info(
+        '[machine-extra-partition-case]',
+        JSON.stringify(result),
+      )
+    }
+
+    console.info(
+      '[machine-extra-partition-summary]',
+      JSON.stringify(results.map((result) => ({
+        pattern: result.pattern,
+        status: result.status,
+        nonFinalObjective: result.nonFinalObjective,
+        solveMs: result.solveMs,
+      }))),
     )
   },
-  140000,
+  260000,
 )
-
