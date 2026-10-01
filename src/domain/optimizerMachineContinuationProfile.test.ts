@@ -996,8 +996,11 @@ function buildFlowProjectedNonfinalStage(
         `op_capacity_${edgeIndex}`,
       )
       model.addConstraint(
-        operation.minus(quantity).leq(0),
-        `op_usage_${edgeIndex}`,
+        operation
+          .times(PROCESSING_STACK_CAPACITY)
+          .minus(quantity)
+          .leq(PROCESSING_STACK_CAPACITY - 1),
+        `op_exact_ceiling_${edgeIndex}`,
       )
       operationVars.push(operation)
       const kind = kindByEdgeKey.get(edgeKey)
@@ -1353,40 +1356,34 @@ async function solveBounded(
 }
 
 profileIt(
-  'measures exact quotient size for seasoning and blending together',
+  'profiles the exact non-final model with exact stack-ceiling links',
   async () => {
     const domain = canonicalDomain()
-    const kinds = new Set<ProductionStepKind>([
-      'seasoning',
-      'blending',
-    ])
-    let quotientVariableCount = 0
-    let maxGroupSignatures = 0
+    expect(domain.recipes).toHaveLength(7892)
 
-    for (const group of pairGroups(domain)) {
-      const signatures = new Set(
-        group.recipes.map(
-          (recipe) => partitionSignature(recipe, kinds).key,
-        ),
-      )
-      quotientVariableCount += signatures.size
-      maxGroupSignatures = Math.max(
-        maxGroupSignatures,
-        signatures.size,
-      )
-    }
+    const built = buildFlowProjectedNonfinalStage(domain)
+    const solved = await solveBoundedWithProgress(
+      built.model,
+      60,
+    )
 
     console.info(
-      '[machine-seasoning-blending-quotient-shape]',
+      '[machine-exact-ceiling-nonfinal-progress]',
       JSON.stringify({
-        recipeCount: domain.recipes.length,
-        groupCount: pairGroups(domain).length,
-        quotientVariableCount,
-        reduction: domain.recipes.length - quotientVariableCount,
-        maxGroupSignatures,
+        expectedOptimum: 77,
+        exactPartitionLowerBounds: {
+          throughSeasoning: 38,
+          blending: 35,
+          total: 73,
+        },
+        knownWitness: 77,
+        status: solved.status,
+        objective: solved.objective,
+        solveMs: Math.round(solved.solveMs),
+        progressTail: solved.progressTail,
       }),
     )
   },
-  30000,
+  80000,
 )
 
