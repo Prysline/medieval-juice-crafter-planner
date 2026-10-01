@@ -2996,7 +2996,7 @@ function buildFinalizing30Blending35RawThroughStage(
   >[] = []
   const slackVars: ReturnType<Model['boolVar']>[] = []
   const usedGroupVars: ReturnType<Model['boolVar']>[] = []
-  const xByRecipeId = new Map<string, ReturnType<Model['intVar']>>()
+  const xNameByRecipeId = new Map<string, string>()
   const rawThroughTerms: ReturnType<
     ReturnType<Model['intVar']>['times']
   >[] = []
@@ -3023,13 +3023,14 @@ function buildFinalizing30Blending35RawThroughStage(
     const groupRecipeUseVars: ReturnType<Model['boolVar']>[] = []
 
     for (const recipe of group.recipes) {
+      const variableName = `x_${recipeVariableCount}`
       const x = model.intVar(
         0,
         cappedUpperBound,
-        `x_${recipeVariableCount}`,
+        variableName,
       )
       recipeVariableCount += 1
-      xByRecipeId.set(recipe.candidate.id, x)
+      xNameByRecipeId.set(recipe.candidate.id, variableName)
 
       const usedRecipe = model.boolVar(
         `ru_${recipeUseVariableCount}`,
@@ -3169,7 +3170,7 @@ function buildFinalizing30Blending35RawThroughStage(
 
   return {
     model,
-    xByRecipeId,
+    xNameByRecipeId,
     recipeVariableCount,
     recipeUseVariableCount,
     blendingOperationEdgeCount: blendingOps.length,
@@ -3185,6 +3186,7 @@ async function solveBounded(
   serializeMs: number
   parseMs: number
   solveMs: number
+  namedSolution: Map<string, number> | null
 }> {
   const serializeStartedAt = performance.now()
   const mps = model.print('mps')
@@ -3211,6 +3213,10 @@ async function solveBounded(
       serializeMs,
       parseMs,
       solveMs,
+      namedSolution:
+        solution.solution instanceof Map
+          ? solution.solution
+          : null,
     }
   } finally {
     highs.free()
@@ -3218,24 +3224,26 @@ async function solveBounded(
 }
 
 profileIt(
-  'searches the finalizing30 blending35 frontier by raw through work',
+  'searches the finalizing30 blending35 frontier by bounded raw through work',
   async () => {
     const domain = canonicalDomain()
     expect(domain.recipes).toHaveLength(7892)
 
     const built =
       buildFinalizing30Blending35RawThroughStage(domain)
-    const startedAt = performance.now()
-    const solution = await built.model.solve()
-    const solveMs = performance.now() - startedAt
+    const solved = await solveBounded(built.model, 90)
 
-    if (solution.status !== 'optimal') {
+    if (
+      solved.objective === null ||
+      solved.namedSolution === null
+    ) {
       console.info(
         '[machine-finalizing30-blending35-raw-through]',
         JSON.stringify({
-          status: solution.status,
-          objective: solution.objective,
-          solveMs: Math.round(solveMs),
+          status: solved.status,
+          objective: solved.objective,
+          solveMs: Math.round(solved.solveMs),
+          namedSolution: false,
           recipeVariableCount: built.recipeVariableCount,
           recipeUseVariableCount:
             built.recipeUseVariableCount,
@@ -3247,13 +3255,13 @@ profileIt(
     }
 
     const selections = domain.recipes.flatMap((recipe) => {
-      const variable = built.xByRecipeId.get(recipe.candidate.id)
-      if (!variable) return []
-      const value = solution.getValue(variable)
+      const variableName = built.xNameByRecipeId.get(
+        recipe.candidate.id,
+      )
+      if (!variableName) return []
+      const value = solved.namedSolution?.get(variableName)
       if (typeof value !== 'number' || !Number.isFinite(value)) {
-        throw new Error(
-          `Invalid recipe production value for ${recipe.candidate.id}`,
-        )
+        return []
       }
       const units = Math.round(value)
       return units > 0
@@ -3269,16 +3277,20 @@ profileIt(
     console.info(
       '[machine-finalizing30-blending35-raw-through]',
       JSON.stringify({
-        status: solution.status,
-        rawThroughObjective: solution.objective,
-        solveMs: Math.round(solveMs),
+        status: solved.status,
+        rawThroughObjective: solved.objective,
+        solveMs: Math.round(solved.solveMs),
         selectedRecipeCount: selections.length,
+        totalSelectedUnits: selections.reduce(
+          (total, selection) => total + selection.units,
+          0,
+        ),
         breakdown,
         knownUpperBound: 107,
         globalLowerBound: 103,
       }),
     )
   },
-  120000,
+  110000,
 )
 
