@@ -268,6 +268,11 @@ function buildFlowParityPartitionStage(
   )
 
   const operationVars: ReturnType<Model['intVar']>[] = []
+  const partitionOperationVars = {
+    throughSeasoning: [] as ReturnType<Model['intVar']>[],
+    blending: [] as ReturnType<Model['intVar']>[],
+    finalizing: [] as ReturnType<Model['intVar']>[],
+  }
   ;[...quantityTermsByEdgeKey.entries()].forEach(
     ([edgeKey, quantityTerms], edgeIndex) => {
       const operation = model.intVar(
@@ -354,6 +359,7 @@ function buildFullMachineCapFeasibility(
     ReturnType<ReturnType<Model['intVar']>['times']>[]
   >()
   const quantityUpperBoundByEdgeKey = new Map<string, number>()
+  const kindByEdgeKey = new Map<string, ProductionStepKind>()
   let recipeVariableCount = 0
 
   groups.forEach((group, groupIndex) => {
@@ -382,6 +388,7 @@ function buildFullMachineCapFeasibility(
           edge.key,
           (multiplicityByEdgeKey.get(edge.key) ?? 0) + 1,
         )
+        kindByEdgeKey.set(edge.key, edge.kind)
       }
       for (const [edgeKey, multiplicity] of multiplicityByEdgeKey) {
         const terms = quantityTermsByEdgeKey.get(edgeKey)
@@ -465,9 +472,29 @@ function buildFullMachineCapFeasibility(
         `op_usage_${edgeIndex}`,
       )
       operationVars.push(operation)
+      const kind = kindByEdgeKey.get(edgeKey)
+      if (kind === 'juicing' || kind === 'seasoning') {
+        partitionOperationVars.throughSeasoning.push(operation)
+      } else if (kind === 'blending') {
+        partitionOperationVars.blending.push(operation)
+      } else if (kind === 'finalizing') {
+        partitionOperationVars.finalizing.push(operation)
+      }
     },
   )
 
+  model.addConstraint(
+    sum(...partitionOperationVars.throughSeasoning).geq(38),
+    'through_lower_bound',
+  )
+  model.addConstraint(
+    sum(...partitionOperationVars.blending).geq(35),
+    'blending_lower_bound',
+  )
+  model.addConstraint(
+    sum(...partitionOperationVars.finalizing).geq(30),
+    'finalizing_lower_bound',
+  )
   model.addConstraint(
     sum(...operationVars).leq(totalCap),
     'machine_total_cap',
@@ -813,7 +840,7 @@ async function solveBounded(
 }
 
 profileIt(
-  'lifts the exact through-seasoning-optimal pairing into a full-machine witness',
+  'proves whether any exact full-machine solution can beat 107',
   async () => {
     const domain = canonicalDomain()
     expect(domain.recipes).toHaveLength(7892)
@@ -821,86 +848,38 @@ profileIt(
       SERVICEABLE_CUSTOMER_COUNT,
     )
 
-    const partitionBuilt = buildPartitionOptimalPairStage(
-      domain,
-      new Set<ProductionStepKind>(['juicing', 'seasoning']),
-    )
-    const partitionStartedAt = performance.now()
-    const partitionSolution = await partitionBuilt.model.solve()
-    const partitionSolveMs =
-      performance.now() - partitionStartedAt
-    if (partitionSolution.status !== 'optimal') {
-      throw new Error(
-        `Through-seasoning pairing ended with ${partitionSolution.status}`,
-      )
-    }
-
-    const unitsByGroupKey = new Map<string, number>()
-    for (const group of partitionBuilt.groups) {
-      let units = 0
-      for (const variable of (
-        partitionBuilt.unitVarsByGroupKey.get(group.key) ?? []
-      )) {
-        const value = partitionSolution.getValue(variable)
-        if (typeof value !== 'number' || !Number.isFinite(value)) {
-          throw new Error(
-            'Invalid through-seasoning pair variable value',
-          )
-        }
-        if (value > 0.5) units += 1
-      }
-      unitsByGroupKey.set(group.key, units)
-    }
-
-    const fullBuilt = buildFixedGroupFullMachineStage(
-      domain,
-      unitsByGroupKey,
-    )
-    const fullStartedAt = performance.now()
-    const fullSolution = await fullBuilt.model.solve()
-    const fullSolveMs = performance.now() - fullStartedAt
-    if (fullSolution.status !== 'optimal') {
-      throw new Error(
-        `Full-machine lift ended with ${fullSolution.status}`,
-      )
-    }
-
-    const selections = domain.recipes.flatMap((recipe) => {
-      const variable = fullBuilt.xByRecipeId.get(recipe.candidate.id)
-      if (!variable) return []
-      const value = fullSolution.getValue(variable)
-      if (typeof value !== 'number' || !Number.isFinite(value)) {
-        throw new Error('Invalid full-machine recipe variable value')
-      }
-      const units = Math.round(value)
-      return units > 0
-        ? [{ recipeId: recipe.candidate.id, units }]
-        : []
-    })
-    const breakdown = machineOperationBreakdownForSelection(
-      domain,
-      selections,
-    )
+    const buildStartedAt = performance.now()
+    const built = buildFullMachineCapFeasibility(domain, 106)
+    const buildMs = performance.now() - buildStartedAt
+    const solved = await solveBounded(built.model, 90)
 
     console.info(
-      '[machine-through-optimal-witness]',
+      '[machine-tightened-106-feasibility]',
       JSON.stringify({
-        throughObjective: partitionSolution.objective,
-        throughSolveMs: Math.round(partitionSolveMs),
-        quotientVariableCount:
-          partitionBuilt.quotientVariableCount,
-        throughEdgeCount: partitionBuilt.operationEdgeCount,
-        selectedGroupCount: fullBuilt.selectedGroupCount,
-        fullRecipeVariableCount: fullBuilt.recipeVariableCount,
-        fullOperationEdgeCount: fullBuilt.operationEdgeCount,
-        fullSolveMs: Math.round(fullSolveMs),
-        selectedRecipeCount: selections.length,
-        breakdown,
-        globalLowerBound: 103,
-        bestKnownUpperBound: 107,
+        cap: 106,
+        lowerBounds: {
+          throughSeasoning: 38,
+          blending: 35,
+          finalizing: 30,
+          total: 103,
+        },
+        knownWitness: 107,
+        groupCount: built.groupCount,
+        assignmentVariableCount:
+          built.assignmentVariableCount,
+        recipeVariableCount: built.recipeVariableCount,
+        singletonSlackVariableCount:
+          built.singletonSlackVariableCount,
+        operationEdgeCount: built.operationEdgeCount,
+        buildMs: Math.round(buildMs),
+        serializeMs: Math.round(solved.serializeMs),
+        parseMs: Math.round(solved.parseMs),
+        solveMs: Math.round(solved.solveMs),
+        status: solved.status,
+        objective: solved.objective,
       }),
     )
   },
-  120000,
+  110000,
 )
 
