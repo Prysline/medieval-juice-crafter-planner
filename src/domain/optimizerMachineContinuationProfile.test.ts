@@ -8810,6 +8810,16 @@ profileIt(
               infeasibleGroups: number
               optimalGroups: number[]
               unresolvedGroups: number[]
+              incumbentSupports: number
+              exactInfeasibleIncumbentSupports: number
+              exactOptimalIncumbentSupports: Array<{
+                groupIndex: number
+                objective: number | null
+              }>
+              invalidIncumbentSupports: Array<{
+                groupIndex: number
+                supportSize: number | null
+              }>
               solveMs: number
             }
           | undefined
