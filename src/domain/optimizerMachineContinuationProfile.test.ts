@@ -11219,14 +11219,10 @@ supportDpProfileIt(
             witness.capacities,
           )
         : null
-      const hallProbeGroupIndexes = new Set([
-        43, 187, 260, 262, 344, 399, 651, 1279,
-      ])
       const cutWitness =
         assignment &&
         assignment.flow < SERVICEABLE_CUSTOMER_COUNT &&
-        assignment.violatingGroupIndexes.length > 0 &&
-        hallProbeGroupIndexes.has(groupIndex)
+        assignment.violatingGroupIndexes.length > 0
           ? find311MaskCapacitySupportWitness(
               groups,
               groupIndex,
