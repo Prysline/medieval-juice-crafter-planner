@@ -3,6 +3,8 @@ import { expect, it } from 'vitest'
 import { customers as canonicalCustomers } from '../data/customers'
 import { customerVillageIsAvailable } from './availability'
 import { PROCESSING_STACK_CAPACITY } from './inventoryRules'
+import { machineOperationBreakdownForSelection } from './optimizerCertificates'
+import type { ProductionStepKind } from './productionPlan'
 import { buildRecipeCandidatePool } from './recipeCandidatePool'
 import {
   buildOptimizationModel,
@@ -233,6 +235,7 @@ async function findCostOptimalPairFeasibility(
 
 function buildPairLiftedMachineStage(
   domain: BatchOptimizationModel,
+  machineOperationKinds?: ReadonlySet<ProductionStepKind>,
 ) {
   const groups = pairGroups(domain)
   const model = new Model()
@@ -362,6 +365,12 @@ function buildPairLiftedMachineStage(
 
       const multiplicityByEdgeKey = new Map<string, number>()
       for (const edge of recipe.productionPath.edges) {
+        if (
+          machineOperationKinds &&
+          !machineOperationKinds.has(edge.kind)
+        ) {
+          continue
+        }
         multiplicityByEdgeKey.set(
           edge.key,
           (multiplicityByEdgeKey.get(edge.key) ?? 0) + 1,
@@ -538,6 +547,7 @@ function buildFixedGroupMachineStage(
     selectedGroupCount: groups.length,
     recipeVariableCount: xByRecipeId.size,
     operationEdgeCount: operationByEdgeKey.size,
+    xByRecipeId,
   }
 }
 
@@ -580,7 +590,7 @@ async function solveBounded(
 }
 
 it(
-  'profiles exact recipe identity choice for one cost-optimal pair matching',
+  'profiles exact partition bounds after pair-parity lifting',
   async () => {
     const domain = canonicalDomain()
 
@@ -594,51 +604,140 @@ it(
     const pairing =
       await findCostOptimalPairFeasibility(domain)
 
-    const buildStartedAt = performance.now()
-    const built = buildFixedGroupMachineStage(
+    const witnessBuildStartedAt = performance.now()
+    const witnessBuilt = buildFixedGroupMachineStage(
       domain,
       pairing.unitsByGroupKey,
     )
-    const buildMs = performance.now() - buildStartedAt
-    const solved = await solveBounded(built.model)
+    const witnessBuildMs =
+      performance.now() - witnessBuildStartedAt
+    const witnessSolveStartedAt = performance.now()
+    const witnessSolution = await witnessBuilt.model.solve()
+    const witnessSolveMs =
+      performance.now() - witnessSolveStartedAt
+    if (witnessSolution.status !== 'optimal') {
+      throw new Error(
+        `Fixed-pair witness ended with ${witnessSolution.status}`,
+      )
+    }
+
+    const witnessSelections = domain.recipes.flatMap((recipe) => {
+      const variable = witnessBuilt.xByRecipeId.get(
+        recipe.candidate.id,
+      )
+      if (!variable) return []
+      const value = witnessSolution.getValue(variable)
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
+        throw new Error(
+          `Fixed-pair witness returned invalid x for ${recipe.candidate.id}`,
+        )
+      }
+      const units = Math.round(value)
+      return units > 0
+        ? [{ recipeId: recipe.candidate.id, units }]
+        : []
+    })
+    const witnessBreakdown =
+      machineOperationBreakdownForSelection(
+        domain,
+        witnessSelections,
+      )
 
     console.info(
-      '[machine-fixed-pair-groups]',
+      '[machine-fixed-pair-witness]',
       JSON.stringify({
         pairFeasibilitySolveMs: Math.round(pairing.solveMs),
-        selectedGroupCount: built.selectedGroupCount,
-        recipeVariableCount: built.recipeVariableCount,
-        operationEdgeCount: built.operationEdgeCount,
-        machineBuildMs: Math.round(buildMs),
-        serializeMs: Math.round(solved.serializeMs),
-        parseMs: Math.round(solved.parseMs),
-        solveMs: Math.round(solved.solveMs),
-        status: solved.status,
-        objective: solved.objective,
+        selectedGroupCount: witnessBuilt.selectedGroupCount,
+        recipeVariableCount: witnessBuilt.recipeVariableCount,
+        operationEdgeCount: witnessBuilt.operationEdgeCount,
+        buildMs: Math.round(witnessBuildMs),
+        solveMs: Math.round(witnessSolveMs),
+        recipeCount: witnessSelections.length,
+        breakdown: witnessBreakdown,
       }),
     )
 
-    const liftedBuildStartedAt = performance.now()
-    const lifted = buildPairLiftedMachineStage(domain)
-    const liftedBuildMs = performance.now() - liftedBuildStartedAt
-    const liftedSolved = await solveBounded(lifted.model, 60)
+    const partitions: Array<{
+      name: 'throughSeasoning' | 'blending'
+      kinds: ReadonlySet<ProductionStepKind>
+      timeLimitSeconds: number
+    }> = [
+      {
+        name: 'throughSeasoning',
+        kinds: new Set<ProductionStepKind>([
+          'juicing',
+          'seasoning',
+        ]),
+        timeLimitSeconds: 45,
+      },
+      {
+        name: 'blending',
+        kinds: new Set<ProductionStepKind>(['blending']),
+        timeLimitSeconds: 60,
+      },
+    ]
+
+    const lowerBounds: Record<
+      'throughSeasoning' | 'blending',
+      number | null
+    > = {
+      throughSeasoning: null,
+      blending: null,
+    }
+
+    for (const partition of partitions) {
+      const buildStartedAt = performance.now()
+      const built = buildPairLiftedMachineStage(
+        domain,
+        partition.kinds,
+      )
+      const buildMs = performance.now() - buildStartedAt
+      const solved = await solveBounded(
+        built.model,
+        partition.timeLimitSeconds,
+      )
+      lowerBounds[partition.name] =
+        solved.status === 'optimal'
+          ? solved.objective
+          : null
+
+      console.info(
+        '[machine-pair-lifted-partition]',
+        JSON.stringify({
+          name: partition.name,
+          groupCount: built.groupCount,
+          pairVariableCount: built.pairVariableCount,
+          singletonVariableCount: built.singletonVariableCount,
+          recipeVariableCount: built.recipeVariableCount,
+          operationEdgeCount: built.operationEdgeCount,
+          buildMs: Math.round(buildMs),
+          serializeMs: Math.round(solved.serializeMs),
+          parseMs: Math.round(solved.parseMs),
+          solveMs: Math.round(solved.solveMs),
+          status: solved.status,
+          objective: solved.objective,
+        }),
+      )
+    }
 
     console.info(
-      '[machine-pair-lifted-exact]',
+      '[machine-partition-certificate-check]',
       JSON.stringify({
-        groupCount: lifted.groupCount,
-        pairVariableCount: lifted.pairVariableCount,
-        singletonVariableCount: lifted.singletonVariableCount,
-        recipeVariableCount: lifted.recipeVariableCount,
-        operationEdgeCount: lifted.operationEdgeCount,
-        machineBuildMs: Math.round(liftedBuildMs),
-        serializeMs: Math.round(liftedSolved.serializeMs),
-        parseMs: Math.round(liftedSolved.parseMs),
-        solveMs: Math.round(liftedSolved.solveMs),
-        status: liftedSolved.status,
-        objective: liftedSolved.objective,
+        lowerBounds: {
+          ...lowerBounds,
+          finalizing: 30,
+        },
+        lowerBoundTotal:
+          lowerBounds.throughSeasoning !== null &&
+          lowerBounds.blending !== null
+            ? lowerBounds.throughSeasoning +
+              lowerBounds.blending +
+              30
+            : null,
+        witnessBreakdown,
       }),
     )
   },
-  180000,
+  240000,
 )
+
