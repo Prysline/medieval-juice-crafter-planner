@@ -196,14 +196,24 @@ async function findCostOptimalPairFeasibility(
       `Cost-optimal pair feasibility ended with ${solution.status}`,
     )
   }
-  expect(Math.round(solution.objective)).toBe(PRODUCTION_UNITS_FIX)
+  const objective = solution.objective
+  if (typeof objective !== 'number' || !Number.isFinite(objective)) {
+    throw new Error('Pair feasibility returned a non-finite objective')
+  }
+  expect(Math.round(objective)).toBe(PRODUCTION_UNITS_FIX)
 
   const unitsByGroupKey = new Map(
     groups.map((group) => [
       group.key,
       (unitVarsByGroupKey.get(group.key) ?? []).reduce(
         (total, variable) =>
-          total + (solution.getValue(variable) > 0.5 ? 1 : 0),
+          (() => {
+            const value = solution.getValue(variable)
+            if (typeof value !== 'number' || !Number.isFinite(value)) {
+              throw new Error('Pair feasibility returned a non-finite variable value')
+            }
+            return total + (value > 0.5 ? 1 : 0)
+          })(),
         0,
       ),
     ]),
@@ -218,6 +228,220 @@ async function findCostOptimalPairFeasibility(
   expect(productionCost).toBe(PRODUCTION_COST_FIX)
 
   return { unitsByGroupKey, solveMs }
+}
+
+
+function buildPairLiftedMachineStage(
+  domain: BatchOptimizationModel,
+) {
+  const groups = pairGroups(domain)
+  const model = new Model()
+  const coverageByCustomerId = new Map<
+    string,
+    ReturnType<Model['boolVar']>[]
+  >(
+    domain.serviceableCustomerIds.map((customerId) => [
+      customerId,
+      [],
+    ]),
+  )
+  const unitVarsByGroupKey = new Map<
+    string,
+    ReturnType<Model['boolVar']>[]
+  >(
+    groups.map((group) => [group.key, []]),
+  )
+  const allUnitVars: ReturnType<Model['boolVar']>[] = []
+  const singletonVars: ReturnType<Model['boolVar']>[] = []
+  const assignedCostTerms: ReturnType<
+    ReturnType<Model['boolVar']>['times']
+  >[] = []
+
+  const addCoverage = (
+    customerId: string,
+    variable: ReturnType<Model['boolVar']>,
+  ) => {
+    const terms = coverageByCustomerId.get(customerId)
+    if (!terms) throw new Error(\`Unknown customer \${customerId}\`)
+    terms.push(variable)
+  }
+
+  let pairVariableCount = 0
+  let singletonVariableCount = 0
+
+  groups.forEach((group, groupIndex) => {
+    if (group.ingredientCost === SINGLETON_RECIPE_COST) {
+      group.eligibleCustomerIds.forEach(
+        (customerId, customerIndex) => {
+          const singleton = model.boolVar(
+            \`single_\${groupIndex}_\${customerIndex}\`,
+          )
+          singletonVariableCount += 1
+          singletonVars.push(singleton)
+          allUnitVars.push(singleton)
+          unitVarsByGroupKey.get(group.key)!.push(singleton)
+          addCoverage(customerId, singleton)
+          assignedCostTerms.push(
+            singleton.times(group.ingredientCost),
+          )
+        },
+      )
+    }
+
+    for (
+      let leftIndex = 0;
+      leftIndex < group.eligibleCustomerIds.length;
+      leftIndex += 1
+    ) {
+      for (
+        let rightIndex = leftIndex + 1;
+        rightIndex < group.eligibleCustomerIds.length;
+        rightIndex += 1
+      ) {
+        const pair = model.boolVar(
+          \`pair_\${groupIndex}_\${leftIndex}_\${rightIndex}\`,
+        )
+        pairVariableCount += 1
+        allUnitVars.push(pair)
+        unitVarsByGroupKey.get(group.key)!.push(pair)
+        addCoverage(group.eligibleCustomerIds[leftIndex], pair)
+        addCoverage(group.eligibleCustomerIds[rightIndex], pair)
+        assignedCostTerms.push(
+          pair.times(group.ingredientCost * 2),
+        )
+      }
+    }
+  })
+
+  domain.serviceableCustomerIds.forEach(
+    (customerId, customerIndex) => {
+      model.addConstraint(
+        sum(...(coverageByCustomerId.get(customerId) ?? []))
+          .eq(1),
+        \`cover_\${customerIndex}\`,
+      )
+    },
+  )
+  model.addConstraint(
+    sum(...singletonVars).eq(1),
+    'singleton_total',
+  )
+  model.addConstraint(
+    sum(...allUnitVars).eq(PRODUCTION_UNITS_FIX),
+    'production_units_fix',
+  )
+  model.addConstraint(
+    sum(...assignedCostTerms).eq(ASSIGNED_INGREDIENT_COST_FIX),
+    'assigned_cost_fix',
+  )
+
+  const xByRecipeId = new Map<string, ReturnType<Model['intVar']>>()
+  const quantityTermsByEdgeKey = new Map<
+    string,
+    ReturnType<ReturnType<Model['intVar']>['times']>[]
+  >()
+  const quantityUpperBoundByEdgeKey = new Map<string, number>()
+
+  let recipeVariableIndex = 0
+  groups.forEach((group, groupIndex) => {
+    const groupRecipeVars: ReturnType<Model['intVar']>[] = []
+    const groupUnitUpperBound = Math.max(
+      1,
+      Math.ceil(group.eligibleCustomerIds.length / 2),
+    )
+
+    for (const recipe of group.recipes) {
+      const x = model.intVar(
+        0,
+        groupUnitUpperBound,
+        \`x_\${recipeVariableIndex}\`,
+      )
+      recipeVariableIndex += 1
+      xByRecipeId.set(recipe.candidate.id, x)
+      groupRecipeVars.push(x)
+
+      const multiplicityByEdgeKey = new Map<string, number>()
+      for (const edge of recipe.productionPath.edges) {
+        multiplicityByEdgeKey.set(
+          edge.key,
+          (multiplicityByEdgeKey.get(edge.key) ?? 0) + 1,
+        )
+      }
+      for (const [edgeKey, multiplicity] of multiplicityByEdgeKey) {
+        const terms = quantityTermsByEdgeKey.get(edgeKey)
+        const term = x.times(multiplicity)
+        if (terms) terms.push(term)
+        else quantityTermsByEdgeKey.set(edgeKey, [term])
+        quantityUpperBoundByEdgeKey.set(
+          edgeKey,
+          (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) +
+            groupUnitUpperBound * multiplicity,
+        )
+      }
+    }
+
+    model.addConstraint(
+      sum(...groupRecipeVars)
+        .minus(sum(...(unitVarsByGroupKey.get(group.key) ?? [])))
+        .eq(0),
+      \`group_recipe_units_\${groupIndex}\`,
+    )
+  })
+
+  const productionCostTerms = groups.flatMap((group) =>
+    group.recipes.map((recipe) =>
+      xByRecipeId
+        .get(recipe.candidate.id)!
+        .times(recipe.juiceUnitIngredientCost),
+    ),
+  )
+  model.addConstraint(
+    sum(...productionCostTerms).eq(PRODUCTION_COST_FIX),
+    'production_cost_fix',
+  )
+
+  const operationByEdgeKey = new Map<
+    string,
+    ReturnType<Model['intVar']>
+  >()
+  ;[...quantityTermsByEdgeKey.entries()].forEach(
+    ([edgeKey, quantityTerms], edgeIndex) => {
+      const operation = model.intVar(
+        0,
+        Math.max(
+          1,
+          Math.ceil(
+            (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) /
+              PROCESSING_STACK_CAPACITY,
+          ),
+        ),
+        \`op_\${edgeIndex}\`,
+      )
+      operationByEdgeKey.set(edgeKey, operation)
+      const quantity = sum(...quantityTerms)
+      model.addConstraint(
+        quantity
+          .minus(operation.times(PROCESSING_STACK_CAPACITY))
+          .leq(0),
+        \`op_capacity_\${edgeIndex}\`,
+      )
+      model.addConstraint(
+        operation.minus(quantity).leq(0),
+        \`op_usage_\${edgeIndex}\`,
+      )
+    },
+  )
+
+  model.minimize(sum(...operationByEdgeKey.values()))
+
+  return {
+    model,
+    groupCount: groups.length,
+    pairVariableCount,
+    singletonVariableCount,
+    recipeVariableCount: xByRecipeId.size,
+    operationEdgeCount: operationByEdgeKey.size,
+  }
 }
 
 function buildFixedGroupMachineStage(
@@ -393,6 +617,28 @@ it(
         objective: solved.objective,
       }),
     )
+
+    const liftedBuildStartedAt = performance.now()
+    const lifted = buildPairLiftedMachineStage(domain)
+    const liftedBuildMs = performance.now() - liftedBuildStartedAt
+    const liftedSolved = await solveBounded(lifted.model, 60)
+
+    console.info(
+      '[machine-pair-lifted-exact]',
+      JSON.stringify({
+        groupCount: lifted.groupCount,
+        pairVariableCount: lifted.pairVariableCount,
+        singletonVariableCount: lifted.singletonVariableCount,
+        recipeVariableCount: lifted.recipeVariableCount,
+        operationEdgeCount: lifted.operationEdgeCount,
+        machineBuildMs: Math.round(liftedBuildMs),
+        serializeMs: Math.round(liftedSolved.serializeMs),
+        parseMs: Math.round(liftedSolved.parseMs),
+        solveMs: Math.round(liftedSolved.solveMs),
+        status: liftedSolved.status,
+        objective: liftedSolved.objective,
+      }),
+    )
   },
-  120000,
+  180000,
 )
