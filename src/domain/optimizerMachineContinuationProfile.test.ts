@@ -973,6 +973,8 @@ function buildFlowProjectedNonfinalStage(
   )
 
   const operationVars: ReturnType<Model['intVar']>[] = []
+  const throughOperationVars: ReturnType<Model['intVar']>[] = []
+  const blendingOperationVars: ReturnType<Model['intVar']>[] = []
   ;[...quantityTermsByEdgeKey.entries()].forEach(
     ([edgeKey, terms], edgeIndex) => {
       const operation = model.intVar(
@@ -998,8 +1000,41 @@ function buildFlowProjectedNonfinalStage(
         `op_usage_${edgeIndex}`,
       )
       operationVars.push(operation)
+      const kind = kindByEdgeKey.get(edgeKey)
+      if (kind === 'juicing' || kind === 'seasoning') {
+        throughOperationVars.push(operation)
+      } else if (kind === 'blending') {
+        blendingOperationVars.push(operation)
+      }
     },
   )
+
+  model.addConstraint(
+    sum(...throughOperationVars).geq(38),
+    'through_exact_lower_bound',
+  )
+  model.addConstraint(
+    sum(...blendingOperationVars).geq(35),
+    'blending_exact_lower_bound',
+  )
+  if (typeof options?.throughExact === 'number') {
+    model.addConstraint(
+      sum(...throughOperationVars).eq(options.throughExact),
+      'through_exact',
+    )
+  }
+  if (typeof options?.blendingCap === 'number') {
+    model.addConstraint(
+      sum(...blendingOperationVars).leq(options.blendingCap),
+      'blending_cap',
+    )
+  }
+  if (typeof options?.totalCap === 'number') {
+    model.addConstraint(
+      sum(...operationVars).leq(options.totalCap),
+      'nonfinal_total_cap',
+    )
+  }
 
   model.minimize(sum(...operationVars))
 
@@ -1156,23 +1191,32 @@ async function solveBounded(
 }
 
 profileIt(
-  'captures HiGHS branch-and-bound progress for the exact non-final model',
+  'captures the strengthened exact non-final dual bound',
   async () => {
     const domain = canonicalDomain()
     expect(domain.recipes).toHaveLength(7892)
 
-    const built = buildFlowProjectedNonfinalStage(domain)
+    const built = buildFlowProjectedNonfinalStage(
+      domain,
+      { totalCap: 77 },
+    )
     const solved = await solveBoundedWithProgress(
       built.model,
       60,
     )
 
     console.info(
-      '[machine-nonfinal-progress]',
+      '[machine-strengthened-nonfinal-progress]',
       JSON.stringify({
         status: solved.status,
         objective: solved.objective,
         solveMs: Math.round(solved.solveMs),
+        exactPartitionLowerBounds: {
+          throughSeasoning: 38,
+          blending: 35,
+          total: 73,
+        },
+        knownNonfinalWitness: 77,
         progressTail: solved.progressTail,
       }),
     )
