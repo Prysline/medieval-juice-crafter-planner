@@ -315,11 +315,29 @@ function buildFlowParityPartitionStage(
     sum(...blendingOperationVars).geq(35),
     'blending_lower_bound',
   )
-  if (typeof totalCap === 'number') {
+  if (typeof options?.throughExact === 'number') {
     model.addConstraint(
-      sum(...operationVars).leq(totalCap),
+      sum(...throughOperationVars).eq(options.throughExact),
+      'through_exact',
+    )
+  }
+  if (typeof options?.blendingCap === 'number') {
+    model.addConstraint(
+      sum(...blendingOperationVars).leq(options.blendingCap),
+      'blending_cap',
+    )
+  }
+  if (typeof options?.totalCap === 'number') {
+    model.addConstraint(
+      sum(...operationVars).leq(options.totalCap),
       'nonfinal_total_cap',
     )
+  }
+  if (
+    typeof options?.totalCap === 'number' ||
+    typeof options?.throughExact === 'number' ||
+    typeof options?.blendingCap === 'number'
+  ) {
     model.minimize(sum(...productionUnitTerms))
   } else {
     model.minimize(sum(...operationVars))
@@ -1029,7 +1047,11 @@ function buildFlowProjectedFullMachineCapFeasibility(
 
 function buildFlowProjectedNonfinalStage(
   domain: BatchOptimizationModel,
-  totalCap?: number,
+  options?: {
+    totalCap?: number
+    throughExact?: number
+    blendingCap?: number
+  },
 ) {
   const groups = pairGroups(domain)
   const model = new Model()
@@ -1235,7 +1257,7 @@ async function solveBounded(
 }
 
 profileIt(
-  'proves whether any exact non-final solution can beat 77',
+  'enumerates every exact non-final case below 77',
   async () => {
     const domain = canonicalDomain()
     expect(domain.recipes).toHaveLength(7892)
@@ -1243,39 +1265,47 @@ profileIt(
       SERVICEABLE_CUSTOMER_COUNT,
     )
 
-    const buildStartedAt = performance.now()
-    const built = buildFlowProjectedNonfinalStage(domain, 76)
-    const buildMs = performance.now() - buildStartedAt
-    const solved = await solveBounded(built.model, 150)
+    const cases = [
+      { throughExact: 38, blendingCap: 38 },
+      { throughExact: 39, blendingCap: 37 },
+      { throughExact: 40, blendingCap: 36 },
+      { throughExact: 41, blendingCap: 35 },
+    ]
 
-    console.info(
-      '[machine-nonfinal-76-feasibility]',
-      JSON.stringify({
-        cap: 76,
-        partitionLowerBounds: {
-          throughSeasoning: 38,
-          blending: 35,
-          total: 73,
-        },
-        knownNonfinalWitness: 77,
-        finalizingExactLowerBound: 30,
-        knownFullWitness: 107,
-        groupCount: built.groupCount,
-        customerFlowVariableCount:
-          built.customerFlowVariableCount,
-        recipeVariableCount: built.recipeVariableCount,
-        singletonSlackVariableCount:
-          built.singletonSlackVariableCount,
-        operationEdgeCount: built.operationEdgeCount,
-        buildMs: Math.round(buildMs),
-        serializeMs: Math.round(solved.serializeMs),
-        parseMs: Math.round(solved.parseMs),
-        solveMs: Math.round(solved.solveMs),
-        status: solved.status,
-        objective: solved.objective,
-      }),
-    )
+    for (const current of cases) {
+      const buildStartedAt = performance.now()
+      const built = buildFlowProjectedNonfinalStage(
+        domain,
+        current,
+      )
+      const buildMs = performance.now() - buildStartedAt
+      const solved = await solveBounded(built.model, 40)
+
+      console.info(
+        '[machine-nonfinal-frontier-case]',
+        JSON.stringify({
+          ...current,
+          totalCap: 76,
+          knownNonfinalWitness: 77,
+          finalizingExactLowerBound: 30,
+          knownFullWitness: 107,
+          groupCount: built.groupCount,
+          customerFlowVariableCount:
+            built.customerFlowVariableCount,
+          recipeVariableCount: built.recipeVariableCount,
+          singletonSlackVariableCount:
+            built.singletonSlackVariableCount,
+          operationEdgeCount: built.operationEdgeCount,
+          buildMs: Math.round(buildMs),
+          serializeMs: Math.round(solved.serializeMs),
+          parseMs: Math.round(solved.parseMs),
+          solveMs: Math.round(solved.solveMs),
+          status: solved.status,
+          objective: solved.objective,
+        }),
+      )
+    }
   },
-  175000,
+  190000,
 )
 
