@@ -6842,11 +6842,17 @@ function buildFinalizing30GroupSupportMaster(
       extra: number
       cost: number
     }
+    allowedExactExtraCosts?: {
+      extra: number
+      costs: readonly number[]
+      count: number
+    }
   } = {},
 ) {
   const slackExtraCount = options.slackExtraCount
   const extraIdentityCuts = options.extraIdentityCuts ?? []
   const requiredExactExtraCost = options.requiredExactExtraCost
+  const allowedExactExtraCosts = options.allowedExactExtraCosts
   const groups = pairGroups(domain)
   const model = new Model()
 
@@ -7085,6 +7091,41 @@ function buildFinalizing30GroupSupportMaster(
     model.addConstraint(
       sum(...currentLevel).minus(sum(...nextLevel)).geq(1),
       `sg_required_exact_extra_cost_${requiredExactExtraCost.extra}_${requiredExactExtraCost.cost}`,
+    )
+  }
+  if (allowedExactExtraCosts) {
+    const level = allowedExactExtraCosts.extra - 1
+    if (
+      level < 0 ||
+      level >= PROCESSING_STACK_CAPACITY - 1
+    ) {
+      throw new Error(
+        `Invalid allowed exact extra multiplicity: ${allowedExactExtraCosts.extra}`,
+      )
+    }
+    const allowedCosts = new Set(allowedExactExtraCosts.costs)
+    const currentLevel = groups.flatMap((group, groupIndex) => {
+      if (!allowedCosts.has(group.ingredientCost)) return []
+      const threshold =
+        extraThresholdVarsByGroupIndex.get(groupIndex)?.[level]
+      return threshold ? [threshold] : []
+    })
+    const nextLevel =
+      level + 1 < PROCESSING_STACK_CAPACITY - 1
+        ? groups.flatMap((group, groupIndex) => {
+            if (!allowedCosts.has(group.ingredientCost)) return []
+            const threshold =
+              extraThresholdVarsByGroupIndex.get(groupIndex)?.[
+                level + 1
+              ]
+            return threshold ? [threshold] : []
+          })
+        : []
+    model.addConstraint(
+      sum(...currentLevel)
+        .minus(sum(...nextLevel))
+        .eq(allowedExactExtraCosts.count),
+      `sg_allowed_exact_extra_costs_${allowedExactExtraCosts.extra}`,
     )
   }
   extraIdentityCuts.forEach((entries, cutIndex) => {
@@ -8711,23 +8752,52 @@ profileIt(
           ...optimalCosts,
           ...unresolvedCosts,
         ].sort((left, right) => left - right)
+        const highestExtraCount = sortedExtras.filter(
+          (extra) => extra === highestExtra,
+        ).length
+        let combinedStatus = 'not-run'
+        let combinedSolveMs = 0
+        if (survivingCosts.length > 0) {
+          const combined = buildFinalizing30GroupSupportMaster(
+            domain,
+            thresholdCounts,
+            {
+              slackExtraCount,
+              allowedExactExtraCosts: {
+                extra: highestExtra,
+                costs: survivingCosts,
+                count: highestExtraCount,
+              },
+            },
+          )
+          const combinedSolved = await solveBounded(
+            combined.model,
+            2,
+          )
+          combinedStatus = combinedSolved.status
+          combinedSolveMs = combinedSolved.solveMs
+        }
         const subcase = {
           slackExtraCount,
           status:
-            survivingCosts.length === 0
+            survivingCosts.length === 0 ||
+            combinedStatus === 'infeasible'
               ? 'infeasible'
               : 'cost-frontier-unresolved',
           highestExtra,
+          highestExtraCount,
           candidateCosts: candidateCosts.length,
           infeasibleCosts: infeasibleCosts.length,
           optimalCosts,
           unresolvedCosts,
+          combinedStatus,
           solveMs: Math.round(
             coarseSolved.solveMs +
               costResults.reduce(
                 (total, entry) => total + entry.solveMs,
                 0,
-              ),
+              ) +
+              combinedSolveMs,
           ),
         }
         subcases.push(subcase)
