@@ -100,3 +100,19 @@ jobs:
         env:
           MACHINE_CONTINUATION_SUPPORT_DP_GROUPS: '1279'
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
+
+
+  machine-single-support-master:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
+    name: machine-single-support-master
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Probe unsplit exact support master
+        env:
+          MACHINE_CONTINUATION_SINGLE_MASTER_GROUPS: '1279'
+        run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
