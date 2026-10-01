@@ -72,6 +72,11 @@ const supportDpProfileIt =
     ? it
     : it.skip
 
+const singleSupportMasterProfileIt =
+  Boolean(machineContinuationEnv.MACHINE_CONTINUATION_SINGLE_MASTER_GROUPS)
+    ? it
+    : it.skip
+
 function canonicalDomain(): BatchOptimizationModel {
   const currentProgress = 'liquid-blender-unlocked'
   const customerIds = canonicalCustomers
@@ -6893,7 +6898,7 @@ function buildAggregateSharedEdgeFrontierMaster(
 function build311ExtraCostSumSupportMaster(
   domain: BatchOptimizationModel,
   fixedExtra3GroupIndex: number,
-  extraOneCostSum: number,
+  extraOneCostSum: number | undefined,
   options: {
     supportCuts?: readonly (readonly number[])[]
     hallCuts?: readonly (readonly number[])[]
@@ -7049,10 +7054,12 @@ function build311ExtraCostSumSupportMaster(
     sum(...slackByGroupIndex.values()).eq(1),
     's31s_slack_group',
   )
-  model.addConstraint(
-    sum(...extraOneCostTerms).eq(extraOneCostSum),
-    's31s_extra_one_cost_sum',
-  )
+  if (typeof extraOneCostSum === 'number') {
+    model.addConstraint(
+      sum(...extraOneCostTerms).eq(extraOneCostSum),
+      's31s_extra_one_cost_sum',
+    )
+  }
   model.addConstraint(
     sum(...productionCostTerms).eq(PRODUCTION_COST_FIX),
     's31s_production_cost',
@@ -11492,6 +11499,186 @@ supportDpProfileIt(
           result.assignmentFlow < SERVICEABLE_CUSTOMER_COUNT,
       ),
     ).toBe(true)
+  },
+  120000,
+)
+
+
+
+singleSupportMasterProfileIt(
+  'probes one exact 3+1+1 support master without extra-one cost-sum splitting',
+  async () => {
+    const domain = canonicalDomain()
+    const groups = pairGroups(domain)
+    const rawGroupIndexes =
+      machineContinuationEnv.MACHINE_CONTINUATION_SINGLE_MASTER_GROUPS ?? ''
+    const targetGroupIndexes = rawGroupIndexes
+      .split(',')
+      .map((value) => Number(value.trim()))
+      .filter((value) => Number.isInteger(value))
+    expect(targetGroupIndexes.length).toBeGreaterThan(0)
+
+    const thresholdCounts = [3, 1, 1, 0] as const
+    const sharedHallCuts =
+      await bootstrap311HallCutsFromDpWitnesses(domain, groups)
+    const sharedHallCutKeys = new Set(
+      sharedHallCuts.map((cut) => cut.join(',')),
+    )
+    const results = []
+
+    for (const groupIndex of targetGroupIndexes) {
+      const supportCuts: number[][] = []
+      let status = 'round-limit'
+      let assignmentFlow: number | null = null
+      let exactStatus: string | null = null
+      let masterSolveMs = 0
+      let exactSolveMs = 0
+      let supportSize = 0
+
+      for (let round = 0; round < 4; round += 1) {
+        const built = build311ExtraCostSumSupportMaster(
+          domain,
+          groupIndex,
+          undefined,
+          {
+            supportCuts,
+            hallCuts: sharedHallCuts,
+            includeCustomerFlow: false,
+          },
+        )
+        const solved = await solveBounded(built.model, 0.5)
+        masterSolveMs += solved.solveMs
+        if (solved.status !== 'optimal' || !solved.namedSolution) {
+          status = solved.status
+          break
+        }
+
+        const support = groups.flatMap((_group, supportGroupIndex) => {
+          const raw = solved.namedSolution!.get(
+            `s31su_${supportGroupIndex}`,
+          )
+          return typeof raw === 'number' &&
+            Number.isFinite(raw) &&
+            raw > 0.5
+            ? [supportGroupIndex]
+            : []
+        })
+        supportSize = support.length
+        if (support.length !== 30) {
+          throw new Error(
+            `Expected 30 support groups for unsplit identity ${groupIndex}, got ${support.length}`,
+          )
+        }
+
+        const capacities = groups.map((_group, capacityGroupIndex) => {
+          const usedRaw = solved.namedSolution!.get(
+            `s31su_${capacityGroupIndex}`,
+          )
+          const used =
+            typeof usedRaw === 'number' &&
+            Number.isFinite(usedRaw) &&
+            usedRaw > 0.5
+              ? 1
+              : 0
+          if (capacityGroupIndex === groupIndex) return used * 8
+          const extraRaw = solved.namedSolution!.get(
+            `s31se1_${capacityGroupIndex}`,
+          )
+          const extra =
+            typeof extraRaw === 'number' &&
+            Number.isFinite(extraRaw) &&
+            extraRaw > 0.5
+              ? 1
+              : 0
+          const slackRaw = solved.namedSolution!.get(
+            `s31sslack_${capacityGroupIndex}`,
+          )
+          const slack =
+            typeof slackRaw === 'number' &&
+            Number.isFinite(slackRaw) &&
+            slackRaw > 0.5
+              ? 1
+              : 0
+          return used * 2 + extra * 2 - slack
+        })
+        const checked = maximumAssignmentFlowForGroupCapacities(
+          groups,
+          domain.serviceableCustomerIds,
+          capacities,
+        )
+        assignmentFlow = checked.flow
+
+        if (checked.flow < SERVICEABLE_CUSTOMER_COUNT) {
+          if (checked.violatingGroupIndexes.length === 0) {
+            status = 'invalid-empty-hall-cut'
+            break
+          }
+          const key = checked.violatingGroupIndexes.join(',')
+          if (sharedHallCutKeys.has(key)) {
+            status = 'duplicate-hall-cut'
+            break
+          }
+          sharedHallCutKeys.add(key)
+          sharedHallCuts.push(checked.violatingGroupIndexes)
+          status = 'hall-cut'
+          continue
+        }
+
+        const exact = buildFinalizing30MaskPartitionStage(
+          domain,
+          new Set<ProductionStepKind>([
+            'juicing',
+            'seasoning',
+            'blending',
+          ]),
+          thresholdCounts,
+          { max: 76 },
+          0,
+          new Set(support),
+        )
+        const exactSolved = await solveBounded(exact.model, 3)
+        exactSolveMs += exactSolved.solveMs
+        exactStatus = exactSolved.status
+        if (exactSolved.status === 'infeasible') {
+          supportCuts.push(support)
+          status = 'exact-infeasible-support'
+          continue
+        }
+        if (exactSolved.status === 'optimal') {
+          status = 'global-witness'
+          break
+        }
+        status = `exact-${exactSolved.status}`
+        break
+      }
+
+      results.push({
+        groupIndex,
+        groupCost: groups[groupIndex].ingredientCost,
+        status,
+        supportSize,
+        assignmentFlow,
+        exactStatus,
+        hallCuts: sharedHallCuts.length,
+        supportCuts: supportCuts.length,
+        masterSolveMs: Math.round(masterSolveMs),
+        exactSolveMs: Math.round(exactSolveMs),
+      })
+    }
+
+    console.info(
+      '[machine-single-support-master-summary]',
+      JSON.stringify({
+        initialHallCuts:
+          sharedHallCuts.length -
+          results.reduce(
+            (sum, result) =>
+              sum + (result.status === 'hall-cut' ? 1 : 0),
+            0,
+          ),
+        results,
+      }),
+    )
   },
   120000,
 )
