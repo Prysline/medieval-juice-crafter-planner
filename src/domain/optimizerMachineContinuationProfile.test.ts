@@ -2734,8 +2734,9 @@ function buildFinalizingOptimalGroupCountStage(
 }
 
 
-function buildFinalizing30Cap106ReducedStage(
+function buildFinalizing30ReducedStage(
   domain: BatchOptimizationModel,
+  objective: 'through' | 'blending' | 'nonfinal-cap',
 ) {
   const groups = pairGroups(domain)
   const model = new Model()
@@ -2933,13 +2934,18 @@ function buildFinalizing30Cap106ReducedStage(
   const blending = sum(...blendingOps)
   model.addConstraint(through.geq(38), 'through_lower_bound')
   model.addConstraint(blending.geq(35), 'blending_lower_bound')
-  model.addConstraint(
-    through.plus(blending).leq(76),
-    'nonfinal_cap_for_total106',
-  )
 
-  // Pure feasibility: production units are fixed.
-  model.minimize(sum(...productionVars))
+  if (objective === 'nonfinal-cap') {
+    model.addConstraint(
+      through.plus(blending).leq(76),
+      'nonfinal_cap_for_total106',
+    )
+    model.minimize(sum(...productionVars))
+  } else if (objective === 'through') {
+    model.minimize(through)
+  } else {
+    model.minimize(blending)
+  }
 
   return {
     model,
@@ -2995,48 +3001,76 @@ async function solveBounded(
 }
 
 profileIt(
-  'proves the finalizing-30 branch of exact machine cap 106',
+  'proves conditional partition minima on the finalizing-30 frontier',
   async () => {
     const domain = canonicalDomain()
     expect(domain.recipes).toHaveLength(7892)
 
-    const buildStartedAt = performance.now()
-    const built = buildFinalizing30Cap106ReducedStage(domain)
-    const buildMs = performance.now() - buildStartedAt
-    const solved = await solveBounded(built.model, 120)
+    const results: Array<{
+      objective: 'through' | 'blending'
+      status: string
+      value: number | null
+      solveMs: number
+      buildMs: number
+    }> = []
 
-    console.info(
-      '[machine-finalizing30-cap106-reduced]',
-      JSON.stringify({
-        branch: {
-          totalCap: 106,
+    for (const objective of ['through', 'blending'] as const) {
+      const buildStartedAt = performance.now()
+      const built = buildFinalizing30ReducedStage(
+        domain,
+        objective,
+      )
+      const buildMs = performance.now() - buildStartedAt
+      const solved = await solveBounded(built.model, 90)
+
+      results.push({
+        objective,
+        status: solved.status,
+        value:
+          solved.status === 'optimal'
+            ? solved.objective
+            : null,
+        solveMs: Math.round(solved.solveMs),
+        buildMs: Math.round(buildMs),
+      })
+
+      console.info(
+        '[machine-finalizing30-conditional-minimum]',
+        JSON.stringify({
+          objective,
           finalizing: 30,
           usedGroups: 30,
-          throughLowerBound: 38,
-          blendingLowerBound: 35,
-          nonfinalCap: 76,
-        },
-        groupCount: built.groupCount,
-        customerFlowVariableCount:
-          built.customerFlowVariableCount,
-        recipeVariableCount: built.recipeVariableCount,
-        recipeUseVariableCount:
-          built.recipeUseVariableCount,
-        usedGroupVariableCount:
-          built.usedGroupVariableCount,
-        throughOperationEdgeCount:
-          built.throughOperationEdgeCount,
-        blendingOperationEdgeCount:
-          built.blendingOperationEdgeCount,
-        buildMs: Math.round(buildMs),
-        serializeMs: Math.round(solved.serializeMs),
-        parseMs: Math.round(solved.parseMs),
-        solveMs: Math.round(solved.solveMs),
-        status: solved.status,
-        objective: solved.objective,
+          globalLowerBounds: {
+            through: 38,
+            blending: 35,
+          },
+          status: solved.status,
+          value: solved.objective,
+          groupCount: built.groupCount,
+          customerFlowVariableCount:
+            built.customerFlowVariableCount,
+          recipeVariableCount: built.recipeVariableCount,
+          recipeUseVariableCount:
+            built.recipeUseVariableCount,
+          throughOperationEdgeCount:
+            built.throughOperationEdgeCount,
+          blendingOperationEdgeCount:
+            built.blendingOperationEdgeCount,
+          buildMs: Math.round(buildMs),
+          solveMs: Math.round(solved.solveMs),
+        }),
+      )
+    }
+
+    console.info(
+      '[machine-finalizing30-conditional-summary]',
+      JSON.stringify({
+        finalizing: 30,
+        usedGroups: 30,
+        results,
       }),
     )
   },
-  140000,
+  200000,
 )
 
