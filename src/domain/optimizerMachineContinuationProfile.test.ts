@@ -307,6 +307,182 @@ function buildFlowParityPartitionStage(
   }
 }
 
+
+function buildFullMachineCapFeasibility(
+  domain: BatchOptimizationModel,
+  totalCap: number,
+) {
+  const groups = pairGroups(domain)
+  const model = new Model()
+  const assignmentsByGroupKey = new Map<
+    string,
+    ReturnType<Model['boolVar']>[]
+  >(groups.map((group) => [group.key, []]))
+  const assignedCostTerms: ReturnType<
+    ReturnType<Model['boolVar']>['times']
+  >[] = []
+  let assignmentVariableCount = 0
+
+  domain.serviceableCustomerIds.forEach(
+    (customerId, customerIndex) => {
+      const customerTerms: ReturnType<Model['boolVar']>[] = []
+      groups.forEach((group, groupIndex) => {
+        if (!group.eligibleCustomerIds.includes(customerId)) return
+        const y = model.boolVar(
+          `y_${customerIndex}_${groupIndex}`,
+        )
+        assignmentVariableCount += 1
+        customerTerms.push(y)
+        assignmentsByGroupKey.get(group.key)!.push(y)
+        assignedCostTerms.push(y.times(group.ingredientCost))
+      })
+      model.addConstraint(
+        sum(...customerTerms).eq(1),
+        `customer_${customerIndex}`,
+      )
+    },
+  )
+
+  const productionUnitTerms: ReturnType<Model['intVar']>[] = []
+  const productionCostTerms: ReturnType<
+    ReturnType<Model['intVar']>['times']
+  >[] = []
+  const singletonSlackVars: ReturnType<Model['boolVar']>[] = []
+  const quantityTermsByEdgeKey = new Map<
+    string,
+    ReturnType<ReturnType<Model['intVar']>['times']>[]
+  >()
+  const quantityUpperBoundByEdgeKey = new Map<string, number>()
+  let recipeVariableCount = 0
+
+  groups.forEach((group, groupIndex) => {
+    const groupUpperBound = Math.max(
+      1,
+      Math.ceil(group.eligibleCustomerIds.length / 2),
+    )
+    const groupRecipeVars: ReturnType<Model['intVar']>[] = []
+
+    for (const recipe of group.recipes) {
+      const x = model.intVar(
+        0,
+        groupUpperBound,
+        `x_${recipeVariableCount}`,
+      )
+      recipeVariableCount += 1
+      groupRecipeVars.push(x)
+      productionUnitTerms.push(x)
+      productionCostTerms.push(
+        x.times(recipe.juiceUnitIngredientCost),
+      )
+
+      const multiplicityByEdgeKey = new Map<string, number>()
+      for (const edge of recipe.productionPath.edges) {
+        multiplicityByEdgeKey.set(
+          edge.key,
+          (multiplicityByEdgeKey.get(edge.key) ?? 0) + 1,
+        )
+      }
+      for (const [edgeKey, multiplicity] of multiplicityByEdgeKey) {
+        const terms = quantityTermsByEdgeKey.get(edgeKey)
+        const term = x.times(multiplicity)
+        if (terms) terms.push(term)
+        else quantityTermsByEdgeKey.set(edgeKey, [term])
+        quantityUpperBoundByEdgeKey.set(
+          edgeKey,
+          (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) +
+            groupUpperBound * multiplicity,
+        )
+      }
+    }
+
+    const groupProductionUnits = sum(...groupRecipeVars)
+    const assignedCustomers = sum(
+      ...(assignmentsByGroupKey.get(group.key) ?? []),
+    )
+    if (group.ingredientCost === SLACK_RECIPE_COST) {
+      const slack = model.boolVar(`slack_${groupIndex}`)
+      singletonSlackVars.push(slack)
+      model.addConstraint(
+        groupProductionUnits
+          .times(2)
+          .minus(assignedCustomers)
+          .minus(slack)
+          .eq(0),
+        `parity_${groupIndex}`,
+      )
+    } else {
+      model.addConstraint(
+        groupProductionUnits
+          .times(2)
+          .minus(assignedCustomers)
+          .eq(0),
+        `parity_${groupIndex}`,
+      )
+    }
+  })
+
+  model.addConstraint(
+    sum(...singletonSlackVars).eq(GLOBAL_SERVING_SLACK),
+    'global_slack',
+  )
+  model.addConstraint(
+    sum(...productionUnitTerms).eq(PRODUCTION_UNITS_FIX),
+    'production_units_fix',
+  )
+  model.addConstraint(
+    sum(...assignedCostTerms).eq(ASSIGNED_INGREDIENT_COST_FIX),
+    'assigned_cost_fix',
+  )
+  model.addConstraint(
+    sum(...productionCostTerms).eq(PRODUCTION_COST_FIX),
+    'production_cost_fix',
+  )
+
+  const operationVars: ReturnType<Model['intVar']>[] = []
+  ;[...quantityTermsByEdgeKey.entries()].forEach(
+    ([edgeKey, terms], edgeIndex) => {
+      const operation = model.intVar(
+        0,
+        Math.max(
+          1,
+          Math.ceil(
+            (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) /
+              PROCESSING_STACK_CAPACITY,
+          ),
+        ),
+        `op_${edgeIndex}`,
+      )
+      const quantity = sum(...terms)
+      model.addConstraint(
+        quantity
+          .minus(operation.times(PROCESSING_STACK_CAPACITY))
+          .leq(0),
+        `op_capacity_${edgeIndex}`,
+      )
+      model.addConstraint(
+        operation.minus(quantity).leq(0),
+        `op_usage_${edgeIndex}`,
+      )
+      operationVars.push(operation)
+    },
+  )
+
+  model.addConstraint(
+    sum(...operationVars).leq(totalCap),
+    'machine_total_cap',
+  )
+  model.minimize(sum(...productionUnitTerms))
+
+  return {
+    model,
+    groupCount: groups.length,
+    assignmentVariableCount,
+    recipeVariableCount,
+    singletonSlackVariableCount: singletonSlackVars.length,
+    operationEdgeCount: operationVars.length,
+  }
+}
+
 async function solveBounded(
   model: Model,
   timeLimitSeconds: number,
@@ -349,7 +525,7 @@ async function solveBounded(
 }
 
 profileIt(
-  'profiles exact machine partitions with integral flow projection',
+  'profiles descending exact full-machine feasibility caps',
   async () => {
     const domain = canonicalDomain()
 
@@ -360,46 +536,23 @@ profileIt(
     expect(GLOBAL_SERVING_SLACK).toBe(1)
     expect(SLACK_RECIPE_COST).toBe(43)
 
-    const partitions: Array<{
-      name: 'throughSeasoning' | 'blending'
-      kinds: ReadonlySet<ProductionStepKind>
-      expectedOptimum: number
-    }> = [
-      {
-        name: 'throughSeasoning',
-        kinds: new Set<ProductionStepKind>([
-          'juicing',
-          'seasoning',
-        ]),
-        expectedOptimum: 38,
-      },
-      {
-        name: 'blending',
-        kinds: new Set<ProductionStepKind>(['blending']),
-        expectedOptimum: 35,
-      },
-    ]
-
-    for (const partition of partitions) {
+    for (const cap of [110, 108, 106]) {
       const buildStartedAt = performance.now()
-      const built = buildFlowParityPartitionStage(
-        domain,
-        partition.kinds,
-      )
+      const built = buildFullMachineCapFeasibility(domain, cap)
       const buildMs = performance.now() - buildStartedAt
-      const solved = await solveBounded(built.model, 60)
+      const solved = await solveBounded(built.model, 35)
 
       console.info(
-        '[machine-flow-parity-partition]',
+        '[machine-full-cap-feasibility]',
         JSON.stringify({
-          name: partition.name,
-          expectedOptimum: partition.expectedOptimum,
+          cap,
+          lowerBound: 103,
           groupCount: built.groupCount,
-          customerFlowVariableCount:
-            built.customerFlowVariableCount,
-          slackFlowVariableCount:
-            built.slackFlowVariableCount,
-          quotientVariableCount: built.quotientVariableCount,
+          assignmentVariableCount:
+            built.assignmentVariableCount,
+          recipeVariableCount: built.recipeVariableCount,
+          singletonSlackVariableCount:
+            built.singletonSlackVariableCount,
           operationEdgeCount: built.operationEdgeCount,
           buildMs: Math.round(buildMs),
           serializeMs: Math.round(solved.serializeMs),
@@ -409,7 +562,10 @@ profileIt(
           objective: solved.objective,
         }),
       )
+
+      if (solved.status !== 'optimal') break
     }
   },
-  150000,
+  130000,
 )
+
