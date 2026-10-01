@@ -7914,7 +7914,7 @@ it.skip(
 )
 
 
-profileIt(
+it.skip(
   'checks 3+1+1 singleton extra subcases',
   async () => {
     const domain = canonicalDomain()
@@ -7952,4 +7952,72 @@ profileIt(
     )
   },
   60000,
+)
+
+
+profileIt(
+  'enumerates singleton identity across remaining extra patterns',
+  async () => {
+    const domain = canonicalDomain()
+    const groups = pairGroups(domain)
+    const slackGroupIndexes = groups.flatMap((group, groupIndex) =>
+      group.ingredientCost === SLACK_RECIPE_COST ? [groupIndex] : [],
+    )
+    const cases = [
+      { pattern: '3+1+1', thresholds: [3, 1, 1, 0] as const },
+      { pattern: '2+2+1', thresholds: [3, 2, 0, 0] as const },
+      { pattern: '2+1+1+1', thresholds: [4, 1, 0, 0] as const },
+      { pattern: '1+1+1+1+1', thresholds: [5, 0, 0, 0] as const },
+    ]
+    const summaries = []
+
+    for (const extraCase of cases) {
+      const results = []
+      for (const slackGroupIndex of slackGroupIndexes) {
+        const built = buildOptimisticGroupOnlyFrontierMaster(
+          domain,
+          extraCase.thresholds,
+          {
+            sharedBucketMode: 'structural-signature',
+            slackExtraCount: 0,
+            slackGroupIndex,
+          },
+        )
+        const solved = await solveBounded(built.model, 1.5)
+        const result = {
+          pattern: extraCase.pattern,
+          slackGroupIndex,
+          status: solved.status,
+          objective: solved.objective,
+          solveMs: Math.round(solved.solveMs),
+        }
+        results.push(result)
+        console.info(
+          '[machine-singleton-identity-case]',
+          JSON.stringify(result),
+        )
+      }
+      const summary = {
+        pattern: extraCase.pattern,
+        total: results.length,
+        infeasible: results.filter((result) => result.status === 'infeasible').length,
+        optimal: results.filter((result) => result.status === 'optimal').length,
+        timelimit: results.filter((result) => result.status === 'timelimit').length,
+        unresolvedGroupIndexes: results
+          .filter((result) => result.status !== 'infeasible')
+          .map((result) => result.slackGroupIndex),
+      }
+      summaries.push(summary)
+      console.info(
+        '[machine-singleton-identity-pattern-summary]',
+        JSON.stringify(summary),
+      )
+    }
+
+    console.info(
+      '[machine-singleton-identity-summary]',
+      JSON.stringify(summaries),
+    )
+  },
+  300000,
 )
