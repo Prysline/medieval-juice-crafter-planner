@@ -7092,6 +7092,29 @@ function build311ExtraCostSumSupportMaster(
     sum(...slackByGroupIndex.values()).eq(1),
     's31s_slack_group',
   )
+  if (forcedCustomerIds.size > 0) {
+    residualServiceableCustomerIds.forEach((customerId, customerIndex) => {
+      const coverTerms = groups.flatMap((group, groupIndex) => {
+        if (
+          groupIndex === fixedExtra3GroupIndex ||
+          !effectiveEligibleCustomerIds[groupIndex].includes(customerId)
+        ) {
+          return []
+        }
+        if (effectiveEligibleCustomerIds[groupIndex].length >= 2) {
+          return [usedGroupVars[groupIndex]]
+        }
+        const slack = slackByGroupIndex.get(groupIndex)
+        return slack ? [slack] : []
+      })
+      if (coverTerms.length > 0 && coverTerms.length <= 3) {
+        model.addConstraint(
+          sum(...coverTerms).geq(1),
+          `s31s_sparse_customer_cover_${customerIndex}`,
+        )
+      }
+    })
+  }
   if (typeof extraOneCostSum === 'number') {
     model.addConstraint(
       sum(...extraOneCostTerms).eq(extraOneCostSum),
