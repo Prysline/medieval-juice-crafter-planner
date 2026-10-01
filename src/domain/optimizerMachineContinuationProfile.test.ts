@@ -7160,6 +7160,99 @@ function build311ExtraCostSumSupportMaster(
 
 
 forcedResidualProfileIt(
+  'profiles forced-customer residual graph structure',
+  async () => {
+    const domain = canonicalDomain()
+    const groups = pairGroups(domain)
+    const targetGroupIndexes = [
+      187, 223, 247, 307, 344, 457, 609, 666, 1279,
+    ] as const
+    const results = []
+
+    for (const groupIndex of targetGroupIndexes) {
+      const fixedCustomers = new Set(
+        groups[groupIndex].eligibleCustomerIds,
+      )
+      const residualCustomerIds =
+        domain.serviceableCustomerIds.filter(
+          (customerId) => !fixedCustomers.has(customerId),
+        )
+      const residualMaskCustomerIds = new Map<string, string[]>()
+      let normalCandidateCount = 0
+      let extraCandidateCount = 0
+      let slackCandidateCount = 0
+      const customerNeighborCounts = new Map(
+        residualCustomerIds.map((customerId) => [customerId, 0]),
+      )
+
+      groups.forEach((group, candidateGroupIndex) => {
+        if (candidateGroupIndex === groupIndex) return
+        const residualEligible = group.eligibleCustomerIds.filter(
+          (customerId) => !fixedCustomers.has(customerId),
+        )
+        const key = residualEligible.join('\u001e')
+        if (!residualMaskCustomerIds.has(key)) {
+          residualMaskCustomerIds.set(key, residualEligible)
+        }
+        if (residualEligible.length >= 2) {
+          normalCandidateCount += 1
+          for (const customerId of residualEligible) {
+            customerNeighborCounts.set(
+              customerId,
+              (customerNeighborCounts.get(customerId) ?? 0) + 1,
+            )
+          }
+        }
+        if (residualEligible.length >= 4) extraCandidateCount += 1
+        if (
+          group.ingredientCost === SLACK_RECIPE_COST &&
+          residualEligible.length >= 1
+        ) {
+          slackCandidateCount += 1
+        }
+      })
+
+      const customerTypes = customerMaskFlowTypes(
+        residualCustomerIds,
+        residualMaskCustomerIds,
+      )
+      const degrees = [...customerNeighborCounts.values()].sort(
+        (left, right) => left - right,
+      )
+      results.push({
+        groupIndex,
+        groupCost: groups[groupIndex].ingredientCost,
+        residualCustomers: residualCustomerIds.length,
+        residualMaskCount: residualMaskCustomerIds.size,
+        customerTypeCount: customerTypes.length,
+        multiCustomerTypes: customerTypes.filter(
+          (entry) => entry.customerIds.length > 1,
+        ).map((entry) => ({
+          demand: entry.customerIds.length,
+          neighborMasks: entry.neighborMaskKeys.length,
+        })),
+        normalCandidateCount,
+        extraCandidateCount,
+        slackCandidateCount,
+        minCustomerNeighborGroups: degrees[0] ?? 0,
+        p10CustomerNeighborGroups:
+          degrees[Math.floor(degrees.length * 0.1)] ?? 0,
+        medianCustomerNeighborGroups:
+          degrees[Math.floor(degrees.length * 0.5)] ?? 0,
+        maxCustomerNeighborGroups:
+          degrees[degrees.length - 1] ?? 0,
+      })
+    }
+
+    console.info(
+      '[machine-forced-residual-structure-summary]',
+      JSON.stringify(results),
+    )
+  },
+  120000,
+)
+
+forcedResidualProfileIt(
   'checks exact forced-customer residual support for tight extra3 identities',
   async () => {
     const domain = canonicalDomain()
