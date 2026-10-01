@@ -1257,6 +1257,126 @@ function buildFlowProjectedKindsStage(
   }
 }
 
+
+function crossGroupDominatedRecipeIds(
+  domain: BatchOptimizationModel,
+): {
+  dominated: Set<string>
+  comparisonCount: number
+  maxCostBucketSize: number
+} {
+  const customerBit = new Map(
+    domain.serviceableCustomerIds.map(
+      (customerId, index) => [customerId, 1n << BigInt(index)],
+    ),
+  )
+  const byCost = new Map<
+    number,
+    Array<{
+      recipe: EligibleOptimizationRecipe
+      eligibleMask: bigint
+      eligibleCount: number
+      edges: Map<string, number>
+      edgeMultiplicityTotal: number
+    }>
+  >()
+
+  for (const recipe of domain.recipes) {
+    let eligibleMask = 0n
+    for (const customerId of recipe.eligibleCustomerIds) {
+      eligibleMask |= customerBit.get(customerId) ?? 0n
+    }
+    const edges = nonfinalEdgeMultiplicity(recipe)
+    const entry = {
+      recipe,
+      eligibleMask,
+      eligibleCount: recipe.eligibleCustomerIds.length,
+      edges,
+      edgeMultiplicityTotal: [...edges.values()].reduce(
+        (total, count) => total + count,
+        0,
+      ),
+    }
+    const bucket = byCost.get(recipe.juiceUnitIngredientCost)
+    if (bucket) bucket.push(entry)
+    else byCost.set(recipe.juiceUnitIngredientCost, [entry])
+  }
+
+  const dominated = new Set<string>()
+  let comparisonCount = 0
+  let maxCostBucketSize = 0
+
+  for (const bucket of byCost.values()) {
+    maxCostBucketSize = Math.max(maxCostBucketSize, bucket.length)
+
+    for (const candidate of bucket) {
+      for (const replacement of bucket) {
+        if (
+          candidate.recipe.candidate.id ===
+          replacement.recipe.candidate.id
+        ) {
+          continue
+        }
+        if (
+          replacement.eligibleCount <
+          candidate.eligibleCount
+        ) {
+          continue
+        }
+        if (
+          replacement.edgeMultiplicityTotal >
+          candidate.edgeMultiplicityTotal
+        ) {
+          continue
+        }
+        if (
+          (replacement.eligibleMask &
+            candidate.eligibleMask) !==
+          candidate.eligibleMask
+        ) {
+          continue
+        }
+
+        comparisonCount += 1
+        if (
+          !edgeMultiplicityIsSubset(
+            replacement.edges,
+            candidate.edges,
+          )
+        ) {
+          continue
+        }
+
+        const strictlyBetterEligibility =
+          replacement.eligibleMask !==
+          candidate.eligibleMask
+        const strictlyBetterEdges =
+          replacement.edgeMultiplicityTotal <
+            candidate.edgeMultiplicityTotal ||
+          [...candidate.edges.entries()].some(
+            ([edgeKey, count]) =>
+              (replacement.edges.get(edgeKey) ?? 0) < count,
+          )
+
+        if (
+          strictlyBetterEligibility ||
+          strictlyBetterEdges
+        ) {
+          dominated.add(candidate.recipe.candidate.id)
+          break
+        }
+      }
+    }
+  }
+
+  return {
+    dominated,
+    comparisonCount,
+    maxCostBucketSize,
+  }
+}
+
+
 async function solveBoundedWithProgress(
   model: Model,
   timeLimitSeconds: number,
@@ -1336,33 +1456,40 @@ async function solveBounded(
 }
 
 profileIt(
-  'proves the blending-35 machine Pareto frontier point',
+  'measures exact cross-service-set recipe dominance',
   async () => {
     const domain = canonicalDomain()
     expect(domain.recipes).toHaveLength(7892)
 
-    const built = buildFlowProjectedNonfinalStage(domain, {
-      blendingCap: 35,
-    })
-    const solved = await solveBoundedWithProgress(
-      built.model,
-      75,
-    )
+    const startedAt = performance.now()
+    const result = crossGroupDominatedRecipeIds(domain)
+    const elapsedMs = performance.now() - startedAt
 
     console.info(
-      '[machine-blending35-frontier]',
+      '[machine-cross-group-dominance]',
       JSON.stringify({
-        blendingExactLowerBound: 35,
-        throughExactLowerBound: 38,
-        expectedNonfinalOptimum: 77,
-        expectedThroughAtOptimum: 42,
-        status: solved.status,
-        objective: solved.objective,
-        solveMs: Math.round(solved.solveMs),
-        progressTail: solved.progressTail,
+        recipeCount: domain.recipes.length,
+        dominatedRecipeCount: result.dominated.size,
+        retainedRecipeCount:
+          domain.recipes.length - result.dominated.size,
+        reductionRatio:
+          result.dominated.size / domain.recipes.length,
+        comparisonCount: result.comparisonCount,
+        maxCostBucketSize: result.maxCostBucketSize,
+        recipesWithInitialFinishedServings:
+          domain.recipes.filter(
+            (recipe) =>
+              (recipe.initialFinishedServings ?? 0) > 0,
+          ).length,
+        recipesWithProductionCaps:
+          domain.recipes.filter(
+            (recipe) =>
+              typeof recipe.maxProductionUnits === 'number',
+          ).length,
+        elapsedMs: Math.round(elapsedMs),
       }),
     )
   },
-  100000,
+  30000,
 )
 
