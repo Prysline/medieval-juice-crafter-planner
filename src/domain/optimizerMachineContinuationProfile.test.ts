@@ -34,6 +34,18 @@ const profileIt =
     ? it
     : it.skip
 
+const extraIdentityProfileIt =
+  machineContinuationEnv.MACHINE_CONTINUATION_PROFILE === '1' &&
+  !machineContinuationEnv.MACHINE_CONTINUATION_PARTIAL_GROUPS
+    ? it
+    : it.skip
+
+const partialSupportProfileIt =
+  machineContinuationEnv.MACHINE_CONTINUATION_PROFILE === '1' &&
+  Boolean(machineContinuationEnv.MACHINE_CONTINUATION_PARTIAL_GROUPS)
+    ? it
+    : it.skip
+
 function canonicalDomain(): BatchOptimizationModel {
   const currentProgress = 'liquid-blender-unlocked'
   const customerIds = canonicalCustomers
@@ -6851,10 +6863,12 @@ function buildFinalizing30GroupSupportMaster(
       groupIndex: number
       extra: number
     }
+    supportCuts?: readonly (readonly number[])[]
   } = {},
 ) {
   const slackExtraCount = options.slackExtraCount
   const extraIdentityCuts = options.extraIdentityCuts ?? []
+  const supportCuts = options.supportCuts ?? []
   const requiredExactExtraCost = options.requiredExactExtraCost
   const allowedExactExtraCosts = options.allowedExactExtraCosts
   const requiredExactExtraGroup = options.requiredExactExtraGroup
@@ -7053,6 +7067,12 @@ function buildFinalizing30GroupSupportMaster(
     sum(...usedGroupVars).eq(30),
     'sg_used_groups',
   )
+  supportCuts.forEach((support, cutIndex) => {
+    model.addConstraint(
+      sum(...support.map((groupIndex) => usedGroupVars[groupIndex])).leq(29),
+      `sg_support_nogood_${cutIndex}`,
+    )
+  })
   extraThresholdCounts.forEach((count, thresholdIndex) => {
     model.addConstraint(
       sum(...extraThresholdVarsByLevel[thresholdIndex]).eq(count),
@@ -8522,7 +8542,7 @@ it.skip(
 )
 
 
-profileIt(
+extraIdentityProfileIt(
   'decomposes finalizing-30 extra-bearing identities exactly',
   async () => {
     const domain = canonicalDomain()
@@ -9040,6 +9060,215 @@ profileIt(
         (result) =>
           result.status === 'static-infeasible' ||
           result.status === 'infeasible',
+      ),
+    ).toBe(true)
+  },
+  300000,
+)
+
+
+partialSupportProfileIt(
+  'decomposes unresolved 3+1+1 identities by companion-extra cost and support',
+  async () => {
+    const domain = canonicalDomain()
+    const groups = pairGroups(domain)
+    const rawGroupIndexes =
+      machineContinuationEnv.MACHINE_CONTINUATION_PARTIAL_GROUPS ?? ''
+    const targetGroupIndexes = rawGroupIndexes
+      .split(',')
+      .map((value) => Number(value.trim()))
+      .filter((value) => Number.isInteger(value))
+    expect(targetGroupIndexes.length).toBeGreaterThan(0)
+
+    const thresholdCounts = [3, 1, 1, 0] as const
+    const maxExtraByGroupIndex = groups.map((group) => {
+      const upperBound = Math.min(
+        PROCESSING_STACK_CAPACITY,
+        Math.max(
+          1,
+          Math.ceil(group.eligibleCustomerIds.length / 2),
+        ),
+      )
+      return upperBound - 1
+    })
+    const companionCosts = [
+      ...new Set(
+        groups.flatMap((group, groupIndex) =>
+          maxExtraByGroupIndex[groupIndex] >= 1
+            ? [group.ingredientCost]
+            : [],
+        ),
+      ),
+    ].sort((left, right) => left - right)
+
+    const identityResults = []
+    let globalWitness:
+      | {
+          groupIndex: number
+          companionCost: number
+          support: number[]
+          objective: number | null
+        }
+      | undefined
+
+    for (const groupIndex of targetGroupIndexes) {
+      expect(groups[groupIndex]).toBeDefined()
+      expect(maxExtraByGroupIndex[groupIndex]).toBeGreaterThanOrEqual(3)
+
+      const costResults = []
+      for (const companionCost of companionCosts) {
+        const supportCuts: number[][] = []
+        let status = 'round-limit'
+        let exactInfeasibleSupports = 0
+        let masterSolveMs = 0
+        let exactSolveMs = 0
+
+        for (let round = 0; round < 2; round += 1) {
+          const built = buildFinalizing30GroupSupportMaster(
+            domain,
+            thresholdCounts,
+            {
+              slackExtraCount: 0,
+              requiredExactExtraGroup: {
+                groupIndex,
+                extra: 3,
+              },
+              requiredExactExtraCost: {
+                extra: 1,
+                cost: companionCost,
+              },
+              supportCuts,
+            },
+          )
+          const solved = await solveBounded(built.model, 0.4)
+          masterSolveMs += solved.solveMs
+
+          if (solved.status === 'infeasible') {
+            status = 'infeasible'
+            break
+          }
+          if (
+            solved.status !== 'optimal' ||
+            !solved.namedSolution
+          ) {
+            status = solved.status
+            break
+          }
+
+          const support = groups.flatMap(
+            (_group, supportGroupIndex) => {
+              const raw = solved.namedSolution!.get(
+                \`sgu_\${supportGroupIndex}\`,
+              )
+              return typeof raw === 'number' &&
+                Number.isFinite(raw) &&
+                raw > 0.5
+                ? [supportGroupIndex]
+                : []
+            },
+          )
+          if (support.length !== 30) {
+            throw new Error(
+              \`Expected 30 support groups for identity \${groupIndex} / cost \${companionCost}, got \${support.length}\`,
+            )
+          }
+
+          const exact = buildFinalizing30MaskPartitionStage(
+            domain,
+            new Set<ProductionStepKind>([
+              'juicing',
+              'seasoning',
+              'blending',
+            ]),
+            thresholdCounts,
+            { max: 76 },
+            0,
+            new Set(support),
+          )
+          const exactSolved = await solveBounded(exact.model, 3)
+          exactSolveMs += exactSolved.solveMs
+          if (exactSolved.status === 'infeasible') {
+            exactInfeasibleSupports += 1
+            supportCuts.push(support)
+            continue
+          }
+          if (exactSolved.status === 'optimal') {
+            status = 'global-witness'
+            globalWitness = {
+              groupIndex,
+              companionCost,
+              support,
+              objective: exactSolved.objective,
+            }
+            break
+          }
+          status = \`exact-\${exactSolved.status}\`
+          break
+        }
+
+        costResults.push({
+          companionCost,
+          status,
+          supportCuts: supportCuts.length,
+          exactInfeasibleSupports,
+          masterSolveMs: Math.round(masterSolveMs),
+          exactSolveMs: Math.round(exactSolveMs),
+        })
+        if (globalWitness) break
+      }
+
+      const unresolvedCosts = costResults
+        .filter((entry) => entry.status !== 'infeasible')
+        .map((entry) => ({
+          cost: entry.companionCost,
+          status: entry.status,
+          supportCuts: entry.supportCuts,
+        }))
+      const result = {
+        groupIndex,
+        groupCost: groups[groupIndex].ingredientCost,
+        companionCostCount: companionCosts.length,
+        infeasibleCosts: costResults.filter(
+          (entry) => entry.status === 'infeasible',
+        ).length,
+        unresolvedCosts,
+        exactInfeasibleSupports: costResults.reduce(
+          (total, entry) =>
+            total + entry.exactInfeasibleSupports,
+          0,
+        ),
+        solveMs: costResults.reduce(
+          (total, entry) =>
+            total + entry.masterSolveMs + entry.exactSolveMs,
+          0,
+        ),
+      }
+      identityResults.push(result)
+      console.info(
+        '[machine-partial-support-identity]',
+        JSON.stringify(result),
+      )
+      if (globalWitness) break
+    }
+
+    console.info(
+      '[machine-partial-support-summary]',
+      JSON.stringify({
+        targetGroupIndexes,
+        closedIdentities: identityResults
+          .filter((entry) => entry.unresolvedCosts.length === 0)
+          .map((entry) => entry.groupIndex),
+        unresolvedIdentities: identityResults
+          .filter((entry) => entry.unresolvedCosts.length > 0)
+          .map((entry) => entry.groupIndex),
+        globalWitness,
+      }),
+    )
+
+    expect(globalWitness).toBeUndefined()
+    expect(
+      identityResults.every(
+        (entry) => entry.unresolvedCosts.length === 0,
       ),
     ).toBe(true)
   },
