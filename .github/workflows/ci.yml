@@ -30,7 +30,7 @@ jobs:
       - run: npm run smoke:highs:pages-like
 
 
-machine-single-support-master:
+  machine-single-support-master:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
     name: machine-single-support-master
     runs-on: ubuntu-latest
