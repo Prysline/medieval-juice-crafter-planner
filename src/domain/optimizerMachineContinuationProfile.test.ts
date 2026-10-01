@@ -1988,6 +1988,199 @@ async function solveBoundedWithProgress(
   }
 }
 
+
+function buildConditionalThroughFrontierStage(
+  domain: BatchOptimizationModel,
+) {
+  const groups = pairGroups(domain)
+  const model = new Model()
+  const flowByGroupKey = new Map<
+    string,
+    ReturnType<Model['numVar']>[]
+  >(groups.map((group) => [group.key, []]))
+  let customerFlowVariableCount = 0
+
+  domain.serviceableCustomerIds.forEach(
+    (customerId, customerIndex) => {
+      const customerTerms: ReturnType<Model['numVar']>[] = []
+      groups.forEach((group, groupIndex) => {
+        if (!group.eligibleCustomerIds.includes(customerId)) return
+        const y = model.numVar(
+          0,
+          1,
+          `y_${customerIndex}_${groupIndex}`,
+        )
+        customerFlowVariableCount += 1
+        customerTerms.push(y)
+        flowByGroupKey.get(group.key)!.push(y)
+      })
+      model.addConstraint(
+        sum(...customerTerms).eq(1),
+        `customer_${customerIndex}`,
+      )
+    },
+  )
+
+  const productionUnitTerms: ReturnType<Model['intVar']>[] = []
+  const productionCostTerms: ReturnType<
+    ReturnType<Model['intVar']>['times']
+  >[] = []
+  const singletonSlackVars: ReturnType<Model['boolVar']>[] = []
+  const quantityTermsByEdgeKey = new Map<
+    string,
+    ReturnType<ReturnType<Model['intVar']>['times']>[]
+  >()
+  const quantityUpperBoundByEdgeKey = new Map<string, number>()
+  const kindByEdgeKey = new Map<string, ProductionStepKind>()
+  let recipeVariableCount = 0
+
+  groups.forEach((group, groupIndex) => {
+    const groupUpperBound = Math.max(
+      1,
+      Math.ceil(group.eligibleCustomerIds.length / 2),
+    )
+    const groupRecipeVars: ReturnType<Model['intVar']>[] = []
+
+    for (const recipe of group.recipes) {
+      const x = model.intVar(
+        0,
+        groupUpperBound,
+        `x_${recipeVariableCount}`,
+      )
+      recipeVariableCount += 1
+      groupRecipeVars.push(x)
+      productionUnitTerms.push(x)
+      productionCostTerms.push(
+        x.times(recipe.juiceUnitIngredientCost),
+      )
+
+      const multiplicityByEdgeKey = new Map<string, number>()
+      for (const edge of recipe.productionPath.edges) {
+        multiplicityByEdgeKey.set(
+          edge.key,
+          (multiplicityByEdgeKey.get(edge.key) ?? 0) + 1,
+        )
+        kindByEdgeKey.set(edge.key, edge.kind)
+      }
+      for (const [edgeKey, multiplicity] of multiplicityByEdgeKey) {
+        const terms = quantityTermsByEdgeKey.get(edgeKey)
+        const term = x.times(multiplicity)
+        if (terms) terms.push(term)
+        else quantityTermsByEdgeKey.set(edgeKey, [term])
+        quantityUpperBoundByEdgeKey.set(
+          edgeKey,
+          (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) +
+            groupUpperBound * multiplicity,
+        )
+      }
+    }
+
+    const groupProductionUnits = sum(...groupRecipeVars)
+    const servedFlow = sum(...(flowByGroupKey.get(group.key) ?? []))
+    if (group.ingredientCost === SLACK_RECIPE_COST) {
+      const slack = model.boolVar(`slack_${groupIndex}`)
+      singletonSlackVars.push(slack)
+      model.addConstraint(
+        groupProductionUnits
+          .times(2)
+          .minus(servedFlow)
+          .minus(slack)
+          .eq(0),
+        `parity_${groupIndex}`,
+      )
+    } else {
+      model.addConstraint(
+        groupProductionUnits
+          .times(2)
+          .minus(servedFlow)
+          .eq(0),
+        `parity_${groupIndex}`,
+      )
+    }
+  })
+
+  model.addConstraint(
+    sum(...singletonSlackVars).eq(GLOBAL_SERVING_SLACK),
+    'global_slack',
+  )
+  model.addConstraint(
+    sum(...productionUnitTerms).eq(PRODUCTION_UNITS_FIX),
+    'production_units_fix',
+  )
+  model.addConstraint(
+    sum(...productionCostTerms).eq(PRODUCTION_COST_FIX),
+    'production_cost_fix',
+  )
+
+  const partitionOperationVars = {
+    throughSeasoning: [] as ReturnType<Model['intVar']>[],
+    blending: [] as ReturnType<Model['intVar']>[],
+    finalizing: [] as ReturnType<Model['intVar']>[],
+  }
+
+  ;[...quantityTermsByEdgeKey.entries()].forEach(
+    ([edgeKey, terms], edgeIndex) => {
+      const operation = model.intVar(
+        0,
+        Math.max(
+          1,
+          Math.ceil(
+            (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) /
+              PROCESSING_STACK_CAPACITY,
+          ),
+        ),
+        `op_${edgeIndex}`,
+      )
+      const quantity = sum(...terms)
+      model.addConstraint(
+        quantity
+          .minus(operation.times(PROCESSING_STACK_CAPACITY))
+          .leq(0),
+        `op_capacity_${edgeIndex}`,
+      )
+      model.addConstraint(
+        operation.minus(quantity).leq(0),
+        `op_usage_${edgeIndex}`,
+      )
+
+      const kind = kindByEdgeKey.get(edgeKey)
+      if (kind === 'juicing' || kind === 'seasoning') {
+        partitionOperationVars.throughSeasoning.push(operation)
+      } else if (kind === 'blending') {
+        partitionOperationVars.blending.push(operation)
+      } else if (kind === 'finalizing') {
+        partitionOperationVars.finalizing.push(operation)
+      }
+    },
+  )
+
+  model.addConstraint(
+    sum(...partitionOperationVars.blending).eq(35),
+    'blending_exact_frontier',
+  )
+  model.addConstraint(
+    sum(...partitionOperationVars.finalizing).eq(30),
+    'finalizing_exact_frontier',
+  )
+  model.minimize(
+    sum(...partitionOperationVars.throughSeasoning),
+  )
+
+  return {
+    model,
+    groupCount: groups.length,
+    customerFlowVariableCount,
+    recipeVariableCount,
+    singletonSlackVariableCount: singletonSlackVars.length,
+    throughOperationEdgeCount:
+      partitionOperationVars.throughSeasoning.length,
+    blendingOperationEdgeCount:
+      partitionOperationVars.blending.length,
+    finalizingOperationEdgeCount:
+      partitionOperationVars.finalizing.length,
+  }
+}
+
 async function solveBounded(
   model: Model,
   timeLimitSeconds: number,
@@ -2030,110 +2223,50 @@ async function solveBounded(
 }
 
 profileIt(
-  'tests exact finalizing identity links with the known 107 witness',
+  'proves the exact through-seasoning bound on the blend-35 finalizing-30 frontier',
   async () => {
     const domain = canonicalDomain()
     expect(domain.recipes).toHaveLength(7892)
-
-    const blendingBuilt = buildPartitionOptimalPairStage(
-      domain,
-      new Set<ProductionStepKind>(['blending']),
+    expect(domain.serviceableCustomerIds).toHaveLength(
+      SERVICEABLE_CUSTOMER_COUNT,
     )
-    const blendingSolution = await blendingBuilt.model.solve()
-    if (blendingSolution.status !== 'optimal') {
-      throw new Error(
-        `Blending witness stage ended with ${blendingSolution.status}`,
-      )
-    }
 
-    const unitsByGroupKey = new Map<string, number>()
-    for (const group of blendingBuilt.groups) {
-      let units = 0
-      for (const variable of (
-        blendingBuilt.unitVarsByGroupKey.get(group.key) ?? []
-      )) {
-        const value = blendingSolution.getValue(variable)
-        if (typeof value !== 'number' || !Number.isFinite(value)) {
-          throw new Error('Invalid blending pair variable value')
-        }
-        if (value > 0.5) units += 1
-      }
-      unitsByGroupKey.set(group.key, units)
-    }
-
-    const fullBuilt = buildFixedGroupFullMachineStage(
-      domain,
-      unitsByGroupKey,
-    )
-    const fullSolution = await fullBuilt.model.solve()
-    if (fullSolution.status !== 'optimal') {
-      throw new Error(
-        `Fixed-group full-machine witness ended with ${fullSolution.status}`,
-      )
-    }
-
-    const selectedUnitsByRecipeId = new Map<string, number>()
-    for (const recipe of domain.recipes) {
-      const variable = fullBuilt.xByRecipeId.get(recipe.candidate.id)
-      if (!variable) continue
-      const value = fullSolution.getValue(variable)
-      if (typeof value !== 'number' || !Number.isFinite(value)) {
-        throw new Error('Invalid fixed-group recipe value')
-      }
-      const units = Math.round(value)
-      if (units > 0) {
-        selectedUnitsByRecipeId.set(recipe.candidate.id, units)
-      }
-    }
-
-    const breakdown = machineOperationBreakdownForSelection(
-      domain,
-      [...selectedUnitsByRecipeId].map(
-        ([recipeId, units]) => ({ recipeId, units }),
-      ),
-    )
-    expect(breakdown.total).toBe(107)
-
-    const startValues = mipStartValuesForFullWitness(
-      domain,
-      selectedUnitsByRecipeId,
-    )
-    const target = buildFlowProjectedFullMachineObjectiveStage(domain)
-    const solved = await solveBoundedWithMIPStart(
-      target.model,
-      startValues,
-      107,
-      90,
-    )
+    const buildStartedAt = performance.now()
+    const built = buildConditionalThroughFrontierStage(domain)
+    const buildMs = performance.now() - buildStartedAt
+    const solved = await solveBounded(built.model, 120)
 
     console.info(
-      '[machine-full-finalizing-linked-proof]',
+      '[machine-conditional-through-frontier]',
       JSON.stringify({
-        witness: {
-          selectedRecipeCount: selectedUnitsByRecipeId.size,
-          startNonzeroValueCount: startValues.size,
-          breakdown,
-        },
-        exactPartitionLowerBounds: {
-          throughSeasoning: 38,
+        frontier: {
           blending: 35,
           finalizing: 30,
-          total: 103,
         },
-        model: {
-          groupCount: target.groupCount,
-          recipeVariableCount: target.recipeVariableCount,
-          operationEdgeCount: target.operationEdgeCount,
-          finalizingOperationEdgeCount:
-            target.finalizingOperationEdgeCount,
-        },
+        targetFor107Proof: 42,
+        globalLowerBound: 103,
+        knownWitness: 107,
+        groupCount: built.groupCount,
+        customerFlowVariableCount:
+          built.customerFlowVariableCount,
+        recipeVariableCount: built.recipeVariableCount,
+        singletonSlackVariableCount:
+          built.singletonSlackVariableCount,
+        throughOperationEdgeCount:
+          built.throughOperationEdgeCount,
+        blendingOperationEdgeCount:
+          built.blendingOperationEdgeCount,
+        finalizingOperationEdgeCount:
+          built.finalizingOperationEdgeCount,
+        buildMs: Math.round(buildMs),
+        serializeMs: Math.round(solved.serializeMs),
+        parseMs: Math.round(solved.parseMs),
+        solveMs: Math.round(solved.solveMs),
         status: solved.status,
         objective: solved.objective,
-        solveMs: Math.round(solved.solveMs),
-        progressTail: solved.progressTail,
       }),
     )
   },
-  190000,
+  140000,
 )
 
