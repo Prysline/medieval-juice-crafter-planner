@@ -36,7 +36,8 @@ const profileIt =
 
 const extraIdentityProfileIt =
   machineContinuationEnv.MACHINE_CONTINUATION_PROFILE === '1' &&
-  !machineContinuationEnv.MACHINE_CONTINUATION_PARTIAL_GROUPS
+  !machineContinuationEnv.MACHINE_CONTINUATION_PARTIAL_GROUPS &&
+  !machineContinuationEnv.MACHINE_CONTINUATION_SLACK_SPLIT_GROUPS
     ? it
     : it.skip
 
