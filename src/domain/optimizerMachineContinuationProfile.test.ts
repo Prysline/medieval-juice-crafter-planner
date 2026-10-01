@@ -5821,56 +5821,93 @@ function buildServiceMaskCompressedNonfinalStage(
 }
 
 profileIt(
-  'tests the blending-35 sub-107 frontier by exact extra-unit partitions',
+  'audits exact blending-only class compression before decomposition',
   async () => {
     const domain = canonicalDomain()
-    const cases = [
-      { pattern: '4+1', thresholds: [2, 1, 1, 1] as const },
-      { pattern: '3+2', thresholds: [2, 2, 1, 0] as const },
-      { pattern: '3+1+1', thresholds: [3, 1, 1, 0] as const },
-      { pattern: '2+2+1', thresholds: [3, 2, 0, 0] as const },
-      { pattern: '2+1+1+1', thresholds: [4, 1, 0, 0] as const },
-      { pattern: '1+1+1+1+1', thresholds: [5, 0, 0, 0] as const },
-    ]
+    const groups = pairGroups(domain)
 
-    const results = []
-    for (const extraCase of cases) {
-      const built = buildFinalizing30CompressedFrontierStage(
-        domain,
-        extraCase.thresholds,
-        { blendingFix: 35, throughCap: 41 },
-      )
-      const solved = await solveBoundedWithProgress(
-        built.model,
-        20,
-      )
-      const result = {
-        pattern: extraCase.pattern,
-        finalizingExact: 30,
-        blendingExact: 35,
-        throughCap: 41,
-        totalMachineCap: 106,
-        status: solved.status,
-        feasibilityObjective: solved.objective,
-        solveMs: Math.round(solved.solveMs),
-        progressTail: solved.progressTail,
+    const blendOwnersByEdgeKey = new Map<string, Set<number>>()
+    groups.forEach((group, groupIndex) => {
+      for (const recipe of group.recipes) {
+        for (const edge of recipe.productionPath.edges) {
+          if (edge.kind !== 'blending') continue
+          const owners =
+            blendOwnersByEdgeKey.get(edge.key) ?? new Set<number>()
+          owners.add(groupIndex)
+          blendOwnersByEdgeKey.set(edge.key, owners)
+        }
       }
-      results.push(result)
-      console.info(
-        '[machine-b35-extra-case]',
-        JSON.stringify(result),
+    })
+    const sharedBlendEdgeKeys = new Set(
+      [...blendOwnersByEdgeKey.entries()]
+        .filter(([, owners]) => owners.size > 1)
+        .map(([edgeKey]) => edgeKey),
+    )
+
+    let blendOnlyClassCount = 0
+    let collapsedRecipeCount = 0
+    let groupsWithSingleBlendClass = 0
+    const classCountHistogram = new Map<number, number>()
+
+    for (const group of groups) {
+      const signatures = new Set<string>()
+      for (const recipe of group.recipes) {
+        const sharedBlend = new Map<string, number>()
+        let privateBlendCount = 0
+        const blendMultiplicity = new Map<string, number>()
+        for (const edge of recipe.productionPath.edges) {
+          if (edge.kind !== 'blending') continue
+          blendMultiplicity.set(
+            edge.key,
+            (blendMultiplicity.get(edge.key) ?? 0) + 1,
+          )
+        }
+        for (const [edgeKey, multiplicity] of blendMultiplicity) {
+          if (sharedBlendEdgeKeys.has(edgeKey)) {
+            sharedBlend.set(edgeKey, multiplicity)
+          } else {
+            if (multiplicity !== 1) {
+              throw new Error(
+                `Private blending edge multiplicity ${multiplicity} is not safely reducible`,
+              )
+            }
+            privateBlendCount += 1
+          }
+        }
+        signatures.add(
+          JSON.stringify({
+            shared: [...sharedBlend.entries()].sort(([a], [b]) =>
+              a.localeCompare(b),
+            ),
+            privateBlendCount,
+          }),
+        )
+      }
+      blendOnlyClassCount += signatures.size
+      collapsedRecipeCount += group.recipes.length - signatures.size
+      if (signatures.size === 1) groupsWithSingleBlendClass += 1
+      classCountHistogram.set(
+        signatures.size,
+        (classCountHistogram.get(signatures.size) ?? 0) + 1,
       )
     }
 
     console.info(
-      '[machine-b35-extra-summary]',
-      JSON.stringify(results.map((result) => ({
-        pattern: result.pattern,
-        status: result.status,
-        feasibilityObjective: result.feasibilityObjective,
-        solveMs: result.solveMs,
-      }))),
+      '[machine-blend-only-class-audit]',
+      JSON.stringify({
+        recipeCount: domain.recipes.length,
+        groupCount: groups.length,
+        sharedBlendEdgeCount: sharedBlendEdgeKeys.size,
+        blendOnlyClassCount,
+        collapsedRecipeCount,
+        groupsWithSingleBlendClass,
+        classCountHistogram: Object.fromEntries(
+          [...classCountHistogram.entries()].sort(
+            ([left], [right]) => left - right,
+          ),
+        ),
+      }),
     )
   },
-  180000,
+  20000,
 )
