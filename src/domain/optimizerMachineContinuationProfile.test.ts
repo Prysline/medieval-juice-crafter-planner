@@ -60,6 +60,12 @@ const extraSumProfileIt =
     ? it
     : it.skip
 
+const supportDpProfileIt =
+  machineContinuationEnv.MACHINE_CONTINUATION_PROFILE === '1' &&
+  Boolean(machineContinuationEnv.MACHINE_CONTINUATION_SUPPORT_DP_GROUPS)
+    ? it
+    : it.skip
+
 function canonicalDomain(): BatchOptimizationModel {
   const currentProgress = 'liquid-blender-unlocked'
   const customerIds = canonicalCustomers
@@ -10406,4 +10412,266 @@ it.skip(
     expect(finalStatus).toBe('iteration-limit')
   },
   240000,
+)
+
+
+const SUPPORT_DP_COUNT_CAP = 1_000_000_000
+
+function cappedProduct(left: number, right: number): number {
+  if (left === 0 || right === 0) return 0
+  return Math.min(SUPPORT_DP_COUNT_CAP, left * right)
+}
+
+function cappedSum(left: number, right: number): number {
+  return Math.min(SUPPORT_DP_COUNT_CAP, left + right)
+}
+
+function cappedBinomial(n: number, k: number): number {
+  if (k < 0 || k > n) return 0
+  const reducedK = Math.min(k, n - k)
+  let value = 1
+  for (let index = 1; index <= reducedK; index += 1) {
+    value = Math.min(
+      SUPPORT_DP_COUNT_CAP,
+      (value * (n - reducedK + index)) / index,
+    )
+    if (value >= SUPPORT_DP_COUNT_CAP) return SUPPORT_DP_COUNT_CAP
+  }
+  return Math.round(value)
+}
+
+function cappedRoleWays(
+  groupCount: number,
+  normalCount: number,
+  extraOneCount: number,
+  slackCount: number,
+): number {
+  const selected = normalCount + extraOneCount + slackCount
+  if (selected > groupCount) return 0
+  const chooseSelected = cappedBinomial(groupCount, selected)
+  const chooseExtra = cappedBinomial(selected, extraOneCount)
+  const chooseSlack = cappedBinomial(
+    selected - extraOneCount,
+    slackCount,
+  )
+  return cappedProduct(
+    cappedProduct(chooseSelected, chooseExtra),
+    chooseSlack,
+  )
+}
+
+function count311SupportRolesByExactArithmetic(
+  groups: readonly PairGroup[],
+  fixedExtra3GroupIndex: number,
+): {
+  countCapped: number
+  stateCount: number
+  classCount: number
+} {
+  const fixedGroup = groups[fixedExtra3GroupIndex]
+  if (!fixedGroup) {
+    return { countCapped: 0, stateCount: 0, classCount: 0 }
+  }
+  const fixedUpperBound = Math.min(
+    PROCESSING_STACK_CAPACITY,
+    Math.max(
+      1,
+      Math.ceil(fixedGroup.eligibleCustomerIds.length / 2),
+    ),
+  )
+  if (fixedUpperBound < 4) {
+    return { countCapped: 0, stateCount: 0, classCount: 0 }
+  }
+
+  const classCounts = new Map<
+    string,
+    {
+      ingredientCost: number
+      extraOneEligible: boolean
+      count: number
+    }
+  >()
+  groups.forEach((group, groupIndex) => {
+    if (groupIndex === fixedExtra3GroupIndex) return
+    const upperBound = Math.min(
+      PROCESSING_STACK_CAPACITY,
+      Math.max(
+        1,
+        Math.ceil(group.eligibleCustomerIds.length / 2),
+      ),
+    )
+    const extraOneEligible = upperBound >= 2
+    const key = `${group.ingredientCost}|${extraOneEligible ? 1 : 0}`
+    const current = classCounts.get(key)
+    if (current) current.count += 1
+    else {
+      classCounts.set(key, {
+        ingredientCost: group.ingredientCost,
+        extraOneEligible,
+        count: 1,
+      })
+    }
+  })
+
+  const encode = (
+    selectedCount: number,
+    extraOneCount: number,
+    slackCount: number,
+    productionCost: number,
+  ) =>
+    (((selectedCount * 3 + extraOneCount) * 2 + slackCount) *
+      (PRODUCTION_COST_FIX + 1)) +
+    productionCost
+
+  const decode = (encoded: number) => {
+    const productionCost = encoded % (PRODUCTION_COST_FIX + 1)
+    let rest = Math.floor(encoded / (PRODUCTION_COST_FIX + 1))
+    const slackCount = rest % 2
+    rest = Math.floor(rest / 2)
+    const extraOneCount = rest % 3
+    const selectedCount = Math.floor(rest / 3)
+    return {
+      selectedCount,
+      extraOneCount,
+      slackCount,
+      productionCost,
+    }
+  }
+
+  let states = new Map<number, number>([
+    [
+      encode(
+        1,
+        0,
+        0,
+        fixedGroup.ingredientCost * 4,
+      ),
+      1,
+    ],
+  ])
+
+  for (const groupClass of classCounts.values()) {
+    const next = new Map(states)
+    for (const [encoded, existingWays] of states) {
+      const state = decode(encoded)
+      const maxAdditionalSelected = Math.min(
+        groupClass.count,
+        30 - state.selectedCount,
+      )
+      for (
+        let extraOneCount = 0;
+        extraOneCount <=
+        Math.min(
+          2 - state.extraOneCount,
+          groupClass.extraOneEligible ? maxAdditionalSelected : 0,
+        );
+        extraOneCount += 1
+      ) {
+        const maxSlackCount =
+          groupClass.ingredientCost === SLACK_RECIPE_COST
+            ? Math.min(
+                1 - state.slackCount,
+                maxAdditionalSelected - extraOneCount,
+              )
+            : 0
+        for (
+          let slackCount = 0;
+          slackCount <= maxSlackCount;
+          slackCount += 1
+        ) {
+          const maxNormalCount =
+            maxAdditionalSelected - extraOneCount - slackCount
+          for (
+            let normalCount = 0;
+            normalCount <= maxNormalCount;
+            normalCount += 1
+          ) {
+            const additionalSelected =
+              normalCount + extraOneCount + slackCount
+            if (additionalSelected === 0) continue
+            const nextSelected =
+              state.selectedCount + additionalSelected
+            const nextExtraOne =
+              state.extraOneCount + extraOneCount
+            const nextSlack = state.slackCount + slackCount
+            const nextCost =
+              state.productionCost +
+              groupClass.ingredientCost *
+                (normalCount + slackCount + 2 * extraOneCount)
+            if (nextCost > PRODUCTION_COST_FIX) continue
+
+            const roleWays = cappedRoleWays(
+              groupClass.count,
+              normalCount,
+              extraOneCount,
+              slackCount,
+            )
+            if (roleWays === 0) continue
+            const transitionWays = cappedProduct(
+              existingWays,
+              roleWays,
+            )
+            const nextKey = encode(
+              nextSelected,
+              nextExtraOne,
+              nextSlack,
+              nextCost,
+            )
+            next.set(
+              nextKey,
+              cappedSum(next.get(nextKey) ?? 0, transitionWays),
+            )
+          }
+        }
+      }
+    }
+    states = next
+  }
+
+  return {
+    countCapped:
+      states.get(
+        encode(30, 2, 1, PRODUCTION_COST_FIX),
+      ) ?? 0,
+    stateCount: states.size,
+    classCount: classCounts.size,
+  }
+}
+
+supportDpProfileIt(
+  'counts exact 3+1+1 support roles before customer-flow validation',
+  () => {
+    const domain = canonicalDomain()
+    const groups = pairGroups(domain)
+    const rawGroupIndexes =
+      machineContinuationEnv.MACHINE_CONTINUATION_SUPPORT_DP_GROUPS ?? ''
+    const targetGroupIndexes = rawGroupIndexes
+      .split(',')
+      .map((value) => Number(value.trim()))
+      .filter((value) => Number.isInteger(value))
+    expect(targetGroupIndexes.length).toBeGreaterThan(0)
+
+    const results = targetGroupIndexes.map((groupIndex) => {
+      const startedAt = performance.now()
+      const counted = count311SupportRolesByExactArithmetic(
+        groups,
+        groupIndex,
+      )
+      return {
+        groupIndex,
+        groupCost: groups[groupIndex]?.ingredientCost ?? null,
+        ...counted,
+        solveMs: Math.round(performance.now() - startedAt),
+      }
+    })
+    console.info(
+      '[machine-support-dp-summary]',
+      JSON.stringify(results),
+    )
+
+    expect(
+      results.every((result) => result.countCapped === 0),
+    ).toBe(true)
+  },
+  120000,
 )
