@@ -22,12 +22,15 @@ const GLOBAL_SERVING_SLACK =
 const SLACK_RECIPE_COST =
   PRODUCTION_COST_FIX * 2 - ASSIGNED_INGREDIENT_COST_FIX
 
-const profileIt =
+const machineContinuationEnv =
   (
     globalThis as {
       process?: { env?: Record<string, string | undefined> }
     }
-  ).process?.env?.MACHINE_CONTINUATION_PROFILE === '1'
+  ).process?.env ?? {}
+
+const profileIt =
+  machineContinuationEnv.MACHINE_CONTINUATION_PROFILE === '1'
     ? it
     : it.skip
 
@@ -2046,6 +2049,7 @@ async function solveBoundedWithProgress(
   objective: number | null
   solveMs: number
   progressTail: string[]
+  namedSolution: Map<string, number> | null
 }> {
   const progress: string[] = []
   const highs = await HiGHS.create({
@@ -2072,6 +2076,10 @@ async function solveBoundedWithProgress(
           : null,
       solveMs,
       progressTail: progress.slice(-40),
+      namedSolution:
+        solution.solution instanceof Map
+          ? solution.solution
+          : null,
     }
   } finally {
     highs.free()
@@ -6279,7 +6287,6 @@ function buildAggregateSharedEdgeFrontierMaster(
 ) {
   const slackExtraCount = options.slackExtraCount
   const totalNonFinalCap = options.totalNonFinalCap
-  const supportCuts = options.supportCuts ?? []
   const groups = pairGroups(domain)
   const model = new Model()
 
@@ -6776,6 +6783,7 @@ function buildOptimisticGroupOnlyFrontierMaster(
   const slackExtraCount = options.slackExtraCount
   const slackGroupIndex = options.slackGroupIndex
   const totalNonFinalCap = options.totalNonFinalCap
+  const supportCuts = options.supportCuts ?? []
   const groups = pairGroups(domain)
   const model = new Model()
 
@@ -8049,7 +8057,7 @@ it.skip(
       group.ingredientCost === SLACK_RECIPE_COST ? [groupIndex] : [],
     )
     const ordinalRaw =
-      process.env.MACHINE_CONTINUATION_SLACK_ORDINAL ?? 'coverage'
+      machineContinuationEnv.MACHINE_CONTINUATION_SLACK_ORDINAL ?? 'coverage'
     if (ordinalRaw === 'coverage') {
       expect(slackGroupIndexes.length).toBeLessThanOrEqual(32)
       return
@@ -8070,7 +8078,7 @@ it.skip(
     const unresolved: Array<{
       pattern: string
       status: string
-      objective?: number
+      objective: number | null
     }> = []
 
     for (const extraCase of cases) {
@@ -8117,7 +8125,7 @@ profileIt(
   async () => {
     const domain = canonicalDomain()
     const requestedPattern =
-      process.env.MACHINE_CONTINUATION_JOINT_PATTERN ?? '3+1+1'
+      machineContinuationEnv.MACHINE_CONTINUATION_JOINT_PATTERN ?? '3+1+1'
     const cases = [
       { pattern: '3+1+1', thresholds: [3, 1, 1, 0] as const },
       { pattern: '2+2+1', thresholds: [3, 2, 0, 0] as const },
