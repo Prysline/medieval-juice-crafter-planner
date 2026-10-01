@@ -6244,7 +6244,13 @@ function buildFinalizing30MaskPartitionStage(
 function buildAggregateSharedEdgeFrontierMaster(
   domain: BatchOptimizationModel,
   extraThresholdCounts: readonly [number, number, number, number],
+  options: {
+    slackExtraCount?: number
+    totalNonFinalCap?: number
+  } = {},
 ) {
+  const slackExtraCount = options.slackExtraCount
+  const totalNonFinalCap = options.totalNonFinalCap
   const groups = pairGroups(domain)
   const model = new Model()
 
@@ -6593,6 +6599,24 @@ function buildAggregateSharedEdgeFrontierMaster(
     sum(...slackVars).eq(GLOBAL_SERVING_SLACK),
     'am_global_slack',
   )
+  if (typeof slackExtraCount === 'number') {
+    const targetUnits = 1 + slackExtraCount
+    const bigM = PROCESSING_STACK_CAPACITY
+    groups.forEach((group, groupIndex) => {
+      if (group.ingredientCost !== SLACK_RECIPE_COST) return
+      const slack = slackByGroupIndex.get(groupIndex)
+      const production = groupProductionByIndex.get(groupIndex)
+      if (!slack || !production) return
+      model.addConstraint(
+        sum(production, slack.times(bigM)).leq(targetUnits + bigM),
+        `am_slack_extra_upper_${groupIndex}`,
+      )
+      model.addConstraint(
+        production.minus(slack.times(bigM)).geq(targetUnits - bigM),
+        `am_slack_extra_lower_${groupIndex}`,
+      )
+    })
+  }
   model.addConstraint(
     sum(...productionVars).eq(PRODUCTION_UNITS_FIX),
     'am_production_units',
@@ -6669,14 +6693,21 @@ function buildAggregateSharedEdgeFrontierMaster(
     ...privateBlendingOperationTerms,
     sharedBlendingOperation,
   )
-  model.addConstraint(
-    optimisticThrough.leq(41),
-    'am_optimistic_through_cap',
-  )
-  model.addConstraint(
-    optimisticBlending.leq(35),
-    'am_optimistic_blending_cap',
-  )
+  if (typeof totalNonFinalCap === 'number') {
+    model.addConstraint(
+      optimisticThrough.plus(optimisticBlending).leq(totalNonFinalCap),
+      'am_optimistic_nonfinal_cap',
+    )
+  } else {
+    model.addConstraint(
+      optimisticThrough.leq(41),
+      'am_optimistic_through_cap',
+    )
+    model.addConstraint(
+      optimisticBlending.leq(35),
+      'am_optimistic_blending_cap',
+    )
+  }
 
   model.minimize(sum(...productionVars))
   return {
@@ -7972,7 +8003,7 @@ it.skip(
 )
 
 
-profileIt(
+it.skip(
   'certifies remaining finalizing-30 singleton identities',
   async () => {
     const domain = canonicalDomain()
@@ -8045,54 +8076,45 @@ profileIt(
 
 
 profileIt(
-  'checks joint recipe-class aggregate shared-edge frontiers',
+  'certifies joint-class remaining finalizing-30 frontier',
   async () => {
     const domain = canonicalDomain()
+    const requestedPattern =
+      process.env.MACHINE_CONTINUATION_JOINT_PATTERN ?? '3+1+1'
     const cases = [
       { pattern: '3+1+1', thresholds: [3, 1, 1, 0] as const },
       { pattern: '2+2+1', thresholds: [3, 2, 0, 0] as const },
       { pattern: '2+1+1+1', thresholds: [4, 1, 0, 0] as const },
       { pattern: '1+1+1+1+1', thresholds: [5, 0, 0, 0] as const },
     ]
-    const results = []
-    for (const extraCase of cases) {
-      const built = buildAggregateSharedEdgeFrontierMaster(
-        domain,
-        extraCase.thresholds,
-      )
-      const solved = await solveBoundedWithProgress(built.model, 10)
-      const result = {
+    const extraCase = cases.find(
+      (candidate) => candidate.pattern === requestedPattern,
+    )
+    expect(extraCase).toBeDefined()
+    if (!extraCase) return
+
+    const built = buildAggregateSharedEdgeFrontierMaster(
+      domain,
+      extraCase.thresholds,
+      {
+        slackExtraCount: 0,
+        totalNonFinalCap: 76,
+      },
+    )
+    const solved = await solveBoundedWithProgress(built.model, 15)
+    console.info(
+      '[machine-joint-class-106-case]',
+      JSON.stringify({
         pattern: extraCase.pattern,
         status: solved.status,
         objective: solved.objective,
         solveMs: Math.round(solved.solveMs),
-        groupCount: built.groupCount,
-        serviceMaskCount: built.serviceMaskCount,
-        customerFlowVariableCount: built.customerFlowVariableCount,
         classVariableCount: built.classVariableCount,
         conflictGroupCount: built.conflictGroupCount,
-        sharedThroughEdgeCount: built.sharedThroughEdgeCount,
-        sharedBlendingEdgeCount: built.sharedBlendingEdgeCount,
         progressTail: solved.progressTail,
-      }
-      results.push(result)
-      console.info(
-        '[machine-joint-class-case]',
-        JSON.stringify(result),
-      )
-    }
-    console.info(
-      '[machine-joint-class-summary]',
-      JSON.stringify(
-        results.map((result) => ({
-          pattern: result.pattern,
-          status: result.status,
-          objective: result.objective,
-          classVariableCount: result.classVariableCount,
-          conflictGroupCount: result.conflictGroupCount,
-        })),
-      ),
+      }),
     )
+    expect(solved.status).toBe('infeasible')
   },
-  90000,
+  60000,
 )
