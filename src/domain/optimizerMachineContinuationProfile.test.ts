@@ -2959,6 +2959,223 @@ function buildFinalizing30ReducedStage(
   }
 }
 
+
+function buildFinalizing30Blending35RawThroughStage(
+  domain: BatchOptimizationModel,
+) {
+  const groups = pairGroups(domain)
+  const model = new Model()
+  const flowByGroupKey = new Map<
+    string,
+    ReturnType<Model['numVar']>[]
+  >(groups.map((group) => [group.key, []]))
+
+  domain.serviceableCustomerIds.forEach(
+    (customerId, customerIndex) => {
+      const terms: ReturnType<Model['numVar']>[] = []
+      groups.forEach((group, groupIndex) => {
+        if (!group.eligibleCustomerIds.includes(customerId)) return
+        const y = model.numVar(
+          0,
+          1,
+          `y_${customerIndex}_${groupIndex}`,
+        )
+        terms.push(y)
+        flowByGroupKey.get(group.key)!.push(y)
+      })
+      model.addConstraint(
+        sum(...terms).eq(1),
+        `customer_${customerIndex}`,
+      )
+    },
+  )
+
+  const productionVars: ReturnType<Model['intVar']>[] = []
+  const productionCostTerms: ReturnType<
+    ReturnType<Model['intVar']>['times']
+  >[] = []
+  const slackVars: ReturnType<Model['boolVar']>[] = []
+  const usedGroupVars: ReturnType<Model['boolVar']>[] = []
+  const xByRecipeId = new Map<string, ReturnType<Model['intVar']>>()
+  const rawThroughTerms: ReturnType<
+    ReturnType<Model['intVar']>['times']
+  >[] = []
+  const blendingQuantityTermsByEdgeKey = new Map<
+    string,
+    ReturnType<ReturnType<Model['intVar']>['times']>[]
+  >()
+  const blendingQuantityUpperBoundByEdgeKey =
+    new Map<string, number>()
+
+  let recipeVariableCount = 0
+  let recipeUseVariableCount = 0
+
+  groups.forEach((group, groupIndex) => {
+    const groupUpperBound = Math.max(
+      1,
+      Math.ceil(group.eligibleCustomerIds.length / 2),
+    )
+    const cappedUpperBound = Math.min(
+      groupUpperBound,
+      PROCESSING_STACK_CAPACITY,
+    )
+    const groupRecipeVars: ReturnType<Model['intVar']>[] = []
+    const groupRecipeUseVars: ReturnType<Model['boolVar']>[] = []
+
+    for (const recipe of group.recipes) {
+      const x = model.intVar(
+        0,
+        cappedUpperBound,
+        `x_${recipeVariableCount}`,
+      )
+      recipeVariableCount += 1
+      xByRecipeId.set(recipe.candidate.id, x)
+
+      const usedRecipe = model.boolVar(
+        `ru_${recipeUseVariableCount}`,
+      )
+      recipeUseVariableCount += 1
+
+      groupRecipeVars.push(x)
+      groupRecipeUseVars.push(usedRecipe)
+      productionVars.push(x)
+      productionCostTerms.push(
+        x.times(recipe.juiceUnitIngredientCost),
+      )
+
+      model.addConstraint(
+        x.minus(usedRecipe.times(cappedUpperBound)).leq(0),
+        `recipe_use_upper_${recipeVariableCount}`,
+      )
+      model.addConstraint(
+        usedRecipe.minus(x).leq(0),
+        `recipe_use_lower_${recipeVariableCount}`,
+      )
+
+      let rawThroughMultiplicity = 0
+      const blendingMultiplicityByEdgeKey = new Map<string, number>()
+
+      for (const edge of recipe.productionPath.edges) {
+        if (edge.kind === 'juicing' || edge.kind === 'seasoning') {
+          rawThroughMultiplicity += 1
+        } else if (edge.kind === 'blending') {
+          blendingMultiplicityByEdgeKey.set(
+            edge.key,
+            (blendingMultiplicityByEdgeKey.get(edge.key) ?? 0) + 1,
+          )
+        }
+      }
+
+      if (rawThroughMultiplicity > 0) {
+        rawThroughTerms.push(x.times(rawThroughMultiplicity))
+      }
+
+      for (
+        const [edgeKey, multiplicity]
+        of blendingMultiplicityByEdgeKey
+      ) {
+        const terms = blendingQuantityTermsByEdgeKey.get(edgeKey)
+        const term = x.times(multiplicity)
+        if (terms) terms.push(term)
+        else blendingQuantityTermsByEdgeKey.set(edgeKey, [term])
+        blendingQuantityUpperBoundByEdgeKey.set(
+          edgeKey,
+          (blendingQuantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) +
+            cappedUpperBound * multiplicity,
+        )
+      }
+    }
+
+    const groupProduction = sum(...groupRecipeVars)
+    const served = sum(...(flowByGroupKey.get(group.key) ?? []))
+
+    if (group.ingredientCost === SLACK_RECIPE_COST) {
+      const slack = model.boolVar(`slack_${groupIndex}`)
+      slackVars.push(slack)
+      model.addConstraint(
+        groupProduction
+          .times(2)
+          .minus(served)
+          .minus(slack)
+          .eq(0),
+        `parity_${groupIndex}`,
+      )
+    } else {
+      model.addConstraint(
+        groupProduction.times(2).minus(served).eq(0),
+        `parity_${groupIndex}`,
+      )
+    }
+
+    const usedGroup = model.boolVar(`ug_${groupIndex}`)
+    usedGroupVars.push(usedGroup)
+    model.addConstraint(
+      sum(...groupRecipeUseVars).minus(usedGroup).eq(0),
+      `one_recipe_per_used_group_${groupIndex}`,
+    )
+  })
+
+  model.addConstraint(
+    sum(...slackVars).eq(GLOBAL_SERVING_SLACK),
+    'global_slack',
+  )
+  model.addConstraint(
+    sum(...productionVars).eq(PRODUCTION_UNITS_FIX),
+    'production_units_fix',
+  )
+  model.addConstraint(
+    sum(...productionCostTerms).eq(PRODUCTION_COST_FIX),
+    'production_cost_fix',
+  )
+  model.addConstraint(
+    sum(...usedGroupVars).eq(30),
+    'finalizing30_used_groups',
+  )
+
+  const blendingOps: ReturnType<Model['intVar']>[] = []
+  ;[...blendingQuantityTermsByEdgeKey.entries()].forEach(
+    ([edgeKey, terms], edgeIndex) => {
+      const operation = model.intVar(
+        0,
+        Math.max(
+          1,
+          Math.ceil(
+            (blendingQuantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) /
+              PROCESSING_STACK_CAPACITY,
+          ),
+        ),
+        `bop_${edgeIndex}`,
+      )
+      const quantity = sum(...terms)
+      model.addConstraint(
+        quantity
+          .minus(operation.times(PROCESSING_STACK_CAPACITY))
+          .leq(0),
+        `bop_capacity_${edgeIndex}`,
+      )
+      model.addConstraint(
+        operation.minus(quantity).leq(0),
+        `bop_usage_${edgeIndex}`,
+      )
+      blendingOps.push(operation)
+    },
+  )
+
+  model.addConstraint(
+    sum(...blendingOps).eq(35),
+    'blending35_frontier',
+  )
+  model.minimize(sum(...rawThroughTerms))
+
+  return {
+    model,
+    xByRecipeId,
+    recipeVariableCount,
+    recipeUseVariableCount,
+    blendingOperationEdgeCount: blendingOps.length,
+  }
+}
+
 async function solveBounded(
   model: Model,
   timeLimitSeconds: number,
@@ -3001,72 +3218,67 @@ async function solveBounded(
 }
 
 profileIt(
-  'checks every finalizing-30 branch that could beat 107',
+  'searches the finalizing30 blending35 frontier by raw through work',
   async () => {
     const domain = canonicalDomain()
     expect(domain.recipes).toHaveLength(7892)
 
-    const branches = [
-      { blending: 35, throughCap: 41 },
-      { blending: 36, throughCap: 40 },
-      { blending: 37, throughCap: 39 },
-      { blending: 38, throughCap: 38 },
-    ]
+    const built =
+      buildFinalizing30Blending35RawThroughStage(domain)
+    const startedAt = performance.now()
+    const solution = await built.model.solve()
+    const solveMs = performance.now() - startedAt
 
-    const results: Array<{
-      blending: number
-      throughCap: number
-      status: string
-      objective: number | null
-      solveMs: number
-    }> = []
-
-    for (const branchCase of branches) {
-      const built = buildFinalizing30ReducedStage(
-        domain,
-        'frontier',
-        branchCase,
-      )
-      const solved = await solveBounded(built.model, 50)
-
-      results.push({
-        ...branchCase,
-        status: solved.status,
-        objective: solved.objective,
-        solveMs: Math.round(solved.solveMs),
-      })
-
+    if (solution.status !== 'optimal') {
       console.info(
-        '[machine-finalizing30-frontier-branch]',
+        '[machine-finalizing30-blending35-raw-through]',
         JSON.stringify({
-          finalizing: 30,
-          usedGroups: 30,
-          totalCap: 106,
-          ...branchCase,
-          status: solved.status,
-          objective: solved.objective,
-          solveMs: Math.round(solved.solveMs),
-          groupCount: built.groupCount,
-          customerFlowVariableCount:
-            built.customerFlowVariableCount,
+          status: solution.status,
+          objective: solution.objective,
+          solveMs: Math.round(solveMs),
           recipeVariableCount: built.recipeVariableCount,
           recipeUseVariableCount:
             built.recipeUseVariableCount,
-          throughOperationEdgeCount:
-            built.throughOperationEdgeCount,
           blendingOperationEdgeCount:
             built.blendingOperationEdgeCount,
         }),
       )
-
-      if (solved.status === 'optimal') break
+      return
     }
 
+    const selections = domain.recipes.flatMap((recipe) => {
+      const variable = built.xByRecipeId.get(recipe.candidate.id)
+      if (!variable) return []
+      const value = solution.getValue(variable)
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
+        throw new Error(
+          `Invalid recipe production value for ${recipe.candidate.id}`,
+        )
+      }
+      const units = Math.round(value)
+      return units > 0
+        ? [{ recipeId: recipe.candidate.id, units }]
+        : []
+    })
+
+    const breakdown = machineOperationBreakdownForSelection(
+      domain,
+      selections,
+    )
+
     console.info(
-      '[machine-finalizing30-frontier-summary]',
-      JSON.stringify({ results }),
+      '[machine-finalizing30-blending35-raw-through]',
+      JSON.stringify({
+        status: solution.status,
+        rawThroughObjective: solution.objective,
+        solveMs: Math.round(solveMs),
+        selectedRecipeCount: selections.length,
+        breakdown,
+        knownUpperBound: 107,
+        globalLowerBound: 103,
+      }),
     )
   },
-  230000,
+  120000,
 )
 
