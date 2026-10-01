@@ -117,9 +117,6 @@ async function findCostOptimalPairFeasibility(
   )
   const allUnitVars: ReturnType<Model['boolVar']>[] = []
   const singletonVars: ReturnType<Model['boolVar']>[] = []
-  const assignedCostTerms: ReturnType<
-    ReturnType<Model['boolVar']>['times']
-  >[] = []
 
   const addCoverage = (
     customerId: string,
@@ -188,10 +185,6 @@ async function findCostOptimalPairFeasibility(
   model.addConstraint(
     sum(...allUnitVars).eq(PRODUCTION_UNITS_FIX),
     'production_units_fix',
-  )
-  model.addConstraint(
-    sum(...assignedCostTerms).eq(ASSIGNED_INGREDIENT_COST_FIX),
-    'assigned_cost_fix',
   )
   // The fixed assigned cost plus the unique cost-43 singleton imply
   // production cost (3853 + 43) / 2 = 1948 exactly. Keep the
@@ -283,25 +276,23 @@ function buildCompactParityFullMachineFeasibility(
   const model = new Model()
   const assignmentsByGroupKey = new Map<
     string,
-    ReturnType<Model['boolVar']>[]
+    ReturnType<Model['numVar']>[]
   >(groups.map((group) => [group.key, []]))
-  const assignedCostTerms: ReturnType<
-    ReturnType<Model['boolVar']>['times']
-  >[] = []
   let assignmentVariableCount = 0
 
   domain.serviceableCustomerIds.forEach(
     (customerId, customerIndex) => {
-      const customerTerms: ReturnType<Model['boolVar']>[] = []
+      const customerTerms: ReturnType<Model['numVar']>[] = []
       groups.forEach((group, groupIndex) => {
         if (!group.eligibleCustomerIds.includes(customerId)) return
-        const y = model.boolVar(
+        const y = model.numVar(
+          0,
+          1,
           `y_${customerIndex}_${groupIndex}`,
         )
         assignmentVariableCount += 1
         customerTerms.push(y)
         assignmentsByGroupKey.get(group.key)!.push(y)
-        assignedCostTerms.push(y.times(group.ingredientCost))
       })
       model.addConstraint(
         sum(...customerTerms).eq(1),
@@ -401,10 +392,6 @@ function buildCompactParityFullMachineFeasibility(
     'production_units_fix',
   )
   model.addConstraint(
-    sum(...assignedCostTerms).eq(ASSIGNED_INGREDIENT_COST_FIX),
-    'assigned_cost_fix',
-  )
-  model.addConstraint(
     sum(...productionCostTerms).eq(PRODUCTION_COST_FIX),
     'production_cost_fix',
   )
@@ -488,25 +475,23 @@ function buildCompactParityPartitionQuotientStage(
   const model = new Model()
   const assignmentsByGroupKey = new Map<
     string,
-    ReturnType<Model['boolVar']>[]
+    ReturnType<Model['numVar']>[]
   >(groups.map((group) => [group.key, []]))
-  const assignedCostTerms: ReturnType<
-    ReturnType<Model['boolVar']>['times']
-  >[] = []
 
   let assignmentVariableCount = 0
   domain.serviceableCustomerIds.forEach(
     (customerId, customerIndex) => {
-      const customerTerms: ReturnType<Model['boolVar']>[] = []
+      const customerTerms: ReturnType<Model['numVar']>[] = []
       groups.forEach((group, groupIndex) => {
         if (!group.eligibleCustomerIds.includes(customerId)) return
-        const y = model.boolVar(
+        const y = model.numVar(
+          0,
+          1,
           `y_${customerIndex}_${groupIndex}`,
         )
         assignmentVariableCount += 1
         customerTerms.push(y)
         assignmentsByGroupKey.get(group.key)!.push(y)
-        assignedCostTerms.push(y.times(group.ingredientCost))
       })
       model.addConstraint(
         sum(...customerTerms).eq(1),
@@ -603,10 +588,6 @@ function buildCompactParityPartitionQuotientStage(
     'production_units_fix',
   )
   model.addConstraint(
-    sum(...assignedCostTerms).eq(ASSIGNED_INGREDIENT_COST_FIX),
-    'assigned_cost_fix',
-  )
-  model.addConstraint(
     sum(...productionCostTerms).eq(PRODUCTION_COST_FIX),
     'production_cost_fix',
   )
@@ -673,9 +654,6 @@ function buildPairLiftedPartitionQuotientStage(
   >(groups.map((group) => [group.key, []]))
   const allUnitVars: ReturnType<Model['boolVar']>[] = []
   const singletonVars: ReturnType<Model['boolVar']>[] = []
-  const assignedCostTerms: ReturnType<
-    ReturnType<Model['boolVar']>['times']
-  >[] = []
 
   const addCoverage = (
     customerId: string,
@@ -745,10 +723,6 @@ function buildPairLiftedPartitionQuotientStage(
   model.addConstraint(
     sum(...allUnitVars).eq(PRODUCTION_UNITS_FIX),
     'production_units_fix',
-  )
-  model.addConstraint(
-    sum(...assignedCostTerms).eq(ASSIGNED_INGREDIENT_COST_FIX),
-    'assigned_cost_fix',
   )
 
   const quantityTermsByEdgeKey = new Map<
@@ -878,9 +852,6 @@ function buildPairLiftedMachineStage(
   )
   const allUnitVars: ReturnType<Model['boolVar']>[] = []
   const singletonVars: ReturnType<Model['boolVar']>[] = []
-  const assignedCostTerms: ReturnType<
-    ReturnType<Model['boolVar']>['times']
-  >[] = []
 
   const addCoverage = (
     customerId: string,
@@ -954,10 +925,6 @@ function buildPairLiftedMachineStage(
   model.addConstraint(
     sum(...allUnitVars).eq(PRODUCTION_UNITS_FIX),
     'production_units_fix',
-  )
-  model.addConstraint(
-    sum(...assignedCostTerms).eq(ASSIGNED_INGREDIENT_COST_FIX),
-    'assigned_cost_fix',
   )
 
   const xByRecipeId = new Map<string, ReturnType<Model['intVar']>>()
@@ -1223,99 +1190,59 @@ profileIt(
     expect(GLOBAL_SERVING_SLACK).toBe(1)
     expect(SINGLETON_RECIPE_COST).toBe(43)
 
-    const pairing =
-      await findCostOptimalPairFeasibility(domain)
+    const partitions: Array<{
+      name: 'throughSeasoning' | 'blending'
+      kinds: ReadonlySet<ProductionStepKind>
+      timeLimitSeconds: number
+    }> = [
+      {
+        name: 'throughSeasoning',
+        kinds: new Set<ProductionStepKind>([
+          'juicing',
+          'seasoning',
+        ]),
+        timeLimitSeconds: 60,
+      },
+      {
+        name: 'blending',
+        kinds: new Set<ProductionStepKind>(['blending']),
+        timeLimitSeconds: 60,
+      },
+    ]
 
-    const witnessBuildStartedAt = performance.now()
-    const witnessBuilt = buildFixedGroupMachineStage(
-      domain,
-      pairing.unitsByGroupKey,
-    )
-    const witnessBuildMs =
-      performance.now() - witnessBuildStartedAt
-    const witnessSolveStartedAt = performance.now()
-    const witnessSolution = await witnessBuilt.model.solve()
-    const witnessSolveMs =
-      performance.now() - witnessSolveStartedAt
-    if (witnessSolution.status !== 'optimal') {
-      throw new Error(
-        `Fixed-pair witness ended with ${witnessSolution.status}`,
+    for (const partition of partitions) {
+      const buildStartedAt = performance.now()
+      const built = buildCompactParityPartitionQuotientStage(
+        domain,
+        partition.kinds,
+      )
+      const buildMs = performance.now() - buildStartedAt
+      const solved = await solveBounded(
+        built.model,
+        partition.timeLimitSeconds,
+      )
+
+      console.info(
+        '[machine-flow-parity-partition]',
+        JSON.stringify({
+          name: partition.name,
+          groupCount: built.groupCount,
+          continuousAssignmentVariableCount:
+            built.assignmentVariableCount,
+          singletonSlackVariableCount:
+            built.singletonSlackVariableCount,
+          quotientVariableCount: built.quotientVariableCount,
+          operationEdgeCount: built.operationEdgeCount,
+          buildMs: Math.round(buildMs),
+          serializeMs: Math.round(solved.serializeMs),
+          parseMs: Math.round(solved.parseMs),
+          solveMs: Math.round(solved.solveMs),
+          status: solved.status,
+          objective: solved.objective,
+        }),
       )
     }
-
-    const witnessSelections = domain.recipes.flatMap((recipe) => {
-      const variable = witnessBuilt.xByRecipeId.get(
-        recipe.candidate.id,
-      )
-      if (!variable) return []
-      const value = witnessSolution.getValue(variable)
-      if (typeof value !== 'number' || !Number.isFinite(value)) {
-        throw new Error(
-          `Fixed-pair witness returned invalid x for ${recipe.candidate.id}`,
-        )
-      }
-      const units = Math.round(value)
-      return units > 0
-        ? [{ recipeId: recipe.candidate.id, units }]
-        : []
-    })
-    const witnessBreakdown =
-      machineOperationBreakdownForSelection(
-        domain,
-        witnessSelections,
-      )
-
-    console.info(
-      '[machine-fixed-pair-witness]',
-      JSON.stringify({
-        pairFeasibilitySolveMs: Math.round(pairing.solveMs),
-        selectedGroupCount: witnessBuilt.selectedGroupCount,
-        recipeVariableCount: witnessBuilt.recipeVariableCount,
-        operationEdgeCount: witnessBuilt.operationEdgeCount,
-        buildMs: Math.round(witnessBuildMs),
-        solveMs: Math.round(witnessSolveMs),
-        recipeCount: witnessSelections.length,
-        breakdown: witnessBreakdown,
-      }),
-    )
-
-    const jointBuildStartedAt = performance.now()
-    const joint = buildCompactParityFullMachineFeasibility(
-      domain,
-      {
-        throughSeasoning: 38,
-        blending: 35,
-        finalizing: 30,
-      },
-    )
-    const jointBuildMs = performance.now() - jointBuildStartedAt
-    const jointSolved = await solveBounded(joint.model, 120)
-
-    console.info(
-      '[machine-joint-103-feasibility]',
-      JSON.stringify({
-        lowerBounds: {
-          throughSeasoning: 38,
-          blending: 35,
-          finalizing: 30,
-          total: 103,
-        },
-        groupCount: joint.groupCount,
-        assignmentVariableCount:
-          joint.assignmentVariableCount,
-        recipeVariableCount: joint.recipeVariableCount,
-        singletonSlackVariableCount:
-          joint.singletonSlackVariableCount,
-        operationEdgeCount: joint.operationEdgeCount,
-        buildMs: Math.round(jointBuildMs),
-        serializeMs: Math.round(jointSolved.serializeMs),
-        parseMs: Math.round(jointSolved.parseMs),
-        solveMs: Math.round(jointSolved.solveMs),
-        status: jointSolved.status,
-        objective: jointSolved.objective,
-      }),
-    )
   },
-  210000,
+  150000,
 )
 
