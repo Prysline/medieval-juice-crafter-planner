@@ -3180,6 +3180,7 @@ function buildFinalizing30Blending35RawThroughStage(
 
 function buildFinalizing30CompressedFrontierStage(
   domain: BatchOptimizationModel,
+  extraThresholdCounts: readonly [number, number, number, number],
 ) {
   const groups = pairGroups(domain)
   const model = new Model()
@@ -3227,7 +3228,10 @@ function buildFinalizing30CompressedFrontierStage(
   )
 
   const productionVars: ReturnType<Model['intVar']>[] = []
-  const extraUnitVars: ReturnType<Model['intVar']>[] = []
+  const extraThresholdVarsByLevel = Array.from(
+    { length: PROCESSING_STACK_CAPACITY - 1 },
+    () => [] as ReturnType<Model['boolVar']>[],
+  )
   const productionCostTerms: ReturnType<
     ReturnType<Model['intVar']>['times']
   >[] = []
@@ -3339,22 +3343,11 @@ function buildFinalizing30CompressedFrontierStage(
         `cu_${classUseVariableCount}`,
       )
       classUseVariableCount += 1
-      const extra = model.intVar(
-        0,
-        Math.max(0, groupUpperBound - 1),
-        `ce_${classVariableCount - 1}`,
-      )
-      extraUnitVars.push(extra)
-
       groupProductionVars.push(x)
       groupUseVars.push(used)
       productionVars.push(x)
       productionCostTerms.push(x.times(group.ingredientCost))
 
-      model.addConstraint(
-        x.minus(used).minus(extra).eq(0),
-        `class_exact_extra_${classVariableCount}`,
-      )
       model.addConstraint(
         x.minus(used.times(groupUpperBound)).leq(0),
         `class_use_upper_${classVariableCount}`,
@@ -3428,6 +3421,43 @@ function buildFinalizing30CompressedFrontierStage(
       sum(...groupUseVars).minus(usedGroup).eq(0),
       `one_class_per_used_group_${groupIndex}`,
     )
+
+    const extraThresholds = Array.from(
+      { length: Math.max(0, groupUpperBound - 1) },
+      (_, thresholdIndex) => {
+        const threshold = model.boolVar(
+          `extra_ge_${thresholdIndex + 1}_${groupIndex}`,
+        )
+        extraThresholdVarsByLevel[thresholdIndex].push(threshold)
+        return threshold
+      },
+    )
+    if (extraThresholds.length === 0) {
+      model.addConstraint(
+        groupProduction.minus(usedGroup).eq(0),
+        `group_exact_extra_${groupIndex}`,
+      )
+    } else {
+      model.addConstraint(
+        groupProduction
+          .minus(usedGroup)
+          .minus(sum(...extraThresholds))
+          .eq(0),
+        `group_exact_extra_${groupIndex}`,
+      )
+      for (
+        let thresholdIndex = 1;
+        thresholdIndex < extraThresholds.length;
+        thresholdIndex += 1
+      ) {
+        model.addConstraint(
+          extraThresholds[thresholdIndex]
+            .minus(extraThresholds[thresholdIndex - 1])
+            .leq(0),
+          `group_extra_monotone_${groupIndex}_${thresholdIndex}`,
+        )
+      }
+    }
   })
 
   model.addConstraint(
@@ -3447,9 +3477,17 @@ function buildFinalizing30CompressedFrontierStage(
     'finalizing30_used_groups',
   )
   model.addConstraint(
-    sum(...extraUnitVars).eq(PRODUCTION_UNITS_FIX - 30),
+    sum(...productionVars)
+      .minus(sum(...usedGroupVars))
+      .eq(PRODUCTION_UNITS_FIX - 30),
     'finalizing30_exact_extra_units',
   )
+  extraThresholdCounts.forEach((count, thresholdIndex) => {
+    model.addConstraint(
+      sum(...extraThresholdVarsByLevel[thresholdIndex]).eq(count),
+      `extra_threshold_count_${thresholdIndex + 1}`,
+    )
+  })
 
   const throughOps: ReturnType<Model['intVar']>[] = []
   ;[...throughQuantityTermsByEdgeKey.entries()].forEach(
@@ -3530,6 +3568,11 @@ function buildFinalizing30CompressedFrontierStage(
       privateBlendOperationTerms.length,
     throughOperationEdgeCount: throughOps.length,
     maxPrivateBlendMultiplicity,
+    extraThresholdVariableCount:
+      extraThresholdVarsByLevel.reduce(
+        (total, variables) => total + variables.length,
+        0,
+      ),
   }
 }
 
@@ -5438,48 +5481,78 @@ async function solveBounded(
 }
 
 profileIt(
-  'proves the finalizing-30 blending-35 frontier with exact extra-unit sparsity',
+  'case-splits the exact five extra units on the finalizing-30 blending-35 frontier',
   async () => {
     const domain = canonicalDomain()
-    const buildStartedAt = performance.now()
-    const built = buildFinalizing30CompressedFrontierStage(domain)
-    const buildMs = performance.now() - buildStartedAt
-    const solved = await solveBoundedWithProgress(
-      built.model,
-      120,
-    )
+    expect(PROCESSING_STACK_CAPACITY).toBe(5)
 
-    console.info(
-      '[machine-finalizing30-extra-unit-frontier]',
-      JSON.stringify({
-        frontier: {
-          finalizing: 30,
-          usedGroups: 30,
-          selectedRecipes: 30,
-          productionUnits: 35,
-          exactExtraUnits: 5,
-          blending: 35,
-          throughCap: 41,
-          totalCap: 106,
-        },
-        knownWitness: 107,
-        groupCount: built.groupCount,
-        classVariableCount: built.classVariableCount,
-        classUseVariableCount: built.classUseVariableCount,
-        sharedBlendOperationEdgeCount:
-          built.sharedBlendOperationEdgeCount,
-        privateBlendOperationTermCount:
-          built.privateBlendOperationTermCount,
-        throughOperationEdgeCount:
-          built.throughOperationEdgeCount,
-        buildMs: Math.round(buildMs),
-        status: solved.status,
-        objective: solved.objective,
-        solveMs: Math.round(solved.solveMs),
-        progressTail: solved.progressTail,
-      }),
-    )
+    // finalizing = 30 and usedGroups = selectedRecipes = 30 means each
+    // selected recipe has exactly one finalizing operation. With stack
+    // capacity five, no selected recipe can carry more than four extra
+    // production units. Therefore the integer partition [5] is impossible.
+    //
+    // For every remaining partition of five, thresholdCounts[k] is the
+    // exact number of selected groups with at least k + 1 extra units.
+    const cases: Array<{
+      name: string
+      thresholdCounts: readonly [number, number, number, number]
+    }> = [
+      { name: '4+1', thresholdCounts: [2, 1, 1, 1] },
+      { name: '3+2', thresholdCounts: [2, 2, 1, 0] },
+      { name: '3+1+1', thresholdCounts: [3, 1, 1, 0] },
+      { name: '2+2+1', thresholdCounts: [3, 2, 0, 0] },
+      { name: '2+1+1+1', thresholdCounts: [4, 1, 0, 0] },
+      { name: '1+1+1+1+1', thresholdCounts: [5, 0, 0, 0] },
+    ]
+
+    for (const extraCase of cases) {
+      const buildStartedAt = performance.now()
+      const built = buildFinalizing30CompressedFrontierStage(
+        domain,
+        extraCase.thresholdCounts,
+      )
+      const buildMs = performance.now() - buildStartedAt
+      const solved = await solveBoundedWithProgress(
+        built.model,
+        20,
+      )
+
+      console.info(
+        '[machine-finalizing30-extra-unit-case]',
+        JSON.stringify({
+          frontier: {
+            finalizing: 30,
+            usedGroups: 30,
+            selectedRecipes: 30,
+            productionUnits: 35,
+            exactExtraUnits: 5,
+            extraPattern: extraCase.name,
+            extraThresholdCounts: extraCase.thresholdCounts,
+            blending: 35,
+            throughCap: 41,
+            totalCap: 106,
+          },
+          knownWitness: 107,
+          groupCount: built.groupCount,
+          classVariableCount: built.classVariableCount,
+          classUseVariableCount: built.classUseVariableCount,
+          extraThresholdVariableCount:
+            built.extraThresholdVariableCount,
+          sharedBlendOperationEdgeCount:
+            built.sharedBlendOperationEdgeCount,
+          privateBlendOperationTermCount:
+            built.privateBlendOperationTermCount,
+          throughOperationEdgeCount:
+            built.throughOperationEdgeCount,
+          buildMs: Math.round(buildMs),
+          status: solved.status,
+          objective: solved.objective,
+          solveMs: Math.round(solved.solveMs),
+          progressTail: solved.progressTail,
+        }),
+      )
+    }
   },
-  140000,
+  150000,
 )
 
