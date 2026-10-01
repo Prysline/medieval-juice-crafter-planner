@@ -6882,8 +6882,15 @@ function build311ExtraCostSumSupportMaster(
   domain: BatchOptimizationModel,
   fixedExtra3GroupIndex: number,
   extraOneCostSum: number,
-  supportCuts: readonly (readonly number[])[] = [],
+  options: {
+    supportCuts?: readonly (readonly number[])[]
+    hallCuts?: readonly (readonly number[])[]
+    includeCustomerFlow?: boolean
+  } = {},
 ) {
+  const supportCuts = options.supportCuts ?? []
+  const hallCuts = options.hallCuts ?? []
+  const includeCustomerFlow = options.includeCustomerFlow ?? true
   const groups = pairGroups(domain)
   const model = new Model()
   const maskKeyForGroup = (group: PairGroup) =>
@@ -6904,27 +6911,29 @@ function build311ExtraCostSumSupportMaster(
     string,
     ReturnType<Model['numVar']>[]
   >([...maskCustomerIds.keys()].map((maskKey) => [maskKey, []]))
-  customerMaskFlowTypes(
-    domain.serviceableCustomerIds,
-    maskCustomerIds,
-  ).forEach((customerType, typeIndex) => {
-    const demand = customerType.customerIds.length
-    const terms = customerType.neighborMaskKeys.map(
-      (maskKey, neighborIndex) => {
-        const flow = model.numVar(
-          0,
-          demand,
-          `s31sy_${typeIndex}_${neighborIndex}`,
-        )
-        flowByMask.get(maskKey)!.push(flow)
-        return flow
-      },
-    )
-    model.addConstraint(
-      sum(...terms).eq(demand),
-      `s31s_customer_type_${typeIndex}`,
-    )
-  })
+  if (includeCustomerFlow) {
+    customerMaskFlowTypes(
+      domain.serviceableCustomerIds,
+      maskCustomerIds,
+    ).forEach((customerType, typeIndex) => {
+      const demand = customerType.customerIds.length
+      const terms = customerType.neighborMaskKeys.map(
+        (maskKey, neighborIndex) => {
+          const flow = model.numVar(
+            0,
+            demand,
+            `s31sy_${typeIndex}_${neighborIndex}`,
+          )
+          flowByMask.get(maskKey)!.push(flow)
+          return flow
+        },
+      )
+      model.addConstraint(
+        sum(...terms).eq(demand),
+        `s31s_customer_type_${typeIndex}`,
+      )
+    })
+  }
 
   const usedGroupVars: ReturnType<Model['boolVar']>[] = []
   const extraOneByGroupIndex = new Map<
@@ -7037,20 +7046,36 @@ function build311ExtraCostSumSupportMaster(
     's31s_production_cost',
   )
 
-  let maskIndex = 0
-  for (const [maskKey, groupIndexes] of groupIndexesByMask) {
-    const capacityTerms = groupIndexes.flatMap(
-      (groupIndex) =>
-        capacityTermsByGroupIndex.get(groupIndex) ?? [],
-    )
-    model.addConstraint(
-      sum(...capacityTerms)
-        .minus(sum(...(flowByMask.get(maskKey) ?? [])))
-        .eq(0),
-      `s31s_mask_capacity_${maskIndex}`,
-    )
-    maskIndex += 1
+  if (includeCustomerFlow) {
+    let maskIndex = 0
+    for (const [maskKey, groupIndexes] of groupIndexesByMask) {
+      const capacityTerms = groupIndexes.flatMap(
+        (groupIndex) =>
+          capacityTermsByGroupIndex.get(groupIndex) ?? [],
+      )
+      model.addConstraint(
+        sum(...capacityTerms)
+          .minus(sum(...(flowByMask.get(maskKey) ?? [])))
+          .eq(0),
+        `s31s_mask_capacity_${maskIndex}`,
+      )
+      maskIndex += 1
+    }
   }
+
+  hallCuts.forEach((groupIndexes, cutIndex) => {
+    const customerIds = new Set<string>()
+    const capacityTerms = groupIndexes.flatMap((groupIndex) => {
+      for (const customerId of groups[groupIndex].eligibleCustomerIds) {
+        customerIds.add(customerId)
+      }
+      return capacityTermsByGroupIndex.get(groupIndex) ?? []
+    })
+    model.addConstraint(
+      sum(...capacityTerms).leq(customerIds.size),
+      `s31s_hall_cut_${cutIndex}`,
+    )
+  })
 
   supportCuts.forEach((support, cutIndex) => {
     model.addConstraint(
@@ -9559,6 +9584,8 @@ partialSupportProfileIt(
     ].sort((left, right) => left - right)
 
     const identityResults = []
+    const sharedHallCuts: number[][] = []
+    const sharedHallCutKeys = new Set<string>()
     let globalWitness:
       | {
           groupIndex: number
@@ -9666,6 +9693,9 @@ partialSupportProfileIt(
         costResults.push({
           companionCost,
           status,
+          hallCutsAdded: sharedHallCuts.length - hallCutsAtStart,
+          sharedHallCuts: sharedHallCuts.length,
+          assignmentFlow,
           supportCuts: supportCuts.length,
           exactInfeasibleSupports,
           masterSolveMs: Math.round(masterSolveMs),
@@ -9679,6 +9709,9 @@ partialSupportProfileIt(
         .map((entry) => ({
           cost: entry.companionCost,
           status: entry.status,
+          hallCutsAdded: entry.hallCutsAdded,
+          sharedHallCuts: entry.sharedHallCuts,
+          assignmentFlow: entry.assignmentFlow,
           supportCuts: entry.supportCuts,
         }))
       const result = {
@@ -9712,6 +9745,7 @@ partialSupportProfileIt(
       '[machine-partial-support-summary]',
       JSON.stringify({
         targetGroupIndexes,
+        sharedHallCuts: sharedHallCuts.length,
         closedIdentities: identityResults
           .filter((entry) => entry.unresolvedCosts.length === 0)
           .map((entry) => entry.groupIndex),
@@ -9825,17 +9859,23 @@ extraSumProfileIt(
         }
 
         const supportCuts: number[][] = []
+        const hallCutsAtStart = sharedHallCuts.length
         let status = 'round-limit'
         let exactInfeasibleSupports = 0
+        let assignmentFlow = 0
         let masterSolveMs = 0
         let exactSolveMs = 0
 
-        for (let round = 0; round < 3; round += 1) {
+        for (let round = 0; round < 4; round += 1) {
           const built = build311ExtraCostSumSupportMaster(
             domain,
             groupIndex,
             extraOneCostSum,
-            supportCuts,
+            {
+              supportCuts,
+              hallCuts: sharedHallCuts,
+              includeCustomerFlow: false,
+            },
           )
           const solved = await solveBounded(built.model, 0.5)
           masterSolveMs += solved.solveMs
@@ -9867,6 +9907,58 @@ extraSumProfileIt(
             throw new Error(
               `Expected 30 support groups for extra group ${groupIndex} / extra-one cost sum ${extraOneCostSum}, got ${support.length}`,
             )
+          }
+
+          const capacities = groups.map((_group, capacityGroupIndex) => {
+            const usedRaw = solved.namedSolution!.get(
+              `s31su_${capacityGroupIndex}`,
+            )
+            const used =
+              typeof usedRaw === 'number' &&
+              Number.isFinite(usedRaw) &&
+              usedRaw > 0.5
+                ? 1
+                : 0
+            if (capacityGroupIndex === groupIndex) return used * 8
+            const extraRaw = solved.namedSolution!.get(
+              `s31se1_${capacityGroupIndex}`,
+            )
+            const extra =
+              typeof extraRaw === 'number' &&
+              Number.isFinite(extraRaw) &&
+              extraRaw > 0.5
+                ? 1
+                : 0
+            const slackRaw = solved.namedSolution!.get(
+              `s31sslack_${capacityGroupIndex}`,
+            )
+            const slack =
+              typeof slackRaw === 'number' &&
+              Number.isFinite(slackRaw) &&
+              slackRaw > 0.5
+                ? 1
+                : 0
+            return used * 2 + extra * 2 - slack
+          })
+          const checked = maximumAssignmentFlowForGroupCapacities(
+            groups,
+            domain.serviceableCustomerIds,
+            capacities,
+          )
+          assignmentFlow = checked.flow
+          if (checked.flow !== domain.serviceableCustomerIds.length) {
+            if (checked.violatingGroupIndexes.length === 0) {
+              status = 'invalid-empty-hall-cut'
+              break
+            }
+            const hallCutKey = checked.violatingGroupIndexes.join(',')
+            if (sharedHallCutKeys.has(hallCutKey)) {
+              status = 'duplicate-hall-cut'
+              break
+            }
+            sharedHallCutKeys.add(hallCutKey)
+            sharedHallCuts.push(checked.violatingGroupIndexes)
+            continue
           }
 
           const exact = buildFinalizing30MaskPartitionStage(
