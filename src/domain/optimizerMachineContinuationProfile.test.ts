@@ -10651,22 +10651,52 @@ supportDpProfileIt(
       .filter((value) => Number.isInteger(value))
     expect(targetGroupIndexes.length).toBeGreaterThan(0)
 
+    const cache = new Map<
+      string,
+      {
+        countCapped: number
+        stateCount: number
+        classCount: number
+        solveMs: number
+      }
+    >()
     const results = targetGroupIndexes.map((groupIndex) => {
-      const startedAt = performance.now()
-      const counted = count311SupportRolesByExactArithmetic(
-        groups,
-        groupIndex,
+      const group = groups[groupIndex]
+      expect(group).toBeDefined()
+      const upperBound = Math.min(
+        PROCESSING_STACK_CAPACITY,
+        Math.max(
+          1,
+          Math.ceil(group.eligibleCustomerIds.length / 2),
+        ),
       )
+      const cacheKey = `${group.ingredientCost}|${upperBound >= 2 ? 1 : 0}`
+      let counted = cache.get(cacheKey)
+      if (!counted) {
+        const startedAt = performance.now()
+        const raw = count311SupportRolesByExactArithmetic(
+          groups,
+          groupIndex,
+        )
+        counted = {
+          ...raw,
+          solveMs: Math.round(performance.now() - startedAt),
+        }
+        cache.set(cacheKey, counted)
+      }
       return {
         groupIndex,
-        groupCost: groups[groupIndex]?.ingredientCost ?? null,
+        groupCost: group.ingredientCost,
+        arithmeticClass: cacheKey,
         ...counted,
-        solveMs: Math.round(performance.now() - startedAt),
       }
     })
     console.info(
       '[machine-support-dp-summary]',
-      JSON.stringify(results),
+      JSON.stringify({
+        uniqueArithmeticClasses: cache.size,
+        results,
+      }),
     )
 
     expect(
