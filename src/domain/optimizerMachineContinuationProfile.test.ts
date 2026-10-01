@@ -2181,6 +2181,213 @@ function buildConditionalThroughFrontierStage(
   }
 }
 
+
+function buildConditionalSeasoningFrontierStage(
+  domain: BatchOptimizationModel,
+) {
+  const groups = pairGroups(domain)
+  const model = new Model()
+  const flowByGroupKey = new Map<
+    string,
+    ReturnType<Model['numVar']>[]
+  >(groups.map((group) => [group.key, []]))
+  let customerFlowVariableCount = 0
+
+  domain.serviceableCustomerIds.forEach(
+    (customerId, customerIndex) => {
+      const customerTerms: ReturnType<Model['numVar']>[] = []
+      groups.forEach((group, groupIndex) => {
+        if (!group.eligibleCustomerIds.includes(customerId)) return
+        const y = model.numVar(
+          0,
+          1,
+          `y_${customerIndex}_${groupIndex}`,
+        )
+        customerFlowVariableCount += 1
+        customerTerms.push(y)
+        flowByGroupKey.get(group.key)!.push(y)
+      })
+      model.addConstraint(
+        sum(...customerTerms).eq(1),
+        `customer_${customerIndex}`,
+      )
+    },
+  )
+
+  const productionUnitTerms: ReturnType<Model['intVar']>[] = []
+  const productionCostTerms: ReturnType<
+    ReturnType<Model['intVar']>['times']
+  >[] = []
+  const singletonSlackVars: ReturnType<Model['boolVar']>[] = []
+  const quantityTermsByEdgeKey = new Map<
+    string,
+    ReturnType<ReturnType<Model['intVar']>['times']>[]
+  >()
+  const quantityUpperBoundByEdgeKey = new Map<string, number>()
+  const kindByEdgeKey = new Map<string, ProductionStepKind>()
+  let recipeVariableCount = 0
+
+  groups.forEach((group, groupIndex) => {
+    const groupUpperBound = Math.max(
+      1,
+      Math.ceil(group.eligibleCustomerIds.length / 2),
+    )
+    const groupRecipeVars: ReturnType<Model['intVar']>[] = []
+
+    for (const recipe of group.recipes) {
+      const x = model.intVar(
+        0,
+        groupUpperBound,
+        `x_${recipeVariableCount}`,
+      )
+      recipeVariableCount += 1
+      groupRecipeVars.push(x)
+      productionUnitTerms.push(x)
+      productionCostTerms.push(
+        x.times(recipe.juiceUnitIngredientCost),
+      )
+
+      const multiplicityByEdgeKey = new Map<string, number>()
+      for (const edge of recipe.productionPath.edges) {
+        multiplicityByEdgeKey.set(
+          edge.key,
+          (multiplicityByEdgeKey.get(edge.key) ?? 0) + 1,
+        )
+        kindByEdgeKey.set(edge.key, edge.kind)
+      }
+      for (const [edgeKey, multiplicity] of multiplicityByEdgeKey) {
+        const terms = quantityTermsByEdgeKey.get(edgeKey)
+        const term = x.times(multiplicity)
+        if (terms) terms.push(term)
+        else quantityTermsByEdgeKey.set(edgeKey, [term])
+        quantityUpperBoundByEdgeKey.set(
+          edgeKey,
+          (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) +
+            groupUpperBound * multiplicity,
+        )
+      }
+    }
+
+    const groupProductionUnits = sum(...groupRecipeVars)
+    const servedFlow = sum(...(flowByGroupKey.get(group.key) ?? []))
+    if (group.ingredientCost === SLACK_RECIPE_COST) {
+      const slack = model.boolVar(`slack_${groupIndex}`)
+      singletonSlackVars.push(slack)
+      model.addConstraint(
+        groupProductionUnits
+          .times(2)
+          .minus(servedFlow)
+          .minus(slack)
+          .eq(0),
+        `parity_${groupIndex}`,
+      )
+    } else {
+      model.addConstraint(
+        groupProductionUnits
+          .times(2)
+          .minus(servedFlow)
+          .eq(0),
+        `parity_${groupIndex}`,
+      )
+    }
+  })
+
+  model.addConstraint(
+    sum(...singletonSlackVars).eq(GLOBAL_SERVING_SLACK),
+    'global_slack',
+  )
+  model.addConstraint(
+    sum(...productionUnitTerms).eq(PRODUCTION_UNITS_FIX),
+    'production_units_fix',
+  )
+  model.addConstraint(
+    sum(...productionCostTerms).eq(PRODUCTION_COST_FIX),
+    'production_cost_fix',
+  )
+
+  const partitionOperationVars = {
+    juicing: [] as ReturnType<Model['intVar']>[],
+    seasoning: [] as ReturnType<Model['intVar']>[],
+    blending: [] as ReturnType<Model['intVar']>[],
+    finalizing: [] as ReturnType<Model['intVar']>[],
+  }
+
+  ;[...quantityTermsByEdgeKey.entries()].forEach(
+    ([edgeKey, terms], edgeIndex) => {
+      const operation = model.intVar(
+        0,
+        Math.max(
+          1,
+          Math.ceil(
+            (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) /
+              PROCESSING_STACK_CAPACITY,
+          ),
+        ),
+        `op_${edgeIndex}`,
+      )
+      const quantity = sum(...terms)
+      model.addConstraint(
+        quantity
+          .minus(operation.times(PROCESSING_STACK_CAPACITY))
+          .leq(0),
+        `op_capacity_${edgeIndex}`,
+      )
+      model.addConstraint(
+        operation.minus(quantity).leq(0),
+        `op_usage_${edgeIndex}`,
+      )
+
+      const kind = kindByEdgeKey.get(edgeKey)
+      if (kind === 'juicing') {
+        partitionOperationVars.juicing.push(operation)
+      } else if (kind === 'seasoning') {
+        partitionOperationVars.seasoning.push(operation)
+      } else if (kind === 'blending') {
+        partitionOperationVars.blending.push(operation)
+      } else if (kind === 'finalizing') {
+        partitionOperationVars.finalizing.push(operation)
+      }
+    },
+  )
+
+  model.addConstraint(
+    sum(...partitionOperationVars.juicing).geq(20),
+    'juicing_global_lower_bound',
+  )
+  model.addConstraint(
+    sum(
+      ...partitionOperationVars.juicing,
+      ...partitionOperationVars.seasoning,
+    ).geq(38),
+    'through_global_lower_bound',
+  )
+  model.addConstraint(
+    sum(...partitionOperationVars.blending).eq(35),
+    'blending_exact_frontier',
+  )
+  model.addConstraint(
+    sum(...partitionOperationVars.finalizing).eq(30),
+    'finalizing_exact_frontier',
+  )
+  model.minimize(sum(...partitionOperationVars.seasoning))
+
+  return {
+    model,
+    groupCount: groups.length,
+    customerFlowVariableCount,
+    recipeVariableCount,
+    singletonSlackVariableCount: singletonSlackVars.length,
+    juicingOperationEdgeCount:
+      partitionOperationVars.juicing.length,
+    seasoningOperationEdgeCount:
+      partitionOperationVars.seasoning.length,
+    blendingOperationEdgeCount:
+      partitionOperationVars.blending.length,
+    finalizingOperationEdgeCount:
+      partitionOperationVars.finalizing.length,
+  }
+}
+
 async function solveBounded(
   model: Model,
   timeLimitSeconds: number,
@@ -2223,7 +2430,7 @@ async function solveBounded(
 }
 
 profileIt(
-  'proves the blend-35 finalizing-30 through frontier with the known 107 MIP start',
+  'proves seasoning on the blend-35 finalizing-30 frontier',
   async () => {
     const domain = canonicalDomain()
     expect(domain.recipes).toHaveLength(7892)
@@ -2287,35 +2494,37 @@ profileIt(
       selections,
     )
     expect(breakdown.total).toBe(107)
+    expect(breakdown.juicing).toBe(20)
+    expect(breakdown.seasoning).toBe(22)
     expect(breakdown.blending).toBe(35)
     expect(breakdown.finalizing).toBe(30)
-    expect(breakdown.juicing + breakdown.seasoning).toBe(42)
 
     const startValues = mipStartValuesForFullWitness(
       domain,
       selectedUnitsByRecipeId,
     )
-    const target = buildConditionalThroughFrontierStage(domain)
+    const target = buildConditionalSeasoningFrontierStage(domain)
     const solved = await solveBoundedWithMIPStart(
       target.model,
       startValues,
-      42,
+      22,
       120,
     )
 
     console.info(
-      '[machine-conditional-through-frontier-mip-start]',
+      '[machine-conditional-seasoning-frontier]',
       JSON.stringify({
         frontier: {
           blending: 35,
           finalizing: 30,
+          juicingLowerBound: 20,
+          throughLowerBound: 38,
         },
         witness: {
           selectedRecipeCount: selectedUnitsByRecipeId.size,
-          startNonzeroValueCount: startValues.size,
           breakdown,
         },
-        targetFor107Proof: 42,
+        targetFor107Proof: 22,
         status: solved.status,
         objective: solved.objective,
         solveMs: Math.round(solved.solveMs),
