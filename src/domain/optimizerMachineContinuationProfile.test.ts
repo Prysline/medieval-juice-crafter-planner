@@ -5079,6 +5079,303 @@ function buildAggregateSeasoningLowerBoundStage(
   }
 }
 
+
+function buildExactSharedEdgeMachineStage(
+  domain: BatchOptimizationModel,
+) {
+  const groups = pairGroups(domain)
+  const model = new Model()
+
+  const maskKeyForGroup = (group: PairGroup) =>
+    group.eligibleCustomerIds.join('\u001e')
+  const maskCustomerIds = new Map<string, string[]>()
+  const groupIndexesByMask = new Map<string, number[]>()
+  groups.forEach((group, groupIndex) => {
+    const maskKey = maskKeyForGroup(group)
+    if (!maskCustomerIds.has(maskKey)) {
+      maskCustomerIds.set(maskKey, group.eligibleCustomerIds)
+    }
+    const indexes = groupIndexesByMask.get(maskKey)
+    if (indexes) indexes.push(groupIndex)
+    else groupIndexesByMask.set(maskKey, [groupIndex])
+  })
+
+  const flowByMask = new Map<
+    string,
+    ReturnType<Model['numVar']>[]
+  >([...maskCustomerIds.keys()].map((maskKey) => [maskKey, []]))
+  let customerFlowVariableCount = 0
+
+  domain.serviceableCustomerIds.forEach(
+    (customerId, customerIndex) => {
+      const terms: ReturnType<Model['numVar']>[] = []
+      ;[...maskCustomerIds.entries()].forEach(
+        ([maskKey, eligibleCustomerIds], maskIndex) => {
+          if (!eligibleCustomerIds.includes(customerId)) return
+          const y = model.numVar(
+            0,
+            1,
+            `fy_${customerIndex}_${maskIndex}`,
+          )
+          customerFlowVariableCount += 1
+          terms.push(y)
+          flowByMask.get(maskKey)!.push(y)
+        },
+      )
+      model.addConstraint(
+        sum(...terms).eq(1),
+        `customer_${customerIndex}`,
+      )
+    },
+  )
+
+  const ownersByEdge = new Map<string, Set<string>>()
+  for (const recipe of domain.recipes) {
+    for (const edge of recipe.productionPath.edges) {
+      const owners =
+        ownersByEdge.get(edge.key) ?? new Set<string>()
+      owners.add(recipe.candidate.id)
+      ownersByEdge.set(edge.key, owners)
+    }
+  }
+  const sharedEdgeKeys = new Set(
+    [...ownersByEdge.entries()]
+      .filter(([, owners]) => owners.size > 1)
+      .map(([edgeKey]) => edgeKey),
+  )
+
+  const productionUnitTerms: ReturnType<Model['intVar']>[] = []
+  const productionCostTerms: ReturnType<
+    ReturnType<Model['intVar']>['times']
+  >[] = []
+  const groupProductionByIndex = new Map<number, ReturnType<typeof sum>>()
+  const slackByGroupIndex = new Map<
+    number,
+    ReturnType<Model['boolVar']>
+  >()
+  const slackVars: ReturnType<Model['boolVar']>[] = []
+
+  const quantityTermsBySharedEdgeKey = new Map<
+    string,
+    ReturnType<ReturnType<Model['intVar']>['times']>[]
+  >()
+  const quantityUpperBoundBySharedEdgeKey =
+    new Map<string, number>()
+  const localOperationTerms: ReturnType<
+    ReturnType<Model['intVar']>['times']
+  >[] = []
+
+  let classVariableCount = 0
+  let localOperationVariableCount = 0
+  let collapsedRecipeCount = 0
+
+  groups.forEach((group, groupIndex) => {
+    const classes = new Map<
+      string,
+      {
+        shared: Map<string, number>
+        localCoefficient: number
+        recipeCount: number
+      }
+    >()
+
+    for (const recipe of group.recipes) {
+      const multiplicityByEdge = new Map<string, number>()
+      for (const edge of recipe.productionPath.edges) {
+        multiplicityByEdge.set(
+          edge.key,
+          (multiplicityByEdge.get(edge.key) ?? 0) + 1,
+        )
+      }
+
+      const shared = new Map<string, number>()
+      let localCoefficient = 0
+      for (const [edgeKey, multiplicity] of multiplicityByEdge) {
+        if (sharedEdgeKeys.has(edgeKey)) {
+          shared.set(edgeKey, multiplicity)
+        } else {
+          if (multiplicity !== 1) {
+            throw new Error(
+              `Private machine edge multiplicity ${multiplicity} is not safely quotientable`,
+            )
+          }
+          localCoefficient += 1
+        }
+      }
+
+      const signature = JSON.stringify({
+        shared: [...shared.entries()].sort(([a], [b]) =>
+          a.localeCompare(b),
+        ),
+        localCoefficient,
+      })
+      const current = classes.get(signature)
+      if (current) {
+        current.recipeCount += 1
+      } else {
+        classes.set(signature, {
+          shared,
+          localCoefficient,
+          recipeCount: 1,
+        })
+      }
+    }
+
+    collapsedRecipeCount +=
+      group.recipes.length - classes.size
+
+    const groupUpperBound = Math.max(
+      1,
+      Math.ceil(group.eligibleCustomerIds.length / 2),
+    )
+    const groupProductionVars: ReturnType<Model['intVar']>[] = []
+
+    for (const recipeClass of classes.values()) {
+      const x = model.intVar(
+        0,
+        groupUpperBound,
+        `qx_${classVariableCount}`,
+      )
+      classVariableCount += 1
+      groupProductionVars.push(x)
+      productionUnitTerms.push(x)
+      productionCostTerms.push(x.times(group.ingredientCost))
+
+      const localOperation = model.intVar(
+        0,
+        Math.max(
+          1,
+          Math.ceil(
+            groupUpperBound / PROCESSING_STACK_CAPACITY,
+          ),
+        ),
+        `lop_${localOperationVariableCount}`,
+      )
+      localOperationVariableCount += 1
+      model.addConstraint(
+        x
+          .minus(
+            localOperation.times(PROCESSING_STACK_CAPACITY),
+          )
+          .leq(0),
+        `local_capacity_${localOperationVariableCount}`,
+      )
+      model.addConstraint(
+        localOperation.minus(x).leq(0),
+        `local_usage_${localOperationVariableCount}`,
+      )
+      localOperationTerms.push(
+        localOperation.times(recipeClass.localCoefficient),
+      )
+
+      for (const [edgeKey, multiplicity] of recipeClass.shared) {
+        const terms =
+          quantityTermsBySharedEdgeKey.get(edgeKey)
+        const term = x.times(multiplicity)
+        if (terms) terms.push(term)
+        else quantityTermsBySharedEdgeKey.set(
+          edgeKey,
+          [term],
+        )
+        quantityUpperBoundBySharedEdgeKey.set(
+          edgeKey,
+          (quantityUpperBoundBySharedEdgeKey.get(edgeKey) ?? 0) +
+            groupUpperBound * multiplicity,
+        )
+      }
+    }
+
+    const groupProduction = sum(...groupProductionVars)
+    groupProductionByIndex.set(groupIndex, groupProduction)
+
+    if (group.ingredientCost === SLACK_RECIPE_COST) {
+      const slack = model.boolVar(`slack_${groupIndex}`)
+      slackVars.push(slack)
+      slackByGroupIndex.set(groupIndex, slack)
+      model.addConstraint(
+        slack.minus(groupProduction).leq(0),
+        `slack_requires_production_${groupIndex}`,
+      )
+    }
+  })
+
+  let maskIndex = 0
+  for (const [maskKey, groupIndexes] of groupIndexesByMask) {
+    const capacityTerms = groupIndexes.map((groupIndex) =>
+      groupProductionByIndex.get(groupIndex)!.times(2),
+    )
+    const maskSlacks = groupIndexes.flatMap((groupIndex) => {
+      const slack = slackByGroupIndex.get(groupIndex)
+      return slack ? [slack] : []
+    })
+    model.addConstraint(
+      sum(...capacityTerms)
+        .minus(sum(...maskSlacks))
+        .minus(sum(...(flowByMask.get(maskKey) ?? [])))
+        .eq(0),
+      `mask_capacity_${maskIndex}`,
+    )
+    maskIndex += 1
+  }
+
+  model.addConstraint(
+    sum(...slackVars).eq(GLOBAL_SERVING_SLACK),
+    'global_slack',
+  )
+  model.addConstraint(
+    sum(...productionUnitTerms).eq(PRODUCTION_UNITS_FIX),
+    'production_units_fix',
+  )
+  model.addConstraint(
+    sum(...productionCostTerms).eq(PRODUCTION_COST_FIX),
+    'production_cost_fix',
+  )
+
+  const sharedOperationVars: ReturnType<Model['intVar']>[] = []
+  ;[...quantityTermsBySharedEdgeKey.entries()].forEach(
+    ([edgeKey, terms], edgeIndex) => {
+      const operation = model.intVar(
+        0,
+        Math.max(
+          1,
+          Math.ceil(
+            (quantityUpperBoundBySharedEdgeKey.get(edgeKey) ?? 0) /
+              PROCESSING_STACK_CAPACITY,
+          ),
+        ),
+        `sop_${edgeIndex}`,
+      )
+      const quantity = sum(...terms)
+      model.addConstraint(
+        quantity
+          .minus(operation.times(PROCESSING_STACK_CAPACITY))
+          .leq(0),
+        `shared_capacity_${edgeIndex}`,
+      )
+      model.addConstraint(
+        operation.minus(quantity).leq(0),
+        `shared_usage_${edgeIndex}`,
+      )
+      sharedOperationVars.push(operation)
+    },
+  )
+
+  model.minimize(
+    sum(...sharedOperationVars, ...localOperationTerms),
+  )
+
+  return {
+    model,
+    serviceMaskCount: maskCustomerIds.size,
+    customerFlowVariableCount,
+    groupCount: groups.length,
+    classVariableCount,
+    localOperationVariableCount,
+    sharedOperationEdgeCount: sharedOperationVars.length,
+    collapsedRecipeCount,
+  }
+}
+
 async function solveBounded(
   model: Model,
   timeLimitSeconds: number,
@@ -5126,93 +5423,45 @@ async function solveBounded(
 }
 
 profileIt(
-  'profiles exact shared-edge machine quotient classes',
+  'solves the exact shared-edge machine continuation',
   async () => {
     const domain = canonicalDomain()
-    const groups = pairGroups(domain)
-
-    const ownersByEdge = new Map<string, Set<string>>()
-    for (const group of groups) {
-      for (const recipe of group.recipes) {
-        for (const edge of recipe.productionPath.edges) {
-          const owners =
-            ownersByEdge.get(edge.key) ?? new Set<string>()
-          owners.add(recipe.candidate.id)
-          ownersByEdge.set(edge.key, owners)
-        }
-      }
-    }
-
-    let classCount = 0
-    let maxClassesPerGroup = 0
-    const classHistogram = new Map<number, number>()
-
-    for (const group of groups) {
-      const classes = new Set<string>()
-
-      for (const recipe of group.recipes) {
-        const shared = new Map<string, number>()
-        let privateMachineEdgeCount = 0
-        let finalizingCount = 0
-
-        for (const edge of recipe.productionPath.edges) {
-          if (edge.kind === 'finalizing') {
-            finalizingCount += 1
-          }
-          const multiplicity =
-            (shared.get(edge.key) ?? 0) + 1
-          if ((ownersByEdge.get(edge.key)?.size ?? 0) === 1) {
-            privateMachineEdgeCount += 1
-          } else {
-            shared.set(edge.key, multiplicity)
-          }
-        }
-
-        if (finalizingCount !== 1) {
-          throw new Error(
-            `Expected one finalizing edge, got ${finalizingCount}`,
-          )
-        }
-
-        classes.add(
-          JSON.stringify({
-            shared: [...shared.entries()].sort(([a], [b]) =>
-              a.localeCompare(b),
-            ),
-            localCoefficient: privateMachineEdgeCount,
-          }),
-        )
-      }
-
-      classCount += classes.size
-      maxClassesPerGroup = Math.max(
-        maxClassesPerGroup,
-        classes.size,
-      )
-      classHistogram.set(
-        classes.size,
-        (classHistogram.get(classes.size) ?? 0) + 1,
-      )
-    }
+    const buildStartedAt = performance.now()
+    const built = buildExactSharedEdgeMachineStage(domain)
+    const buildMs = performance.now() - buildStartedAt
+    const solved = await solveBoundedWithProgress(
+      built.model,
+      120,
+    )
 
     console.info(
-      '[machine-exact-shared-edge-quotient-shape]',
+      '[machine-exact-shared-edge-solve]',
       JSON.stringify({
-        recipeCount: domain.recipes.length,
-        groupCount: groups.length,
-        classCount,
-        maxClassesPerGroup,
-        collapsedRecipeCount:
-          domain.recipes.length - classCount,
-        classHistogram: Object.fromEntries(
-          [...classHistogram.entries()].sort(
-            ([a], [b]) => a - b,
-          ),
-        ),
+        fixedOptima: {
+          productionUnits: PRODUCTION_UNITS_FIX,
+          assignedIngredientCost:
+            ASSIGNED_INGREDIENT_COST_FIX,
+          productionCost: PRODUCTION_COST_FIX,
+        },
+        knownWitness: 107,
+        serviceMaskCount: built.serviceMaskCount,
+        customerFlowVariableCount:
+          built.customerFlowVariableCount,
+        groupCount: built.groupCount,
+        classVariableCount: built.classVariableCount,
+        localOperationVariableCount:
+          built.localOperationVariableCount,
+        sharedOperationEdgeCount:
+          built.sharedOperationEdgeCount,
+        collapsedRecipeCount: built.collapsedRecipeCount,
+        buildMs: Math.round(buildMs),
+        status: solved.status,
+        objective: solved.objective,
+        solveMs: Math.round(solved.solveMs),
+        progressTail: solved.progressTail,
       }),
     )
   },
-  30000,
+  140000,
 )
 
-// CI retry after transient Rollup optional-dependency failure.
