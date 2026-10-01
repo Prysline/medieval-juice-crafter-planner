@@ -6706,6 +6706,7 @@ function buildOptimisticGroupOnlyFrontierMaster(
       | 'structural-signature'
     slackExtraCount?: number
     slackGroupIndex?: number
+    totalNonFinalCap?: number
   } = {},
 ) {
   const includeCustomerFlow = options.includeCustomerFlow ?? true
@@ -6713,6 +6714,7 @@ function buildOptimisticGroupOnlyFrontierMaster(
   const sharedBucketMode = options.sharedBucketMode ?? 'equipment'
   const slackExtraCount = options.slackExtraCount
   const slackGroupIndex = options.slackGroupIndex
+  const totalNonFinalCap = options.totalNonFinalCap
   const groups = pairGroups(domain)
   const model = new Model()
 
@@ -7182,14 +7184,29 @@ function buildOptimisticGroupOnlyFrontierMaster(
     sharedBucketIndex += 1
   }
 
-  model.addConstraint(
-    sum(...privateThroughTerms, ...sharedThroughOps).leq(41),
-    'go_through_cap',
+  const optimisticThrough = sum(
+    ...privateThroughTerms,
+    ...sharedThroughOps,
   )
-  model.addConstraint(
-    sum(...privateBlendTerms, ...sharedBlendOps).leq(35),
-    'go_blending_cap',
+  const optimisticBlending = sum(
+    ...privateBlendTerms,
+    ...sharedBlendOps,
   )
+  if (typeof totalNonFinalCap === 'number') {
+    model.addConstraint(
+      optimisticThrough.plus(optimisticBlending).leq(totalNonFinalCap),
+      'go_nonfinal_total_cap',
+    )
+  } else {
+    model.addConstraint(
+      optimisticThrough.leq(41),
+      'go_through_cap',
+    )
+    model.addConstraint(
+      optimisticBlending.leq(35),
+      'go_blending_cap',
+    )
+  }
   model.minimize(sum(...productionVars))
   return {
     model,
@@ -7956,68 +7973,59 @@ it.skip(
 
 
 profileIt(
-  'enumerates singleton identity across remaining extra patterns',
+  'certifies finalizing-30 machine cap 106 across exact extra partitions',
   async () => {
     const domain = canonicalDomain()
-    const groups = pairGroups(domain)
-    const slackGroupIndexes = groups.flatMap((group, groupIndex) =>
-      group.ingredientCost === SLACK_RECIPE_COST ? [groupIndex] : [],
-    )
     const cases = [
-      { pattern: '3+1+1', thresholds: [3, 1, 1, 0] as const },
-      { pattern: '2+2+1', thresholds: [3, 2, 0, 0] as const },
-      { pattern: '2+1+1+1', thresholds: [4, 1, 0, 0] as const },
-      { pattern: '1+1+1+1+1', thresholds: [5, 0, 0, 0] as const },
+      { pattern: '4+1', thresholds: [2, 1, 1, 1] as const, slackExtras: [0, 1, 4] as const },
+      { pattern: '3+2', thresholds: [2, 2, 1, 0] as const, slackExtras: [0, 2, 3] as const },
+      { pattern: '3+1+1', thresholds: [3, 1, 1, 0] as const, slackExtras: [0, 1, 3] as const },
+      { pattern: '2+2+1', thresholds: [3, 2, 0, 0] as const, slackExtras: [0, 1, 2] as const },
+      { pattern: '2+1+1+1', thresholds: [4, 1, 0, 0] as const, slackExtras: [0, 1, 2] as const },
+      { pattern: '1+1+1+1+1', thresholds: [5, 0, 0, 0] as const, slackExtras: [0, 1] as const },
     ]
-    const summaries = []
+    const unresolved: Array<{
+      pattern: string
+      slackExtraCount: number
+      status: string
+      objective?: number
+    }> = []
 
     for (const extraCase of cases) {
-      const results = []
-      for (const slackGroupIndex of slackGroupIndexes) {
+      for (const slackExtraCount of extraCase.slackExtras) {
         const built = buildOptimisticGroupOnlyFrontierMaster(
           domain,
           extraCase.thresholds,
           {
             sharedBucketMode: 'structural-signature',
-            slackExtraCount: 0,
-            slackGroupIndex,
+            slackExtraCount,
+            totalNonFinalCap: 76,
           },
         )
-        const solved = await solveBounded(built.model, 1.5)
-        const result = {
-          pattern: extraCase.pattern,
-          slackGroupIndex,
-          status: solved.status,
-          objective: solved.objective,
-          solveMs: Math.round(solved.solveMs),
-        }
-        results.push(result)
+        const solved = await solveBoundedWithProgress(built.model, 10)
         console.info(
-          '[machine-singleton-identity-case]',
-          JSON.stringify(result),
+          '[machine-finalizing30-106-case]',
+          JSON.stringify({
+            pattern: extraCase.pattern,
+            slackExtraCount,
+            status: solved.status,
+            objective: solved.objective,
+            solveMs: Math.round(solved.solveMs),
+            progressTail: solved.progressTail,
+          }),
         )
+        if (solved.status !== 'infeasible') {
+          unresolved.push({
+            pattern: extraCase.pattern,
+            slackExtraCount,
+            status: solved.status,
+            objective: solved.objective,
+          })
+        }
       }
-      const summary = {
-        pattern: extraCase.pattern,
-        total: results.length,
-        infeasible: results.filter((result) => result.status === 'infeasible').length,
-        optimal: results.filter((result) => result.status === 'optimal').length,
-        timelimit: results.filter((result) => result.status === 'timelimit').length,
-        unresolvedGroupIndexes: results
-          .filter((result) => result.status !== 'infeasible')
-          .map((result) => result.slackGroupIndex),
-      }
-      summaries.push(summary)
-      console.info(
-        '[machine-singleton-identity-pattern-summary]',
-        JSON.stringify(summary),
-      )
     }
 
-    console.info(
-      '[machine-singleton-identity-summary]',
-      JSON.stringify(summaries),
-    )
+    expect(unresolved).toEqual([])
   },
   300000,
 )
