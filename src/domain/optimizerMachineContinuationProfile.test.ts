@@ -11524,6 +11524,7 @@ singleSupportMasterProfileIt(
     const sharedHallCutKeys = new Set(
       sharedHallCuts.map((cut) => cut.join(',')),
     )
+    const initialHallCutCount = sharedHallCuts.length
     const results = []
 
     for (const groupIndex of targetGroupIndexes) {
@@ -11534,6 +11535,10 @@ singleSupportMasterProfileIt(
       let masterSolveMs = 0
       let exactSolveMs = 0
       let supportSize = 0
+      let customerFlowFallbackStatus: string | null = null
+      let customerFlowFallbackSolveMs = 0
+      let customerFlowFallbackAssignmentFlow: number | null = null
+      let customerFlowFallbackExactStatus: string | null = null
       const roundFlows: Array<number | null> = []
       const roundHallCutSizes: number[] = []
 
@@ -11656,6 +11661,116 @@ singleSupportMasterProfileIt(
         break
       }
 
+      if (status === 'timelimit') {
+        const flowBuilt = build311ExtraCostSumSupportMaster(
+          domain,
+          groupIndex,
+          undefined,
+          {
+            supportCuts,
+            hallCuts: sharedHallCuts,
+            includeCustomerFlow: true,
+          },
+        )
+        const flowSolved = await solveBounded(flowBuilt.model, 0.5)
+        customerFlowFallbackStatus = flowSolved.status
+        customerFlowFallbackSolveMs = flowSolved.solveMs
+
+        if (
+          flowSolved.status === 'optimal' &&
+          flowSolved.namedSolution
+        ) {
+          const support = groups.flatMap(
+            (_group, supportGroupIndex) => {
+              const raw = flowSolved.namedSolution!.get(
+                `s31su_${supportGroupIndex}`,
+              )
+              return typeof raw === 'number' &&
+                Number.isFinite(raw) &&
+                raw > 0.5
+                ? [supportGroupIndex]
+                : []
+            },
+          )
+          if (support.length !== 30) {
+            throw new Error(
+              `Expected 30 support groups from customer-flow fallback for identity ${groupIndex}, got ${support.length}`,
+            )
+          }
+          supportSize = support.length
+
+          const capacities = groups.map(
+            (_group, capacityGroupIndex) => {
+              const usedRaw = flowSolved.namedSolution!.get(
+                `s31su_${capacityGroupIndex}`,
+              )
+              const used =
+                typeof usedRaw === 'number' &&
+                Number.isFinite(usedRaw) &&
+                usedRaw > 0.5
+                  ? 1
+                  : 0
+              if (capacityGroupIndex === groupIndex) {
+                return used * 8
+              }
+              const extraRaw = flowSolved.namedSolution!.get(
+                `s31se1_${capacityGroupIndex}`,
+              )
+              const extra =
+                typeof extraRaw === 'number' &&
+                Number.isFinite(extraRaw) &&
+                extraRaw > 0.5
+                  ? 1
+                  : 0
+              const slackRaw = flowSolved.namedSolution!.get(
+                `s31sslack_${capacityGroupIndex}`,
+              )
+              const slack =
+                typeof slackRaw === 'number' &&
+                Number.isFinite(slackRaw) &&
+                slackRaw > 0.5
+                  ? 1
+                  : 0
+              return used * 2 + extra * 2 - slack
+            },
+          )
+          const checked = maximumAssignmentFlowForGroupCapacities(
+            groups,
+            domain.serviceableCustomerIds,
+            capacities,
+          )
+          customerFlowFallbackAssignmentFlow = checked.flow
+          if (checked.flow !== SERVICEABLE_CUSTOMER_COUNT) {
+            throw new Error(
+              `Customer-flow master returned support with assignment flow ${checked.flow}`,
+            )
+          }
+
+          const exact = buildFinalizing30MaskPartitionStage(
+            domain,
+            new Set<ProductionStepKind>([
+              'juicing',
+              'seasoning',
+              'blending',
+            ]),
+            thresholdCounts,
+            { max: 76 },
+            0,
+            new Set(support),
+          )
+          const exactSolved = await solveBounded(exact.model, 3)
+          customerFlowFallbackExactStatus = exactSolved.status
+          exactSolveMs += exactSolved.solveMs
+          if (exactSolved.status === 'optimal') {
+            status = 'global-witness-via-customer-flow'
+          } else if (exactSolved.status === 'infeasible') {
+            status = 'customer-flow-exact-infeasible-support'
+          } else {
+            status = `customer-flow-exact-${exactSolved.status}`
+          }
+        }
+      }
+
       results.push({
         groupIndex,
         groupCost: groups[groupIndex].ingredientCost,
@@ -11667,6 +11782,11 @@ singleSupportMasterProfileIt(
         supportCuts: supportCuts.length,
         roundFlows,
         roundHallCutSizes,
+        customerFlowFallbackStatus,
+        customerFlowFallbackSolveMs:
+          Math.round(customerFlowFallbackSolveMs),
+        customerFlowFallbackAssignmentFlow,
+        customerFlowFallbackExactStatus,
         masterSolveMs: Math.round(masterSolveMs),
         exactSolveMs: Math.round(exactSolveMs),
       })
@@ -11675,13 +11795,7 @@ singleSupportMasterProfileIt(
     console.info(
       '[machine-single-support-master-summary]',
       JSON.stringify({
-        initialHallCuts:
-          sharedHallCuts.length -
-          results.reduce(
-            (sum, result) =>
-              sum + (result.status === 'hall-cut' ? 1 : 0),
-            0,
-          ),
+        initialHallCuts: initialHallCutCount,
         results,
       }),
     )
