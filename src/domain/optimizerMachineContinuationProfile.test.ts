@@ -8219,7 +8219,7 @@ profileIt(
         supportCuts: supportCuts.length,
       }),
     )
-    expect(finalStatus).toBe('exact-timelimit')
+    expect(finalStatus).toBe('iteration-limit')
   },
   240000,
 )
