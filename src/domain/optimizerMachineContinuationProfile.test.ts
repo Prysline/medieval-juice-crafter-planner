@@ -7219,6 +7219,36 @@ forcedResidualProfileIt(
       const degrees = [...customerNeighborCounts.values()].sort(
         (left, right) => left - right,
       )
+      const lowDegreeCustomers = residualCustomerIds.flatMap(
+        (customerId) => {
+          const candidates = groups.flatMap((group, candidateGroupIndex) => {
+            if (candidateGroupIndex === groupIndex) return []
+            const residualEligible = group.eligibleCustomerIds.filter(
+              (eligibleCustomerId) =>
+                !fixedCustomers.has(eligibleCustomerId),
+            )
+            const canServeNormally =
+              residualEligible.length >= 2 &&
+              residualEligible.includes(customerId)
+            const canServeAsSlack =
+              group.ingredientCost === SLACK_RECIPE_COST &&
+              residualEligible.length >= 1 &&
+              residualEligible.includes(customerId)
+            return canServeNormally || canServeAsSlack
+              ? [{
+                  groupIndex: candidateGroupIndex,
+                  cost: group.ingredientCost,
+                  normal: canServeNormally,
+                  slack: canServeAsSlack,
+                  residualEligible: residualEligible.length,
+                }]
+              : []
+          })
+          return candidates.length <= 3
+            ? [{ customerId, candidates }]
+            : []
+        },
+      )
       results.push({
         groupIndex,
         groupCost: groups[groupIndex].ingredientCost,
@@ -7241,6 +7271,7 @@ forcedResidualProfileIt(
           degrees[Math.floor(degrees.length * 0.5)] ?? 0,
         maxCustomerNeighborGroups:
           degrees[degrees.length - 1] ?? 0,
+        lowDegreeCustomers,
       })
     }
 
