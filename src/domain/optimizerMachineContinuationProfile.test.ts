@@ -3184,24 +3184,45 @@ function buildFinalizing30CompressedFrontierStage(
 ) {
   const groups = pairGroups(domain)
   const model = new Model()
-  const flowByGroupKey = new Map<
+
+  const maskKeyForGroup = (group: PairGroup) =>
+    group.eligibleCustomerIds.join('\u001e')
+  const maskCustomerIds = new Map<string, string[]>()
+  const groupIndexesByMask = new Map<string, number[]>()
+  groups.forEach((group, groupIndex) => {
+    const maskKey = maskKeyForGroup(group)
+    if (!maskCustomerIds.has(maskKey)) {
+      maskCustomerIds.set(maskKey, group.eligibleCustomerIds)
+    }
+    const indexes = groupIndexesByMask.get(maskKey)
+    if (indexes) indexes.push(groupIndex)
+    else groupIndexesByMask.set(maskKey, [groupIndex])
+  })
+
+  const customerFlowByMask = new Map<
     string,
     ReturnType<Model['numVar']>[]
-  >(groups.map((group) => [group.key, []]))
+  >(
+    [...maskCustomerIds.keys()].map((maskKey) => [maskKey, []]),
+  )
+  let customerFlowVariableCount = 0
 
   domain.serviceableCustomerIds.forEach(
     (customerId, customerIndex) => {
       const terms: ReturnType<Model['numVar']>[] = []
-      groups.forEach((group, groupIndex) => {
-        if (!group.eligibleCustomerIds.includes(customerId)) return
-        const y = model.numVar(
-          0,
-          1,
-          `y_${customerIndex}_${groupIndex}`,
-        )
-        terms.push(y)
-        flowByGroupKey.get(group.key)!.push(y)
-      })
+      ;[...maskCustomerIds.entries()].forEach(
+        ([maskKey, eligibleCustomerIds], maskIndex) => {
+          if (!eligibleCustomerIds.includes(customerId)) return
+          const y = model.numVar(
+            0,
+            1,
+            `my_${customerIndex}_${maskIndex}`,
+          )
+          customerFlowVariableCount += 1
+          terms.push(y)
+          customerFlowByMask.get(maskKey)!.push(y)
+        },
+      )
       model.addConstraint(
         sum(...terms).eq(1),
         `customer_${customerIndex}`,
@@ -3236,6 +3257,14 @@ function buildFinalizing30CompressedFrontierStage(
     ReturnType<Model['intVar']>['times']
   >[] = []
   const slackVars: ReturnType<Model['boolVar']>[] = []
+  const slackVarsByGroupIndex = new Map<
+    number,
+    ReturnType<Model['boolVar']>
+  >()
+  const groupProductionByIndex = new Map<
+    number,
+    ReturnType<typeof sum>
+  >()
   const usedGroupVars: ReturnType<Model['boolVar']>[] = []
   const throughQuantityTermsByEdgeKey = new Map<
     string,
@@ -3396,24 +3425,7 @@ function buildFinalizing30CompressedFrontierStage(
     }
 
     const groupProduction = sum(...groupProductionVars)
-    const served = sum(...(flowByGroupKey.get(group.key) ?? []))
-    if (group.ingredientCost === SLACK_RECIPE_COST) {
-      const slack = model.boolVar(`slack_${groupIndex}`)
-      slackVars.push(slack)
-      model.addConstraint(
-        groupProduction
-          .times(2)
-          .minus(served)
-          .minus(slack)
-          .eq(0),
-        `parity_${groupIndex}`,
-      )
-    } else {
-      model.addConstraint(
-        groupProduction.times(2).minus(served).eq(0),
-        `parity_${groupIndex}`,
-      )
-    }
+    groupProductionByIndex.set(groupIndex, groupProduction)
 
     const usedGroup = model.boolVar(`ug_${groupIndex}`)
     usedGroupVars.push(usedGroup)
@@ -3421,6 +3433,16 @@ function buildFinalizing30CompressedFrontierStage(
       sum(...groupUseVars).minus(usedGroup).eq(0),
       `one_class_per_used_group_${groupIndex}`,
     )
+
+    if (group.ingredientCost === SLACK_RECIPE_COST) {
+      const slack = model.boolVar(`slack_${groupIndex}`)
+      slackVars.push(slack)
+      slackVarsByGroupIndex.set(groupIndex, slack)
+      model.addConstraint(
+        slack.minus(usedGroup).leq(0),
+        `slack_requires_used_group_${groupIndex}`,
+      )
+    }
 
     const extraThresholds = Array.from(
       { length: Math.max(0, groupUpperBound - 1) },
@@ -3459,6 +3481,25 @@ function buildFinalizing30CompressedFrontierStage(
       }
     }
   })
+
+  let maskIndex = 0
+  for (const [maskKey, groupIndexes] of groupIndexesByMask) {
+    const capacityTerms = groupIndexes.map((groupIndex) =>
+      groupProductionByIndex.get(groupIndex)!.times(2),
+    )
+    const maskSlackVars = groupIndexes.flatMap((groupIndex) => {
+      const slack = slackVarsByGroupIndex.get(groupIndex)
+      return slack ? [slack] : []
+    })
+    model.addConstraint(
+      sum(...capacityTerms)
+        .minus(sum(...maskSlackVars))
+        .minus(sum(...(customerFlowByMask.get(maskKey) ?? [])))
+        .eq(0),
+      `mask_capacity_${maskIndex}`,
+    )
+    maskIndex += 1
+  }
 
   model.addConstraint(
     sum(...slackVars).eq(GLOBAL_SERVING_SLACK),
@@ -3558,6 +3599,8 @@ function buildFinalizing30CompressedFrontierStage(
 
   return {
     model,
+    serviceMaskCount: maskCustomerIds.size,
+    customerFlowVariableCount,
     groupCount: groups.length,
     classVariableCount,
     classUseVariableCount,
@@ -5513,7 +5556,7 @@ profileIt(
       const buildMs = performance.now() - buildStartedAt
       const solved = await solveBoundedWithProgress(
         built.model,
-        20,
+        12,
       )
 
       results.push({
@@ -5540,6 +5583,9 @@ profileIt(
             blending: 35,
             nonFinal: 73,
           },
+          serviceMaskCount: built.serviceMaskCount,
+          customerFlowVariableCount:
+            built.customerFlowVariableCount,
           groupCount: built.groupCount,
           classVariableCount: built.classVariableCount,
           classUseVariableCount: built.classUseVariableCount,
@@ -5565,6 +5611,6 @@ profileIt(
       JSON.stringify(results),
     )
   },
-  150000,
+  140000,
 )
 
