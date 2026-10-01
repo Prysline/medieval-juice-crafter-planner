@@ -22,6 +22,13 @@ const GLOBAL_SERVING_SLACK =
 const SLACK_RECIPE_COST =
   PRODUCTION_COST_FIX * 2 - ASSIGNED_INGREDIENT_COST_FIX
 
+const UNRESOLVED_311_EXTRA3_GROUP_INDEXES = [
+  23, 26, 43, 45, 46, 129, 140, 142, 146, 162, 182, 187,
+  212, 214, 217, 223, 247, 253, 260, 262, 264, 276, 296,
+  297, 307, 313, 344, 399, 403, 406, 456, 457, 460, 461,
+  462, 547, 609, 624, 651, 654, 656, 666, 966, 1083, 1279,
+] as const
+
 const machineContinuationEnv =
   (
     globalThis as {
@@ -9816,8 +9823,17 @@ extraSumProfileIt(
     )
 
     const identityResults = []
-    const sharedHallCuts: number[][] = []
-    const sharedHallCutKeys = new Set<string>()
+    const sharedHallCuts =
+      bootstrap311HallCutsFromDpWitnesses(domain, groups)
+    const sharedHallCutKeys = new Set(
+      sharedHallCuts.map((cut) => cut.join(',')),
+    )
+    console.info(
+      '[machine-extra-sum-bootstrap-hall]',
+      JSON.stringify({
+        hallCuts: sharedHallCuts.length,
+      }),
+    )
     let globalWitness:
       | {
           groupIndex: number
@@ -11060,6 +11076,37 @@ function find311MaskCapacitySupportWitness(
     )
   }
   return { support, capacities }
+}
+
+function bootstrap311HallCutsFromDpWitnesses(
+  domain: BatchOptimizationModel,
+  groups: readonly PairGroup[],
+): number[][] {
+  const cuts: number[][] = []
+  const keys = new Set<string>()
+  for (const groupIndex of UNRESOLVED_311_EXTRA3_GROUP_INDEXES) {
+    const witness = find311MaskCapacitySupportWitness(
+      groups,
+      groupIndex,
+    )
+    if (!witness) continue
+    const checked = maximumAssignmentFlowForGroupCapacities(
+      groups,
+      domain.serviceableCustomerIds,
+      witness.capacities,
+    )
+    if (
+      checked.flow === domain.serviceableCustomerIds.length ||
+      checked.violatingGroupIndexes.length === 0
+    ) {
+      continue
+    }
+    const key = checked.violatingGroupIndexes.join(',')
+    if (keys.has(key)) continue
+    keys.add(key)
+    cuts.push(checked.violatingGroupIndexes)
+  }
+  return cuts
 }
 
 supportDpProfileIt(
