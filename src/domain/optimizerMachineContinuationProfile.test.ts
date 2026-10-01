@@ -46,6 +46,12 @@ const partialSupportProfileIt =
     ? it
     : it.skip
 
+const slackSplitProfileIt =
+  machineContinuationEnv.MACHINE_CONTINUATION_PROFILE === '1' &&
+  Boolean(machineContinuationEnv.MACHINE_CONTINUATION_SLACK_SPLIT_GROUPS)
+    ? it
+    : it.skip
+
 function canonicalDomain(): BatchOptimizationModel {
   const currentProgress = 'liquid-blender-unlocked'
   const customerIds = canonicalCustomers
@@ -6863,6 +6869,7 @@ function buildFinalizing30GroupSupportMaster(
       groupIndex: number
       extra: number
     }
+    fixedSlackGroupIndex?: number
     supportCuts?: readonly (readonly number[])[]
   } = {},
 ) {
@@ -6872,6 +6879,7 @@ function buildFinalizing30GroupSupportMaster(
   const requiredExactExtraCost = options.requiredExactExtraCost
   const allowedExactExtraCosts = options.allowedExactExtraCosts
   const requiredExactExtraGroup = options.requiredExactExtraGroup
+  const fixedSlackGroupIndex = options.fixedSlackGroupIndex
   const groups = pairGroups(domain)
   const model = new Model()
 
@@ -7055,6 +7063,20 @@ function buildFinalizing30GroupSupportMaster(
     sum(...slackVars).eq(GLOBAL_SERVING_SLACK),
     'sg_global_slack',
   )
+  if (typeof fixedSlackGroupIndex === 'number') {
+    const fixedSlack = slackByGroupIndex.get(fixedSlackGroupIndex)
+    if (!fixedSlack) {
+      model.addConstraint(
+        sum(...productionVars).leq(-1),
+        'sg_invalid_fixed_slack_group',
+      )
+    } else {
+      model.addConstraint(
+        fixedSlack.eq(1),
+        'sg_fixed_slack_group',
+      )
+    }
+  }
   model.addConstraint(
     sum(...productionVars).eq(PRODUCTION_UNITS_FIX),
     'sg_production_units',
@@ -9269,6 +9291,196 @@ partialSupportProfileIt(
     expect(
       identityResults.every(
         (entry) => entry.unresolvedCosts.length === 0,
+      ),
+    ).toBe(true)
+  },
+  300000,
+)
+
+
+slackSplitProfileIt(
+  'decomposes unresolved 3+1+1 identities by fixed slack identity and support',
+  async () => {
+    const domain = canonicalDomain()
+    const groups = pairGroups(domain)
+    const rawGroupIndexes =
+      machineContinuationEnv.MACHINE_CONTINUATION_SLACK_SPLIT_GROUPS ?? ''
+    const targetGroupIndexes = rawGroupIndexes
+      .split(',')
+      .map((value) => Number(value.trim()))
+      .filter((value) => Number.isInteger(value))
+    expect(targetGroupIndexes.length).toBeGreaterThan(0)
+
+    const thresholdCounts = [3, 1, 1, 0] as const
+    const slackGroupIndexes = groups.flatMap((group, groupIndex) =>
+      group.ingredientCost === SLACK_RECIPE_COST
+        ? [groupIndex]
+        : [],
+    )
+    expect(slackGroupIndexes.length).toBe(45)
+
+    const identityResults = []
+    let globalWitness:
+      | {
+          groupIndex: number
+          slackGroupIndex: number
+          support: number[]
+          objective: number | null
+        }
+      | undefined
+
+    for (const groupIndex of targetGroupIndexes) {
+      const slackResults = []
+      for (const slackGroupIndex of slackGroupIndexes) {
+        const supportCuts: number[][] = []
+        let status = 'round-limit'
+        let exactInfeasibleSupports = 0
+        let masterSolveMs = 0
+        let exactSolveMs = 0
+
+        for (let round = 0; round < 3; round += 1) {
+          const built = buildFinalizing30GroupSupportMaster(
+            domain,
+            thresholdCounts,
+            {
+              slackExtraCount: 0,
+              fixedSlackGroupIndex: slackGroupIndex,
+              requiredExactExtraGroup: {
+                groupIndex,
+                extra: 3,
+              },
+              supportCuts,
+            },
+          )
+          const solved = await solveBounded(built.model, 0.5)
+          masterSolveMs += solved.solveMs
+          if (solved.status === 'infeasible') {
+            status = 'infeasible'
+            break
+          }
+          if (
+            solved.status !== 'optimal' ||
+            !solved.namedSolution
+          ) {
+            status = solved.status
+            break
+          }
+
+          const support = groups.flatMap(
+            (_group, supportGroupIndex) => {
+              const raw = solved.namedSolution!.get(
+                `sgu_${supportGroupIndex}`,
+              )
+              return typeof raw === 'number' &&
+                Number.isFinite(raw) &&
+                raw > 0.5
+                ? [supportGroupIndex]
+                : []
+            },
+          )
+          if (support.length !== 30) {
+            throw new Error(
+              `Expected 30 support groups for extra group ${groupIndex} / slack group ${slackGroupIndex}, got ${support.length}`,
+            )
+          }
+
+          const exact = buildFinalizing30MaskPartitionStage(
+            domain,
+            new Set<ProductionStepKind>([
+              'juicing',
+              'seasoning',
+              'blending',
+            ]),
+            thresholdCounts,
+            { max: 76 },
+            0,
+            new Set(support),
+            slackGroupIndex,
+          )
+          const exactSolved = await solveBounded(exact.model, 3)
+          exactSolveMs += exactSolved.solveMs
+          if (exactSolved.status === 'infeasible') {
+            exactInfeasibleSupports += 1
+            supportCuts.push(support)
+            continue
+          }
+          if (exactSolved.status === 'optimal') {
+            status = 'global-witness'
+            globalWitness = {
+              groupIndex,
+              slackGroupIndex,
+              support,
+              objective: exactSolved.objective,
+            }
+            break
+          }
+          status = `exact-${exactSolved.status}`
+          break
+        }
+
+        slackResults.push({
+          slackGroupIndex,
+          status,
+          supportCuts: supportCuts.length,
+          exactInfeasibleSupports,
+          masterSolveMs: Math.round(masterSolveMs),
+          exactSolveMs: Math.round(exactSolveMs),
+        })
+        if (globalWitness) break
+      }
+
+      const unresolvedSlackGroups = slackResults
+        .filter((entry) => entry.status !== 'infeasible')
+        .map((entry) => ({
+          slackGroupIndex: entry.slackGroupIndex,
+          status: entry.status,
+          supportCuts: entry.supportCuts,
+        }))
+      const result = {
+        groupIndex,
+        groupCost: groups[groupIndex]?.ingredientCost ?? null,
+        slackCases: slackResults.length,
+        infeasibleSlackCases: slackResults.filter(
+          (entry) => entry.status === 'infeasible',
+        ).length,
+        unresolvedSlackGroups,
+        exactInfeasibleSupports: slackResults.reduce(
+          (total, entry) =>
+            total + entry.exactInfeasibleSupports,
+          0,
+        ),
+        solveMs: slackResults.reduce(
+          (total, entry) =>
+            total + entry.masterSolveMs + entry.exactSolveMs,
+          0,
+        ),
+      }
+      identityResults.push(result)
+      console.info(
+        '[machine-slack-split-identity]',
+        JSON.stringify(result),
+      )
+      if (globalWitness) break
+    }
+
+    console.info(
+      '[machine-slack-split-summary]',
+      JSON.stringify({
+        targetGroupIndexes,
+        closedIdentities: identityResults
+          .filter((entry) => entry.unresolvedSlackGroups.length === 0)
+          .map((entry) => entry.groupIndex),
+        unresolvedIdentities: identityResults
+          .filter((entry) => entry.unresolvedSlackGroups.length > 0)
+          .map((entry) => entry.groupIndex),
+        globalWitness,
+      }),
+    )
+
+    expect(globalWitness).toBeUndefined()
+    expect(
+      identityResults.every(
+        (entry) => entry.unresolvedSlackGroups.length === 0,
       ),
     ).toBe(true)
   },
