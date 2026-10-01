@@ -11360,6 +11360,61 @@ async function bootstrap311HallCutsFromDpWitnesses(
 }
 
 supportDpProfileIt(
+  'profiles Hall-closure membership signatures for unresolved 3+1+1 support',
+  async () => {
+    const domain = canonicalDomain()
+    const groups = pairGroups(domain)
+    const cuts = await bootstrap311HallCutsFromDpWitnesses(domain, groups)
+    const cutSets = cuts.map((cut) => new Set(cut))
+    const signatureCounts = new Map<string, number>()
+    const classCounts = new Map<string, number>()
+
+    groups.forEach((group, groupIndex) => {
+      const signature = cutSets
+        .map((cut) => (cut.has(groupIndex) ? '1' : '0'))
+        .join('')
+      signatureCounts.set(
+        signature,
+        (signatureCounts.get(signature) ?? 0) + 1,
+      )
+      const roleClass =
+        `${group.ingredientCost}|${group.eligibleCustomerIds.length >= 2 ? 1 : 0}|${group.eligibleCustomerIds.length >= 4 ? 1 : 0}|${group.ingredientCost === SLACK_RECIPE_COST ? 1 : 0}|${signature}`
+      classCounts.set(roleClass, (classCounts.get(roleClass) ?? 0) + 1)
+    })
+
+    const cutRows = cuts.map((cut, cutIndex) => {
+      const customerIds = new Set<string>()
+      for (const groupIndex of cut) {
+        for (const customerId of groups[groupIndex]?.eligibleCustomerIds ?? []) {
+          customerIds.add(customerId)
+        }
+      }
+      return {
+        cutIndex,
+        groupCount: cut.length,
+        customerCount: customerIds.size,
+      }
+    })
+
+    console.info(
+      '[machine-hall-signature-summary]',
+      JSON.stringify({
+        groupCount: groups.length,
+        cutCount: cuts.length,
+        signatureCount: signatureCounts.size,
+        roleSignatureClassCount: classCounts.size,
+        largestSignatures: [...signatureCounts.entries()]
+          .map(([signature, count]) => ({ signature, count }))
+          .sort((left, right) => right.count - left.count)
+          .slice(0, 20),
+        cuts: cutRows,
+      }),
+    )
+  },
+  120000,
+)
+
+supportDpProfileIt(
   'counts exact 3+1+1 support roles before customer-flow validation',
   async () => {
     const domain = canonicalDomain()
