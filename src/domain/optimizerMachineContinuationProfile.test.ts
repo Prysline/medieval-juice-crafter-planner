@@ -8041,3 +8041,57 @@ profileIt(
   },
   300000,
 )
+
+
+profileIt(
+  'checks joint recipe-class aggregate shared-edge frontiers',
+  async () => {
+    const domain = canonicalDomain()
+    const cases = [
+      { pattern: '3+1+1', thresholds: [3, 1, 1, 0] as const },
+      { pattern: '2+2+1', thresholds: [3, 2, 0, 0] as const },
+      { pattern: '2+1+1+1', thresholds: [4, 1, 0, 0] as const },
+      { pattern: '1+1+1+1+1', thresholds: [5, 0, 0, 0] as const },
+    ]
+    const results = []
+    for (const extraCase of cases) {
+      const built = buildAggregateSharedEdgeFrontierMaster(
+        domain,
+        extraCase.thresholds,
+      )
+      const solved = await solveBoundedWithProgress(built.model, 10)
+      const result = {
+        pattern: extraCase.pattern,
+        status: solved.status,
+        objective: solved.objective,
+        solveMs: Math.round(solved.solveMs),
+        groupCount: built.groupCount,
+        serviceMaskCount: built.serviceMaskCount,
+        customerFlowVariableCount: built.customerFlowVariableCount,
+        classVariableCount: built.classVariableCount,
+        conflictGroupCount: built.conflictGroupCount,
+        sharedThroughEdgeCount: built.sharedThroughEdgeCount,
+        sharedBlendingEdgeCount: built.sharedBlendingEdgeCount,
+        progressTail: solved.progressTail,
+      }
+      results.push(result)
+      console.info(
+        '[machine-joint-class-case]',
+        JSON.stringify(result),
+      )
+    }
+    console.info(
+      '[machine-joint-class-summary]',
+      JSON.stringify(
+        results.map((result) => ({
+          pattern: result.pattern,
+          status: result.status,
+          objective: result.objective,
+          classVariableCount: result.classVariableCount,
+          conflictGroupCount: result.conflictGroupCount,
+        })),
+      ),
+    )
+  },
+  90000,
+)
