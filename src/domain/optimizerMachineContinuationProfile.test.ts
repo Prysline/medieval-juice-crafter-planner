@@ -8191,8 +8191,7 @@ profileIt(
           pattern: extraCase.pattern,
           status: 'static-infeasible',
           candidateCounts,
-          identityCases: 0,
-          exactInfeasible: 0,
+          subcases: [],
         }
         results.push(result)
         console.info(
@@ -8209,133 +8208,169 @@ profileIt(
             (extra) => extra >= thresholdIndex + 1,
           ).length,
       ) as [number, number, number, number]
+      const slackExtraCounts = [
+        0,
+        ...new Set(extraCase.extras),
+      ].filter(
+        (extra) => extra <= PROCESSING_STACK_CAPACITY - 1,
+      )
 
-      const extraIdentityCuts: Array<
-        Array<{ groupIndex: number; extra: number }>
-      > = []
-      const seenIdentityKeys = new Set<string>()
-      let finalStatus = 'iteration-limit'
-      let exactInfeasible = 0
-      let masterSolveMs = 0
-      let exactSolveMs = 0
+      const subcases = []
+      for (const slackExtraCount of slackExtraCounts) {
+        const extraIdentityCuts: Array<
+          Array<{ groupIndex: number; extra: number }>
+        > = []
+        const seenIdentityKeys = new Set<string>()
+        let finalStatus = 'iteration-limit'
+        let exactInfeasible = 0
+        let masterSolveMs = 0
+        let exactSolveMs = 0
 
-      for (let iteration = 0; iteration < 96; iteration += 1) {
-        const master = buildOptimisticGroupOnlyFrontierMaster(
-          domain,
-          thresholdCounts,
-          {
-            includeCustomerFlow: true,
-            sharedBucketMode: 'structural-signature',
-            totalNonFinalCap: 76,
-            extraIdentityCuts,
-          },
-        )
-        const masterSolved = await solveBounded(master.model, 2)
-        masterSolveMs += masterSolved.solveMs
-
-        if (masterSolved.status === 'infeasible') {
-          finalStatus = 'infeasible'
-          break
-        }
-        if (
-          masterSolved.status !== 'optimal' ||
-          !masterSolved.namedSolution
-        ) {
-          finalStatus = `master-${masterSolved.status}`
-          break
-        }
-
-        const extraEntries = groups.flatMap((_group, groupIndex) => {
-          const productionRaw = masterSolved.namedSolution!.get(
-            `gox_${groupIndex}`,
+        for (let iteration = 0; iteration < 96; iteration += 1) {
+          const master = buildOptimisticGroupOnlyFrontierMaster(
+            domain,
+            thresholdCounts,
+            {
+              includeCustomerFlow: false,
+              sharedBucketMode: 'structural-signature',
+              slackExtraCount,
+              totalNonFinalCap: 76,
+              extraIdentityCuts,
+            },
           )
-          const usedRaw = masterSolved.namedSolution!.get(
-            `gou_${groupIndex}`,
-          )
+          const masterSolved = await solveBounded(master.model, 2)
+          masterSolveMs += masterSolved.solveMs
+
+          if (masterSolved.status === 'infeasible') {
+            finalStatus = 'infeasible'
+            break
+          }
           if (
-            typeof productionRaw !== 'number' ||
-            !Number.isFinite(productionRaw) ||
-            typeof usedRaw !== 'number' ||
-            !Number.isFinite(usedRaw)
+            masterSolved.status !== 'optimal' ||
+            !masterSolved.namedSolution
           ) {
+            finalStatus = `master-${masterSolved.status}`
+            break
+          }
+
+          const extraEntries = groups.flatMap(
+            (_group, groupIndex) => {
+              const productionRaw = masterSolved.namedSolution!.get(
+                `gox_${groupIndex}`,
+              )
+              const usedRaw = masterSolved.namedSolution!.get(
+                `gou_${groupIndex}`,
+              )
+              if (
+                typeof productionRaw !== 'number' ||
+                !Number.isFinite(productionRaw) ||
+                typeof usedRaw !== 'number' ||
+                !Number.isFinite(usedRaw)
+              ) {
+                throw new Error(
+                  `Missing extra identity solution for group ${groupIndex}`,
+                )
+              }
+              const extra =
+                Math.round(productionRaw) - Math.round(usedRaw)
+              return extra > 0 ? [{ groupIndex, extra }] : []
+            },
+          )
+          extraEntries.sort(
+            (left, right) =>
+              left.groupIndex - right.groupIndex,
+          )
+          const identityKey = extraEntries
+            .map(
+              ({ groupIndex, extra }) =>
+                `${groupIndex}:${extra}`,
+            )
+            .join(',')
+          if (seenIdentityKeys.has(identityKey)) {
             throw new Error(
-              `Missing extra identity solution for group ${groupIndex}`,
+              `Duplicate extra-bearing identity candidate: ${identityKey}`,
             )
           }
-          const extra =
-            Math.round(productionRaw) - Math.round(usedRaw)
-          return extra > 0 ? [{ groupIndex, extra }] : []
-        })
-        extraEntries.sort(
-          (left, right) => left.groupIndex - right.groupIndex,
-        )
-        const identityKey = extraEntries
-          .map(({ groupIndex, extra }) => `${groupIndex}:${extra}`)
-          .join(',')
-        if (seenIdentityKeys.has(identityKey)) {
-          throw new Error(
-            `Duplicate extra-bearing identity candidate: ${identityKey}`,
+          seenIdentityKeys.add(identityKey)
+
+          const actualExtras = extraEntries
+            .map(({ extra }) => extra)
+            .sort((left, right) => right - left)
+          expect(actualExtras).toEqual(sortedExtras)
+
+          const exact = buildFinalizing30MaskPartitionStage(
+            domain,
+            exactPartitionKinds,
+            thresholdCounts,
+            { max: 76 },
+            slackExtraCount,
+            undefined,
+            undefined,
+            new Map(
+              extraEntries.map(({ groupIndex, extra }) => [
+                groupIndex,
+                extra,
+              ]),
+            ),
           )
-        }
-        seenIdentityKeys.add(identityKey)
+          const exactSolved = await solveBounded(exact.model, 4)
+          exactSolveMs += exactSolved.solveMs
+          console.info(
+            '[machine-extra-identity-case]',
+            JSON.stringify({
+              pattern: extraCase.pattern,
+              slackExtraCount,
+              iteration: iteration + 1,
+              extraEntries,
+              masterStatus: masterSolved.status,
+              exactStatus: exactSolved.status,
+              exactObjective: exactSolved.objective,
+              masterSolveMs: Math.round(masterSolved.solveMs),
+              exactSolveMs: Math.round(exactSolved.solveMs),
+            }),
+          )
 
-        const actualExtras = extraEntries
-          .map(({ extra }) => extra)
-          .sort((left, right) => right - left)
-        expect(actualExtras).toEqual(sortedExtras)
-
-        const exact = buildFinalizing30MaskPartitionStage(
-          domain,
-          exactPartitionKinds,
-          thresholdCounts,
-          { max: 76 },
-          undefined,
-          undefined,
-          undefined,
-          new Map(
-            extraEntries.map(({ groupIndex, extra }) => [
-              groupIndex,
-              extra,
-            ]),
-          ),
-        )
-        const exactSolved = await solveBounded(exact.model, 4)
-        exactSolveMs += exactSolved.solveMs
-        console.info(
-          '[machine-extra-identity-case]',
-          JSON.stringify({
-            pattern: extraCase.pattern,
-            iteration: iteration + 1,
-            extraEntries,
-            masterStatus: masterSolved.status,
-            exactStatus: exactSolved.status,
-            exactObjective: exactSolved.objective,
-            masterSolveMs: Math.round(masterSolved.solveMs),
-            exactSolveMs: Math.round(exactSolved.solveMs),
-          }),
-        )
-
-        if (exactSolved.status === 'infeasible') {
-          exactInfeasible += 1
-          extraIdentityCuts.push(extraEntries)
-          continue
-        }
-        if (exactSolved.status === 'optimal') {
-          finalStatus = 'feasible-exact'
+          if (exactSolved.status === 'infeasible') {
+            exactInfeasible += 1
+            extraIdentityCuts.push(extraEntries)
+            continue
+          }
+          if (exactSolved.status === 'optimal') {
+            finalStatus = 'feasible-exact'
+            break
+          }
+          finalStatus = `exact-${exactSolved.status}`
           break
         }
-        finalStatus = `exact-${exactSolved.status}`
-        break
+
+        const subcase = {
+          slackExtraCount,
+          status: finalStatus,
+          identityCases: seenIdentityKeys.size,
+          exactInfeasible,
+          masterSolveMs: Math.round(masterSolveMs),
+          exactSolveMs: Math.round(exactSolveMs),
+        }
+        subcases.push(subcase)
+        console.info(
+          '[machine-extra-identity-subcase]',
+          JSON.stringify({
+            pattern: extraCase.pattern,
+            ...subcase,
+          }),
+        )
       }
 
+      const status = subcases.every(
+        (subcase) => subcase.status === 'infeasible',
+      )
+        ? 'infeasible'
+        : 'unresolved'
       const result = {
         pattern: extraCase.pattern,
-        status: finalStatus,
+        status,
         candidateCounts,
-        identityCases: seenIdentityKeys.size,
-        exactInfeasible,
-        masterSolveMs: Math.round(masterSolveMs),
-        exactSolveMs: Math.round(exactSolveMs),
+        subcases,
       }
       results.push(result)
       console.info(
