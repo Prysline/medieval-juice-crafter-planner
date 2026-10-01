@@ -10797,6 +10797,7 @@ function exact311MaskCapacityReachability(
 function find311MaskCapacitySupportWitness(
   groups: readonly PairGroup[],
   fixedExtra3GroupIndex: number,
+  hallCutGroupIndexes: readonly number[] = [],
 ): {
   support: number[]
   capacities: number[]
@@ -10805,6 +10806,16 @@ function find311MaskCapacitySupportWitness(
   if (!fixedGroup || fixedGroup.eligibleCustomerIds.length < 8) {
     return null
   }
+
+  const hallCutSet = new Set(hallCutGroupIndexes)
+  const hallCustomerIds = new Set<string>()
+  for (const groupIndex of hallCutGroupIndexes) {
+    for (const customerId of groups[groupIndex]?.eligibleCustomerIds ?? []) {
+      hallCustomerIds.add(customerId)
+    }
+  }
+  const hallLimit =
+    hallCutGroupIndexes.length > 0 ? hallCustomerIds.size : 0
 
   const maskKeyForGroup = (group: PairGroup) =>
     group.eligibleCustomerIds.join('\u001e')
@@ -10822,6 +10833,7 @@ function find311MaskCapacitySupportWitness(
     slackCount: number
     productionCost: number
     capacity: number
+    hallCapacity: number
     capacities: Array<[number, number]>
   }
 
@@ -10837,6 +10849,7 @@ function find311MaskCapacitySupportWitness(
           slackCount: 0,
           productionCost: 0,
           capacity: 0,
+          hallCapacity: 0,
           capacities: [],
         },
       ],
@@ -10852,6 +10865,7 @@ function find311MaskCapacitySupportWitness(
               slackCount: 0,
               productionCost: group.ingredientCost * 4,
               capacity: 8,
+              hallCapacity: hallCutSet.has(groupIndex) ? 8 : 0,
               capacities: [[groupIndex, 8]],
             }]
           : [
@@ -10861,6 +10875,7 @@ function find311MaskCapacitySupportWitness(
                 slackCount: 0,
                 productionCost: 0,
                 capacity: 0,
+                hallCapacity: 0,
                 capacities: [],
               },
               ...(group.eligibleCustomerIds.length >= 2
@@ -10870,6 +10885,7 @@ function find311MaskCapacitySupportWitness(
                     slackCount: 0,
                     productionCost: group.ingredientCost,
                     capacity: 2,
+                    hallCapacity: hallCutSet.has(groupIndex) ? 2 : 0,
                     capacities: [[groupIndex, 2]] as Array<[number, number]>,
                   }]
                 : []),
@@ -10880,6 +10896,7 @@ function find311MaskCapacitySupportWitness(
                     slackCount: 0,
                     productionCost: group.ingredientCost * 2,
                     capacity: 4,
+                    hallCapacity: hallCutSet.has(groupIndex) ? 4 : 0,
                     capacities: [[groupIndex, 4]] as Array<[number, number]>,
                   }]
                 : []),
@@ -10890,6 +10907,7 @@ function find311MaskCapacitySupportWitness(
                     slackCount: 1,
                     productionCost: group.ingredientCost,
                     capacity: 1,
+                    hallCapacity: hallCutSet.has(groupIndex) ? 1 : 0,
                     capacities: [[groupIndex, 1]] as Array<[number, number]>,
                   }]
                 : []),
@@ -10908,6 +10926,8 @@ function find311MaskCapacitySupportWitness(
             productionCost:
               existing.productionCost + role.productionCost,
             capacity: existing.capacity + role.capacity,
+            hallCapacity:
+              existing.hallCapacity + role.hallCapacity,
             capacities: [
               ...existing.capacities,
               ...role.capacities,
@@ -10918,12 +10938,13 @@ function find311MaskCapacitySupportWitness(
             candidate.extraOneCount > 2 ||
             candidate.slackCount > 1 ||
             candidate.productionCost > PRODUCTION_COST_FIX ||
-            candidate.capacity > maskSize
+            candidate.capacity > maskSize ||
+            candidate.hallCapacity > hallLimit
           ) {
             continue
           }
           const key =
-            `${candidate.selectedCount}|${candidate.extraOneCount}|${candidate.slackCount}|${candidate.productionCost}|${candidate.capacity}`
+            `${candidate.selectedCount}|${candidate.extraOneCount}|${candidate.slackCount}|${candidate.productionCost}|${candidate.capacity}|${candidate.hallCapacity}`
           if (!next.has(key)) next.set(key, candidate)
         }
       }
@@ -10937,12 +10958,16 @@ function find311MaskCapacitySupportWitness(
     selectedCount: number,
     extraOneCount: number,
     slackCount: number,
-  ) => (selectedCount * 3 + extraOneCount) * 2 + slackCount
-  const stateSize = 31 * 3 * 2
+    hallCapacity: number,
+  ) =>
+    (((selectedCount * 3 + extraOneCount) * 2 + slackCount) *
+      (hallLimit + 1)) +
+    hallCapacity
+  const stateSize = 31 * 3 * 2 * (hallLimit + 1)
   const costMask =
     (1n << BigInt(PRODUCTION_COST_FIX + 1)) - 1n
   let states = Array<bigint>(stateSize).fill(0n)
-  states[stateIndex(0, 0, 0)] = 1n
+  states[stateIndex(0, 0, 0, 0)] = 1n
   const snapshots: bigint[][] = [states]
 
   for (const localOptions of localOptionsByMask) {
@@ -10950,23 +10975,32 @@ function find311MaskCapacitySupportWitness(
     for (let selectedCount = 0; selectedCount <= 30; selectedCount += 1) {
       for (let extraOneCount = 0; extraOneCount <= 2; extraOneCount += 1) {
         for (let slackCount = 0; slackCount <= 1; slackCount += 1) {
-          const source =
-            states[stateIndex(
-              selectedCount,
-              extraOneCount,
-              slackCount,
-            )]
-          if (source === 0n) continue
-          for (const option of localOptions) {
+          for (
+            let hallCapacity = 0;
+            hallCapacity <= hallLimit;
+            hallCapacity += 1
+          ) {
+            const source =
+              states[stateIndex(
+                selectedCount,
+                extraOneCount,
+                slackCount,
+                hallCapacity,
+              )]
+            if (source === 0n) continue
+            for (const option of localOptions) {
             const nextSelected =
               selectedCount + option.selectedCount
             const nextExtraOne =
               extraOneCount + option.extraOneCount
             const nextSlack = slackCount + option.slackCount
+            const nextHall =
+              hallCapacity + option.hallCapacity
             if (
               nextSelected > 30 ||
               nextExtraOne > 2 ||
-              nextSlack > 1
+              nextSlack > 1 ||
+              nextHall > hallLimit
             ) {
               continue
             }
@@ -10978,8 +11012,10 @@ function find311MaskCapacitySupportWitness(
                 nextSelected,
                 nextExtraOne,
                 nextSlack,
+                nextHall,
               )
             ] |= shifted
+            }
           }
         }
       }
@@ -10989,11 +11025,21 @@ function find311MaskCapacitySupportWitness(
   }
 
   const targetBit = 1n << BigInt(PRODUCTION_COST_FIX)
-  if (
-    (states[stateIndex(30, 2, 1)] & targetBit) === 0n
+  let hallCapacity = -1
+  for (
+    let candidateHall = 0;
+    candidateHall <= hallLimit;
+    candidateHall += 1
   ) {
-    return null
+    if (
+      (states[stateIndex(30, 2, 1, candidateHall)] &
+        targetBit) !== 0n
+    ) {
+      hallCapacity = candidateHall
+      break
+    }
   }
+  if (hallCapacity < 0) return null
 
   let selectedCount = 30
   let extraOneCount = 2
@@ -11016,11 +11062,14 @@ function find311MaskCapacitySupportWitness(
       const sourceSlack = slackCount - option.slackCount
       const sourceCost =
         productionCost - option.productionCost
+      const sourceHall =
+        hallCapacity - option.hallCapacity
       if (
         sourceSelected < 0 ||
         sourceExtraOne < 0 ||
         sourceSlack < 0 ||
-        sourceCost < 0
+        sourceCost < 0 ||
+        sourceHall < 0
       ) {
         continue
       }
@@ -11030,6 +11079,7 @@ function find311MaskCapacitySupportWitness(
             sourceSelected,
             sourceExtraOne,
             sourceSlack,
+            sourceHall,
           )
         ]
       if (
@@ -11042,6 +11092,7 @@ function find311MaskCapacitySupportWitness(
       extraOneCount = sourceExtraOne
       slackCount = sourceSlack
       productionCost = sourceCost
+      hallCapacity = sourceHall
       chosenOptions.push(option)
       break
     }
@@ -11056,7 +11107,8 @@ function find311MaskCapacitySupportWitness(
     selectedCount !== 0 ||
     extraOneCount !== 0 ||
     slackCount !== 0 ||
-    productionCost !== 0
+    productionCost !== 0 ||
+    hallCapacity !== 0
   ) {
     throw new Error('Support DP backtrack did not reach origin')
   }
@@ -11167,6 +11219,27 @@ supportDpProfileIt(
             witness.capacities,
           )
         : null
+      const hallProbeGroupIndexes = new Set([
+        43, 187, 260, 262, 344, 399, 651, 1279,
+      ])
+      const cutWitness =
+        assignment &&
+        assignment.flow < SERVICEABLE_CUSTOMER_COUNT &&
+        assignment.violatingGroupIndexes.length > 0 &&
+        hallProbeGroupIndexes.has(groupIndex)
+          ? find311MaskCapacitySupportWitness(
+              groups,
+              groupIndex,
+              assignment.violatingGroupIndexes,
+            )
+          : null
+      const cutAssignment = cutWitness
+        ? maximumAssignmentFlowForGroupCapacities(
+            groups,
+            domain.serviceableCustomerIds,
+            cutWitness.capacities,
+          )
+        : null
       return {
         groupIndex,
         groupCost: group.ingredientCost,
@@ -11183,6 +11256,10 @@ supportDpProfileIt(
         assignmentFlow: assignment?.flow ?? 0,
         hallViolationGroups:
           assignment?.violatingGroupIndexes.length ?? 0,
+        oneCutWitness: cutWitness !== null,
+        oneCutAssignmentFlow: cutAssignment?.flow ?? null,
+        oneCutHallViolationGroups:
+          cutAssignment?.violatingGroupIndexes.length ?? null,
       }
     })
     console.info(
