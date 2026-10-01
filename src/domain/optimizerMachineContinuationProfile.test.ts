@@ -6700,7 +6700,10 @@ function buildOptimisticGroupOnlyFrontierMaster(
   options: {
     includeCustomerFlow?: boolean
     hallCuts?: readonly (readonly number[])[]
-    sharedBucketMode?: 'equipment' | 'operation-signature'
+    sharedBucketMode?:
+      | 'equipment'
+      | 'operation-signature'
+      | 'structural-signature'
   } = {},
 ) {
   const includeCustomerFlow = options.includeCustomerFlow ?? true
@@ -6770,11 +6773,31 @@ function buildOptimisticGroupOnlyFrontierMaster(
             : edge.kind === 'seasoning'
               ? `seasoning:${edge.equipment}:${edge.addedIngredientId ?? 'unknown'}`
               : `blending:${edge.fromIngredientIds.length}:${edge.secondaryFromIngredientIds?.length ?? 0}`
+        const structuralSignature =
+          edge.kind === 'juicing'
+            ? `juicing:${edge.addedIngredientId ?? edge.key}`
+            : edge.kind === 'seasoning'
+              ? [
+                  'seasoning',
+                  edge.equipment,
+                  edge.fromIngredientIds[0] ?? 'unknown-base',
+                  edge.addedIngredientId ?? 'unknown-additive',
+                  edge.fromIngredientIds.length,
+                ].join(':')
+              : [
+                  'blending',
+                  edge.fromIngredientIds[0] ?? 'unknown-left',
+                  edge.secondaryFromIngredientIds?.[0] ?? 'unknown-right',
+                  edge.fromIngredientIds.length,
+                  edge.secondaryFromIngredientIds?.length ?? 0,
+                ].join(':')
         sharedBucketByEdgeKey.set(
           edge.key,
           sharedBucketMode === 'equipment'
             ? edge.equipment
-            : operationSignature,
+            : sharedBucketMode === 'operation-signature'
+              ? operationSignature
+              : structuralSignature,
         )
         const current = owners.get(edge.key) ?? new Set<number>()
         current.add(groupIndex)
@@ -7142,7 +7165,7 @@ function buildOptimisticGroupOnlyFrontierMaster(
 
 
 
-profileIt(
+it.skip(
   'checks equipment-bucket group-only finalizing-30 extra frontiers',
   async () => {
     const domain = canonicalDomain()
@@ -7187,7 +7210,7 @@ profileIt(
 )
 
 
-profileIt(
+it.skip(
   'checks operation-signature-bucket finalizing-30 extra frontiers',
   async () => {
     const domain = canonicalDomain()
@@ -7549,4 +7572,50 @@ it.skip(
     console.info('[machine-hall-cut-summary]', JSON.stringify(results))
   },
   180000,
+)
+
+
+profileIt(
+  'checks structural-signature finalizing-30 extra frontiers',
+  async () => {
+    const domain = canonicalDomain()
+    const cases = [
+      { pattern: '3+1+1', thresholds: [3, 1, 1, 0] as const },
+      { pattern: '2+2+1', thresholds: [3, 2, 0, 0] as const },
+      { pattern: '2+1+1+1', thresholds: [4, 1, 0, 0] as const },
+      { pattern: '1+1+1+1+1', thresholds: [5, 0, 0, 0] as const },
+    ]
+    const results = []
+    for (const extraCase of cases) {
+      const built = buildOptimisticGroupOnlyFrontierMaster(
+        domain,
+        extraCase.thresholds,
+        { sharedBucketMode: 'structural-signature' },
+      )
+      const solved = await solveBoundedWithProgress(built.model, 10)
+      const result = {
+        pattern: extraCase.pattern,
+        status: solved.status,
+        objective: solved.objective,
+        solveMs: Math.round(solved.solveMs),
+        progressTail: solved.progressTail,
+      }
+      results.push(result)
+      console.info(
+        '[machine-structural-signature-case]',
+        JSON.stringify(result),
+      )
+    }
+    console.info(
+      '[machine-structural-signature-summary]',
+      JSON.stringify(
+        results.map((result) => ({
+          pattern: result.pattern,
+          status: result.status,
+          objective: result.objective,
+        })),
+      ),
+    )
+  },
+  90000,
 )
