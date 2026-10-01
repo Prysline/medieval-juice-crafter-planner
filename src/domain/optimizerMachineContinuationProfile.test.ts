@@ -9835,7 +9835,7 @@ extraSumProfileIt(
 
     const identityResults = []
     const sharedHallCuts =
-      bootstrap311HallCutsFromDpWitnesses(domain, groups)
+      await bootstrap311HallCutsFromDpWitnesses(domain, groups)
     const sharedHallCutKeys = new Set(
       sharedHallCuts.map((cut) => cut.join(',')),
     )
@@ -10805,19 +10805,25 @@ function exact311MaskCapacityReachability(
   }
 }
 
-function find311MaskCapacitySupportWitness(
+async function find311MaskCapacitySupportWitness(
   groups: readonly PairGroup[],
   fixedExtra3GroupIndex: number,
   hallCutGroupIndexes: readonly number[] = [],
   hallCutGroupIndexes2: readonly number[] = [],
-): {
+  yieldEveryMasks = 0,
+): Promise<{
   support: number[]
   capacities: number[]
-} | null {
+} | null> {
   const fixedGroup = groups[fixedExtra3GroupIndex]
   if (!fixedGroup || fixedGroup.eligibleCustomerIds.length < 8) {
     return null
   }
+
+  const yieldToEventLoop = () =>
+    new Promise<void>((resolve) => {
+      globalThis.setTimeout(resolve, 0)
+    })
 
   const hallCutSet = new Set(hallCutGroupIndexes)
   const hallCustomerIds = new Set<string>()
@@ -11102,6 +11108,12 @@ function find311MaskCapacitySupportWitness(
     ) {
       checkpoints.set(processedMaskCount, states)
     }
+    if (
+      yieldEveryMasks > 0 &&
+      processedMaskCount % yieldEveryMasks === 0
+    ) {
+      await yieldToEventLoop()
+    }
   }
 
   const targetBit = 1n << BigInt(PRODUCTION_COST_FIX)
@@ -11169,6 +11181,12 @@ function find311MaskCapacitySupportWitness(
         localOptionsByMask[forwardIndex],
       )
       blockSnapshots.push(blockState)
+      if (
+        yieldEveryMasks > 0 &&
+        (forwardIndex - blockStart + 1) % yieldEveryMasks === 0
+      ) {
+        await yieldToEventLoop()
+      }
     }
 
     for (; maskIndex >= blockStart; maskIndex -= 1) {
@@ -11257,14 +11275,14 @@ function find311MaskCapacitySupportWitness(
   return { support, capacities }
 }
 
-function bootstrap311HallCutsFromDpWitnesses(
+async function bootstrap311HallCutsFromDpWitnesses(
   domain: BatchOptimizationModel,
   groups: readonly PairGroup[],
-): number[][] {
+): Promise<number[][]> {
   const cuts: number[][] = []
   const keys = new Set<string>()
   for (const groupIndex of UNRESOLVED_311_EXTRA3_GROUP_INDEXES) {
-    const witness = find311MaskCapacitySupportWitness(
+    const witness = await find311MaskCapacitySupportWitness(
       groups,
       groupIndex,
     )
@@ -11290,7 +11308,7 @@ function bootstrap311HallCutsFromDpWitnesses(
 
 supportDpProfileIt(
   'counts exact 3+1+1 support roles before customer-flow validation',
-  () => {
+  async () => {
     const domain = canonicalDomain()
     const groups = pairGroups(domain)
     const rawGroupIndexes =
@@ -11310,7 +11328,8 @@ supportDpProfileIt(
         solveMs: number
       }
     >()
-    const results = targetGroupIndexes.map((groupIndex) => {
+    const results = []
+    for (const groupIndex of targetGroupIndexes) {
       const group = groups[groupIndex]
       expect(group).toBeDefined()
       const fixedCapacityFeasible =
@@ -11335,7 +11354,7 @@ supportDpProfileIt(
         groups,
         groupIndex,
       )
-      const witness = find311MaskCapacitySupportWitness(
+      const witness = await find311MaskCapacitySupportWitness(
         groups,
         groupIndex,
       )
@@ -11350,7 +11369,7 @@ supportDpProfileIt(
         assignment &&
         assignment.flow < SERVICEABLE_CUSTOMER_COUNT &&
         assignment.violatingGroupIndexes.length > 0
-          ? find311MaskCapacitySupportWitness(
+          ? await find311MaskCapacitySupportWitness(
               groups,
               groupIndex,
               assignment.violatingGroupIndexes,
@@ -11371,11 +11390,12 @@ supportDpProfileIt(
         assignment &&
         assignment.violatingGroupIndexes.length > 0 &&
         twoCutProbeGroupIndexes.has(groupIndex)
-          ? find311MaskCapacitySupportWitness(
+          ? await find311MaskCapacitySupportWitness(
               groups,
               groupIndex,
               assignment.violatingGroupIndexes,
               cutAssignment.violatingGroupIndexes,
+              8,
             )
           : null
       const twoCutAssignment = twoCutWitness
@@ -11385,7 +11405,7 @@ supportDpProfileIt(
             twoCutWitness.capacities,
           )
         : null
-      return {
+      results.push({
         groupIndex,
         groupCost: group.ingredientCost,
         arithmeticClass: cacheKey,
@@ -11409,8 +11429,8 @@ supportDpProfileIt(
         twoCutAssignmentFlow: twoCutAssignment?.flow ?? null,
         twoCutHallViolationGroups:
           twoCutAssignment?.violatingGroupIndexes.length ?? null,
-      }
-    })
+      })
+    }
     console.info(
       '[machine-support-dp-summary]',
       JSON.stringify({
