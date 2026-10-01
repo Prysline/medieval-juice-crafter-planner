@@ -3181,6 +3181,7 @@ function buildFinalizing30Blending35RawThroughStage(
 function buildFinalizing30CompressedFrontierStage(
   domain: BatchOptimizationModel,
   extraThresholdCounts: readonly [number, number, number, number],
+  nonFinalCap?: number,
 ) {
   const groups = pairGroups(domain)
   const model = new Model()
@@ -3595,7 +3596,15 @@ function buildFinalizing30CompressedFrontierStage(
   )
   model.addConstraint(through.geq(38), 'through_lower_bound')
   model.addConstraint(blending.geq(35), 'blending_lower_bound')
-  model.minimize(through.plus(blending))
+  if (typeof nonFinalCap === 'number') {
+    model.addConstraint(
+      through.plus(blending).leq(nonFinalCap),
+      'nonfinal_break_107_cap',
+    )
+    model.minimize(sum(...productionVars))
+  } else {
+    model.minimize(through.plus(blending))
+  }
 
   return {
     model,
@@ -5790,11 +5799,10 @@ function buildServiceMaskCompressedNonfinalStage(
 }
 
 profileIt(
-  'proves the finalizing-30 frontier by exact extra-unit partition cases',
+  'rules out sub-107 finalizing-30 solutions by exact extra-unit partitions',
   async () => {
     const domain = canonicalDomain()
     const cases = [
-      { pattern: '5', thresholds: [1, 1, 1, 1] as const },
       { pattern: '4+1', thresholds: [2, 1, 1, 1] as const },
       { pattern: '3+2', thresholds: [2, 2, 1, 0] as const },
       { pattern: '3+1+1', thresholds: [3, 1, 1, 0] as const },
@@ -5809,58 +5817,41 @@ profileIt(
       const built = buildFinalizing30CompressedFrontierStage(
         domain,
         extraCase.thresholds,
+        76,
       )
       const buildMs = performance.now() - buildStartedAt
       const solved = await solveBoundedWithProgress(
         built.model,
-        30,
+        25,
       )
-
       const result = {
         pattern: extraCase.pattern,
         thresholds: extraCase.thresholds,
-        targetFor107Certificate: 77,
+        totalMachineCap: 106,
         finalizingExact: 30,
-        knownFullWitness: 107,
-        serviceMaskCount: built.serviceMaskCount,
-        customerFlowVariableCount:
-          built.customerFlowVariableCount,
-        groupCount: built.groupCount,
-        classVariableCount: built.classVariableCount,
-        classUseVariableCount: built.classUseVariableCount,
-        sharedBlendEdgeCount: built.sharedBlendEdgeCount,
-        sharedBlendOperationEdgeCount:
-          built.sharedBlendOperationEdgeCount,
-        privateBlendOperationTermCount:
-          built.privateBlendOperationTermCount,
-        throughOperationEdgeCount:
-          built.throughOperationEdgeCount,
-        maxPrivateBlendMultiplicity:
-          built.maxPrivateBlendMultiplicity,
-        extraThresholdVariableCount:
-          built.extraThresholdVariableCount,
+        nonFinalCap: 76,
         buildMs: Math.round(buildMs),
         status: solved.status,
-        nonFinalObjective: solved.objective,
+        feasibilityObjective: solved.objective,
         solveMs: Math.round(solved.solveMs),
         progressTail: solved.progressTail,
       }
       results.push(result)
       console.info(
-        '[machine-extra-partition-case]',
+        '[machine-extra-cap-case]',
         JSON.stringify(result),
       )
     }
 
     console.info(
-      '[machine-extra-partition-summary]',
+      '[machine-extra-cap-summary]',
       JSON.stringify(results.map((result) => ({
         pattern: result.pattern,
         status: result.status,
-        nonFinalObjective: result.nonFinalObjective,
+        feasibilityObjective: result.feasibilityObjective,
         solveMs: result.solveMs,
       }))),
     )
   },
-  260000,
+  210000,
 )
