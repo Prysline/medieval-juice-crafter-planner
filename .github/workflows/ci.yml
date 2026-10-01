@@ -43,4 +43,5 @@ jobs:
       - name: Probe unsplit exact support master
         env:
           MACHINE_CONTINUATION_SINGLE_MASTER_GROUPS: '1279'
+          MACHINE_CONTINUATION_SUPPORT_DP_GROUPS: '1279'
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
