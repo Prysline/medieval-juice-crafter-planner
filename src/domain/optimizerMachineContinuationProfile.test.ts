@@ -181,6 +181,7 @@ function buildFullMachineCapFeasibility(
   >()
   const quantityUpperBoundByEdgeKey = new Map<string, number>()
   const kindByEdgeKey = new Map<string, ProductionStepKind>()
+  const finalizingGroupIndexByEdgeKey = new Map<string, number>()
   let recipeVariableCount = 0
 
   groups.forEach((group, groupIndex) => {
@@ -210,6 +211,9 @@ function buildFullMachineCapFeasibility(
           (multiplicityByEdgeKey.get(edge.key) ?? 0) + 1,
         )
         kindByEdgeKey.set(edge.key, edge.kind)
+        if (edge.kind === 'finalizing') {
+          finalizingGroupIndexByEdgeKey.set(edge.key, groupIndex)
+        }
       }
       for (const [edgeKey, multiplicity] of multiplicityByEdgeKey) {
         const terms = quantityTermsByEdgeKey.get(edgeKey)
@@ -757,6 +761,9 @@ function buildFlowProjectedFullMachineCapFeasibility(
     blending: [] as ReturnType<Model['intVar']>[],
     finalizing: [] as ReturnType<Model['intVar']>[],
   }
+  const finalizingOperationVarsByGroup = groups.map(
+    () => [] as ReturnType<Model['intVar']>[],
+  )
 
   ;[...quantityTermsByEdgeKey.entries()].forEach(
     ([edgeKey, terms], edgeIndex) => {
@@ -2551,7 +2558,24 @@ function buildConditionalThroughCapFeasibility(
         partitionOperationVars.blending.push(operation)
       } else if (kind === 'finalizing') {
         partitionOperationVars.finalizing.push(operation)
+        const groupIndex =
+          finalizingGroupIndexByEdgeKey.get(edgeKey)
+        if (typeof groupIndex !== 'number') {
+          throw new Error(
+            `Missing finalizing group index for ${edgeKey}`,
+          )
+        }
+        finalizingOperationVarsByGroup[groupIndex].push(operation)
       }
+    },
+  )
+
+  finalizingOperationVarsByGroup.forEach(
+    (groupOperations, groupIndex) => {
+      model.addConstraint(
+        sum(...groupOperations).leq(1),
+        `finalizing_single_identity_${groupIndex}`,
+      )
     },
   )
 
@@ -2751,59 +2775,87 @@ async function solveBounded(
 }
 
 profileIt(
-  'proves the used-group count on the exact finalizing-30 frontier',
+  'uses the exact finalizing group theorem to test the 106 frontier',
   async () => {
     const domain = canonicalDomain()
     expect(domain.recipes).toHaveLength(7892)
 
-    const results: Array<{
-      objective: 'minimum-groups' | 'maximum-groups'
-      status: string
-      value: number | null
-      solveMs: number
-    }> = []
-
-    for (const objective of [
+    const groupProof = buildFinalizingOptimalGroupCountStage(
+      domain,
       'minimum-groups',
-      'maximum-groups',
-    ] as const) {
-      const built = buildFinalizingOptimalGroupCountStage(
-        domain,
-        objective,
+    )
+    const groupProofStartedAt = performance.now()
+    const groupProofSolution = await groupProof.model.solve()
+    const groupProofSolveMs =
+      performance.now() - groupProofStartedAt
+    if (
+      groupProofSolution.status !== 'optimal' ||
+      typeof groupProofSolution.objective !== 'number' ||
+      !Number.isFinite(groupProofSolution.objective)
+    ) {
+      throw new Error(
+        `Finalizing used-group proof ended with ${groupProofSolution.status}`,
       )
-      const startedAt = performance.now()
-      const solution = await built.model.solve()
-      const solveMs = performance.now() - startedAt
-
-      let value: number | null = null
-      if (
-        solution.status === 'optimal' &&
-        typeof solution.objective === 'number' &&
-        Number.isFinite(solution.objective)
-      ) {
-        value =
-          objective === 'minimum-groups'
-            ? Math.round(solution.objective)
-            : Math.round(-solution.objective)
-      }
-
-      results.push({
-        objective,
-        status: solution.status,
-        value,
-        solveMs: Math.round(solveMs),
-      })
     }
+    const minimumUsedGroups =
+      Math.round(groupProofSolution.objective)
+    expect(minimumUsedGroups).toBe(30)
+
+    const buildStartedAt = performance.now()
+    const built = buildConditionalThroughCapFeasibility(
+      domain,
+      41,
+    )
+    const buildMs = performance.now() - buildStartedAt
+    const solved = await solveBoundedWithProgress(
+      built.model,
+      150,
+      {
+        mip_rel_gap: 0,
+        mip_abs_gap: 0,
+      },
+    )
 
     console.info(
-      '[machine-finalizing-used-group-range]',
+      '[machine-finalizing-structured-106-feasibility]',
       JSON.stringify({
-        finalizingOptimum: 30,
-        productionUnits: PRODUCTION_UNITS_FIX,
-        results,
+        finalizingTheorem: {
+          finalizingOptimum: 30,
+          minimumUsedGroups,
+          groupProofSolveMs: Math.round(groupProofSolveMs),
+          consequence:
+            'exactly 30 used groups; one recipe identity and <=5 units per used group',
+        },
+        frontier: {
+          throughLowerBound: 38,
+          throughCap: 41,
+          blending: 35,
+          finalizing: 30,
+        },
+        implication:
+          'feasible => <=106 exists; infeasible => optimum 107',
+        model: {
+          groupCount: built.groupCount,
+          customerFlowVariableCount:
+            built.customerFlowVariableCount,
+          recipeVariableCount: built.recipeVariableCount,
+          singletonSlackVariableCount:
+            built.singletonSlackVariableCount,
+          throughOperationEdgeCount:
+            built.throughOperationEdgeCount,
+          blendingOperationEdgeCount:
+            built.blendingOperationEdgeCount,
+          finalizingOperationEdgeCount:
+            built.finalizingOperationEdgeCount,
+        },
+        buildMs: Math.round(buildMs),
+        status: solved.status,
+        objective: solved.objective,
+        solveMs: Math.round(solved.solveMs),
+        progressTail: solved.progressTail,
       }),
     )
   },
-  90000,
+  210000,
 )
 
