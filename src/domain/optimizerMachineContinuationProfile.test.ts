@@ -7080,6 +7080,7 @@ function buildFinalizing30GroupSupportMaster(
     groups,
     groupProductionByIndex,
     usedGroupVars,
+    slackByGroupIndex,
     groupCount: groups.length,
     serviceMaskCount: maskCustomerIds.size,
     customerFlowVariableCount,
@@ -8613,34 +8614,115 @@ profileIt(
             finalStatus = 'infeasible'
             break
           }
+          if (!masterSolved.namedSolution) {
+            finalStatus =
+              `master-${masterSolved.status}-no-incumbent`
+            break
+          }
+
+          const productionByGroup = groups.map(
+            (_group, groupIndex) => {
+              const raw = masterSolved.namedSolution!.get(
+                `sgx_${groupIndex}`,
+              )
+              return typeof raw === 'number' &&
+                Number.isFinite(raw) &&
+                Math.abs(raw - Math.round(raw)) <= 1e-6
+                ? Math.round(raw)
+                : Number.NaN
+            },
+          )
+          const usedByGroup = groups.map(
+            (_group, groupIndex) => {
+              const raw = masterSolved.namedSolution!.get(
+                `sgu_${groupIndex}`,
+              )
+              return typeof raw === 'number' &&
+                Number.isFinite(raw) &&
+                Math.abs(raw - Math.round(raw)) <= 1e-6
+                ? Math.round(raw)
+                : Number.NaN
+            },
+          )
+          const slackByGroup = groups.map(
+            (group, groupIndex) => {
+              if (
+                group.ingredientCost !== SLACK_RECIPE_COST
+              ) {
+                return 0
+              }
+              const raw = masterSolved.namedSolution!.get(
+                `sgs_${groupIndex}`,
+              )
+              return typeof raw === 'number' &&
+                Number.isFinite(raw) &&
+                Math.abs(raw - Math.round(raw)) <= 1e-6
+                ? Math.round(raw)
+                : Number.NaN
+            },
+          )
+          const supportInvariantValid =
+            productionByGroup.every(Number.isFinite) &&
+            usedByGroup.every(
+              (used) => used === 0 || used === 1,
+            ) &&
+            slackByGroup.every(
+              (slack) => slack === 0 || slack === 1,
+            ) &&
+            productionByGroup.reduce(
+              (total, units) => total + units,
+              0,
+            ) === PRODUCTION_UNITS_FIX &&
+            usedByGroup.reduce(
+              (total, used) => total + used,
+              0,
+            ) === 30 &&
+            slackByGroup.reduce(
+              (total, slack) => total + slack,
+              0,
+            ) === GLOBAL_SERVING_SLACK &&
+            groups.reduce(
+              (total, group, groupIndex) =>
+                total +
+                group.ingredientCost *
+                  productionByGroup[groupIndex],
+              0,
+            ) === PRODUCTION_COST_FIX &&
+            groups.every((_group, groupIndex) => {
+              const units = productionByGroup[groupIndex]
+              const used = usedByGroup[groupIndex]
+              return (
+                units >= used &&
+                (used === 1 || units === 0) &&
+                units <= PROCESSING_STACK_CAPACITY
+              )
+            })
+          const capacities = productionByGroup.map(
+            (units, groupIndex) =>
+              units * 2 - slackByGroup[groupIndex],
+          )
+          const assignmentFlow = supportInvariantValid
+            ? maximumAssignmentFlowForGroupCapacities(
+                groups,
+                domain.serviceableCustomerIds,
+                capacities,
+              ).flow
+            : -1
           if (
-            masterSolved.status !== 'optimal' ||
-            !masterSolved.namedSolution
+            !supportInvariantValid ||
+            assignmentFlow !==
+              domain.serviceableCustomerIds.length
           ) {
-            finalStatus = `master-${masterSolved.status}`
+            finalStatus =
+              `master-${masterSolved.status}-invalid-incumbent`
             break
           }
 
           const extraEntries = groups.flatMap(
             (_group, groupIndex) => {
-              const productionRaw = masterSolved.namedSolution!.get(
-                `gox_${groupIndex}`,
-              )
-              const usedRaw = masterSolved.namedSolution!.get(
-                `gou_${groupIndex}`,
-              )
-              if (
-                typeof productionRaw !== 'number' ||
-                !Number.isFinite(productionRaw) ||
-                typeof usedRaw !== 'number' ||
-                !Number.isFinite(usedRaw)
-              ) {
-                throw new Error(
-                  `Missing extra identity solution for group ${groupIndex}`,
-                )
-              }
               const extra =
-                Math.round(productionRaw) - Math.round(usedRaw)
+                productionByGroup[groupIndex] -
+                usedByGroup[groupIndex]
               return extra > 0 ? [{ groupIndex, extra }] : []
             },
           )
@@ -8691,6 +8773,7 @@ profileIt(
               iteration: iteration + 1,
               extraEntries,
               masterStatus: masterSolved.status,
+              masterValidatedIncumbent: true,
               exactStatus: exactSolved.status,
               exactObjective: exactSolved.objective,
               masterSolveMs: Math.round(masterSolved.solveMs),
