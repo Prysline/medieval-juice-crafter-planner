@@ -61,7 +61,6 @@ const extraSumProfileIt =
     : it.skip
 
 const supportDpProfileIt =
-  machineContinuationEnv.MACHINE_CONTINUATION_PROFILE === '1' &&
   Boolean(machineContinuationEnv.MACHINE_CONTINUATION_SUPPORT_DP_GROUPS)
     ? it
     : it.skip
