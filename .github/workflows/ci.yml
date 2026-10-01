@@ -58,7 +58,7 @@ jobs:
 
   machine-continuation-partial-support:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-slack-split (${{ matrix.chunk }})
+    name: machine-extra-sum (${{ matrix.chunk }})
     strategy:
       fail-fast: false
       matrix:
@@ -78,9 +78,9 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - name: Run specialized slack-split machine continuation profiler
+      - name: Run extra-bearing cost-sum machine continuation profiler
         env:
           MACHINE_CONTINUATION_PROFILE: '1'
-          MACHINE_CONTINUATION_SLACK_SPLIT_GROUPS: ${{ matrix.groups }}
+          MACHINE_CONTINUATION_EXTRA_SUM_GROUPS: ${{ matrix.groups }}
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
 
