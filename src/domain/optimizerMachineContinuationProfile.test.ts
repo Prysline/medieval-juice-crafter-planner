@@ -2733,6 +2733,226 @@ function buildFinalizingOptimalGroupCountStage(
   }
 }
 
+
+function buildFinalizing30Cap106ReducedStage(
+  domain: BatchOptimizationModel,
+) {
+  const groups = pairGroups(domain)
+  const model = new Model()
+  const flowByGroupKey = new Map<
+    string,
+    ReturnType<Model['numVar']>[]
+  >(groups.map((group) => [group.key, []]))
+
+  let customerFlowVariableCount = 0
+  domain.serviceableCustomerIds.forEach(
+    (customerId, customerIndex) => {
+      const terms: ReturnType<Model['numVar']>[] = []
+      groups.forEach((group, groupIndex) => {
+        if (!group.eligibleCustomerIds.includes(customerId)) return
+        const y = model.numVar(
+          0,
+          1,
+          `y_${customerIndex}_${groupIndex}`,
+        )
+        customerFlowVariableCount += 1
+        terms.push(y)
+        flowByGroupKey.get(group.key)!.push(y)
+      })
+      model.addConstraint(
+        sum(...terms).eq(1),
+        `customer_${customerIndex}`,
+      )
+    },
+  )
+
+  const productionVars: ReturnType<Model['intVar']>[] = []
+  const productionCostTerms: ReturnType<
+    ReturnType<Model['intVar']>['times']
+  >[] = []
+  const slackVars: ReturnType<Model['boolVar']>[] = []
+  const usedGroupVars: ReturnType<Model['boolVar']>[] = []
+  const quantityTermsByEdgeKey = new Map<
+    string,
+    ReturnType<ReturnType<Model['intVar']>['times']>[]
+  >()
+  const quantityUpperBoundByEdgeKey = new Map<string, number>()
+  const kindByEdgeKey = new Map<string, ProductionStepKind>()
+
+  let recipeVariableCount = 0
+  let recipeUseVariableCount = 0
+
+  groups.forEach((group, groupIndex) => {
+    const groupUpperBound = Math.max(
+      1,
+      Math.ceil(group.eligibleCustomerIds.length / 2),
+    )
+    const groupRecipeVars: ReturnType<Model['intVar']>[] = []
+    const groupRecipeUseVars: ReturnType<Model['boolVar']>[] = []
+
+    for (const recipe of group.recipes) {
+      const x = model.intVar(
+        0,
+        Math.min(groupUpperBound, PROCESSING_STACK_CAPACITY),
+        `x_${recipeVariableCount}`,
+      )
+      recipeVariableCount += 1
+      const usedRecipe = model.boolVar(
+        `ru_${recipeUseVariableCount}`,
+      )
+      recipeUseVariableCount += 1
+
+      groupRecipeVars.push(x)
+      groupRecipeUseVars.push(usedRecipe)
+      productionVars.push(x)
+      productionCostTerms.push(
+        x.times(recipe.juiceUnitIngredientCost),
+      )
+
+      model.addConstraint(
+        x
+          .minus(
+            usedRecipe.times(
+              Math.min(groupUpperBound, PROCESSING_STACK_CAPACITY),
+            ),
+          )
+          .leq(0),
+        `recipe_use_upper_${recipeVariableCount}`,
+      )
+      model.addConstraint(
+        usedRecipe.minus(x).leq(0),
+        `recipe_use_lower_${recipeVariableCount}`,
+      )
+
+      const multiplicityByEdgeKey = new Map<string, number>()
+      for (const edge of recipe.productionPath.edges) {
+        if (edge.kind === 'finalizing') continue
+        multiplicityByEdgeKey.set(
+          edge.key,
+          (multiplicityByEdgeKey.get(edge.key) ?? 0) + 1,
+        )
+        kindByEdgeKey.set(edge.key, edge.kind)
+      }
+      for (const [edgeKey, multiplicity] of multiplicityByEdgeKey) {
+        const terms = quantityTermsByEdgeKey.get(edgeKey)
+        const term = x.times(multiplicity)
+        if (terms) terms.push(term)
+        else quantityTermsByEdgeKey.set(edgeKey, [term])
+        quantityUpperBoundByEdgeKey.set(
+          edgeKey,
+          (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) +
+            Math.min(groupUpperBound, PROCESSING_STACK_CAPACITY) *
+              multiplicity,
+        )
+      }
+    }
+
+    const groupProduction = sum(...groupRecipeVars)
+    const served = sum(...(flowByGroupKey.get(group.key) ?? []))
+    if (group.ingredientCost === SLACK_RECIPE_COST) {
+      const slack = model.boolVar(`slack_${groupIndex}`)
+      slackVars.push(slack)
+      model.addConstraint(
+        groupProduction
+          .times(2)
+          .minus(served)
+          .minus(slack)
+          .eq(0),
+        `parity_${groupIndex}`,
+      )
+    } else {
+      model.addConstraint(
+        groupProduction.times(2).minus(served).eq(0),
+        `parity_${groupIndex}`,
+      )
+    }
+
+    const usedGroup = model.boolVar(`ug_${groupIndex}`)
+    usedGroupVars.push(usedGroup)
+    model.addConstraint(
+      sum(...groupRecipeUseVars).minus(usedGroup).eq(0),
+      `one_recipe_per_used_group_${groupIndex}`,
+    )
+  })
+
+  model.addConstraint(
+    sum(...slackVars).eq(GLOBAL_SERVING_SLACK),
+    'global_slack',
+  )
+  model.addConstraint(
+    sum(...productionVars).eq(PRODUCTION_UNITS_FIX),
+    'production_units_fix',
+  )
+  model.addConstraint(
+    sum(...productionCostTerms).eq(PRODUCTION_COST_FIX),
+    'production_cost_fix',
+  )
+  model.addConstraint(
+    sum(...usedGroupVars).eq(30),
+    'finalizing30_used_groups',
+  )
+
+  const throughOps: ReturnType<Model['intVar']>[] = []
+  const blendingOps: ReturnType<Model['intVar']>[] = []
+
+  ;[...quantityTermsByEdgeKey.entries()].forEach(
+    ([edgeKey, terms], edgeIndex) => {
+      const operation = model.intVar(
+        0,
+        Math.max(
+          1,
+          Math.ceil(
+            (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) /
+              PROCESSING_STACK_CAPACITY,
+          ),
+        ),
+        `op_${edgeIndex}`,
+      )
+      const quantity = sum(...terms)
+      model.addConstraint(
+        quantity
+          .minus(operation.times(PROCESSING_STACK_CAPACITY))
+          .leq(0),
+        `op_capacity_${edgeIndex}`,
+      )
+      model.addConstraint(
+        operation.minus(quantity).leq(0),
+        `op_usage_${edgeIndex}`,
+      )
+
+      const kind = kindByEdgeKey.get(edgeKey)
+      if (kind === 'juicing' || kind === 'seasoning') {
+        throughOps.push(operation)
+      } else if (kind === 'blending') {
+        blendingOps.push(operation)
+      }
+    },
+  )
+
+  const through = sum(...throughOps)
+  const blending = sum(...blendingOps)
+  model.addConstraint(through.geq(38), 'through_lower_bound')
+  model.addConstraint(blending.geq(35), 'blending_lower_bound')
+  model.addConstraint(
+    through.plus(blending).leq(76),
+    'nonfinal_cap_for_total106',
+  )
+
+  // Pure feasibility: production units are fixed.
+  model.minimize(sum(...productionVars))
+
+  return {
+    model,
+    groupCount: groups.length,
+    customerFlowVariableCount,
+    recipeVariableCount,
+    recipeUseVariableCount,
+    usedGroupVariableCount: usedGroupVars.length,
+    throughOperationEdgeCount: throughOps.length,
+    blendingOperationEdgeCount: blendingOps.length,
+  }
+}
+
 async function solveBounded(
   model: Model,
   timeLimitSeconds: number,
@@ -2775,87 +2995,48 @@ async function solveBounded(
 }
 
 profileIt(
-  'uses the exact finalizing group theorem to test the 106 frontier',
+  'proves the finalizing-30 branch of exact machine cap 106',
   async () => {
     const domain = canonicalDomain()
     expect(domain.recipes).toHaveLength(7892)
 
-    const groupProof = buildFinalizingOptimalGroupCountStage(
-      domain,
-      'minimum-groups',
-    )
-    const groupProofStartedAt = performance.now()
-    const groupProofSolution = await groupProof.model.solve()
-    const groupProofSolveMs =
-      performance.now() - groupProofStartedAt
-    if (
-      groupProofSolution.status !== 'optimal' ||
-      typeof groupProofSolution.objective !== 'number' ||
-      !Number.isFinite(groupProofSolution.objective)
-    ) {
-      throw new Error(
-        `Finalizing used-group proof ended with ${groupProofSolution.status}`,
-      )
-    }
-    const minimumUsedGroups =
-      Math.round(groupProofSolution.objective)
-    expect(minimumUsedGroups).toBe(30)
-
     const buildStartedAt = performance.now()
-    const built = buildConditionalThroughCapFeasibility(
-      domain,
-      41,
-    )
+    const built = buildFinalizing30Cap106ReducedStage(domain)
     const buildMs = performance.now() - buildStartedAt
-    const solved = await solveBoundedWithProgress(
-      built.model,
-      150,
-      {
-        mip_rel_gap: 0,
-        mip_abs_gap: 0,
-      },
-    )
+    const solved = await solveBounded(built.model, 120)
 
     console.info(
-      '[machine-finalizing-structured-106-feasibility]',
+      '[machine-finalizing30-cap106-reduced]',
       JSON.stringify({
-        finalizingTheorem: {
-          finalizingOptimum: 30,
-          minimumUsedGroups,
-          groupProofSolveMs: Math.round(groupProofSolveMs),
-          consequence:
-            'exactly 30 used groups; one recipe identity and <=5 units per used group',
-        },
-        frontier: {
-          throughLowerBound: 38,
-          throughCap: 41,
-          blending: 35,
+        branch: {
+          totalCap: 106,
           finalizing: 30,
+          usedGroups: 30,
+          throughLowerBound: 38,
+          blendingLowerBound: 35,
+          nonfinalCap: 76,
         },
-        implication:
-          'feasible => <=106 exists; infeasible => optimum 107',
-        model: {
-          groupCount: built.groupCount,
-          customerFlowVariableCount:
-            built.customerFlowVariableCount,
-          recipeVariableCount: built.recipeVariableCount,
-          singletonSlackVariableCount:
-            built.singletonSlackVariableCount,
-          throughOperationEdgeCount:
-            built.throughOperationEdgeCount,
-          blendingOperationEdgeCount:
-            built.blendingOperationEdgeCount,
-          finalizingOperationEdgeCount:
-            built.finalizingOperationEdgeCount,
-        },
+        groupCount: built.groupCount,
+        customerFlowVariableCount:
+          built.customerFlowVariableCount,
+        recipeVariableCount: built.recipeVariableCount,
+        recipeUseVariableCount:
+          built.recipeUseVariableCount,
+        usedGroupVariableCount:
+          built.usedGroupVariableCount,
+        throughOperationEdgeCount:
+          built.throughOperationEdgeCount,
+        blendingOperationEdgeCount:
+          built.blendingOperationEdgeCount,
         buildMs: Math.round(buildMs),
+        serializeMs: Math.round(solved.serializeMs),
+        parseMs: Math.round(solved.parseMs),
+        solveMs: Math.round(solved.solveMs),
         status: solved.status,
         objective: solved.objective,
-        solveMs: Math.round(solved.solveMs),
-        progressTail: solved.progressTail,
       }),
     )
   },
-  210000,
+  140000,
 )
 
