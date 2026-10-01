@@ -6642,69 +6642,386 @@ function buildAggregateSharedEdgeFrontierMaster(
 
 
 
-profileIt(
-  'reports finalizing-30 singleton and extra-group identity structure',
-  () => {
-    const domain = canonicalDomain()
-    const groups = pairGroups(domain)
-    const structural = groups.map((group, groupIndex) => ({
-      groupIndex,
-      ingredientCost: group.ingredientCost,
-      eligibleCustomerIds: group.eligibleCustomerIds,
-      eligibleCustomerCount: group.eligibleCustomerIds.length,
-      maxUnits: Math.min(
-        PROCESSING_STACK_CAPACITY,
-        Math.max(1, Math.ceil(group.eligibleCustomerIds.length / 2)),
-      ),
-      recipeCount: group.recipes.length,
-    }))
-    const singletonCandidates = structural.filter(
-      (group) => group.ingredientCost === SLACK_RECIPE_COST,
-    )
-    const capacityCounts = Array.from(
-      { length: PROCESSING_STACK_CAPACITY },
-      (_, unitsMinusOne) => ({
-        minUnits: unitsMinusOne + 1,
-        count: structural.filter(
-          (group) => group.maxUnits >= unitsMinusOne + 1,
-        ).length,
-        cost43Count: singletonCandidates.filter(
-          (group) => group.maxUnits >= unitsMinusOne + 1,
-        ).length,
-      }),
-    )
-    const costFrequency = [...new Map<number, number>(
-      structural.map((group) => [group.ingredientCost, 0]),
-    ).keys()]
-      .sort((a, b) => a - b)
-      .map((cost) => ({
-        cost,
-        groupCount: structural.filter(
-          (group) => group.ingredientCost === cost,
-        ).length,
-        extraCapableGroupCount: structural.filter(
-          (group) =>
-            group.ingredientCost === cost && group.maxUnits >= 2,
-        ).length,
-      }))
 
-    console.info(
-      '[machine-final30-identity-structure]',
-      JSON.stringify({
-        groupCount: groups.length,
-        serviceMaskCount: new Set(
-          groups.map((group) =>
-            group.eligibleCustomerIds.join('\\u001e'),
-          ),
-        ).size,
-        singletonCost: SLACK_RECIPE_COST,
-        singletonCandidateCount: singletonCandidates.length,
-        singletonCandidates,
-        capacityCounts,
-        costFrequency,
-      }),
+function buildOptimisticGroupOnlyFrontierMaster(
+  domain: BatchOptimizationModel,
+  extraThresholdCounts: readonly [number, number, number, number],
+) {
+  const groups = pairGroups(domain)
+  const model = new Model()
+
+  const maskKeyForGroup = (group: PairGroup) =>
+    group.eligibleCustomerIds.join('\u001e')
+  const maskCustomerIds = new Map<string, string[]>()
+  const groupIndexesByMask = new Map<string, number[]>()
+  groups.forEach((group, groupIndex) => {
+    const maskKey = maskKeyForGroup(group)
+    if (!maskCustomerIds.has(maskKey)) {
+      maskCustomerIds.set(maskKey, group.eligibleCustomerIds)
+    }
+    const indexes = groupIndexesByMask.get(maskKey)
+    if (indexes) indexes.push(groupIndex)
+    else groupIndexesByMask.set(maskKey, [groupIndex])
+  })
+
+  const flowByMask = new Map<
+    string,
+    ReturnType<Model['numVar']>[]
+  >([...maskCustomerIds.keys()].map((maskKey) => [maskKey, []]))
+  domain.serviceableCustomerIds.forEach(
+    (customerId, customerIndex) => {
+      const terms: ReturnType<Model['numVar']>[] = []
+      ;[...maskCustomerIds.entries()].forEach(
+        ([maskKey, eligibleCustomerIds], maskIndex) => {
+          if (!eligibleCustomerIds.includes(customerId)) return
+          const y = model.numVar(
+            0,
+            1,
+            `goy_${customerIndex}_${maskIndex}`,
+          )
+          terms.push(y)
+          flowByMask.get(maskKey)!.push(y)
+        },
+      )
+      model.addConstraint(
+        sum(...terms).eq(1),
+        `go_customer_${customerIndex}`,
+      )
+    },
+  )
+
+  const throughOwners = new Map<string, Set<number>>()
+  const blendingOwners = new Map<string, Set<number>>()
+  groups.forEach((group, groupIndex) => {
+    for (const recipe of group.recipes) {
+      for (const edge of recipe.productionPath.edges) {
+        const owners =
+          edge.kind === 'juicing' || edge.kind === 'seasoning'
+            ? throughOwners
+            : edge.kind === 'blending'
+              ? blendingOwners
+              : null
+        if (!owners) continue
+        const current = owners.get(edge.key) ?? new Set<number>()
+        current.add(groupIndex)
+        owners.set(edge.key, current)
+      }
+    }
+  })
+  const sharedThroughEdgeKeys = new Set(
+    [...throughOwners.entries()]
+      .filter(([, owners]) => owners.size > 1)
+      .map(([key]) => key),
+  )
+  const sharedBlendingEdgeKeys = new Set(
+    [...blendingOwners.entries()]
+      .filter(([, owners]) => owners.size > 1)
+      .map(([key]) => key),
+  )
+
+  const productionVars: ReturnType<Model['intVar']>[] = []
+  const productionCostTerms: ReturnType<
+    ReturnType<Model['intVar']>['times']
+  >[] = []
+  const groupProductionByIndex = new Map<
+    number,
+    ReturnType<Model['intVar']>
+  >()
+  const usedGroupVars: ReturnType<Model['boolVar']>[] = []
+  const slackVars: ReturnType<Model['boolVar']>[] = []
+  const slackByGroupIndex = new Map<
+    number,
+    ReturnType<Model['boolVar']>
+  >()
+  const extraThresholdVarsByLevel = Array.from(
+    { length: PROCESSING_STACK_CAPACITY - 1 },
+    () => [] as ReturnType<Model['boolVar']>[],
+  )
+  const privateThroughTerms: ReturnType<
+    ReturnType<Model['boolVar']>['times']
+  >[] = []
+  const sharedThroughTerms: ReturnType<
+    ReturnType<Model['intVar']>['times']
+  >[] = []
+  let sharedThroughUpperBound = 0
+  const privateBlendTerms: ReturnType<
+    ReturnType<Model['boolVar']>['times']
+  >[] = []
+  const sharedBlendTerms: ReturnType<
+    ReturnType<Model['intVar']>['times']
+  >[] = []
+  let sharedBlendUpperBound = 0
+
+  groups.forEach((group, groupIndex) => {
+    const upperBound = Math.min(
+      PROCESSING_STACK_CAPACITY,
+      Math.max(1, Math.ceil(group.eligibleCustomerIds.length / 2)),
     )
-    expect(singletonCandidates.length).toBeGreaterThan(0)
+    const x = model.intVar(0, upperBound, `gox_${groupIndex}`)
+    const used = model.boolVar(`gou_${groupIndex}`)
+    productionVars.push(x)
+    usedGroupVars.push(used)
+    groupProductionByIndex.set(groupIndex, x)
+    productionCostTerms.push(x.times(group.ingredientCost))
+    model.addConstraint(
+      x.minus(used.times(upperBound)).leq(0),
+      `go_use_upper_${groupIndex}`,
+    )
+    model.addConstraint(
+      used.minus(x).leq(0),
+      `go_use_lower_${groupIndex}`,
+    )
+
+    const profiles = group.recipes.map((recipe) => {
+      const throughMultiplicity = new Map<string, number>()
+      const blendMultiplicity = new Map<string, number>()
+      for (const edge of recipe.productionPath.edges) {
+        if (edge.kind === 'juicing' || edge.kind === 'seasoning') {
+          throughMultiplicity.set(
+            edge.key,
+            (throughMultiplicity.get(edge.key) ?? 0) + 1,
+          )
+        } else if (edge.kind === 'blending') {
+          blendMultiplicity.set(
+            edge.key,
+            (blendMultiplicity.get(edge.key) ?? 0) + 1,
+          )
+        }
+      }
+      let privateThrough = 0
+      let sharedThrough = 0
+      for (const [key, multiplicity] of throughMultiplicity) {
+        if (sharedThroughEdgeKeys.has(key)) {
+          sharedThrough += multiplicity
+        } else {
+          privateThrough += 1
+        }
+      }
+      let privateBlend = 0
+      let sharedBlend = 0
+      for (const [key, multiplicity] of blendMultiplicity) {
+        if (sharedBlendingEdgeKeys.has(key)) {
+          sharedBlend += multiplicity
+        } else {
+          privateBlend += 1
+        }
+      }
+      return {
+        privateThrough,
+        sharedThrough,
+        privateBlend,
+        sharedBlend,
+      }
+    })
+    const minPrivateThrough = Math.min(
+      ...profiles.map((profile) => profile.privateThrough),
+    )
+    const minSharedThrough = Math.min(
+      ...profiles.map((profile) => profile.sharedThrough),
+    )
+    const minPrivateBlend = Math.min(
+      ...profiles.map((profile) => profile.privateBlend),
+    )
+    const minSharedBlend = Math.min(
+      ...profiles.map((profile) => profile.sharedBlend),
+    )
+
+    if (minPrivateThrough > 0) {
+      privateThroughTerms.push(used.times(minPrivateThrough))
+    }
+    if (minSharedThrough > 0) {
+      sharedThroughTerms.push(x.times(minSharedThrough))
+      sharedThroughUpperBound += upperBound * minSharedThrough
+    }
+    if (minPrivateBlend > 0) {
+      privateBlendTerms.push(used.times(minPrivateBlend))
+    }
+    if (minSharedBlend > 0) {
+      sharedBlendTerms.push(x.times(minSharedBlend))
+      sharedBlendUpperBound += upperBound * minSharedBlend
+    }
+
+    if (group.ingredientCost === SLACK_RECIPE_COST) {
+      const slack = model.boolVar(`gos_${groupIndex}`)
+      slackVars.push(slack)
+      slackByGroupIndex.set(groupIndex, slack)
+      model.addConstraint(
+        slack.minus(used).leq(0),
+        `go_slack_used_${groupIndex}`,
+      )
+    }
+
+    const thresholds = Array.from(
+      { length: Math.max(0, upperBound - 1) },
+      (_, thresholdIndex) => {
+        const threshold = model.boolVar(
+          `goe_${thresholdIndex + 1}_${groupIndex}`,
+        )
+        extraThresholdVarsByLevel[thresholdIndex].push(threshold)
+        return threshold
+      },
+    )
+    model.addConstraint(
+      x.minus(used).minus(sum(...thresholds)).eq(0),
+      `go_exact_extra_${groupIndex}`,
+    )
+    for (
+      let thresholdIndex = 1;
+      thresholdIndex < thresholds.length;
+      thresholdIndex += 1
+    ) {
+      model.addConstraint(
+        thresholds[thresholdIndex]
+          .minus(thresholds[thresholdIndex - 1])
+          .leq(0),
+        `go_extra_monotone_${groupIndex}_${thresholdIndex}`,
+      )
+    }
+  })
+
+  let maskIndex = 0
+  for (const [maskKey, groupIndexes] of groupIndexesByMask) {
+    const capacityTerms = groupIndexes.map((groupIndex) =>
+      groupProductionByIndex.get(groupIndex)!.times(2),
+    )
+    const maskSlacks = groupIndexes.flatMap((groupIndex) => {
+      const slack = slackByGroupIndex.get(groupIndex)
+      return slack ? [slack] : []
+    })
+    model.addConstraint(
+      sum(...capacityTerms)
+        .minus(sum(...maskSlacks))
+        .minus(sum(...(flowByMask.get(maskKey) ?? [])))
+        .eq(0),
+      `go_mask_capacity_${maskIndex}`,
+    )
+    maskIndex += 1
+  }
+
+  model.addConstraint(
+    sum(...slackVars).eq(GLOBAL_SERVING_SLACK),
+    'go_global_slack',
+  )
+  model.addConstraint(
+    sum(...productionVars).eq(PRODUCTION_UNITS_FIX),
+    'go_production_units',
+  )
+  model.addConstraint(
+    sum(...productionCostTerms).eq(PRODUCTION_COST_FIX),
+    'go_production_cost',
+  )
+  model.addConstraint(
+    sum(...usedGroupVars).eq(30),
+    'go_used_groups',
+  )
+  extraThresholdCounts.forEach((count, thresholdIndex) => {
+    model.addConstraint(
+      sum(...extraThresholdVarsByLevel[thresholdIndex]).eq(count),
+      `go_extra_count_${thresholdIndex + 1}`,
+    )
+  })
+
+  const sharedThroughOp = model.intVar(
+    0,
+    Math.max(
+      1,
+      Math.ceil(sharedThroughUpperBound / PROCESSING_STACK_CAPACITY),
+    ),
+    'go_shared_through_op',
+  )
+  const sharedThroughQuantity = sum(...sharedThroughTerms)
+  model.addConstraint(
+    sharedThroughQuantity
+      .minus(sharedThroughOp.times(PROCESSING_STACK_CAPACITY))
+      .leq(0),
+    'go_shared_through_capacity',
+  )
+  model.addConstraint(
+    sharedThroughOp.minus(sharedThroughQuantity).leq(0),
+    'go_shared_through_usage',
+  )
+
+  const sharedBlendOp = model.intVar(
+    0,
+    Math.max(
+      1,
+      Math.ceil(sharedBlendUpperBound / PROCESSING_STACK_CAPACITY),
+    ),
+    'go_shared_blend_op',
+  )
+  const sharedBlendQuantity = sum(...sharedBlendTerms)
+  model.addConstraint(
+    sharedBlendQuantity
+      .minus(sharedBlendOp.times(PROCESSING_STACK_CAPACITY))
+      .leq(0),
+    'go_shared_blend_capacity',
+  )
+  model.addConstraint(
+    sharedBlendOp.minus(sharedBlendQuantity).leq(0),
+    'go_shared_blend_usage',
+  )
+
+  model.addConstraint(
+    sum(...privateThroughTerms, sharedThroughOp).leq(41),
+    'go_through_cap',
+  )
+  model.addConstraint(
+    sum(...privateBlendTerms, sharedBlendOp).leq(35),
+    'go_blending_cap',
+  )
+  model.minimize(sum(...productionVars))
+  return {
+    model,
+    groupCount: groups.length,
+    serviceMaskCount: maskCustomerIds.size,
+  }
+}
+
+
+profileIt(
+  'checks optimistic group-only finalizing-30 extra frontiers',
+  async () => {
+    const domain = canonicalDomain()
+    const cases = [
+      { pattern: '4+1', thresholds: [2, 1, 1, 1] as const },
+      { pattern: '3+2', thresholds: [2, 2, 1, 0] as const },
+      { pattern: '3+1+1', thresholds: [3, 1, 1, 0] as const },
+      { pattern: '2+2+1', thresholds: [3, 2, 0, 0] as const },
+      { pattern: '2+1+1+1', thresholds: [4, 1, 0, 0] as const },
+      { pattern: '1+1+1+1+1', thresholds: [5, 0, 0, 0] as const },
+    ]
+    const results = []
+    for (const extraCase of cases) {
+      const built = buildOptimisticGroupOnlyFrontierMaster(
+        domain,
+        extraCase.thresholds,
+      )
+      const solved = await solveBoundedWithProgress(built.model, 10)
+      const result = {
+        pattern: extraCase.pattern,
+        status: solved.status,
+        objective: solved.objective,
+        solveMs: Math.round(solved.solveMs),
+        groupCount: built.groupCount,
+        serviceMaskCount: built.serviceMaskCount,
+        progressTail: solved.progressTail,
+      }
+      results.push(result)
+      console.info(
+        '[machine-group-only-case]',
+        JSON.stringify(result),
+      )
+    }
+    console.info(
+      '[machine-group-only-summary]',
+      JSON.stringify(
+        results.map((result) => ({
+          pattern: result.pattern,
+          status: result.status,
+          objective: result.objective,
+        })),
+      ),
+    )
   },
-  30000,
+  120000,
 )
