@@ -1278,6 +1278,44 @@ function exactDominatedRecipeIds(
   return dominated
 }
 
+
+async function solveBoundedWithProgress(
+  model: Model,
+  timeLimitSeconds: number,
+): Promise<{
+  status: string
+  objective: number | null
+  solveMs: number
+  progressTail: string[]
+}> {
+  const progress: string[] = []
+  const highs = await HiGHS.create({
+    console: {
+      log: (message: string) => progress.push(message),
+      error: (message: string) => progress.push(message),
+    },
+  })
+  try {
+    await highs.parse(model.print('mps'), 'mps')
+    highs.setParam('time_limit', timeLimitSeconds)
+    const startedAt = performance.now()
+    const solution = await highs.solve()
+    const solveMs = performance.now() - startedAt
+    return {
+      status: solution.status,
+      objective:
+        typeof solution.objective === 'number' &&
+        Number.isFinite(solution.objective)
+          ? solution.objective
+          : null,
+      solveMs,
+      progressTail: progress.slice(-40),
+    }
+  } finally {
+    highs.free()
+  }
+}
+
 async function solveBounded(
   model: Model,
   timeLimitSeconds: number,
@@ -1320,40 +1358,27 @@ async function solveBounded(
 }
 
 profileIt(
-  'measures exact non-final edge-superset dominance',
+  'captures HiGHS branch-and-bound progress for the exact non-final model',
   async () => {
     const domain = canonicalDomain()
     expect(domain.recipes).toHaveLength(7892)
-    const dominated = exactDominatedRecipeIds(domain)
-    const groups = pairGroups(domain)
 
-    const retainedByGroup = groups.map((group) => ({
-      total: group.recipes.length,
-      retained: group.recipes.filter(
-        (recipe) => !dominated.has(recipe.candidate.id),
-      ).length,
-    }))
+    const built = buildFlowProjectedNonfinalStage(domain)
+    const solved = await solveBoundedWithProgress(
+      built.model,
+      60,
+    )
 
     console.info(
-      '[machine-exact-dominance]',
+      '[machine-nonfinal-progress]',
       JSON.stringify({
-        recipeCount: domain.recipes.length,
-        groupCount: groups.length,
-        dominatedRecipeCount: dominated.size,
-        retainedRecipeCount:
-          domain.recipes.length - dominated.size,
-        groupsWithPruning: retainedByGroup.filter(
-          (entry) => entry.retained < entry.total,
-        ).length,
-        maxGroupSize: Math.max(
-          ...retainedByGroup.map((entry) => entry.total),
-        ),
-        maxRetainedGroupSize: Math.max(
-          ...retainedByGroup.map((entry) => entry.retained),
-        ),
+        status: solved.status,
+        objective: solved.objective,
+        solveMs: Math.round(solved.solveMs),
+        progressTail: solved.progressTail,
       }),
     )
   },
-  30000,
+  80000,
 )
 
