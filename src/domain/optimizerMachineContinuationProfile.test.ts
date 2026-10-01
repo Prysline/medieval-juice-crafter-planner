@@ -7662,7 +7662,7 @@ it.skip(
 // CI trigger: structural-signature exact frontier profile
 
 
-it.skip(
+profileIt(
   'checks singleton-group exact extra subcases',
   async () => {
     const domain = canonicalDomain()
@@ -7726,7 +7726,7 @@ it.skip(
 )
 
 
-profileIt(
+it.skip(
   'enumerates singleton group for all-ones extra pattern',
   async () => {
     const domain = canonicalDomain()
@@ -7775,7 +7775,7 @@ profileIt(
 )
 
 
-profileIt(
+it.skip(
   'checks shared Hall-cut pool across finalizing-30 extra frontiers',
   async () => {
     const domain = canonicalDomain()
