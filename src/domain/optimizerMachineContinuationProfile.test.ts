@@ -7662,7 +7662,7 @@ it.skip(
 // CI trigger: structural-signature exact frontier profile
 
 
-profileIt(
+it.skip(
   'checks singleton-group exact extra subcases',
   async () => {
     const domain = canonicalDomain()
@@ -7911,4 +7911,45 @@ it.skip(
     )
   },
   180000,
+)
+
+
+profileIt(
+  'checks 3+1+1 singleton extra subcases',
+  async () => {
+    const domain = canonicalDomain()
+    const results = []
+    for (const slackExtraCount of [0, 1, 3] as const) {
+      const built = buildOptimisticGroupOnlyFrontierMaster(
+        domain,
+        [3, 1, 1, 0],
+        {
+          sharedBucketMode: 'structural-signature',
+          slackExtraCount,
+        },
+      )
+      const solved = await solveBoundedWithProgress(built.model, 10)
+      const result = {
+        pattern: '3+1+1',
+        slackExtraCount,
+        status: solved.status,
+        objective: solved.objective,
+        solveMs: Math.round(solved.solveMs),
+        progressTail: solved.progressTail,
+      }
+      results.push(result)
+      console.info('[machine-311-slack-extra-case]', JSON.stringify(result))
+    }
+    console.info(
+      '[machine-311-slack-extra-summary]',
+      JSON.stringify(
+        results.map((result) => ({
+          slackExtraCount: result.slackExtraCount,
+          status: result.status,
+          objective: result.objective,
+        })),
+      ),
+    )
+  },
+  60000,
 )
