@@ -1215,6 +1215,69 @@ function buildFlowProjectedNonfinalStage(
   }
 }
 
+
+function nonfinalEdgeMultiplicity(
+  recipe: EligibleOptimizationRecipe,
+): Map<string, number> {
+  const result = new Map<string, number>()
+  for (const edge of recipe.productionPath.edges) {
+    if (edge.kind === 'finalizing') continue
+    result.set(edge.key, (result.get(edge.key) ?? 0) + 1)
+  }
+  return result
+}
+
+function edgeMultiplicityIsSubset(
+  subset: ReadonlyMap<string, number>,
+  superset: ReadonlyMap<string, number>,
+): boolean {
+  for (const [edgeKey, count] of subset) {
+    if ((superset.get(edgeKey) ?? 0) < count) return false
+  }
+  return true
+}
+
+function exactDominatedRecipeIds(
+  domain: BatchOptimizationModel,
+): Set<string> {
+  const dominated = new Set<string>()
+
+  for (const group of pairGroups(domain)) {
+    const signatures = group.recipes.map((recipe) => ({
+      recipe,
+      edges: nonfinalEdgeMultiplicity(recipe),
+    }))
+
+    for (let candidateIndex = 0; candidateIndex < signatures.length; candidateIndex += 1) {
+      const candidate = signatures[candidateIndex]
+      for (let replacementIndex = 0; replacementIndex < signatures.length; replacementIndex += 1) {
+        if (candidateIndex === replacementIndex) continue
+        const replacement = signatures[replacementIndex]
+
+        if (
+          edgeMultiplicityIsSubset(
+            replacement.edges,
+            candidate.edges,
+          )
+        ) {
+          const strictlyBetter =
+            replacement.edges.size < candidate.edges.size ||
+            [...candidate.edges.entries()].some(
+              ([edgeKey, count]) =>
+                (replacement.edges.get(edgeKey) ?? 0) < count,
+            )
+          if (strictlyBetter) {
+            dominated.add(candidate.recipe.candidate.id)
+            break
+          }
+        }
+      }
+    }
+  }
+
+  return dominated
+}
+
 async function solveBounded(
   model: Model,
   timeLimitSeconds: number,
@@ -1257,55 +1320,40 @@ async function solveBounded(
 }
 
 profileIt(
-  'enumerates every exact non-final case below 77',
+  'measures exact non-final edge-superset dominance',
   async () => {
     const domain = canonicalDomain()
     expect(domain.recipes).toHaveLength(7892)
-    expect(domain.serviceableCustomerIds).toHaveLength(
-      SERVICEABLE_CUSTOMER_COUNT,
+    const dominated = exactDominatedRecipeIds(domain)
+    const groups = pairGroups(domain)
+
+    const retainedByGroup = groups.map((group) => ({
+      total: group.recipes.length,
+      retained: group.recipes.filter(
+        (recipe) => !dominated.has(recipe.candidate.id),
+      ).length,
+    }))
+
+    console.info(
+      '[machine-exact-dominance]',
+      JSON.stringify({
+        recipeCount: domain.recipes.length,
+        groupCount: groups.length,
+        dominatedRecipeCount: dominated.size,
+        retainedRecipeCount:
+          domain.recipes.length - dominated.size,
+        groupsWithPruning: retainedByGroup.filter(
+          (entry) => entry.retained < entry.total,
+        ).length,
+        maxGroupSize: Math.max(
+          ...retainedByGroup.map((entry) => entry.total),
+        ),
+        maxRetainedGroupSize: Math.max(
+          ...retainedByGroup.map((entry) => entry.retained),
+        ),
+      }),
     )
-
-    const cases = [
-      { throughExact: 38, blendingCap: 38 },
-      { throughExact: 39, blendingCap: 37 },
-      { throughExact: 40, blendingCap: 36 },
-      { throughExact: 41, blendingCap: 35 },
-    ]
-
-    for (const current of cases) {
-      const buildStartedAt = performance.now()
-      const built = buildFlowProjectedNonfinalStage(
-        domain,
-        current,
-      )
-      const buildMs = performance.now() - buildStartedAt
-      const solved = await solveBounded(built.model, 40)
-
-      console.info(
-        '[machine-nonfinal-frontier-case]',
-        JSON.stringify({
-          ...current,
-          totalCap: 76,
-          knownNonfinalWitness: 77,
-          finalizingExactLowerBound: 30,
-          knownFullWitness: 107,
-          groupCount: built.groupCount,
-          customerFlowVariableCount:
-            built.customerFlowVariableCount,
-          recipeVariableCount: built.recipeVariableCount,
-          singletonSlackVariableCount:
-            built.singletonSlackVariableCount,
-          operationEdgeCount: built.operationEdgeCount,
-          buildMs: Math.round(buildMs),
-          serializeMs: Math.round(solved.serializeMs),
-          parseMs: Math.round(solved.parseMs),
-          solveMs: Math.round(solved.solveMs),
-          status: solved.status,
-          objective: solved.objective,
-        }),
-      )
-    }
   },
-  190000,
+  30000,
 )
 
