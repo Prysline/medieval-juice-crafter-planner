@@ -6743,6 +6743,7 @@ function buildOptimisticGroupOnlyFrontierMaster(
 
   const throughOwners = new Map<string, Set<number>>()
   const blendingOwners = new Map<string, Set<number>>()
+  const equipmentByEdgeKey = new Map<string, string>()
   groups.forEach((group, groupIndex) => {
     for (const recipe of group.recipes) {
       for (const edge of recipe.productionPath.edges) {
@@ -6753,6 +6754,7 @@ function buildOptimisticGroupOnlyFrontierMaster(
               ? blendingOwners
               : null
         if (!owners) continue
+        equipmentByEdgeKey.set(edge.key, edge.equipment)
         const current = owners.get(edge.key) ?? new Set<number>()
         current.add(groupIndex)
         owners.set(edge.key, current)
@@ -6791,17 +6793,19 @@ function buildOptimisticGroupOnlyFrontierMaster(
   const privateThroughTerms: ReturnType<
     ReturnType<Model['boolVar']>['times']
   >[] = []
-  const sharedThroughTerms: ReturnType<
-    ReturnType<Model['intVar']>['times']
-  >[] = []
-  let sharedThroughUpperBound = 0
+  const sharedThroughTermsByEquipment = new Map<
+    string,
+    ReturnType<ReturnType<Model['intVar']>['times']>[]
+  >()
+  const sharedThroughUpperBoundByEquipment = new Map<string, number>()
   const privateBlendTerms: ReturnType<
     ReturnType<Model['boolVar']>['times']
   >[] = []
-  const sharedBlendTerms: ReturnType<
-    ReturnType<Model['intVar']>['times']
-  >[] = []
-  let sharedBlendUpperBound = 0
+  const sharedBlendTermsByEquipment = new Map<
+    string,
+    ReturnType<ReturnType<Model['intVar']>['times']>[]
+  >()
+  const sharedBlendUpperBoundByEquipment = new Map<string, number>()
 
   groups.forEach((group, groupIndex) => {
     const upperBound = Math.min(
@@ -6840,56 +6844,99 @@ function buildOptimisticGroupOnlyFrontierMaster(
         }
       }
       let privateThrough = 0
-      let sharedThrough = 0
+      const sharedThroughByEquipment = new Map<string, number>()
       for (const [key, multiplicity] of throughMultiplicity) {
         if (sharedThroughEdgeKeys.has(key)) {
-          sharedThrough += multiplicity
+          const equipment = equipmentByEdgeKey.get(key) ?? 'unknown'
+          sharedThroughByEquipment.set(
+            equipment,
+            (sharedThroughByEquipment.get(equipment) ?? 0) +
+              multiplicity,
+          )
         } else {
           privateThrough += 1
         }
       }
       let privateBlend = 0
-      let sharedBlend = 0
+      const sharedBlendByEquipment = new Map<string, number>()
       for (const [key, multiplicity] of blendMultiplicity) {
         if (sharedBlendingEdgeKeys.has(key)) {
-          sharedBlend += multiplicity
+          const equipment = equipmentByEdgeKey.get(key) ?? 'unknown'
+          sharedBlendByEquipment.set(
+            equipment,
+            (sharedBlendByEquipment.get(equipment) ?? 0) +
+              multiplicity,
+          )
         } else {
           privateBlend += 1
         }
       }
       return {
         privateThrough,
-        sharedThrough,
+        sharedThroughByEquipment,
         privateBlend,
-        sharedBlend,
+        sharedBlendByEquipment,
       }
     })
     const minPrivateThrough = Math.min(
       ...profiles.map((profile) => profile.privateThrough),
     )
-    const minSharedThrough = Math.min(
-      ...profiles.map((profile) => profile.sharedThrough),
-    )
     const minPrivateBlend = Math.min(
       ...profiles.map((profile) => profile.privateBlend),
     )
-    const minSharedBlend = Math.min(
-      ...profiles.map((profile) => profile.sharedBlend),
-    )
-
     if (minPrivateThrough > 0) {
       privateThroughTerms.push(used.times(minPrivateThrough))
-    }
-    if (minSharedThrough > 0) {
-      sharedThroughTerms.push(x.times(minSharedThrough))
-      sharedThroughUpperBound += upperBound * minSharedThrough
     }
     if (minPrivateBlend > 0) {
       privateBlendTerms.push(used.times(minPrivateBlend))
     }
-    if (minSharedBlend > 0) {
-      sharedBlendTerms.push(x.times(minSharedBlend))
-      sharedBlendUpperBound += upperBound * minSharedBlend
+
+    const sharedThroughEquipments = new Set(
+      profiles.flatMap((profile) => [
+        ...profile.sharedThroughByEquipment.keys(),
+      ]),
+    )
+    for (const equipment of sharedThroughEquipments) {
+      const minimum = Math.min(
+        ...profiles.map(
+          (profile) =>
+            profile.sharedThroughByEquipment.get(equipment) ?? 0,
+        ),
+      )
+      if (minimum <= 0) continue
+      const terms =
+        sharedThroughTermsByEquipment.get(equipment) ?? []
+      terms.push(x.times(minimum))
+      sharedThroughTermsByEquipment.set(equipment, terms)
+      sharedThroughUpperBoundByEquipment.set(
+        equipment,
+        (sharedThroughUpperBoundByEquipment.get(equipment) ?? 0) +
+          upperBound * minimum,
+      )
+    }
+
+    const sharedBlendEquipments = new Set(
+      profiles.flatMap((profile) => [
+        ...profile.sharedBlendByEquipment.keys(),
+      ]),
+    )
+    for (const equipment of sharedBlendEquipments) {
+      const minimum = Math.min(
+        ...profiles.map(
+          (profile) =>
+            profile.sharedBlendByEquipment.get(equipment) ?? 0,
+        ),
+      )
+      if (minimum <= 0) continue
+      const terms =
+        sharedBlendTermsByEquipment.get(equipment) ?? []
+      terms.push(x.times(minimum))
+      sharedBlendTermsByEquipment.set(equipment, terms)
+      sharedBlendUpperBoundByEquipment.set(
+        equipment,
+        (sharedBlendUpperBoundByEquipment.get(equipment) ?? 0) +
+          upperBound * minimum,
+      )
     }
 
     if (group.ingredientCost === SLACK_RECIPE_COST) {
@@ -6972,52 +7019,70 @@ function buildOptimisticGroupOnlyFrontierMaster(
     )
   })
 
-  const sharedThroughOp = model.intVar(
-    0,
-    Math.max(
-      1,
-      Math.ceil(sharedThroughUpperBound / PROCESSING_STACK_CAPACITY),
-    ),
-    'go_shared_through_op',
-  )
-  const sharedThroughQuantity = sum(...sharedThroughTerms)
-  model.addConstraint(
-    sharedThroughQuantity
-      .minus(sharedThroughOp.times(PROCESSING_STACK_CAPACITY))
-      .leq(0),
-    'go_shared_through_capacity',
-  )
-  model.addConstraint(
-    sharedThroughOp.minus(sharedThroughQuantity).leq(0),
-    'go_shared_through_usage',
-  )
+  const sharedThroughOps: ReturnType<Model['intVar']>[] = []
+  let sharedBucketIndex = 0
+  for (const [equipment, terms] of sharedThroughTermsByEquipment) {
+    const operation = model.intVar(
+      0,
+      Math.max(
+        1,
+        Math.ceil(
+          (sharedThroughUpperBoundByEquipment.get(equipment) ?? 0) /
+            PROCESSING_STACK_CAPACITY,
+        ),
+      ),
+      `go_shared_through_op_${sharedBucketIndex}`,
+    )
+    const quantity = sum(...terms)
+    model.addConstraint(
+      quantity
+        .minus(operation.times(PROCESSING_STACK_CAPACITY))
+        .leq(0),
+      `go_shared_through_capacity_${sharedBucketIndex}`,
+    )
+    model.addConstraint(
+      operation.minus(quantity).leq(0),
+      `go_shared_through_usage_${sharedBucketIndex}`,
+    )
+    sharedThroughOps.push(operation)
+    sharedBucketIndex += 1
+  }
 
-  const sharedBlendOp = model.intVar(
-    0,
-    Math.max(
-      1,
-      Math.ceil(sharedBlendUpperBound / PROCESSING_STACK_CAPACITY),
-    ),
-    'go_shared_blend_op',
-  )
-  const sharedBlendQuantity = sum(...sharedBlendTerms)
-  model.addConstraint(
-    sharedBlendQuantity
-      .minus(sharedBlendOp.times(PROCESSING_STACK_CAPACITY))
-      .leq(0),
-    'go_shared_blend_capacity',
-  )
-  model.addConstraint(
-    sharedBlendOp.minus(sharedBlendQuantity).leq(0),
-    'go_shared_blend_usage',
-  )
+  const sharedBlendOps: ReturnType<Model['intVar']>[] = []
+  sharedBucketIndex = 0
+  for (const [equipment, terms] of sharedBlendTermsByEquipment) {
+    const operation = model.intVar(
+      0,
+      Math.max(
+        1,
+        Math.ceil(
+          (sharedBlendUpperBoundByEquipment.get(equipment) ?? 0) /
+            PROCESSING_STACK_CAPACITY,
+        ),
+      ),
+      `go_shared_blend_op_${sharedBucketIndex}`,
+    )
+    const quantity = sum(...terms)
+    model.addConstraint(
+      quantity
+        .minus(operation.times(PROCESSING_STACK_CAPACITY))
+        .leq(0),
+      `go_shared_blend_capacity_${sharedBucketIndex}`,
+    )
+    model.addConstraint(
+      operation.minus(quantity).leq(0),
+      `go_shared_blend_usage_${sharedBucketIndex}`,
+    )
+    sharedBlendOps.push(operation)
+    sharedBucketIndex += 1
+  }
 
   model.addConstraint(
-    sum(...privateThroughTerms, sharedThroughOp).leq(41),
+    sum(...privateThroughTerms, ...sharedThroughOps).leq(41),
     'go_through_cap',
   )
   model.addConstraint(
-    sum(...privateBlendTerms, sharedBlendOp).leq(35),
+    sum(...privateBlendTerms, ...sharedBlendOps).leq(35),
     'go_blending_cap',
   )
   model.minimize(sum(...productionVars))
@@ -7030,8 +7095,9 @@ function buildOptimisticGroupOnlyFrontierMaster(
 
 
 
+
 profileIt(
-  'checks hybrid conflict-preserving finalizing-30 extra frontiers',
+  'checks equipment-bucket group-only finalizing-30 extra frontiers',
   async () => {
     const domain = canonicalDomain()
     const cases = [
@@ -7042,7 +7108,7 @@ profileIt(
     ]
     const results = []
     for (const extraCase of cases) {
-      const built = buildAggregateSharedEdgeFrontierMaster(
+      const built = buildOptimisticGroupOnlyFrontierMaster(
         domain,
         extraCase.thresholds,
       )
@@ -7052,18 +7118,16 @@ profileIt(
         status: solved.status,
         objective: solved.objective,
         solveMs: Math.round(solved.solveMs),
-        conflictGroupCount: built.conflictGroupCount,
-        classVariableCount: built.classVariableCount,
         progressTail: solved.progressTail,
       }
       results.push(result)
       console.info(
-        '[machine-hybrid-conflict-case]',
+        '[machine-equipment-bucket-case]',
         JSON.stringify(result),
       )
     }
     console.info(
-      '[machine-hybrid-conflict-summary]',
+      '[machine-equipment-bucket-summary]',
       JSON.stringify(
         results.map((result) => ({
           pattern: result.pattern,
