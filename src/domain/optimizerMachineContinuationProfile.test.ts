@@ -11562,13 +11562,17 @@ function build311HallSignatureSupportMaster(
   hallCuts.forEach((cut, cutIndex) => {
     const customerIds = new Set<string>()
     for (const groupIndex of cut) {
+      if (groupIndex === fixedExtra3GroupIndex) continue
       for (const customerId of groups[groupIndex]?.eligibleCustomerIds ?? []) {
+        if (forcedCustomerIds?.has(customerId)) continue
         customerIds.add(customerId)
       }
     }
-    const fixedCapacity = cutSets[cutIndex].has(fixedExtra3GroupIndex)
-      ? 8
-      : 0
+    const fixedCapacity = forcedCustomerIds
+      ? 0
+      : cutSets[cutIndex].has(fixedExtra3GroupIndex)
+        ? 8
+        : 0
     model.addConstraint(
       sum(...hallTerms[cutIndex]).leq(customerIds.size - fixedCapacity),
       `hsa_hall_${cutIndex}`,
@@ -11645,13 +11649,41 @@ hallSignatureProfileIt(
           `Expected 30 Hall-signature support groups, got ${support.length}`,
         )
       }
-      const checked = maximumAssignmentFlowForGroupCapacities(
-        groups,
-        domain.serviceableCustomerIds,
-        capacities,
+      const fixedCustomerIds = new Set(
+        groups[groupIndex].eligibleCustomerIds,
       )
+      const residualGroups =
+        fixedCustomerIds.size === 8
+          ? groups.map((group, residualGroupIndex) => ({
+              ...group,
+              eligibleCustomerIds:
+                residualGroupIndex === groupIndex
+                  ? []
+                  : group.eligibleCustomerIds.filter(
+                      (customerId) => !fixedCustomerIds.has(customerId),
+                    ),
+            }))
+          : groups
+      const residualCustomerIds =
+        fixedCustomerIds.size === 8
+          ? domain.serviceableCustomerIds.filter(
+              (customerId) => !fixedCustomerIds.has(customerId),
+            )
+          : domain.serviceableCustomerIds
+      const residualCapacities =
+        fixedCustomerIds.size === 8
+          ? capacities.map((capacity, residualGroupIndex) =>
+              residualGroupIndex === groupIndex ? 0 : capacity,
+            )
+          : capacities
+      const checked = maximumAssignmentFlowForGroupCapacities(
+        residualGroups,
+        residualCustomerIds,
+        residualCapacities,
+      )
+      const targetFlow = residualCustomerIds.length
 
-      if (checked.flow < SERVICEABLE_CUSTOMER_COUNT) {
+      if (checked.flow < targetFlow) {
         const key = checked.violatingGroupIndexes.join(',')
         rounds.push({
           round: round + 1,
@@ -11659,7 +11691,8 @@ hallSignatureProfileIt(
           hallCuts: hallCuts.length,
           classCount: built.classes.length,
           solveMs: Math.round(solved.solveMs),
-          assignmentFlow: checked.flow,
+          assignmentFlow:
+            checked.flow + (fixedCustomerIds.size === 8 ? 8 : 0),
           newCutGroups: checked.violatingGroupIndexes.length,
         })
         if (
@@ -11692,7 +11725,8 @@ hallSignatureProfileIt(
         hallCuts: hallCuts.length,
         classCount: built.classes.length,
         solveMs: Math.round(solved.solveMs),
-        assignmentFlow: checked.flow,
+        assignmentFlow:
+          checked.flow + (fixedCustomerIds.size === 8 ? 8 : 0),
         exactSolveMs: Math.round(exactSolved.solveMs),
       })
       break
