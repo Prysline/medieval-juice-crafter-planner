@@ -11593,7 +11593,7 @@ function build311HallSignatureSupportMaster(
       hallTerms[cutIndex].push(
         normal.times(2),
         extra.times(4),
-        slack,
+        slack.times(1),
       )
     })
     classes.push({
