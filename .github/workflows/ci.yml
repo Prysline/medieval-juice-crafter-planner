@@ -55,23 +55,22 @@ jobs:
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
 
 
+
   machine-continuation-partial-support:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-partial-support (${{ matrix.chunk }})
+    name: machine-slack-split (${{ matrix.chunk }})
     strategy:
       fail-fast: false
       matrix:
         include:
           - chunk: a
-            groups: '23,26,43,45,46,129,140,142,146'
+            groups: '43,187'
           - chunk: b
-            groups: '162,182,187,212,214,217,223,247,253'
+            groups: '260,262'
           - chunk: c
-            groups: '260,262,264,276,296,297,307,313,344'
+            groups: '344,399'
           - chunk: d
-            groups: '399,403,406,456,457,460,461,462,547'
-          - chunk: e
-            groups: '609,624,651,654,656,666,966,1083,1279'
+            groups: '651,1279'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -79,8 +78,9 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - name: Run partial-support machine continuation profiler
+      - name: Run slack-split machine continuation profiler
         env:
           MACHINE_CONTINUATION_PROFILE: '1'
-          MACHINE_CONTINUATION_PARTIAL_GROUPS: ${{ matrix.groups }}
+          MACHINE_CONTINUATION_SLACK_SPLIT_GROUPS: ${{ matrix.groups }}
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
+
