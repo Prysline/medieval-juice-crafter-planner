@@ -53,6 +53,12 @@ const slackSplitProfileIt =
     ? it
     : it.skip
 
+const extraSumProfileIt =
+  machineContinuationEnv.MACHINE_CONTINUATION_PROFILE === '1' &&
+  Boolean(machineContinuationEnv.MACHINE_CONTINUATION_EXTRA_SUM_GROUPS)
+    ? it
+    : it.skip
+
 function canonicalDomain(): BatchOptimizationModel {
   const currentProgress = 'liquid-blender-unlocked'
   const customerIds = canonicalCustomers
@@ -6862,6 +6868,204 @@ function buildAggregateSharedEdgeFrontierMaster(
  * This removes the generic integer-production / threshold encoding without
  * changing the feasible group-support set for this fixed case.
  */
+
+/**
+ * Exact support master for 3+1+1 / slackExtra=0 after fixing the
+ * extra=3 service+cost group and the sum of the two extra=1 costs.
+ *
+ * The unique slack group remains endogenous. This is a complete case
+ * partition over the symmetric pair of extra=1 groups, while the fixed
+ * cost sum also fixes the base-support ingredient-cost sum.
+ */
+function build311ExtraCostSumSupportMaster(
+  domain: BatchOptimizationModel,
+  fixedExtra3GroupIndex: number,
+  extraOneCostSum: number,
+  supportCuts: readonly (readonly number[])[] = [],
+) {
+  const groups = pairGroups(domain)
+  const model = new Model()
+  const maskKeyForGroup = (group: PairGroup) =>
+    group.eligibleCustomerIds.join('\u001e')
+  const maskCustomerIds = new Map<string, string[]>()
+  const groupIndexesByMask = new Map<string, number[]>()
+  groups.forEach((group, groupIndex) => {
+    const maskKey = maskKeyForGroup(group)
+    if (!maskCustomerIds.has(maskKey)) {
+      maskCustomerIds.set(maskKey, group.eligibleCustomerIds)
+    }
+    const indexes = groupIndexesByMask.get(maskKey)
+    if (indexes) indexes.push(groupIndex)
+    else groupIndexesByMask.set(maskKey, [groupIndex])
+  })
+
+  const flowByMask = new Map<
+    string,
+    ReturnType<Model['numVar']>[]
+  >([...maskCustomerIds.keys()].map((maskKey) => [maskKey, []]))
+  customerMaskFlowTypes(
+    domain.serviceableCustomerIds,
+    maskCustomerIds,
+  ).forEach((customerType, typeIndex) => {
+    const demand = customerType.customerIds.length
+    const terms = customerType.neighborMaskKeys.map(
+      (maskKey, neighborIndex) => {
+        const flow = model.numVar(
+          0,
+          demand,
+          `s31sy_${typeIndex}_${neighborIndex}`,
+        )
+        flowByMask.get(maskKey)!.push(flow)
+        return flow
+      },
+    )
+    model.addConstraint(
+      sum(...terms).eq(demand),
+      `s31s_customer_type_${typeIndex}`,
+    )
+  })
+
+  const usedGroupVars: ReturnType<Model['boolVar']>[] = []
+  const extraOneByGroupIndex = new Map<
+    number,
+    ReturnType<Model['boolVar']>
+  >()
+  const slackByGroupIndex = new Map<
+    number,
+    ReturnType<Model['boolVar']>
+  >()
+  const productionCostTerms: ReturnType<
+    ReturnType<Model['boolVar']>['times']
+  >[] = []
+  const extraOneCostTerms: ReturnType<
+    ReturnType<Model['boolVar']>['times']
+  >[] = []
+  const capacityTermsByGroupIndex = new Map<
+    number,
+    ReturnType<ReturnType<Model['boolVar']>['times']>[]
+  >()
+
+  groups.forEach((group, groupIndex) => {
+    const upperBound = Math.min(
+      PROCESSING_STACK_CAPACITY,
+      Math.max(
+        1,
+        Math.ceil(group.eligibleCustomerIds.length / 2),
+      ),
+    )
+    const used = model.boolVar(`s31su_${groupIndex}`)
+    usedGroupVars.push(used)
+
+    if (groupIndex === fixedExtra3GroupIndex) {
+      if (upperBound < 4) {
+        model.addConstraint(
+          used.leq(-1),
+          's31s_invalid_extra3_capacity',
+        )
+      }
+      model.addConstraint(
+        used.eq(1),
+        's31s_fixed_extra3_used',
+      )
+      productionCostTerms.push(
+        used.times(group.ingredientCost * 4),
+      )
+      capacityTermsByGroupIndex.set(groupIndex, [
+        used.times(8),
+      ])
+      return
+    }
+
+    productionCostTerms.push(used.times(group.ingredientCost))
+    const capacityTerms = [used.times(2)]
+    let extraOne:
+      | ReturnType<Model['boolVar']>
+      | undefined
+    if (upperBound >= 2) {
+      extraOne = model.boolVar(`s31se1_${groupIndex}`)
+      extraOneByGroupIndex.set(groupIndex, extraOne)
+      model.addConstraint(
+        extraOne.minus(used).leq(0),
+        `s31s_extra_used_${groupIndex}`,
+      )
+      productionCostTerms.push(
+        extraOne.times(group.ingredientCost),
+      )
+      extraOneCostTerms.push(
+        extraOne.times(group.ingredientCost),
+      )
+      capacityTerms.push(extraOne.times(2))
+    }
+
+    if (group.ingredientCost === SLACK_RECIPE_COST) {
+      const slack = model.boolVar(`s31sslack_${groupIndex}`)
+      slackByGroupIndex.set(groupIndex, slack)
+      model.addConstraint(
+        slack.minus(used).leq(0),
+        `s31s_slack_used_${groupIndex}`,
+      )
+      if (extraOne) {
+        model.addConstraint(
+          slack.plus(extraOne).leq(1),
+          `s31s_slack_no_extra_${groupIndex}`,
+        )
+      }
+      capacityTerms.push(slack.times(-1))
+    }
+    capacityTermsByGroupIndex.set(groupIndex, capacityTerms)
+  })
+
+  model.addConstraint(
+    sum(...usedGroupVars).eq(30),
+    's31s_used_groups',
+  )
+  model.addConstraint(
+    sum(...extraOneByGroupIndex.values()).eq(2),
+    's31s_extra_one_groups',
+  )
+  model.addConstraint(
+    sum(...slackByGroupIndex.values()).eq(1),
+    's31s_slack_group',
+  )
+  model.addConstraint(
+    sum(...extraOneCostTerms).eq(extraOneCostSum),
+    's31s_extra_one_cost_sum',
+  )
+  model.addConstraint(
+    sum(...productionCostTerms).eq(PRODUCTION_COST_FIX),
+    's31s_production_cost',
+  )
+
+  let maskIndex = 0
+  for (const [maskKey, groupIndexes] of groupIndexesByMask) {
+    const capacityTerms = groupIndexes.flatMap(
+      (groupIndex) =>
+        capacityTermsByGroupIndex.get(groupIndex) ?? [],
+    )
+    model.addConstraint(
+      sum(...capacityTerms)
+        .minus(sum(...(flowByMask.get(maskKey) ?? [])))
+        .eq(0),
+      `s31s_mask_capacity_${maskIndex}`,
+    )
+    maskIndex += 1
+  }
+
+  supportCuts.forEach((support, cutIndex) => {
+    model.addConstraint(
+      sum(
+        ...support.map(
+          (groupIndex) => usedGroupVars[groupIndex],
+        ),
+      ).leq(29),
+      `s31s_support_nogood_${cutIndex}`,
+    )
+  })
+
+  model.minimize(sum(...usedGroupVars))
+  return { model, groups }
+}
+
 function build311FixedIdentitySupportMaster(
   domain: BatchOptimizationModel,
   fixedExtra3GroupIndex: number,
@@ -9527,6 +9731,252 @@ partialSupportProfileIt(
   300000,
 )
 
+
+
+extraSumProfileIt(
+  'decomposes unresolved 3+1+1 identities by extra-one cost sum and support',
+  async () => {
+    const domain = canonicalDomain()
+    const groups = pairGroups(domain)
+    const rawGroupIndexes =
+      machineContinuationEnv.MACHINE_CONTINUATION_EXTRA_SUM_GROUPS ?? ''
+    const targetGroupIndexes = rawGroupIndexes
+      .split(',')
+      .map((value) => Number(value.trim()))
+      .filter((value) => Number.isInteger(value))
+    expect(targetGroupIndexes.length).toBeGreaterThan(0)
+
+    const thresholdCounts = [3, 1, 1, 0] as const
+    const maxExtraByGroupIndex = groups.map((group) => {
+      const upperBound = Math.min(
+        PROCESSING_STACK_CAPACITY,
+        Math.max(
+          1,
+          Math.ceil(group.eligibleCustomerIds.length / 2),
+        ),
+      )
+      return upperBound - 1
+    })
+    const eligibleExtraOneCosts = groups.flatMap(
+      (group, groupIndex) =>
+        maxExtraByGroupIndex[groupIndex] >= 1
+          ? [group.ingredientCost]
+          : [],
+    )
+    const possibleExtraOneCostSums = new Set<number>()
+    for (
+      let leftIndex = 0;
+      leftIndex < eligibleExtraOneCosts.length;
+      leftIndex += 1
+    ) {
+      for (
+        let rightIndex = leftIndex + 1;
+        rightIndex < eligibleExtraOneCosts.length;
+        rightIndex += 1
+      ) {
+        possibleExtraOneCostSums.add(
+          eligibleExtraOneCosts[leftIndex] +
+            eligibleExtraOneCosts[rightIndex],
+        )
+      }
+    }
+    const costSums = [...possibleExtraOneCostSums].sort(
+      (left, right) => left - right,
+    )
+
+    const identityResults = []
+    let globalWitness:
+      | {
+          groupIndex: number
+          extraOneCostSum: number
+          support: number[]
+          objective: number | null
+        }
+      | undefined
+
+    for (const groupIndex of targetGroupIndexes) {
+      const sumResults = []
+      for (const extraOneCostSum of costSums) {
+        const baseSupportCost =
+          PRODUCTION_COST_FIX -
+          3 * groups[groupIndex].ingredientCost -
+          extraOneCostSum
+        const theoreticalMinSupportCost =
+          SLACK_RECIPE_COST +
+          29 * Math.min(...groups.map((group) => group.ingredientCost))
+        const theoreticalMaxSupportCost =
+          SLACK_RECIPE_COST +
+          29 * Math.max(...groups.map((group) => group.ingredientCost))
+        if (
+          baseSupportCost < theoreticalMinSupportCost ||
+          baseSupportCost > theoreticalMaxSupportCost
+        ) {
+          sumResults.push({
+            extraOneCostSum,
+            baseSupportCost,
+            status: 'static-infeasible',
+            supportCuts: 0,
+            exactInfeasibleSupports: 0,
+            masterSolveMs: 0,
+            exactSolveMs: 0,
+          })
+          continue
+        }
+
+        const supportCuts: number[][] = []
+        let status = 'round-limit'
+        let exactInfeasibleSupports = 0
+        let masterSolveMs = 0
+        let exactSolveMs = 0
+
+        for (let round = 0; round < 3; round += 1) {
+          const built = build311ExtraCostSumSupportMaster(
+            domain,
+            groupIndex,
+            extraOneCostSum,
+            supportCuts,
+          )
+          const solved = await solveBounded(built.model, 0.5)
+          masterSolveMs += solved.solveMs
+          if (solved.status === 'infeasible') {
+            status = 'infeasible'
+            break
+          }
+          if (
+            solved.status !== 'optimal' ||
+            !solved.namedSolution
+          ) {
+            status = solved.status
+            break
+          }
+
+          const support = groups.flatMap(
+            (_group, supportGroupIndex) => {
+              const raw = solved.namedSolution!.get(
+                `s31su_${supportGroupIndex}`,
+              )
+              return typeof raw === 'number' &&
+                Number.isFinite(raw) &&
+                raw > 0.5
+                ? [supportGroupIndex]
+                : []
+            },
+          )
+          if (support.length !== 30) {
+            throw new Error(
+              `Expected 30 support groups for extra group ${groupIndex} / extra-one cost sum ${extraOneCostSum}, got ${support.length}`,
+            )
+          }
+
+          const exact = buildFinalizing30MaskPartitionStage(
+            domain,
+            new Set<ProductionStepKind>([
+              'juicing',
+              'seasoning',
+              'blending',
+            ]),
+            thresholdCounts,
+            { max: 76 },
+            0,
+            new Set(support),
+          )
+          const exactSolved = await solveBounded(exact.model, 3)
+          exactSolveMs += exactSolved.solveMs
+          if (exactSolved.status === 'infeasible') {
+            exactInfeasibleSupports += 1
+            supportCuts.push(support)
+            continue
+          }
+          if (exactSolved.status === 'optimal') {
+            status = 'global-witness'
+            globalWitness = {
+              groupIndex,
+              extraOneCostSum,
+              support,
+              objective: exactSolved.objective,
+            }
+            break
+          }
+          status = `exact-${exactSolved.status}`
+          break
+        }
+
+        sumResults.push({
+          extraOneCostSum,
+          baseSupportCost,
+          status,
+          supportCuts: supportCuts.length,
+          exactInfeasibleSupports,
+          masterSolveMs: Math.round(masterSolveMs),
+          exactSolveMs: Math.round(exactSolveMs),
+        })
+        if (globalWitness) break
+      }
+
+      const unresolvedCostSums = sumResults
+        .filter(
+          (entry) =>
+            entry.status !== 'infeasible' &&
+            entry.status !== 'static-infeasible',
+        )
+        .map((entry) => ({
+          extraOneCostSum: entry.extraOneCostSum,
+          baseSupportCost: entry.baseSupportCost,
+          status: entry.status,
+          supportCuts: entry.supportCuts,
+        }))
+      const result = {
+        groupIndex,
+        groupCost: groups[groupIndex]?.ingredientCost ?? null,
+        costSumCases: sumResults.length,
+        infeasibleCostSums: sumResults.filter(
+          (entry) =>
+            entry.status === 'infeasible' ||
+            entry.status === 'static-infeasible',
+        ).length,
+        unresolvedCostSums,
+        exactInfeasibleSupports: sumResults.reduce(
+          (total, entry) =>
+            total + entry.exactInfeasibleSupports,
+          0,
+        ),
+        solveMs: sumResults.reduce(
+          (total, entry) =>
+            total + entry.masterSolveMs + entry.exactSolveMs,
+          0,
+        ),
+      }
+      identityResults.push(result)
+      console.info(
+        '[machine-extra-sum-identity]',
+        JSON.stringify(result),
+      )
+      if (globalWitness) break
+    }
+
+    console.info(
+      '[machine-extra-sum-summary]',
+      JSON.stringify({
+        targetGroupIndexes,
+        closedIdentities: identityResults
+          .filter((entry) => entry.unresolvedCostSums.length === 0)
+          .map((entry) => entry.groupIndex),
+        unresolvedIdentities: identityResults
+          .filter((entry) => entry.unresolvedCostSums.length > 0)
+          .map((entry) => entry.groupIndex),
+        globalWitness,
+      }),
+    )
+
+    expect(globalWitness).toBeUndefined()
+    expect(
+      identityResults.every(
+        (entry) => entry.unresolvedCostSums.length === 0,
+      ),
+    ).toBe(true)
+  },
+  300000,
+)
 
 slackSplitProfileIt(
   'decomposes unresolved 3+1+1 identities by fixed slack identity and support',
