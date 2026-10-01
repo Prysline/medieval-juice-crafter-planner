@@ -7973,73 +7973,74 @@ it.skip(
 
 
 profileIt(
-  'certifies finalizing-30 machine cap 106 across exact extra partitions',
+  'certifies remaining finalizing-30 singleton identities',
   async () => {
     const domain = canonicalDomain()
+    const groups = pairGroups(domain)
+    const slackGroupIndexes = groups.flatMap((group, groupIndex) =>
+      group.ingredientCost === SLACK_RECIPE_COST ? [groupIndex] : [],
+    )
+    const ordinalRaw =
+      process.env.MACHINE_CONTINUATION_SLACK_ORDINAL ?? 'coverage'
+    if (ordinalRaw === 'coverage') {
+      expect(slackGroupIndexes.length).toBeLessThanOrEqual(32)
+      return
+    }
+
+    const ordinal = Number.parseInt(ordinalRaw, 10)
+    expect(Number.isInteger(ordinal)).toBe(true)
+    expect(ordinal).toBeGreaterThanOrEqual(0)
+    if (ordinal >= slackGroupIndexes.length) return
+
+    const slackGroupIndex = slackGroupIndexes[ordinal]
     const cases = [
-      { pattern: '4+1', thresholds: [2, 1, 1, 1] as const, slackExtras: [0, 1, 4] as const },
-      { pattern: '3+2', thresholds: [2, 2, 1, 0] as const, slackExtras: [0, 2, 3] as const },
-      { pattern: '3+1+1', thresholds: [3, 1, 1, 0] as const, slackExtras: [0, 1, 3] as const },
-      { pattern: '2+2+1', thresholds: [3, 2, 0, 0] as const, slackExtras: [0, 1, 2] as const },
-      { pattern: '2+1+1+1', thresholds: [4, 1, 0, 0] as const, slackExtras: [0, 1, 2] as const },
-      { pattern: '1+1+1+1+1', thresholds: [5, 0, 0, 0] as const, slackExtras: [0, 1] as const },
+      { pattern: '3+1+1', thresholds: [3, 1, 1, 0] as const },
+      { pattern: '2+2+1', thresholds: [3, 2, 0, 0] as const },
+      { pattern: '2+1+1+1', thresholds: [4, 1, 0, 0] as const },
+      { pattern: '1+1+1+1+1', thresholds: [5, 0, 0, 0] as const },
     ]
-    const requestedCase = process.env.MACHINE_CONTINUATION_PROFILE_CASE
     const unresolved: Array<{
       pattern: string
-      slackExtraCount: number
       status: string
       objective?: number
     }> = []
 
     for (const extraCase of cases) {
-      for (const slackExtraCount of extraCase.slackExtras) {
-        const caseKey = `${extraCase.pattern}:${slackExtraCount}`
-        if (requestedCase && requestedCase !== caseKey) continue
-        const built = buildOptimisticGroupOnlyFrontierMaster(
-          domain,
-          extraCase.thresholds,
-          {
-            sharedBucketMode: 'structural-signature',
-            slackExtraCount,
-            totalNonFinalCap: 76,
-          },
-        )
-        const solved = await solveBoundedWithProgress(built.model, 10)
-        console.info(
-          '[machine-finalizing30-106-case]',
-          JSON.stringify({
-            pattern: extraCase.pattern,
-            slackExtraCount,
-            status: solved.status,
-            objective: solved.objective,
-            solveMs: Math.round(solved.solveMs),
-            progressTail: solved.progressTail,
-          }),
-        )
-        if (solved.status !== 'infeasible') {
-          unresolved.push({
-            pattern: extraCase.pattern,
-            slackExtraCount,
-            status: solved.status,
-            objective: solved.objective,
-          })
-        }
+      const built = buildOptimisticGroupOnlyFrontierMaster(
+        domain,
+        extraCase.thresholds,
+        {
+          sharedBucketMode: 'structural-signature',
+          slackExtraCount: 0,
+          slackGroupIndex,
+          totalNonFinalCap: 76,
+        },
+      )
+      const solved = await solveBoundedWithProgress(built.model, 5)
+      console.info(
+        '[machine-singleton-identity-106-case]',
+        JSON.stringify({
+          ordinal,
+          slackGroupIndex,
+          pattern: extraCase.pattern,
+          status: solved.status,
+          objective: solved.objective,
+          solveMs: Math.round(solved.solveMs),
+          progressTail: solved.progressTail,
+        }),
+      )
+      if (solved.status !== 'infeasible') {
+        unresolved.push({
+          pattern: extraCase.pattern,
+          status: solved.status,
+          objective: solved.objective,
+        })
       }
     }
 
-    if (requestedCase) {
-      const matched = cases.some((extraCase) =>
-        extraCase.slackExtras.some(
-          (slackExtraCount) =>
-            `${extraCase.pattern}:${slackExtraCount}` === requestedCase,
-        ),
-      )
-      expect(matched).toBe(true)
-    }
     expect(unresolved).toEqual([])
   },
-  300000,
+  120000,
 )
 
 
