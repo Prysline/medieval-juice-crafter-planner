@@ -6794,6 +6794,262 @@ function buildAggregateSharedEdgeFrontierMaster(
 
 
 
+function buildFinalizing30GroupSupportMaster(
+  domain: BatchOptimizationModel,
+  extraThresholdCounts: readonly [number, number, number, number],
+  options: {
+    slackExtraCount?: number
+    extraIdentityCuts?: readonly (
+      readonly { groupIndex: number; extra: number }[]
+    )[]
+  } = {},
+) {
+  const slackExtraCount = options.slackExtraCount
+  const extraIdentityCuts = options.extraIdentityCuts ?? []
+  const groups = pairGroups(domain)
+  const model = new Model()
+
+  const maskKeyForGroup = (group: PairGroup) =>
+    group.eligibleCustomerIds.join('\u001e')
+  const maskCustomerIds = new Map<string, string[]>()
+  const groupIndexesByMask = new Map<string, number[]>()
+  groups.forEach((group, groupIndex) => {
+    const maskKey = maskKeyForGroup(group)
+    if (!maskCustomerIds.has(maskKey)) {
+      maskCustomerIds.set(maskKey, group.eligibleCustomerIds)
+    }
+    const indexes = groupIndexesByMask.get(maskKey)
+    if (indexes) indexes.push(groupIndex)
+    else groupIndexesByMask.set(maskKey, [groupIndex])
+  })
+
+  const flowByMask = new Map<
+    string,
+    ReturnType<Model['numVar']>[]
+  >([...maskCustomerIds.keys()].map((maskKey) => [maskKey, []]))
+  let customerFlowVariableCount = 0
+  domain.serviceableCustomerIds.forEach(
+    (customerId, customerIndex) => {
+      const terms: ReturnType<Model['numVar']>[] = []
+      ;[...maskCustomerIds.entries()].forEach(
+        ([maskKey, eligibleCustomerIds], maskIndex) => {
+          if (!eligibleCustomerIds.includes(customerId)) return
+          const flow = model.numVar(
+            0,
+            1,
+            `sgy_${customerIndex}_${maskIndex}`,
+          )
+          customerFlowVariableCount += 1
+          terms.push(flow)
+          flowByMask.get(maskKey)!.push(flow)
+        },
+      )
+      model.addConstraint(
+        sum(...terms).eq(1),
+        `sg_customer_${customerIndex}`,
+      )
+    },
+  )
+
+  const productionVars: ReturnType<Model['intVar']>[] = []
+  const productionCostTerms: ReturnType<
+    ReturnType<Model['intVar']>['times']
+  >[] = []
+  const groupProductionByIndex = new Map<
+    number,
+    ReturnType<Model['intVar']>
+  >()
+  const usedGroupVars: ReturnType<Model['boolVar']>[] = []
+  const slackVars: ReturnType<Model['boolVar']>[] = []
+  const slackByGroupIndex = new Map<
+    number,
+    ReturnType<Model['boolVar']>
+  >()
+  const extraThresholdVarsByLevel = Array.from(
+    { length: PROCESSING_STACK_CAPACITY - 1 },
+    () => [] as ReturnType<Model['boolVar']>[],
+  )
+  const extraThresholdVarsByGroupIndex = new Map<
+    number,
+    ReturnType<Model['boolVar']>[]
+  >()
+
+  groups.forEach((group, groupIndex) => {
+    const upperBound = Math.min(
+      PROCESSING_STACK_CAPACITY,
+      Math.max(
+        1,
+        Math.ceil(group.eligibleCustomerIds.length / 2),
+      ),
+    )
+    const production = model.intVar(
+      0,
+      upperBound,
+      `sgx_${groupIndex}`,
+    )
+    const used = model.boolVar(`sgu_${groupIndex}`)
+    productionVars.push(production)
+    productionCostTerms.push(
+      production.times(group.ingredientCost),
+    )
+    groupProductionByIndex.set(groupIndex, production)
+    usedGroupVars.push(used)
+    model.addConstraint(
+      production.minus(used.times(upperBound)).leq(0),
+      `sg_use_upper_${groupIndex}`,
+    )
+    model.addConstraint(
+      used.minus(production).leq(0),
+      `sg_use_lower_${groupIndex}`,
+    )
+
+    if (group.ingredientCost === SLACK_RECIPE_COST) {
+      const slack = model.boolVar(`sgs_${groupIndex}`)
+      slackVars.push(slack)
+      slackByGroupIndex.set(groupIndex, slack)
+      model.addConstraint(
+        slack.minus(used).leq(0),
+        `sg_slack_used_${groupIndex}`,
+      )
+    }
+
+    const thresholds = Array.from(
+      { length: Math.max(0, upperBound - 1) },
+      (_, thresholdIndex) => {
+        const threshold = model.boolVar(
+          `sge_${thresholdIndex + 1}_${groupIndex}`,
+        )
+        extraThresholdVarsByLevel[thresholdIndex].push(threshold)
+        return threshold
+      },
+    )
+    extraThresholdVarsByGroupIndex.set(groupIndex, thresholds)
+    model.addConstraint(
+      production.minus(used).minus(sum(...thresholds)).eq(0),
+      `sg_exact_extra_${groupIndex}`,
+    )
+    for (
+      let thresholdIndex = 1;
+      thresholdIndex < thresholds.length;
+      thresholdIndex += 1
+    ) {
+      model.addConstraint(
+        thresholds[thresholdIndex]
+          .minus(thresholds[thresholdIndex - 1])
+          .leq(0),
+        `sg_extra_monotone_${groupIndex}_${thresholdIndex}`,
+      )
+    }
+  })
+
+  let maskIndex = 0
+  for (const [maskKey, groupIndexes] of groupIndexesByMask) {
+    const capacityTerms = groupIndexes.map((groupIndex) =>
+      groupProductionByIndex.get(groupIndex)!.times(2),
+    )
+    const maskSlacks = groupIndexes.flatMap((groupIndex) => {
+      const slack = slackByGroupIndex.get(groupIndex)
+      return slack ? [slack] : []
+    })
+    model.addConstraint(
+      sum(...capacityTerms)
+        .minus(sum(...maskSlacks))
+        .minus(sum(...(flowByMask.get(maskKey) ?? [])))
+        .eq(0),
+      `sg_mask_capacity_${maskIndex}`,
+    )
+    maskIndex += 1
+  }
+
+  if (typeof slackExtraCount === 'number') {
+    const targetUnits = 1 + slackExtraCount
+    const bigM = PROCESSING_STACK_CAPACITY
+    groups.forEach((group, groupIndex) => {
+      if (group.ingredientCost !== SLACK_RECIPE_COST) return
+      const slack = slackByGroupIndex.get(groupIndex)
+      const production = groupProductionByIndex.get(groupIndex)
+      if (!slack || !production) return
+      model.addConstraint(
+        sum(production, slack.times(bigM)).leq(
+          targetUnits + bigM,
+        ),
+        `sg_slack_extra_upper_${groupIndex}`,
+      )
+      model.addConstraint(
+        production.minus(slack.times(bigM)).geq(
+          targetUnits - bigM,
+        ),
+        `sg_slack_extra_lower_${groupIndex}`,
+      )
+    })
+  }
+
+  model.addConstraint(
+    sum(...slackVars).eq(GLOBAL_SERVING_SLACK),
+    'sg_global_slack',
+  )
+  model.addConstraint(
+    sum(...productionVars).eq(PRODUCTION_UNITS_FIX),
+    'sg_production_units',
+  )
+  model.addConstraint(
+    sum(...productionCostTerms).eq(PRODUCTION_COST_FIX),
+    'sg_production_cost',
+  )
+  model.addConstraint(
+    sum(...usedGroupVars).eq(30),
+    'sg_used_groups',
+  )
+  extraThresholdCounts.forEach((count, thresholdIndex) => {
+    model.addConstraint(
+      sum(...extraThresholdVarsByLevel[thresholdIndex]).eq(count),
+      `sg_extra_count_${thresholdIndex + 1}`,
+    )
+  })
+  extraIdentityCuts.forEach((entries, cutIndex) => {
+    const activeThresholds = entries.flatMap(
+      ({ groupIndex, extra }) => {
+        const thresholds =
+          extraThresholdVarsByGroupIndex.get(groupIndex) ?? []
+        if (extra <= 0 || extra > thresholds.length) {
+          throw new Error(
+            `Invalid support-master extra identity cut for group ${groupIndex}: ${extra}`,
+          )
+        }
+        return thresholds.slice(0, extra)
+      },
+    )
+    if (
+      activeThresholds.length !==
+      PRODUCTION_UNITS_FIX - 30
+    ) {
+      throw new Error(
+        `Support-master extra identity cut must encode exactly ${
+          PRODUCTION_UNITS_FIX - 30
+        } extra units`,
+      )
+    }
+    model.addConstraint(
+      sum(...activeThresholds).leq(
+        activeThresholds.length - 1,
+      ),
+      `sg_extra_identity_nogood_${cutIndex}`,
+    )
+  })
+
+  model.minimize(sum(...productionVars))
+  return {
+    model,
+    groups,
+    groupProductionByIndex,
+    usedGroupVars,
+    groupCount: groups.length,
+    serviceMaskCount: maskCustomerIds.size,
+    customerFlowVariableCount,
+  }
+}
+
+
 function buildOptimisticGroupOnlyFrontierMaster(
   domain: BatchOptimizationModel,
   extraThresholdCounts: readonly [number, number, number, number],
@@ -8227,14 +8483,11 @@ profileIt(
         let exactSolveMs = 0
 
         for (let iteration = 0; iteration < 96; iteration += 1) {
-          const master = buildOptimisticGroupOnlyFrontierMaster(
+          const master = buildFinalizing30GroupSupportMaster(
             domain,
             thresholdCounts,
             {
-              includeCustomerFlow: false,
-              sharedBucketMode: 'structural-signature',
               slackExtraCount,
-              totalNonFinalCap: 76,
               extraIdentityCuts,
             },
           )
