@@ -3892,44 +3892,6 @@ function buildFinalizing30ConditionalSeasoningStage(
       sum(...groupUseVars).minus(usedGroup).eq(0),
       `one_class_per_used_group_${groupIndex}`,
     )
-
-    const extraThresholds = Array.from(
-      { length: Math.max(0, groupUpperBound - 1) },
-      (_, thresholdIndex) => {
-        const threshold = model.boolVar(
-          `agg_extra_ge_${thresholdIndex + 1}_${groupIndex}`,
-        )
-        extraThresholdVarsByLevel[thresholdIndex].push(threshold)
-        return threshold
-      },
-    )
-    const groupProduction = groupProductionByIndex.get(groupIndex)!
-    if (extraThresholds.length === 0) {
-      model.addConstraint(
-        groupProduction.minus(usedGroup).eq(0),
-        `agg_group_exact_extra_${groupIndex}`,
-      )
-    } else {
-      model.addConstraint(
-        groupProduction
-          .minus(usedGroup)
-          .minus(sum(...extraThresholds))
-          .eq(0),
-        `agg_group_exact_extra_${groupIndex}`,
-      )
-      for (
-        let thresholdIndex = 1;
-        thresholdIndex < extraThresholds.length;
-        thresholdIndex += 1
-      ) {
-        model.addConstraint(
-          extraThresholds[thresholdIndex]
-            .minus(extraThresholds[thresholdIndex - 1])
-            .leq(0),
-          `agg_extra_monotone_${groupIndex}_${thresholdIndex}`,
-        )
-      }
-    }
   })
 
   model.addConstraint(
@@ -4097,10 +4059,6 @@ function buildFinalizing30DoubleCompressedSeasoningStage(
   >[] = []
   const slackVars: ReturnType<Model['boolVar']>[] = []
   const usedGroupVars: ReturnType<Model['boolVar']>[] = []
-  const extraThresholdVarsByLevel = Array.from(
-    { length: PROCESSING_STACK_CAPACITY - 1 },
-    () => [] as ReturnType<Model['boolVar']>[],
-  )
 
   const sharedSeasoningQuantityTermsByEdgeKey = new Map<
     string,
@@ -4944,6 +4902,10 @@ function buildAggregateSeasoningLowerBoundStage(
   >()
   const slackVars: ReturnType<Model['boolVar']>[] = []
   const usedGroupVars: ReturnType<Model['boolVar']>[] = []
+  const extraThresholdVarsByLevel = Array.from(
+    { length: PROCESSING_STACK_CAPACITY - 1 },
+    () => [] as ReturnType<Model['boolVar']>[],
+  )
 
   const sharedSeasoningQuantityTerms: ReturnType<
     ReturnType<Model['intVar']>['times']
@@ -5129,6 +5091,44 @@ function buildAggregateSeasoningLowerBoundStage(
       sum(...groupUseVars).minus(usedGroup).eq(0),
       `one_class_per_used_group_${groupIndex}`,
     )
+
+    const groupProduction = groupProductionByIndex.get(groupIndex)!
+    const extraThresholds = Array.from(
+      { length: Math.max(0, groupUpperBound - 1) },
+      (_, thresholdIndex) => {
+        const threshold = model.boolVar(
+          `agg_extra_ge_${thresholdIndex + 1}_${groupIndex}`,
+        )
+        extraThresholdVarsByLevel[thresholdIndex].push(threshold)
+        return threshold
+      },
+    )
+    if (extraThresholds.length === 0) {
+      model.addConstraint(
+        groupProduction.minus(usedGroup).eq(0),
+        `agg_group_exact_extra_${groupIndex}`,
+      )
+    } else {
+      model.addConstraint(
+        groupProduction
+          .minus(usedGroup)
+          .minus(sum(...extraThresholds))
+          .eq(0),
+        `agg_group_exact_extra_${groupIndex}`,
+      )
+      for (
+        let thresholdIndex = 1;
+        thresholdIndex < extraThresholds.length;
+        thresholdIndex += 1
+      ) {
+        model.addConstraint(
+          extraThresholds[thresholdIndex]
+            .minus(extraThresholds[thresholdIndex - 1])
+            .leq(0),
+          `agg_extra_monotone_${groupIndex}_${thresholdIndex}`,
+        )
+      }
+    }
   })
 
   let maskIndex = 0
@@ -5905,10 +5905,7 @@ profileIt(
         extraCase.thresholds,
         21,
       )
-      const solved = await solveBoundedWithProgress(
-        built.model,
-        20,
-      )
+      const solved = await solveBoundedWithProgress(built.model, 20)
       const result = {
         pattern: extraCase.pattern,
         finalizingExact: 30,
