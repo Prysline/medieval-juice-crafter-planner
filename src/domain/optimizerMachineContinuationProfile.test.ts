@@ -11436,6 +11436,10 @@ function build311HallSignatureSupportMaster(
   }
 
   const cutSets = hallCuts.map((cut) => new Set(cut))
+  const forcedCustomerIds =
+    fixedGroup.eligibleCustomerIds.length === 8
+      ? new Set(fixedGroup.eligibleCustomerIds)
+      : null
   const classMap = new Map<
     string,
     {
@@ -11450,9 +11454,16 @@ function build311HallSignatureSupportMaster(
 
   groups.forEach((group, groupIndex) => {
     if (groupIndex === fixedExtra3GroupIndex) return
-    const normalEligible = group.eligibleCustomerIds.length >= 2
-    const extraEligible = group.eligibleCustomerIds.length >= 4
-    const slackEligible = group.ingredientCost === SLACK_RECIPE_COST
+    const remainingEligibleCount = forcedCustomerIds
+      ? group.eligibleCustomerIds.filter(
+          (customerId) => !forcedCustomerIds.has(customerId),
+        ).length
+      : group.eligibleCustomerIds.length
+    const normalEligible = remainingEligibleCount >= 2
+    const extraEligible = remainingEligibleCount >= 4
+    const slackEligible =
+      group.ingredientCost === SLACK_RECIPE_COST &&
+      remainingEligibleCount >= 1
     const signature = cutSets
       .map((cut) => (cut.has(groupIndex) ? '1' : '0'))
       .join('')
