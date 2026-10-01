@@ -10997,6 +10997,8 @@ function find311MaskCapacitySupportWitness(
       hallCapacity) *
       (hallLimit2 + 1)) +
     hallCapacity2
+  const stateSize =
+    31 * 3 * 2 * (hallLimit + 1) * (hallLimit2 + 1)
   const costMask =
     (1n << BigInt(PRODUCTION_COST_FIX + 1)) - 1n
   const hallCapacitySize = hallLimit + 1
@@ -11019,12 +11021,18 @@ function find311MaskCapacitySupportWitness(
       hallCapacity2,
     }
   }
+  type ActiveDpState = {
+    bits: bigint[]
+    activeIndexes: number[]
+  }
   const advanceStates = (
-    sourceStates: ReadonlyMap<number, bigint>,
+    sourceState: ActiveDpState,
     localOptions: readonly WitnessLocalOption[],
-  ): Map<number, bigint> => {
-    const next = new Map<number, bigint>()
-    for (const [encoded, source] of sourceStates) {
+  ): ActiveDpState => {
+    const nextBits = Array<bigint>(stateSize).fill(0n)
+    const nextActiveIndexes: number[] = []
+    for (const encoded of sourceState.activeIndexes) {
+      const source = sourceState.bits[encoded]
       const decoded = decodeStateIndex(encoded)
       for (const option of localOptions) {
         const nextSelected =
@@ -11056,20 +11064,28 @@ function find311MaskCapacitySupportWitness(
           nextHall,
           nextHall2,
         )
-        next.set(
-          targetIndex,
-          (next.get(targetIndex) ?? 0n) | shifted,
-        )
+        const previous = nextBits[targetIndex]
+        if (previous === 0n) {
+          nextActiveIndexes.push(targetIndex)
+        }
+        nextBits[targetIndex] = previous | shifted
       }
     }
-    return next
+    return {
+      bits: nextBits,
+      activeIndexes: nextActiveIndexes,
+    }
   }
 
-  let states = new Map<number, bigint>([
-    [stateIndex(0, 0, 0, 0, 0), 1n],
-  ])
+  const initialBits = Array<bigint>(stateSize).fill(0n)
+  const initialIndex = stateIndex(0, 0, 0, 0, 0)
+  initialBits[initialIndex] = 1n
+  let states: ActiveDpState = {
+    bits: initialBits,
+    activeIndexes: [initialIndex],
+  }
   const checkpointStride = 32
-  const checkpoints = new Map<number, Map<number, bigint>>([
+  const checkpoints = new Map<number, ActiveDpState>([
     [0, states],
   ])
 
@@ -11103,15 +11119,15 @@ function find311MaskCapacitySupportWitness(
       candidateHall2 += 1
     ) {
       if (
-        ((states.get(
+        (states.bits[
           stateIndex(
             30,
             2,
             1,
             candidateHall,
             candidateHall2,
-          ),
-        ) ?? 0n) & targetBit) !== 0n
+          )
+        ] & targetBit) !== 0n
       ) {
         hallCapacity = candidateHall
         hallCapacity2 = candidateHall2
@@ -11141,9 +11157,7 @@ function find311MaskCapacitySupportWitness(
         `Missing support DP checkpoint at mask ${blockStart}`,
       )
     }
-    const blockSnapshots: Array<Map<number, bigint>> = [
-      checkpoint,
-    ]
+    const blockSnapshots: ActiveDpState[] = [checkpoint]
     let blockState = checkpoint
     for (
       let forwardIndex = blockStart;
@@ -11183,15 +11197,15 @@ function find311MaskCapacitySupportWitness(
           continue
         }
         const sourceBits =
-          previous.get(
+          previous.bits[
             stateIndex(
               sourceSelected,
               sourceExtraOne,
               sourceSlack,
               sourceHall,
               sourceHall2,
-            ),
-          ) ?? 0n
+            )
+          ]
         if (
           (sourceBits & (1n << BigInt(sourceCost))) === 0n
         ) {
