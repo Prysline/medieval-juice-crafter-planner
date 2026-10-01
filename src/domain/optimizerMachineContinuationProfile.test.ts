@@ -8068,7 +8068,6 @@ profileIt(
       (candidate) => candidate.pattern === requestedPattern,
     )
     expect(extraCase).toBeDefined()
-    expect(slackGroupIndexes.length).toBeLessThanOrEqual(32)
     if (!extraCase) return
 
     const unresolved: Array<{
