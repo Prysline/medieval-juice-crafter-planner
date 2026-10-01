@@ -6705,12 +6705,14 @@ function buildOptimisticGroupOnlyFrontierMaster(
       | 'operation-signature'
       | 'structural-signature'
     slackExtraCount?: number
+    slackGroupIndex?: number
   } = {},
 ) {
   const includeCustomerFlow = options.includeCustomerFlow ?? true
   const hallCuts = options.hallCuts ?? []
   const sharedBucketMode = options.sharedBucketMode ?? 'equipment'
   const slackExtraCount = options.slackExtraCount
+  const slackGroupIndex = options.slackGroupIndex
   const groups = pairGroups(domain)
   const model = new Model()
 
@@ -7089,6 +7091,20 @@ function buildOptimisticGroupOnlyFrontierMaster(
     sum(...slackVars).eq(GLOBAL_SERVING_SLACK),
     'go_global_slack',
   )
+  if (typeof slackGroupIndex === 'number') {
+    const fixedSlack = slackByGroupIndex.get(slackGroupIndex)
+    if (!fixedSlack) {
+      model.addConstraint(
+        sum(...productionVars).leq(-1),
+        'go_invalid_fixed_slack_group',
+      )
+    } else {
+      model.addConstraint(
+        fixedSlack.eq(1),
+        'go_fixed_slack_group',
+      )
+    }
+  }
   model.addConstraint(
     sum(...productionVars).eq(PRODUCTION_UNITS_FIX),
     'go_production_units',
@@ -7646,7 +7662,7 @@ it.skip(
 // CI trigger: structural-signature exact frontier profile
 
 
-profileIt(
+it.skip(
   'checks singleton-group exact extra subcases',
   async () => {
     const domain = canonicalDomain()
@@ -7707,4 +7723,53 @@ profileIt(
     )
   },
   150000,
+)
+
+
+profileIt(
+  'enumerates singleton group for all-ones extra pattern',
+  async () => {
+    const domain = canonicalDomain()
+    const groups = pairGroups(domain)
+    const slackGroupIndexes = groups.flatMap((group, groupIndex) =>
+      group.ingredientCost === SLACK_RECIPE_COST ? [groupIndex] : [],
+    )
+    const results = []
+    for (const slackGroupIndex of slackGroupIndexes) {
+      const built = buildOptimisticGroupOnlyFrontierMaster(
+        domain,
+        [5, 0, 0, 0],
+        {
+          sharedBucketMode: 'structural-signature',
+          slackExtraCount: 0,
+          slackGroupIndex,
+        },
+      )
+      const solved = await solveBounded(built.model, 2)
+      const result = {
+        slackGroupIndex,
+        status: solved.status,
+        objective: solved.objective,
+        solveMs: Math.round(solved.solveMs),
+      }
+      results.push(result)
+      console.info(
+        '[machine-singleton-group-case]',
+        JSON.stringify(result),
+      )
+    }
+    console.info(
+      '[machine-singleton-group-summary]',
+      JSON.stringify({
+        total: results.length,
+        infeasible: results.filter((result) => result.status === 'infeasible').length,
+        optimal: results.filter((result) => result.status === 'optimal').length,
+        timelimit: results.filter((result) => result.status === 'timelimit').length,
+        unresolvedGroupIndexes: results
+          .filter((result) => result.status !== 'infeasible')
+          .map((result) => result.slackGroupIndex),
+      }),
+    )
+  },
+  120000,
 )
