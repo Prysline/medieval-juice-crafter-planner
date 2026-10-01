@@ -8414,6 +8414,84 @@ profileIt(
   async () => {
     const domain = canonicalDomain()
     const groups = pairGroups(domain)
+    const structureMaskCustomerIds = new Map<string, string[]>()
+    const structureGroupsByMask = new Map<string, number>()
+    const structureCostCounts = new Map<number, number>()
+    groups.forEach((group) => {
+      const maskKey = group.eligibleCustomerIds.join('\u001e')
+      if (!structureMaskCustomerIds.has(maskKey)) {
+        structureMaskCustomerIds.set(
+          maskKey,
+          group.eligibleCustomerIds,
+        )
+      }
+      structureGroupsByMask.set(
+        maskKey,
+        (structureGroupsByMask.get(maskKey) ?? 0) + 1,
+      )
+      structureCostCounts.set(
+        group.ingredientCost,
+        (structureCostCounts.get(group.ingredientCost) ?? 0) + 1,
+      )
+    })
+    const structureFlowTypes = customerMaskFlowTypes(
+      domain.serviceableCustomerIds,
+      structureMaskCustomerIds,
+    )
+    const structureRows = groups.map((group) => ({
+      maskKey: group.eligibleCustomerIds.join('\u001e'),
+      eligibleCustomers: group.eligibleCustomerIds.length,
+      ingredientCost: group.ingredientCost,
+      maxExtra:
+        Math.min(
+          PROCESSING_STACK_CAPACITY,
+          Math.max(
+            1,
+            Math.ceil(group.eligibleCustomerIds.length / 2),
+          ),
+        ) - 1,
+    }))
+    console.info(
+      '[machine-extra-structure]',
+      JSON.stringify({
+        groupCount: groups.length,
+        serviceMaskCount: structureMaskCustomerIds.size,
+        customerFlowTypeCount: structureFlowTypes.length,
+        uniqueIngredientCostCount: structureCostCounts.size,
+        groupsPerMask: {
+          min: Math.min(...structureGroupsByMask.values()),
+          max: Math.max(...structureGroupsByMask.values()),
+          multiCostMasks: [...structureGroupsByMask.values()].filter(
+            (count) => count > 1,
+          ).length,
+        },
+        commonCosts: [...structureCostCounts.entries()]
+          .sort(
+            ([leftCost, leftCount], [rightCost, rightCount]) =>
+              rightCount - leftCount || leftCost - rightCost,
+          )
+          .slice(0, 24),
+        extraEligibility: [1, 2, 3, 4].map((extra) => {
+          const eligible = structureRows.filter(
+            (row) => row.maxExtra >= extra,
+          )
+          return {
+            extra,
+            groups: eligible.length,
+            masks: new Set(
+              eligible.map((row) => row.maskKey),
+            ).size,
+            costs: new Set(
+              eligible.map((row) => row.ingredientCost),
+            ).size,
+            slackCostGroups: eligible.filter(
+              (row) =>
+                row.ingredientCost === SLACK_RECIPE_COST,
+            ).length,
+          }
+        }),
+      }),
+    )
     const requestedPattern =
       machineContinuationEnv.MACHINE_CONTINUATION_JOINT_PATTERN ??
       '3+1+1'
