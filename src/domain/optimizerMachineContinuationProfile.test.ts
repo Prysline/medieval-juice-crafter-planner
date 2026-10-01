@@ -3,6 +3,7 @@ import { expect, it } from 'vitest'
 import { customers as canonicalCustomers } from '../data/customers'
 import { customerVillageIsAvailable } from './availability'
 import { PROCESSING_STACK_CAPACITY } from './inventoryRules'
+import { machineOperationBreakdownForSelection } from './optimizerCertificates'
 import { buildRecipeCandidatePool } from './recipeCandidatePool'
 import {
   buildOptimizationModel,
@@ -483,6 +484,293 @@ function buildFullMachineCapFeasibility(
   }
 }
 
+
+function buildBlendingOptimalPairStage(
+  domain: BatchOptimizationModel,
+) {
+  const groups = pairGroups(domain)
+  const model = new Model()
+  const coverageByCustomerId = new Map<
+    string,
+    ReturnType<Model['boolVar']>[]
+  >(domain.serviceableCustomerIds.map((id) => [id, []]))
+  const unitVarsByGroupKey = new Map<
+    string,
+    ReturnType<Model['boolVar']>[]
+  >(groups.map((group) => [group.key, []]))
+  const allUnitVars: ReturnType<Model['boolVar']>[] = []
+  const singletonVars: ReturnType<Model['boolVar']>[] = []
+  const assignedCostTerms: ReturnType<
+    ReturnType<Model['boolVar']>['times']
+  >[] = []
+
+  const addCoverage = (
+    customerId: string,
+    variable: ReturnType<Model['boolVar']>,
+  ) => {
+    const terms = coverageByCustomerId.get(customerId)
+    if (!terms) throw new Error(`Unknown customer ${customerId}`)
+    terms.push(variable)
+  }
+
+  groups.forEach((group, groupIndex) => {
+    if (group.ingredientCost === SLACK_RECIPE_COST) {
+      group.eligibleCustomerIds.forEach(
+        (customerId, customerIndex) => {
+          const singleton = model.boolVar(
+            `single_${groupIndex}_${customerIndex}`,
+          )
+          singletonVars.push(singleton)
+          allUnitVars.push(singleton)
+          unitVarsByGroupKey.get(group.key)!.push(singleton)
+          addCoverage(customerId, singleton)
+          assignedCostTerms.push(
+            singleton.times(group.ingredientCost),
+          )
+        },
+      )
+    }
+
+    for (
+      let leftIndex = 0;
+      leftIndex < group.eligibleCustomerIds.length;
+      leftIndex += 1
+    ) {
+      for (
+        let rightIndex = leftIndex + 1;
+        rightIndex < group.eligibleCustomerIds.length;
+        rightIndex += 1
+      ) {
+        const pair = model.boolVar(
+          `pair_${groupIndex}_${leftIndex}_${rightIndex}`,
+        )
+        allUnitVars.push(pair)
+        unitVarsByGroupKey.get(group.key)!.push(pair)
+        addCoverage(group.eligibleCustomerIds[leftIndex], pair)
+        addCoverage(group.eligibleCustomerIds[rightIndex], pair)
+        assignedCostTerms.push(
+          pair.times(group.ingredientCost * 2),
+        )
+      }
+    }
+  })
+
+  domain.serviceableCustomerIds.forEach(
+    (customerId, customerIndex) => {
+      model.addConstraint(
+        sum(...(coverageByCustomerId.get(customerId) ?? [])).eq(1),
+        `cover_${customerIndex}`,
+      )
+    },
+  )
+  model.addConstraint(sum(...singletonVars).eq(1), 'singleton_total')
+  model.addConstraint(
+    sum(...allUnitVars).eq(PRODUCTION_UNITS_FIX),
+    'production_units_fix',
+  )
+  model.addConstraint(
+    sum(...assignedCostTerms).eq(ASSIGNED_INGREDIENT_COST_FIX),
+    'assigned_cost_fix',
+  )
+
+  const quantityTermsByEdgeKey = new Map<
+    string,
+    ReturnType<ReturnType<Model['intVar']>['times']>[]
+  >()
+  const quantityUpperBoundByEdgeKey = new Map<string, number>()
+  const productionCostTerms: ReturnType<
+    ReturnType<Model['intVar']>['times']
+  >[] = []
+  const blendingKinds = new Set<ProductionStepKind>(['blending'])
+  let quotientVariableCount = 0
+
+  groups.forEach((group, groupIndex) => {
+    const signatures = new Map<
+      string,
+      ReturnType<typeof partitionSignature>
+    >()
+    for (const recipe of group.recipes) {
+      const signature = partitionSignature(recipe, blendingKinds)
+      if (!signatures.has(signature.key)) {
+        signatures.set(signature.key, signature)
+      }
+    }
+
+    const upperBound = Math.max(
+      1,
+      Math.ceil(group.eligibleCustomerIds.length / 2),
+    )
+    const quotientVars: ReturnType<Model['intVar']>[] = []
+
+    for (const signature of signatures.values()) {
+      const x = model.intVar(
+        0,
+        upperBound,
+        `qx_${quotientVariableCount}`,
+      )
+      quotientVariableCount += 1
+      quotientVars.push(x)
+      productionCostTerms.push(x.times(group.ingredientCost))
+      for (const [edgeKey, multiplicity] of signature.multiplicityByEdgeKey) {
+        const terms = quantityTermsByEdgeKey.get(edgeKey)
+        const term = x.times(multiplicity)
+        if (terms) terms.push(term)
+        else quantityTermsByEdgeKey.set(edgeKey, [term])
+        quantityUpperBoundByEdgeKey.set(
+          edgeKey,
+          (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) +
+            upperBound * multiplicity,
+        )
+      }
+    }
+
+    model.addConstraint(
+      sum(...quotientVars)
+        .minus(sum(...(unitVarsByGroupKey.get(group.key) ?? [])))
+        .eq(0),
+      `group_units_${groupIndex}`,
+    )
+  })
+
+  model.addConstraint(
+    sum(...productionCostTerms).eq(PRODUCTION_COST_FIX),
+    'production_cost_fix',
+  )
+
+  const operationVars: ReturnType<Model['intVar']>[] = []
+  ;[...quantityTermsByEdgeKey.entries()].forEach(
+    ([edgeKey, terms], edgeIndex) => {
+      const operation = model.intVar(
+        0,
+        Math.max(
+          1,
+          Math.ceil(
+            (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) /
+              PROCESSING_STACK_CAPACITY,
+          ),
+        ),
+        `op_${edgeIndex}`,
+      )
+      const quantity = sum(...terms)
+      model.addConstraint(
+        quantity
+          .minus(operation.times(PROCESSING_STACK_CAPACITY))
+          .leq(0),
+        `op_capacity_${edgeIndex}`,
+      )
+      model.addConstraint(
+        operation.minus(quantity).leq(0),
+        `op_usage_${edgeIndex}`,
+      )
+      operationVars.push(operation)
+    },
+  )
+
+  model.minimize(sum(...operationVars))
+  return {
+    model,
+    groups,
+    unitVarsByGroupKey,
+    quotientVariableCount,
+    operationEdgeCount: operationVars.length,
+  }
+}
+
+function buildFixedGroupFullMachineStage(
+  domain: BatchOptimizationModel,
+  unitsByGroupKey: Map<string, number>,
+) {
+  const groups = pairGroups(domain).filter(
+    (group) => (unitsByGroupKey.get(group.key) ?? 0) > 0,
+  )
+  const model = new Model()
+  const xByRecipeId = new Map<string, ReturnType<Model['intVar']>>()
+  const quantityTermsByEdgeKey = new Map<
+    string,
+    ReturnType<ReturnType<Model['intVar']>['times']>[]
+  >()
+  const quantityUpperBoundByEdgeKey = new Map<string, number>()
+
+  let recipeVariableCount = 0
+  for (const group of groups) {
+    const groupUnits = unitsByGroupKey.get(group.key) ?? 0
+    const groupRecipeVars: ReturnType<Model['intVar']>[] = []
+
+    for (const recipe of group.recipes) {
+      const x = model.intVar(
+        0,
+        groupUnits,
+        `x_${recipeVariableCount}`,
+      )
+      recipeVariableCount += 1
+      xByRecipeId.set(recipe.candidate.id, x)
+      groupRecipeVars.push(x)
+
+      const multiplicityByEdgeKey = new Map<string, number>()
+      for (const edge of recipe.productionPath.edges) {
+        multiplicityByEdgeKey.set(
+          edge.key,
+          (multiplicityByEdgeKey.get(edge.key) ?? 0) + 1,
+        )
+      }
+      for (const [edgeKey, multiplicity] of multiplicityByEdgeKey) {
+        const terms = quantityTermsByEdgeKey.get(edgeKey)
+        const term = x.times(multiplicity)
+        if (terms) terms.push(term)
+        else quantityTermsByEdgeKey.set(edgeKey, [term])
+        quantityUpperBoundByEdgeKey.set(
+          edgeKey,
+          (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) +
+            groupUnits * multiplicity,
+        )
+      }
+    }
+
+    model.addConstraint(
+      sum(...groupRecipeVars).eq(groupUnits),
+      `group_units_${groups.indexOf(group)}`,
+    )
+  }
+
+  const operationVars: ReturnType<Model['intVar']>[] = []
+  ;[...quantityTermsByEdgeKey.entries()].forEach(
+    ([edgeKey, terms], edgeIndex) => {
+      const operation = model.intVar(
+        0,
+        Math.max(
+          1,
+          Math.ceil(
+            (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) /
+              PROCESSING_STACK_CAPACITY,
+          ),
+        ),
+        `op_${edgeIndex}`,
+      )
+      const quantity = sum(...terms)
+      model.addConstraint(
+        quantity
+          .minus(operation.times(PROCESSING_STACK_CAPACITY))
+          .leq(0),
+        `op_capacity_${edgeIndex}`,
+      )
+      model.addConstraint(
+        operation.minus(quantity).leq(0),
+        `op_usage_${edgeIndex}`,
+      )
+      operationVars.push(operation)
+    },
+  )
+  model.minimize(sum(...operationVars))
+
+  return {
+    model,
+    xByRecipeId,
+    selectedGroupCount: groups.length,
+    recipeVariableCount,
+    operationEdgeCount: operationVars.length,
+  }
+}
+
 async function solveBounded(
   model: Model,
   timeLimitSeconds: number,
@@ -525,47 +813,87 @@ async function solveBounded(
 }
 
 profileIt(
-  'profiles descending exact full-machine feasibility caps',
+  'lifts the exact blending-optimal pairing into a full-machine witness',
   async () => {
     const domain = canonicalDomain()
-
     expect(domain.recipes).toHaveLength(7892)
     expect(domain.serviceableCustomerIds).toHaveLength(
       SERVICEABLE_CUSTOMER_COUNT,
     )
-    expect(GLOBAL_SERVING_SLACK).toBe(1)
-    expect(SLACK_RECIPE_COST).toBe(43)
 
-    for (const cap of [110, 108, 106]) {
-      const buildStartedAt = performance.now()
-      const built = buildFullMachineCapFeasibility(domain, cap)
-      const buildMs = performance.now() - buildStartedAt
-      const solved = await solveBounded(built.model, 35)
-
-      console.info(
-        '[machine-full-cap-feasibility]',
-        JSON.stringify({
-          cap,
-          lowerBound: 103,
-          groupCount: built.groupCount,
-          assignmentVariableCount:
-            built.assignmentVariableCount,
-          recipeVariableCount: built.recipeVariableCount,
-          singletonSlackVariableCount:
-            built.singletonSlackVariableCount,
-          operationEdgeCount: built.operationEdgeCount,
-          buildMs: Math.round(buildMs),
-          serializeMs: Math.round(solved.serializeMs),
-          parseMs: Math.round(solved.parseMs),
-          solveMs: Math.round(solved.solveMs),
-          status: solved.status,
-          objective: solved.objective,
-        }),
+    const blendingBuilt = buildBlendingOptimalPairStage(domain)
+    const blendingStartedAt = performance.now()
+    const blendingSolution = await blendingBuilt.model.solve()
+    const blendingSolveMs = performance.now() - blendingStartedAt
+    if (blendingSolution.status !== 'optimal') {
+      throw new Error(
+        `Blending pairing ended with ${blendingSolution.status}`,
       )
-
-      if (solved.status !== 'optimal') break
     }
+
+    const unitsByGroupKey = new Map<string, number>()
+    for (const group of blendingBuilt.groups) {
+      let units = 0
+      for (const variable of (
+        blendingBuilt.unitVarsByGroupKey.get(group.key) ?? []
+      )) {
+        const value = blendingSolution.getValue(variable)
+        if (typeof value !== 'number' || !Number.isFinite(value)) {
+          throw new Error('Invalid blending pair variable value')
+        }
+        if (value > 0.5) units += 1
+      }
+      unitsByGroupKey.set(group.key, units)
+    }
+
+    const fullBuilt = buildFixedGroupFullMachineStage(
+      domain,
+      unitsByGroupKey,
+    )
+    const fullStartedAt = performance.now()
+    const fullSolution = await fullBuilt.model.solve()
+    const fullSolveMs = performance.now() - fullStartedAt
+    if (fullSolution.status !== 'optimal') {
+      throw new Error(
+        `Full-machine lift ended with ${fullSolution.status}`,
+      )
+    }
+
+    const selections = domain.recipes.flatMap((recipe) => {
+      const variable = fullBuilt.xByRecipeId.get(recipe.candidate.id)
+      if (!variable) return []
+      const value = fullSolution.getValue(variable)
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
+        throw new Error('Invalid full-machine recipe variable value')
+      }
+      const units = Math.round(value)
+      return units > 0
+        ? [{ recipeId: recipe.candidate.id, units }]
+        : []
+    })
+    const breakdown = machineOperationBreakdownForSelection(
+      domain,
+      selections,
+    )
+
+    console.info(
+      '[machine-blending-optimal-witness]',
+      JSON.stringify({
+        blendingObjective: blendingSolution.objective,
+        blendingSolveMs: Math.round(blendingSolveMs),
+        quotientVariableCount:
+          blendingBuilt.quotientVariableCount,
+        blendingEdgeCount: blendingBuilt.operationEdgeCount,
+        selectedGroupCount: fullBuilt.selectedGroupCount,
+        fullRecipeVariableCount: fullBuilt.recipeVariableCount,
+        fullOperationEdgeCount: fullBuilt.operationEdgeCount,
+        fullSolveMs: Math.round(fullSolveMs),
+        selectedRecipeCount: selections.length,
+        breakdown,
+        globalLowerBound: 103,
+      }),
+    )
   },
-  130000,
+  120000,
 )
 
