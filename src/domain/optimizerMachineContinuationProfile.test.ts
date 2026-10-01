@@ -3181,7 +3181,11 @@ function buildFinalizing30Blending35RawThroughStage(
 function buildFinalizing30CompressedFrontierStage(
   domain: BatchOptimizationModel,
   extraThresholdCounts: readonly [number, number, number, number],
-  nonFinalCap?: number,
+  frontier?: {
+    nonFinalCap?: number
+    blendingFix?: number
+    throughCap?: number
+  },
 ) {
   const groups = pairGroups(domain)
   const model = new Model()
@@ -3596,11 +3600,29 @@ function buildFinalizing30CompressedFrontierStage(
   )
   model.addConstraint(through.geq(38), 'through_lower_bound')
   model.addConstraint(blending.geq(35), 'blending_lower_bound')
-  if (typeof nonFinalCap === 'number') {
+  if (typeof frontier?.blendingFix === 'number') {
     model.addConstraint(
-      through.plus(blending).leq(nonFinalCap),
+      blending.eq(frontier.blendingFix),
+      'blending_frontier_fix',
+    )
+  }
+  if (typeof frontier?.throughCap === 'number') {
+    model.addConstraint(
+      through.leq(frontier.throughCap),
+      'through_frontier_cap',
+    )
+  }
+  if (typeof frontier?.nonFinalCap === 'number') {
+    model.addConstraint(
+      through.plus(blending).leq(frontier.nonFinalCap),
       'nonfinal_break_107_cap',
     )
+  }
+  if (
+    typeof frontier?.blendingFix === 'number' ||
+    typeof frontier?.throughCap === 'number' ||
+    typeof frontier?.nonFinalCap === 'number'
+  ) {
     model.minimize(sum(...productionVars))
   } else {
     model.minimize(through.plus(blending))
@@ -5799,7 +5821,7 @@ function buildServiceMaskCompressedNonfinalStage(
 }
 
 profileIt(
-  'rules out sub-107 finalizing-30 solutions by exact extra-unit partitions',
+  'tests the blending-35 sub-107 frontier by exact extra-unit partitions',
   async () => {
     const domain = canonicalDomain()
     const cases = [
@@ -5813,24 +5835,21 @@ profileIt(
 
     const results = []
     for (const extraCase of cases) {
-      const buildStartedAt = performance.now()
       const built = buildFinalizing30CompressedFrontierStage(
         domain,
         extraCase.thresholds,
-        76,
+        { blendingFix: 35, throughCap: 41 },
       )
-      const buildMs = performance.now() - buildStartedAt
       const solved = await solveBoundedWithProgress(
         built.model,
-        25,
+        20,
       )
       const result = {
         pattern: extraCase.pattern,
-        thresholds: extraCase.thresholds,
-        totalMachineCap: 106,
         finalizingExact: 30,
-        nonFinalCap: 76,
-        buildMs: Math.round(buildMs),
+        blendingExact: 35,
+        throughCap: 41,
+        totalMachineCap: 106,
         status: solved.status,
         feasibilityObjective: solved.objective,
         solveMs: Math.round(solved.solveMs),
@@ -5838,13 +5857,13 @@ profileIt(
       }
       results.push(result)
       console.info(
-        '[machine-extra-cap-case]',
+        '[machine-b35-extra-case]',
         JSON.stringify(result),
       )
     }
 
     console.info(
-      '[machine-extra-cap-summary]',
+      '[machine-b35-extra-summary]',
       JSON.stringify(results.map((result) => ({
         pattern: result.pattern,
         status: result.status,
@@ -5853,5 +5872,5 @@ profileIt(
       }))),
     )
   },
-  210000,
+  180000,
 )
