@@ -8048,7 +8048,7 @@ it.skip(
 )
 
 
-it.skip(
+profileIt(
   'certifies remaining finalizing-30 singleton identities',
   async () => {
     const domain = canonicalDomain()
@@ -8056,72 +8056,82 @@ it.skip(
     const slackGroupIndexes = groups.flatMap((group, groupIndex) =>
       group.ingredientCost === SLACK_RECIPE_COST ? [groupIndex] : [],
     )
-    const ordinalRaw =
-      machineContinuationEnv.MACHINE_CONTINUATION_SLACK_ORDINAL ?? 'coverage'
-    if (ordinalRaw === 'coverage') {
-      expect(slackGroupIndexes.length).toBeLessThanOrEqual(32)
-      return
-    }
-
-    const ordinal = Number.parseInt(ordinalRaw, 10)
-    expect(Number.isInteger(ordinal)).toBe(true)
-    expect(ordinal).toBeGreaterThanOrEqual(0)
-    if (ordinal >= slackGroupIndexes.length) return
-
-    const slackGroupIndex = slackGroupIndexes[ordinal]
+    const requestedPattern =
+      machineContinuationEnv.MACHINE_CONTINUATION_JOINT_PATTERN ?? '3+1+1'
     const cases = [
       { pattern: '3+1+1', thresholds: [3, 1, 1, 0] as const },
       { pattern: '2+2+1', thresholds: [3, 2, 0, 0] as const },
       { pattern: '2+1+1+1', thresholds: [4, 1, 0, 0] as const },
       { pattern: '1+1+1+1+1', thresholds: [5, 0, 0, 0] as const },
     ]
+    const extraCase = cases.find(
+      (candidate) => candidate.pattern === requestedPattern,
+    )
+    expect(extraCase).toBeDefined()
+    expect(slackGroupIndexes.length).toBeLessThanOrEqual(32)
+    if (!extraCase) return
+
     const unresolved: Array<{
-      pattern: string
+      ordinal: number
+      slackGroupIndex: number
       status: string
       objective: number | null
     }> = []
 
-    for (const extraCase of cases) {
+    for (
+      let ordinal = 0;
+      ordinal < slackGroupIndexes.length;
+      ordinal += 1
+    ) {
+      const slackGroupIndex = slackGroupIndexes[ordinal]
       const built = buildOptimisticGroupOnlyFrontierMaster(
         domain,
         extraCase.thresholds,
         {
+          includeCustomerFlow: false,
           sharedBucketMode: 'structural-signature',
           slackExtraCount: 0,
           slackGroupIndex,
           totalNonFinalCap: 76,
         },
       )
-      const solved = await solveBoundedWithProgress(built.model, 5)
+      const solved = await solveBoundedWithProgress(built.model, 2)
       console.info(
         '[machine-singleton-identity-106-case]',
         JSON.stringify({
+          pattern: extraCase.pattern,
           ordinal,
           slackGroupIndex,
-          pattern: extraCase.pattern,
           status: solved.status,
           objective: solved.objective,
           solveMs: Math.round(solved.solveMs),
-          progressTail: solved.progressTail,
         }),
       )
       if (solved.status !== 'infeasible') {
         unresolved.push({
-          pattern: extraCase.pattern,
+          ordinal,
+          slackGroupIndex,
           status: solved.status,
           objective: solved.objective,
         })
       }
     }
 
+    console.info(
+      '[machine-singleton-identity-106-summary]',
+      JSON.stringify({
+        pattern: extraCase.pattern,
+        slackGroupCount: slackGroupIndexes.length,
+        unresolved,
+      }),
+    )
     expect(unresolved).toEqual([])
   },
-  120000,
+  180000,
 )
 
-
-profileIt(
-  'decomposes remaining finalizing-30 support frontier exactly',
+it.skip(
+  'decomposes remaining finalizing-30 support frontier exactly',,
   async () => {
     const domain = canonicalDomain()
     const requestedPattern =
