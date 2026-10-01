@@ -11419,6 +11419,281 @@ hallSignatureProfileIt(
   120000,
 )
 
+
+function build311HallSignatureSupportMaster(
+  groups: readonly PairGroup[],
+  fixedExtra3GroupIndex: number,
+  hallCuts: readonly (readonly number[])[],
+) {
+  const fixedGroup = groups[fixedExtra3GroupIndex]
+  const model = new Model()
+  if (!fixedGroup || fixedGroup.eligibleCustomerIds.length < 8) {
+    model.addConstraint(
+      model.intVar(0, 0, 'invalid').geq(1),
+      'invalid_fixed_group',
+    )
+    return { model, classes: [] as Array<{ groupIndexes: number[]; normalName: string; extraName: string; slackName: string }> }
+  }
+
+  const cutSets = hallCuts.map((cut) => new Set(cut))
+  const classMap = new Map<
+    string,
+    {
+      ingredientCost: number
+      normalEligible: boolean
+      extraEligible: boolean
+      slackEligible: boolean
+      signature: string
+      groupIndexes: number[]
+    }
+  >()
+
+  groups.forEach((group, groupIndex) => {
+    if (groupIndex === fixedExtra3GroupIndex) return
+    const normalEligible = group.eligibleCustomerIds.length >= 2
+    const extraEligible = group.eligibleCustomerIds.length >= 4
+    const slackEligible = group.ingredientCost === SLACK_RECIPE_COST
+    const signature = cutSets
+      .map((cut) => (cut.has(groupIndex) ? '1' : '0'))
+      .join('')
+    const key =
+      `${group.ingredientCost}|${normalEligible ? 1 : 0}|${extraEligible ? 1 : 0}|${slackEligible ? 1 : 0}|${signature}`
+    const current = classMap.get(key)
+    if (current) current.groupIndexes.push(groupIndex)
+    else {
+      classMap.set(key, {
+        ingredientCost: group.ingredientCost,
+        normalEligible,
+        extraEligible,
+        slackEligible,
+        signature,
+        groupIndexes: [groupIndex],
+      })
+    }
+  })
+
+  const selectedTerms = []
+  const extraTerms = []
+  const slackTerms = []
+  const costTerms = []
+  const hallTerms = hallCuts.map(() => [])
+  const classes: Array<{
+    groupIndexes: number[]
+    normalName: string
+    extraName: string
+    slackName: string
+  }> = []
+
+  let classIndex = 0
+  for (const groupClass of classMap.values()) {
+    const count = groupClass.groupIndexes.length
+    const normalName = `hsa_n_${classIndex}`
+    const extraName = `hsa_e_${classIndex}`
+    const slackName = `hsa_s_${classIndex}`
+    const normal = model.intVar(
+      0,
+      groupClass.normalEligible ? count : 0,
+      normalName,
+    )
+    const extra = model.intVar(
+      0,
+      groupClass.extraEligible ? Math.min(2, count) : 0,
+      extraName,
+    )
+    const slack = model.intVar(
+      0,
+      groupClass.slackEligible ? 1 : 0,
+      slackName,
+    )
+    model.addConstraint(
+      sum(normal, extra, slack).leq(count),
+      `hsa_class_count_${classIndex}`,
+    )
+    selectedTerms.push(normal, extra, slack)
+    extraTerms.push(extra)
+    slackTerms.push(slack)
+    costTerms.push(
+      normal.times(groupClass.ingredientCost),
+      extra.times(groupClass.ingredientCost * 2),
+      slack.times(groupClass.ingredientCost),
+    )
+    hallCuts.forEach((_cut, cutIndex) => {
+      if (groupClass.signature[cutIndex] !== '1') return
+      hallTerms[cutIndex].push(
+        normal.times(2),
+        extra.times(4),
+        slack,
+      )
+    })
+    classes.push({
+      groupIndexes: groupClass.groupIndexes,
+      normalName,
+      extraName,
+      slackName,
+    })
+    classIndex += 1
+  }
+
+  model.addConstraint(
+    sum(...selectedTerms).eq(29),
+    'hsa_selected_groups',
+  )
+  model.addConstraint(sum(...extraTerms).eq(2), 'hsa_extra_one')
+  model.addConstraint(sum(...slackTerms).eq(1), 'hsa_slack')
+  model.addConstraint(
+    sum(...costTerms).eq(
+      PRODUCTION_COST_FIX - fixedGroup.ingredientCost * 4,
+    ),
+    'hsa_production_cost',
+  )
+
+  hallCuts.forEach((cut, cutIndex) => {
+    const customerIds = new Set<string>()
+    for (const groupIndex of cut) {
+      for (const customerId of groups[groupIndex]?.eligibleCustomerIds ?? []) {
+        customerIds.add(customerId)
+      }
+    }
+    const fixedCapacity = cutSets[cutIndex].has(fixedExtra3GroupIndex)
+      ? 8
+      : 0
+    model.addConstraint(
+      sum(...hallTerms[cutIndex]).leq(customerIds.size - fixedCapacity),
+      `hsa_hall_${cutIndex}`,
+    )
+  })
+
+  return { model, classes }
+}
+
+hallSignatureProfileIt(
+  'iterates exact Hall-signature support classes for one unresolved identity',
+  async () => {
+    const domain = canonicalDomain()
+    const groups = pairGroups(domain)
+    const groupIndex = 1279
+    const hallCuts = await bootstrap311HallCutsFromDpWitnesses(domain, groups)
+    const hallCutKeys = new Set(hallCuts.map((cut) => cut.join(',')))
+    const thresholdCounts = [3, 1, 1, 0] as const
+    const rounds = []
+
+    for (let round = 0; round < 24; round += 1) {
+      const built = build311HallSignatureSupportMaster(
+        groups,
+        groupIndex,
+        hallCuts,
+      )
+      const solved = await solveBounded(built.model, 1)
+      if (solved.status !== 'optimal' || !solved.namedSolution) {
+        rounds.push({
+          round: round + 1,
+          status: solved.status,
+          hallCuts: hallCuts.length,
+          classCount: built.classes.length,
+          solveMs: Math.round(solved.solveMs),
+        })
+        break
+      }
+
+      const capacities = Array(groups.length).fill(0)
+      capacities[groupIndex] = 8
+      for (const groupClass of built.classes) {
+        const normalRaw = solved.namedSolution.get(groupClass.normalName)
+        const extraRaw = solved.namedSolution.get(groupClass.extraName)
+        const slackRaw = solved.namedSolution.get(groupClass.slackName)
+        const normalCount =
+          typeof normalRaw === 'number' ? Math.round(normalRaw) : 0
+        const extraCount =
+          typeof extraRaw === 'number' ? Math.round(extraRaw) : 0
+        const slackCount =
+          typeof slackRaw === 'number' ? Math.round(slackRaw) : 0
+        const available = [...groupClass.groupIndexes]
+        for (let index = 0; index < extraCount; index += 1) {
+          const chosen = available.shift()
+          if (chosen === undefined) throw new Error('Missing extra group')
+          capacities[chosen] = 4
+        }
+        for (let index = 0; index < slackCount; index += 1) {
+          const chosen = available.shift()
+          if (chosen === undefined) throw new Error('Missing slack group')
+          capacities[chosen] = 1
+        }
+        for (let index = 0; index < normalCount; index += 1) {
+          const chosen = available.shift()
+          if (chosen === undefined) throw new Error('Missing normal group')
+          capacities[chosen] = 2
+        }
+      }
+
+      const support = capacities.flatMap((capacity, supportGroupIndex) =>
+        capacity > 0 ? [supportGroupIndex] : [],
+      )
+      if (support.length !== 30) {
+        throw new Error(
+          `Expected 30 Hall-signature support groups, got ${support.length}`,
+        )
+      }
+      const checked = maximumAssignmentFlowForGroupCapacities(
+        groups,
+        domain.serviceableCustomerIds,
+        capacities,
+      )
+
+      if (checked.flow < SERVICEABLE_CUSTOMER_COUNT) {
+        const key = checked.violatingGroupIndexes.join(',')
+        rounds.push({
+          round: round + 1,
+          status: 'hall-cut',
+          hallCuts: hallCuts.length,
+          classCount: built.classes.length,
+          solveMs: Math.round(solved.solveMs),
+          assignmentFlow: checked.flow,
+          newCutGroups: checked.violatingGroupIndexes.length,
+        })
+        if (
+          checked.violatingGroupIndexes.length === 0 ||
+          hallCutKeys.has(key)
+        ) {
+          break
+        }
+        hallCutKeys.add(key)
+        hallCuts.push(checked.violatingGroupIndexes)
+        continue
+      }
+
+      const exact = buildFinalizing30MaskPartitionStage(
+        domain,
+        new Set<ProductionStepKind>([
+          'juicing',
+          'seasoning',
+          'blending',
+        ]),
+        thresholdCounts,
+        { max: 76 },
+        0,
+        new Set(support),
+      )
+      const exactSolved = await solveBounded(exact.model, 3)
+      rounds.push({
+        round: round + 1,
+        status: `customer-feasible-${exactSolved.status}`,
+        hallCuts: hallCuts.length,
+        classCount: built.classes.length,
+        solveMs: Math.round(solved.solveMs),
+        assignmentFlow: checked.flow,
+        exactSolveMs: Math.round(exactSolved.solveMs),
+      })
+      break
+    }
+
+    console.info(
+      '[machine-hall-signature-master-summary]',
+      JSON.stringify({ groupIndex, rounds }),
+    )
+  },
+  120000,
+)
+
 supportDpProfileIt(
   'counts exact 3+1+1 support roles before customer-flow validation',
   async () => {
