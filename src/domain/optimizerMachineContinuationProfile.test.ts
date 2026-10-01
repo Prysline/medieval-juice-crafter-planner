@@ -485,8 +485,9 @@ function buildFullMachineCapFeasibility(
 }
 
 
-function buildBlendingOptimalPairStage(
+function buildPartitionOptimalPairStage(
   domain: BatchOptimizationModel,
+  partitionKinds: ReadonlySet<ProductionStepKind>,
 ) {
   const groups = pairGroups(domain)
   const model = new Model()
@@ -581,7 +582,6 @@ function buildBlendingOptimalPairStage(
   const productionCostTerms: ReturnType<
     ReturnType<Model['intVar']>['times']
   >[] = []
-  const blendingKinds = new Set<ProductionStepKind>(['blending'])
   let quotientVariableCount = 0
 
   groups.forEach((group, groupIndex) => {
@@ -590,7 +590,7 @@ function buildBlendingOptimalPairStage(
       ReturnType<typeof partitionSignature>
     >()
     for (const recipe of group.recipes) {
-      const signature = partitionSignature(recipe, blendingKinds)
+      const signature = partitionSignature(recipe, partitionKinds)
       if (!signatures.has(signature.key)) {
         signatures.set(signature.key, signature)
       }
@@ -813,7 +813,7 @@ async function solveBounded(
 }
 
 profileIt(
-  'lifts the exact blending-optimal pairing into a full-machine witness',
+  'lifts the exact through-seasoning-optimal pairing into a full-machine witness',
   async () => {
     const domain = canonicalDomain()
     expect(domain.recipes).toHaveLength(7892)
@@ -821,25 +821,31 @@ profileIt(
       SERVICEABLE_CUSTOMER_COUNT,
     )
 
-    const blendingBuilt = buildBlendingOptimalPairStage(domain)
-    const blendingStartedAt = performance.now()
-    const blendingSolution = await blendingBuilt.model.solve()
-    const blendingSolveMs = performance.now() - blendingStartedAt
-    if (blendingSolution.status !== 'optimal') {
+    const partitionBuilt = buildPartitionOptimalPairStage(
+      domain,
+      new Set<ProductionStepKind>(['juicing', 'seasoning']),
+    )
+    const partitionStartedAt = performance.now()
+    const partitionSolution = await partitionBuilt.model.solve()
+    const partitionSolveMs =
+      performance.now() - partitionStartedAt
+    if (partitionSolution.status !== 'optimal') {
       throw new Error(
-        `Blending pairing ended with ${blendingSolution.status}`,
+        `Through-seasoning pairing ended with ${partitionSolution.status}`,
       )
     }
 
     const unitsByGroupKey = new Map<string, number>()
-    for (const group of blendingBuilt.groups) {
+    for (const group of partitionBuilt.groups) {
       let units = 0
       for (const variable of (
-        blendingBuilt.unitVarsByGroupKey.get(group.key) ?? []
+        partitionBuilt.unitVarsByGroupKey.get(group.key) ?? []
       )) {
-        const value = blendingSolution.getValue(variable)
+        const value = partitionSolution.getValue(variable)
         if (typeof value !== 'number' || !Number.isFinite(value)) {
-          throw new Error('Invalid blending pair variable value')
+          throw new Error(
+            'Invalid through-seasoning pair variable value',
+          )
         }
         if (value > 0.5) units += 1
       }
@@ -877,13 +883,13 @@ profileIt(
     )
 
     console.info(
-      '[machine-blending-optimal-witness]',
+      '[machine-through-optimal-witness]',
       JSON.stringify({
-        blendingObjective: blendingSolution.objective,
-        blendingSolveMs: Math.round(blendingSolveMs),
+        throughObjective: partitionSolution.objective,
+        throughSolveMs: Math.round(partitionSolveMs),
         quotientVariableCount:
-          blendingBuilt.quotientVariableCount,
-        blendingEdgeCount: blendingBuilt.operationEdgeCount,
+          partitionBuilt.quotientVariableCount,
+        throughEdgeCount: partitionBuilt.operationEdgeCount,
         selectedGroupCount: fullBuilt.selectedGroupCount,
         fullRecipeVariableCount: fullBuilt.recipeVariableCount,
         fullOperationEdgeCount: fullBuilt.operationEdgeCount,
@@ -891,6 +897,7 @@ profileIt(
         selectedRecipeCount: selections.length,
         breakdown,
         globalLowerBound: 103,
+        bestKnownUpperBound: 107,
       }),
     )
   },
