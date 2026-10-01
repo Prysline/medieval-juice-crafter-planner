@@ -6848,6 +6848,205 @@ function buildAggregateSharedEdgeFrontierMaster(
 
 
 
+
+/**
+ * Exact support master for the remaining 3+1+1 / slackExtra=0 frontier
+ * once the extra=3 group and singleton slack group are fixed.
+ *
+ * With finalizing=30 and 35 production units:
+ * - 30 used groups contribute one base unit each;
+ * - the fixed extra=3 group contributes three additional units;
+ * - exactly two other used groups contribute one additional unit each.
+ *
+ * This removes the generic integer-production / threshold encoding without
+ * changing the feasible group-support set for this fixed case.
+ */
+function build311FixedIdentitySupportMaster(
+  domain: BatchOptimizationModel,
+  fixedExtra3GroupIndex: number,
+  fixedSlackGroupIndex: number,
+  supportCuts: readonly (readonly number[])[] = [],
+) {
+  const groups = pairGroups(domain)
+  const model = new Model()
+
+  const maskKeyForGroup = (group: PairGroup) =>
+    group.eligibleCustomerIds.join('\u001e')
+  const maskCustomerIds = new Map<string, string[]>()
+  const groupIndexesByMask = new Map<string, number[]>()
+  groups.forEach((group, groupIndex) => {
+    const maskKey = maskKeyForGroup(group)
+    if (!maskCustomerIds.has(maskKey)) {
+      maskCustomerIds.set(maskKey, group.eligibleCustomerIds)
+    }
+    const indexes = groupIndexesByMask.get(maskKey)
+    if (indexes) indexes.push(groupIndex)
+    else groupIndexesByMask.set(maskKey, [groupIndex])
+  })
+
+  const flowByMask = new Map<
+    string,
+    ReturnType<Model['numVar']>[]
+  >([...maskCustomerIds.keys()].map((maskKey) => [maskKey, []]))
+  const customerFlowTypes = customerMaskFlowTypes(
+    domain.serviceableCustomerIds,
+    maskCustomerIds,
+  )
+  customerFlowTypes.forEach((customerType, typeIndex) => {
+    const demand = customerType.customerIds.length
+    const terms = customerType.neighborMaskKeys.map(
+      (maskKey, neighborIndex) => {
+        const flow = model.numVar(
+          0,
+          demand,
+          `s31y_${typeIndex}_${neighborIndex}`,
+        )
+        flowByMask.get(maskKey)!.push(flow)
+        return flow
+      },
+    )
+    model.addConstraint(
+      sum(...terms).eq(demand),
+      `s31_customer_type_${typeIndex}`,
+    )
+  })
+
+  const usedGroupVars: ReturnType<Model['boolVar']>[] = []
+  const extraOneByGroupIndex = new Map<
+    number,
+    ReturnType<Model['boolVar']>
+  >()
+  const productionCostTerms: ReturnType<
+    ReturnType<Model['boolVar']>['times']
+  >[] = []
+  const capacityTermsByGroupIndex = new Map<
+    number,
+    ReturnType<ReturnType<Model['boolVar']>['times']>[]
+  >()
+
+  groups.forEach((group, groupIndex) => {
+    const upperBound = Math.min(
+      PROCESSING_STACK_CAPACITY,
+      Math.max(
+        1,
+        Math.ceil(group.eligibleCustomerIds.length / 2),
+      ),
+    )
+    const used = model.boolVar(`s31u_${groupIndex}`)
+    usedGroupVars.push(used)
+
+    if (groupIndex === fixedExtra3GroupIndex) {
+      if (upperBound < 4) {
+        model.addConstraint(
+          used.leq(-1),
+          's31_invalid_extra3_capacity',
+        )
+      }
+      model.addConstraint(used.eq(1), 's31_fixed_extra3_used')
+      productionCostTerms.push(
+        used.times(group.ingredientCost * 4),
+      )
+      capacityTermsByGroupIndex.set(groupIndex, [
+        used.times(8),
+      ])
+      return
+    }
+
+    productionCostTerms.push(used.times(group.ingredientCost))
+    const capacityTerms = [used.times(2)]
+    if (upperBound >= 2) {
+      const extraOne = model.boolVar(`s31e1_${groupIndex}`)
+      extraOneByGroupIndex.set(groupIndex, extraOne)
+      model.addConstraint(
+        extraOne.minus(used).leq(0),
+        `s31_extra_used_${groupIndex}`,
+      )
+      productionCostTerms.push(
+        extraOne.times(group.ingredientCost),
+      )
+      capacityTerms.push(extraOne.times(2))
+    }
+    capacityTermsByGroupIndex.set(groupIndex, capacityTerms)
+  })
+
+  if (
+    fixedSlackGroupIndex === fixedExtra3GroupIndex ||
+    groups[fixedSlackGroupIndex]?.ingredientCost !==
+      SLACK_RECIPE_COST
+  ) {
+    model.addConstraint(
+      sum(...usedGroupVars).leq(-1),
+      's31_invalid_fixed_slack',
+    )
+  } else {
+    model.addConstraint(
+      usedGroupVars[fixedSlackGroupIndex].eq(1),
+      's31_fixed_slack_used',
+    )
+    const slackExtra =
+      extraOneByGroupIndex.get(fixedSlackGroupIndex)
+    if (slackExtra) {
+      model.addConstraint(
+        slackExtra.eq(0),
+        's31_fixed_slack_no_extra',
+      )
+    }
+  }
+
+  model.addConstraint(
+    sum(...usedGroupVars).eq(30),
+    's31_used_groups',
+  )
+  model.addConstraint(
+    sum(...extraOneByGroupIndex.values()).eq(2),
+    's31_extra_one_groups',
+  )
+  model.addConstraint(
+    sum(...productionCostTerms).eq(PRODUCTION_COST_FIX),
+    's31_production_cost',
+  )
+
+  let maskIndex = 0
+  for (const [maskKey, groupIndexes] of groupIndexesByMask) {
+    const capacityTerms = groupIndexes.flatMap(
+      (groupIndex) =>
+        capacityTermsByGroupIndex.get(groupIndex) ?? [],
+    )
+    const slackTerm = groupIndexes.includes(
+      fixedSlackGroupIndex,
+    )
+      ? [usedGroupVars[fixedSlackGroupIndex]]
+      : []
+    model.addConstraint(
+      sum(...capacityTerms)
+        .minus(sum(...slackTerm))
+        .minus(sum(...(flowByMask.get(maskKey) ?? [])))
+        .eq(0),
+      `s31_mask_capacity_${maskIndex}`,
+    )
+    maskIndex += 1
+  }
+
+  supportCuts.forEach((support, cutIndex) => {
+    model.addConstraint(
+      sum(
+        ...support.map(
+          (groupIndex) => usedGroupVars[groupIndex],
+        ),
+      ).leq(29),
+      `s31_support_nogood_${cutIndex}`,
+    )
+  })
+
+  model.minimize(sum(...usedGroupVars))
+  return {
+    model,
+    groups,
+    usedGroupVars,
+    extraOneByGroupIndex,
+  }
+}
+
 function buildFinalizing30GroupSupportMaster(
   domain: BatchOptimizationModel,
   extraThresholdCounts: readonly [number, number, number, number],
@@ -9339,18 +9538,11 @@ slackSplitProfileIt(
         let exactSolveMs = 0
 
         for (let round = 0; round < 3; round += 1) {
-          const built = buildFinalizing30GroupSupportMaster(
+          const built = build311FixedIdentitySupportMaster(
             domain,
-            thresholdCounts,
-            {
-              slackExtraCount: 0,
-              fixedSlackGroupIndex: slackGroupIndex,
-              requiredExactExtraGroup: {
-                groupIndex,
-                extra: 3,
-              },
-              supportCuts,
-            },
+            groupIndex,
+            slackGroupIndex,
+            supportCuts,
           )
           const solved = await solveBounded(built.model, 0.5)
           masterSolveMs += solved.solveMs
@@ -9369,7 +9561,7 @@ slackSplitProfileIt(
           const support = groups.flatMap(
             (_group, supportGroupIndex) => {
               const raw = solved.namedSolution!.get(
-                `sgu_${supportGroupIndex}`,
+                `s31u_${supportGroupIndex}`,
               )
               return typeof raw === 'number' &&
                 Number.isFinite(raw) &&
