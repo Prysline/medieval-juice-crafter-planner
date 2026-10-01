@@ -21,6 +21,8 @@ const GLOBAL_SERVING_SLACK =
   PRODUCTION_UNITS_FIX * 2 - SERVICEABLE_CUSTOMER_COUNT
 const SINGLETON_RECIPE_COST =
   PRODUCTION_COST_FIX * 2 - ASSIGNED_INGREDIENT_COST_FIX
+const profileIt =
+  process.env.MACHINE_CONTINUATION_PROFILE === '1' ? it : it.skip
 
 function canonicalDomain(): BatchOptimizationModel {
   const currentProgress = 'liquid-blender-unlocked'
@@ -818,7 +820,7 @@ async function solveBounded(
   }
 }
 
-it(
+profileIt(
   'profiles exact partition bounds after pair-parity lifting',
   async () => {
     const domain = canonicalDomain()
