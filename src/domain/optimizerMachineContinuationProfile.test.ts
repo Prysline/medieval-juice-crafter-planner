@@ -22,7 +22,13 @@ const GLOBAL_SERVING_SLACK =
 const SINGLETON_RECIPE_COST =
   PRODUCTION_COST_FIX * 2 - ASSIGNED_INGREDIENT_COST_FIX
 const profileIt =
-  process.env.MACHINE_CONTINUATION_PROFILE === '1' ? it : it.skip
+  (
+    globalThis as {
+      process?: { env?: Record<string, string | undefined> }
+    }
+  ).process?.env?.MACHINE_CONTINUATION_PROFILE === '1'
+    ? it
+    : it.skip
 
 function canonicalDomain(): BatchOptimizationModel {
   const currentProgress = 'liquid-blender-unlocked'
@@ -262,6 +268,217 @@ function partitionSignature(
 }
 
 
+
+
+
+function buildCompactParityFullMachineFeasibility(
+  domain: BatchOptimizationModel,
+  caps: {
+    throughSeasoning: number
+    blending: number
+    finalizing: number
+  },
+) {
+  const groups = pairGroups(domain)
+  const model = new Model()
+  const assignmentsByGroupKey = new Map<
+    string,
+    ReturnType<Model['boolVar']>[]
+  >(groups.map((group) => [group.key, []]))
+  const assignedCostTerms: ReturnType<
+    ReturnType<Model['boolVar']>['times']
+  >[] = []
+  let assignmentVariableCount = 0
+
+  domain.serviceableCustomerIds.forEach(
+    (customerId, customerIndex) => {
+      const customerTerms: ReturnType<Model['boolVar']>[] = []
+      groups.forEach((group, groupIndex) => {
+        if (!group.eligibleCustomerIds.includes(customerId)) return
+        const y = model.boolVar(
+          `y_${customerIndex}_${groupIndex}`,
+        )
+        assignmentVariableCount += 1
+        customerTerms.push(y)
+        assignmentsByGroupKey.get(group.key)!.push(y)
+        assignedCostTerms.push(y.times(group.ingredientCost))
+      })
+      model.addConstraint(
+        sum(...customerTerms).eq(1),
+        `customer_${customerIndex}`,
+      )
+    },
+  )
+
+  const xByRecipeId = new Map<string, ReturnType<Model['intVar']>>()
+  const productionUnitTerms: ReturnType<Model['intVar']>[] = []
+  const productionCostTerms: ReturnType<
+    ReturnType<Model['intVar']>['times']
+  >[] = []
+  const singletonSlackVars: ReturnType<Model['boolVar']>[] = []
+  const quantityTermsByEdgeKey = new Map<
+    string,
+    ReturnType<ReturnType<Model['intVar']>['times']>[]
+  >()
+  const quantityUpperBoundByEdgeKey = new Map<string, number>()
+  const kindByEdgeKey = new Map<string, ProductionStepKind>()
+
+  let recipeVariableIndex = 0
+  groups.forEach((group, groupIndex) => {
+    const groupUpperBound = Math.max(
+      1,
+      Math.ceil(group.eligibleCustomerIds.length / 2),
+    )
+    const groupRecipeVars: ReturnType<Model['intVar']>[] = []
+
+    for (const recipe of group.recipes) {
+      const x = model.intVar(
+        0,
+        groupUpperBound,
+        `x_${recipeVariableIndex}`,
+      )
+      recipeVariableIndex += 1
+      xByRecipeId.set(recipe.candidate.id, x)
+      groupRecipeVars.push(x)
+      productionUnitTerms.push(x)
+      productionCostTerms.push(
+        x.times(recipe.juiceUnitIngredientCost),
+      )
+
+      const multiplicityByEdgeKey = new Map<string, number>()
+      for (const edge of recipe.productionPath.edges) {
+        multiplicityByEdgeKey.set(
+          edge.key,
+          (multiplicityByEdgeKey.get(edge.key) ?? 0) + 1,
+        )
+        kindByEdgeKey.set(edge.key, edge.kind)
+      }
+      for (const [edgeKey, multiplicity] of multiplicityByEdgeKey) {
+        const terms = quantityTermsByEdgeKey.get(edgeKey)
+        const term = x.times(multiplicity)
+        if (terms) terms.push(term)
+        else quantityTermsByEdgeKey.set(edgeKey, [term])
+        quantityUpperBoundByEdgeKey.set(
+          edgeKey,
+          (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) +
+            groupUpperBound * multiplicity,
+        )
+      }
+    }
+
+    const groupProductionUnits = sum(...groupRecipeVars)
+    const assignedCustomers = sum(
+      ...(assignmentsByGroupKey.get(group.key) ?? []),
+    )
+    if (group.ingredientCost === SINGLETON_RECIPE_COST) {
+      const slack = model.boolVar(`slack_${groupIndex}`)
+      singletonSlackVars.push(slack)
+      model.addConstraint(
+        groupProductionUnits
+          .times(2)
+          .minus(assignedCustomers)
+          .minus(slack)
+          .eq(0),
+        `parity_${groupIndex}`,
+      )
+    } else {
+      model.addConstraint(
+        groupProductionUnits
+          .times(2)
+          .minus(assignedCustomers)
+          .eq(0),
+        `parity_${groupIndex}`,
+      )
+    }
+  })
+
+  model.addConstraint(
+    sum(...singletonSlackVars).eq(GLOBAL_SERVING_SLACK),
+    'global_slack',
+  )
+  model.addConstraint(
+    sum(...productionUnitTerms).eq(PRODUCTION_UNITS_FIX),
+    'production_units_fix',
+  )
+  model.addConstraint(
+    sum(...assignedCostTerms).eq(ASSIGNED_INGREDIENT_COST_FIX),
+    'assigned_cost_fix',
+  )
+  model.addConstraint(
+    sum(...productionCostTerms).eq(PRODUCTION_COST_FIX),
+    'production_cost_fix',
+  )
+
+  const operationVarsByPartition = {
+    throughSeasoning: [] as ReturnType<Model['intVar']>[],
+    blending: [] as ReturnType<Model['intVar']>[],
+    finalizing: [] as ReturnType<Model['intVar']>[],
+  }
+
+  ;[...quantityTermsByEdgeKey.entries()].forEach(
+    ([edgeKey, terms], edgeIndex) => {
+      const operation = model.intVar(
+        0,
+        Math.max(
+          1,
+          Math.ceil(
+            (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) /
+              PROCESSING_STACK_CAPACITY,
+          ),
+        ),
+        `op_${edgeIndex}`,
+      )
+      const quantity = sum(...terms)
+      model.addConstraint(
+        quantity
+          .minus(operation.times(PROCESSING_STACK_CAPACITY))
+          .leq(0),
+        `op_capacity_${edgeIndex}`,
+      )
+      model.addConstraint(
+        operation.minus(quantity).leq(0),
+        `op_usage_${edgeIndex}`,
+      )
+
+      const kind = kindByEdgeKey.get(edgeKey)
+      if (kind === 'juicing' || kind === 'seasoning') {
+        operationVarsByPartition.throughSeasoning.push(operation)
+      } else if (kind === 'blending') {
+        operationVarsByPartition.blending.push(operation)
+      } else if (kind === 'finalizing') {
+        operationVarsByPartition.finalizing.push(operation)
+      }
+    },
+  )
+
+  model.addConstraint(
+    sum(...operationVarsByPartition.throughSeasoning)
+      .leq(caps.throughSeasoning),
+    'through_seasoning_cap',
+  )
+  model.addConstraint(
+    sum(...operationVarsByPartition.blending)
+      .leq(caps.blending),
+    'blending_cap',
+  )
+  model.addConstraint(
+    sum(...operationVarsByPartition.finalizing)
+      .leq(caps.finalizing),
+    'finalizing_cap',
+  )
+
+  // Pure feasibility: production units are already fixed to 35.
+  model.minimize(sum(...productionUnitTerms))
+
+  return {
+    model,
+    groupCount: groups.length,
+    assignmentVariableCount,
+    recipeVariableCount: xByRecipeId.size,
+    singletonSlackVariableCount: singletonSlackVars.length,
+    operationEdgeCount: quantityTermsByEdgeKey.size,
+  }
+}
 
 function buildCompactParityPartitionQuotientStage(
   domain: BatchOptimizationModel,
@@ -1062,44 +1279,43 @@ profileIt(
       }),
     )
 
-    const throughKinds = new Set<ProductionStepKind>([
-      'juicing',
-      'seasoning',
-    ])
-    const compactBuildStartedAt = performance.now()
-    const compact = buildCompactParityPartitionQuotientStage(
+    const jointBuildStartedAt = performance.now()
+    const joint = buildCompactParityFullMachineFeasibility(
       domain,
-      throughKinds,
+      {
+        throughSeasoning: 38,
+        blending: 35,
+        finalizing: 30,
+      },
     )
-    const compactBuildMs =
-      performance.now() - compactBuildStartedAt
-    const compactSolved = await solveBounded(
-      compact.model,
-      90,
-    )
+    const jointBuildMs = performance.now() - jointBuildStartedAt
+    const jointSolved = await solveBounded(joint.model, 120)
 
     console.info(
-      '[machine-compact-parity-quotient]',
+      '[machine-joint-103-feasibility]',
       JSON.stringify({
-        name: 'throughSeasoning',
-        groupCount: compact.groupCount,
+        lowerBounds: {
+          throughSeasoning: 38,
+          blending: 35,
+          finalizing: 30,
+          total: 103,
+        },
+        groupCount: joint.groupCount,
         assignmentVariableCount:
-          compact.assignmentVariableCount,
+          joint.assignmentVariableCount,
+        recipeVariableCount: joint.recipeVariableCount,
         singletonSlackVariableCount:
-          compact.singletonSlackVariableCount,
-        quotientVariableCount: compact.quotientVariableCount,
-        operationEdgeCount: compact.operationEdgeCount,
-        buildMs: Math.round(compactBuildMs),
-        serializeMs: Math.round(compactSolved.serializeMs),
-        parseMs: Math.round(compactSolved.parseMs),
-        solveMs: Math.round(compactSolved.solveMs),
-        status: compactSolved.status,
-        objective: compactSolved.objective,
-        witnessThroughSeasoning:
-          witnessBreakdown.juicing + witnessBreakdown.seasoning,
+          joint.singletonSlackVariableCount,
+        operationEdgeCount: joint.operationEdgeCount,
+        buildMs: Math.round(jointBuildMs),
+        serializeMs: Math.round(jointSolved.serializeMs),
+        parseMs: Math.round(jointSolved.parseMs),
+        solveMs: Math.round(jointSolved.solveMs),
+        status: jointSolved.status,
+        objective: jointSolved.objective,
       }),
     )
   },
-  180000,
+  210000,
 )
 
