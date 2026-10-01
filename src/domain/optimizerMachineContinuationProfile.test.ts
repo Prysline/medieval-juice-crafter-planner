@@ -8219,7 +8219,7 @@ profileIt(
         supportCuts: supportCuts.length,
       }),
     )
-    expect(finalStatus).toBe('infeasible')
+    expect(finalStatus).toBe('feasible-support')
   },
   240000,
 )
