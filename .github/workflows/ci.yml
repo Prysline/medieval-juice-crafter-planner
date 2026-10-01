@@ -53,3 +53,34 @@ jobs:
           MACHINE_CONTINUATION_PROFILE: '1'
           MACHINE_CONTINUATION_JOINT_PATTERN: ${{ matrix.pattern }}
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
+
+
+  machine-continuation-partial-support:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
+    name: machine-partial-support (${{ matrix.chunk }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - chunk: a
+            groups: '23,26,43,45,46,129,140,142,146'
+          - chunk: b
+            groups: '162,182,187,212,214,217,223,247,253'
+          - chunk: c
+            groups: '260,262,264,276,296,297,307,313,344'
+          - chunk: d
+            groups: '399,403,406,456,457,460,461,462,547'
+          - chunk: e
+            groups: '609,624,651,654,656,666,966,1083,1279'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Run partial-support machine continuation profiler
+        env:
+          MACHINE_CONTINUATION_PROFILE: '1'
+          MACHINE_CONTINUATION_PARTIAL_GROUPS: ${{ matrix.groups }}
+        run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
