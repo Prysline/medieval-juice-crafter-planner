@@ -3892,6 +3892,44 @@ function buildFinalizing30ConditionalSeasoningStage(
       sum(...groupUseVars).minus(usedGroup).eq(0),
       `one_class_per_used_group_${groupIndex}`,
     )
+
+    const extraThresholds = Array.from(
+      { length: Math.max(0, groupUpperBound - 1) },
+      (_, thresholdIndex) => {
+        const threshold = model.boolVar(
+          `agg_extra_ge_${thresholdIndex + 1}_${groupIndex}`,
+        )
+        extraThresholdVarsByLevel[thresholdIndex].push(threshold)
+        return threshold
+      },
+    )
+    const groupProduction = groupProductionByIndex.get(groupIndex)!
+    if (extraThresholds.length === 0) {
+      model.addConstraint(
+        groupProduction.minus(usedGroup).eq(0),
+        `agg_group_exact_extra_${groupIndex}`,
+      )
+    } else {
+      model.addConstraint(
+        groupProduction
+          .minus(usedGroup)
+          .minus(sum(...extraThresholds))
+          .eq(0),
+        `agg_group_exact_extra_${groupIndex}`,
+      )
+      for (
+        let thresholdIndex = 1;
+        thresholdIndex < extraThresholds.length;
+        thresholdIndex += 1
+      ) {
+        model.addConstraint(
+          extraThresholds[thresholdIndex]
+            .minus(extraThresholds[thresholdIndex - 1])
+            .leq(0),
+          `agg_extra_monotone_${groupIndex}_${thresholdIndex}`,
+        )
+      }
+    }
   })
 
   model.addConstraint(
@@ -4059,6 +4097,10 @@ function buildFinalizing30DoubleCompressedSeasoningStage(
   >[] = []
   const slackVars: ReturnType<Model['boolVar']>[] = []
   const usedGroupVars: ReturnType<Model['boolVar']>[] = []
+  const extraThresholdVarsByLevel = Array.from(
+    { length: PROCESSING_STACK_CAPACITY - 1 },
+    () => [] as ReturnType<Model['boolVar']>[],
+  )
 
   const sharedSeasoningQuantityTermsByEdgeKey = new Map<
     string,
@@ -4814,6 +4856,8 @@ function buildMaskProjectedFinalizing30SeasoningStage(
 function buildAggregateSeasoningLowerBoundStage(
   domain: BatchOptimizationModel,
   blendingFix: number,
+  extraThresholdCounts?: readonly [number, number, number, number],
+  seasoningCap?: number,
 ) {
   const groups = pairGroups(domain)
   const model = new Model()
@@ -5122,6 +5166,18 @@ function buildAggregateSeasoningLowerBoundStage(
     sum(...usedGroupVars).eq(30),
     'finalizing30_used_groups',
   )
+  model.addConstraint(
+    sum(...productionVars)
+      .minus(sum(...usedGroupVars))
+      .eq(PRODUCTION_UNITS_FIX - 30),
+    'finalizing30_exact_extra_units',
+  )
+  extraThresholdCounts?.forEach((count, thresholdIndex) => {
+    model.addConstraint(
+      sum(...extraThresholdVarsByLevel[thresholdIndex]).eq(count),
+      `agg_extra_threshold_count_${thresholdIndex + 1}`,
+    )
+  })
 
   const sharedSeasoningOperation = model.intVar(
     0,
@@ -5194,7 +5250,15 @@ function buildAggregateSeasoningLowerBoundStage(
     blending.eq(blendingFix),
     'blending_frontier_fix',
   )
-  model.minimize(seasoningLowerBound)
+  if (typeof seasoningCap === 'number') {
+    model.addConstraint(
+      seasoningLowerBound.leq(seasoningCap),
+      'aggregate_seasoning_cap',
+    )
+    model.minimize(sum(...productionVars))
+  } else {
+    model.minimize(seasoningLowerBound)
+  }
 
   return {
     model,
@@ -5821,93 +5885,58 @@ function buildServiceMaskCompressedNonfinalStage(
 }
 
 profileIt(
-  'audits exact blending-only class compression before decomposition',
+  'rules out blending-35 sub-107 cases with aggregate seasoning lower bound',
   async () => {
     const domain = canonicalDomain()
-    const groups = pairGroups(domain)
+    const cases = [
+      { pattern: '4+1', thresholds: [2, 1, 1, 1] as const },
+      { pattern: '3+2', thresholds: [2, 2, 1, 0] as const },
+      { pattern: '3+1+1', thresholds: [3, 1, 1, 0] as const },
+      { pattern: '2+2+1', thresholds: [3, 2, 0, 0] as const },
+      { pattern: '2+1+1+1', thresholds: [4, 1, 0, 0] as const },
+      { pattern: '1+1+1+1+1', thresholds: [5, 0, 0, 0] as const },
+    ]
 
-    const blendOwnersByEdgeKey = new Map<string, Set<number>>()
-    groups.forEach((group, groupIndex) => {
-      for (const recipe of group.recipes) {
-        for (const edge of recipe.productionPath.edges) {
-          if (edge.kind !== 'blending') continue
-          const owners =
-            blendOwnersByEdgeKey.get(edge.key) ?? new Set<number>()
-          owners.add(groupIndex)
-          blendOwnersByEdgeKey.set(edge.key, owners)
-        }
+    const results = []
+    for (const extraCase of cases) {
+      const built = buildAggregateSeasoningLowerBoundStage(
+        domain,
+        35,
+        extraCase.thresholds,
+        21,
+      )
+      const solved = await solveBoundedWithProgress(
+        built.model,
+        20,
+      )
+      const result = {
+        pattern: extraCase.pattern,
+        finalizingExact: 30,
+        blendingExact: 35,
+        juicingGlobalLowerBound: 20,
+        seasoningCapForTotal106: 21,
+        status: solved.status,
+        feasibilityObjective: solved.objective,
+        solveMs: Math.round(solved.solveMs),
+        classVariableCount: built.classVariableCount,
+        progressTail: solved.progressTail,
       }
-    })
-    const sharedBlendEdgeKeys = new Set(
-      [...blendOwnersByEdgeKey.entries()]
-        .filter(([, owners]) => owners.size > 1)
-        .map(([edgeKey]) => edgeKey),
-    )
-
-    let blendOnlyClassCount = 0
-    let collapsedRecipeCount = 0
-    let groupsWithSingleBlendClass = 0
-    const classCountHistogram = new Map<number, number>()
-
-    for (const group of groups) {
-      const signatures = new Set<string>()
-      for (const recipe of group.recipes) {
-        const sharedBlend = new Map<string, number>()
-        let privateBlendCount = 0
-        const blendMultiplicity = new Map<string, number>()
-        for (const edge of recipe.productionPath.edges) {
-          if (edge.kind !== 'blending') continue
-          blendMultiplicity.set(
-            edge.key,
-            (blendMultiplicity.get(edge.key) ?? 0) + 1,
-          )
-        }
-        for (const [edgeKey, multiplicity] of blendMultiplicity) {
-          if (sharedBlendEdgeKeys.has(edgeKey)) {
-            sharedBlend.set(edgeKey, multiplicity)
-          } else {
-            if (multiplicity !== 1) {
-              throw new Error(
-                `Private blending edge multiplicity ${multiplicity} is not safely reducible`,
-              )
-            }
-            privateBlendCount += 1
-          }
-        }
-        signatures.add(
-          JSON.stringify({
-            shared: [...sharedBlend.entries()].sort(([a], [b]) =>
-              a.localeCompare(b),
-            ),
-            privateBlendCount,
-          }),
-        )
-      }
-      blendOnlyClassCount += signatures.size
-      collapsedRecipeCount += group.recipes.length - signatures.size
-      if (signatures.size === 1) groupsWithSingleBlendClass += 1
-      classCountHistogram.set(
-        signatures.size,
-        (classCountHistogram.get(signatures.size) ?? 0) + 1,
+      results.push(result)
+      console.info(
+        '[machine-b35-aggregate-seasoning-extra-case]',
+        JSON.stringify(result),
       )
     }
 
     console.info(
-      '[machine-blend-only-class-audit]',
-      JSON.stringify({
-        recipeCount: domain.recipes.length,
-        groupCount: groups.length,
-        sharedBlendEdgeCount: sharedBlendEdgeKeys.size,
-        blendOnlyClassCount,
-        collapsedRecipeCount,
-        groupsWithSingleBlendClass,
-        classCountHistogram: Object.fromEntries(
-          [...classCountHistogram.entries()].sort(
-            ([left], [right]) => left - right,
-          ),
-        ),
-      }),
+      '[machine-b35-aggregate-seasoning-extra-summary]',
+      JSON.stringify(results.map((result) => ({
+        pattern: result.pattern,
+        status: result.status,
+        feasibilityObjective: result.feasibilityObjective,
+        solveMs: result.solveMs,
+      }))),
     )
   },
-  20000,
+  180000,
 )
