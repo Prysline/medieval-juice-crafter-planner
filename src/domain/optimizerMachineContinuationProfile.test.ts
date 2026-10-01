@@ -6641,58 +6641,70 @@ function buildAggregateSharedEdgeFrontierMaster(
 }
 
 
-profileIt(
-  'checks aggregate shared-edge necessary conditions by extra pattern',
-  async () => {
-    const domain = canonicalDomain()
-    const cases = [
-      { pattern: '4+1', thresholds: [2, 1, 1, 1] as const },
-      { pattern: '3+2', thresholds: [2, 2, 1, 0] as const },
-      { pattern: '3+1+1', thresholds: [3, 1, 1, 0] as const },
-      { pattern: '2+2+1', thresholds: [3, 2, 0, 0] as const },
-      { pattern: '2+1+1+1', thresholds: [4, 1, 0, 0] as const },
-      { pattern: '1+1+1+1+1', thresholds: [5, 0, 0, 0] as const },
-    ]
 
-    const results = []
-    for (const extraCase of cases) {
-      const built = buildAggregateSharedEdgeFrontierMaster(
-        domain,
-        extraCase.thresholds,
-      )
-      const solved = await solveBoundedWithProgress(built.model, 10)
-      const result = {
-        pattern: extraCase.pattern,
-        status: solved.status,
-        objective: solved.objective,
-        solveMs: Math.round(solved.solveMs),
-        metrics: {
-          groupCount: built.groupCount,
-          serviceMaskCount: built.serviceMaskCount,
-          customerFlowVariableCount: built.customerFlowVariableCount,
-          classVariableCount: built.classVariableCount,
-          sharedThroughEdgeCount: built.sharedThroughEdgeCount,
-          sharedBlendingEdgeCount: built.sharedBlendingEdgeCount,
-        },
-        progressTail: solved.progressTail,
-      }
-      results.push(result)
-      console.info(
-        '[machine-aggregate-master-case]',
-        JSON.stringify(result),
-      )
-    }
+profileIt(
+  'reports finalizing-30 singleton and extra-group identity structure',
+  () => {
+    const domain = canonicalDomain()
+    const groups = pairGroups(domain)
+    const structural = groups.map((group, groupIndex) => ({
+      groupIndex,
+      ingredientCost: group.ingredientCost,
+      eligibleCustomerIds: group.eligibleCustomerIds,
+      eligibleCustomerCount: group.eligibleCustomerIds.length,
+      maxUnits: Math.min(
+        PROCESSING_STACK_CAPACITY,
+        Math.max(1, Math.ceil(group.eligibleCustomerIds.length / 2)),
+      ),
+      recipeCount: group.recipes.length,
+    }))
+    const singletonCandidates = structural.filter(
+      (group) => group.ingredientCost === SLACK_RECIPE_COST,
+    )
+    const capacityCounts = Array.from(
+      { length: PROCESSING_STACK_CAPACITY },
+      (_, unitsMinusOne) => ({
+        minUnits: unitsMinusOne + 1,
+        count: structural.filter(
+          (group) => group.maxUnits >= unitsMinusOne + 1,
+        ).length,
+        cost43Count: singletonCandidates.filter(
+          (group) => group.maxUnits >= unitsMinusOne + 1,
+        ).length,
+      }),
+    )
+    const costFrequency = [...new Map<number, number>(
+      structural.map((group) => [group.ingredientCost, 0]),
+    ).keys()]
+      .sort((a, b) => a - b)
+      .map((cost) => ({
+        cost,
+        groupCount: structural.filter(
+          (group) => group.ingredientCost === cost,
+        ).length,
+        extraCapableGroupCount: structural.filter(
+          (group) =>
+            group.ingredientCost === cost && group.maxUnits >= 2,
+        ).length,
+      }))
 
     console.info(
-      '[machine-aggregate-master-summary]',
-      JSON.stringify(
-        results.map((result) => ({
-          pattern: result.pattern,
-          status: result.status,
-          objective: result.objective,
-        })),
-      ),
+      '[machine-final30-identity-structure]',
+      JSON.stringify({
+        groupCount: groups.length,
+        serviceMaskCount: new Set(
+          groups.map((group) =>
+            group.eligibleCustomerIds.join('\\u001e'),
+          ),
+        ).size,
+        singletonCost: SLACK_RECIPE_COST,
+        singletonCandidateCount: singletonCandidates.length,
+        singletonCandidates,
+        capacityCounts,
+        costFrequency,
+      }),
     )
+    expect(singletonCandidates.length).toBeGreaterThan(0)
   },
-  120000,
+  30000,
 )
