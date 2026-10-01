@@ -10997,82 +10997,81 @@ function find311MaskCapacitySupportWitness(
       hallCapacity) *
       (hallLimit2 + 1)) +
     hallCapacity2
-  const stateSize =
-    31 * 3 * 2 * (hallLimit + 1) * (hallLimit2 + 1)
   const costMask =
     (1n << BigInt(PRODUCTION_COST_FIX + 1)) - 1n
+  const hallCapacitySize = hallLimit + 1
+  const hallCapacity2Size = hallLimit2 + 1
+  const decodeStateIndex = (encoded: number) => {
+    let remainder = encoded
+    const hallCapacity2 = remainder % hallCapacity2Size
+    remainder = Math.floor(remainder / hallCapacity2Size)
+    const hallCapacity = remainder % hallCapacitySize
+    remainder = Math.floor(remainder / hallCapacitySize)
+    const slackCount = remainder % 2
+    remainder = Math.floor(remainder / 2)
+    const extraOneCount = remainder % 3
+    const selectedCount = Math.floor(remainder / 3)
+    return {
+      selectedCount,
+      extraOneCount,
+      slackCount,
+      hallCapacity,
+      hallCapacity2,
+    }
+  }
   const advanceStates = (
-    sourceStates: readonly bigint[],
+    sourceStates: ReadonlyMap<number, bigint>,
     localOptions: readonly WitnessLocalOption[],
-  ): bigint[] => {
-    const next = Array<bigint>(stateSize).fill(0n)
-    for (let selectedCount = 0; selectedCount <= 30; selectedCount += 1) {
-      for (let extraOneCount = 0; extraOneCount <= 2; extraOneCount += 1) {
-        for (let slackCount = 0; slackCount <= 1; slackCount += 1) {
-          for (
-            let hallCapacity = 0;
-            hallCapacity <= hallLimit;
-            hallCapacity += 1
-          ) {
-            for (
-              let hallCapacity2 = 0;
-              hallCapacity2 <= hallLimit2;
-              hallCapacity2 += 1
-            ) {
-              const source =
-                sourceStates[stateIndex(
-                  selectedCount,
-                  extraOneCount,
-                  slackCount,
-                  hallCapacity,
-                  hallCapacity2,
-                )]
-              if (source === 0n) continue
-              for (const option of localOptions) {
-                const nextSelected =
-                  selectedCount + option.selectedCount
-                const nextExtraOne =
-                  extraOneCount + option.extraOneCount
-                const nextSlack =
-                  slackCount + option.slackCount
-                const nextHall =
-                  hallCapacity + option.hallCapacity
-                const nextHall2 =
-                  hallCapacity2 + option.hallCapacity2
-                if (
-                  nextSelected > 30 ||
-                  nextExtraOne > 2 ||
-                  nextSlack > 1 ||
-                  nextHall > hallLimit ||
-                  nextHall2 > hallLimit2
-                ) {
-                  continue
-                }
-                const shifted =
-                  (source << BigInt(option.productionCost)) & costMask
-                if (shifted === 0n) continue
-                next[
-                  stateIndex(
-                    nextSelected,
-                    nextExtraOne,
-                    nextSlack,
-                    nextHall,
-                    nextHall2,
-                  )
-                ] |= shifted
-              }
-            }
-          }
+  ): Map<number, bigint> => {
+    const next = new Map<number, bigint>()
+    for (const [encoded, source] of sourceStates) {
+      const decoded = decodeStateIndex(encoded)
+      for (const option of localOptions) {
+        const nextSelected =
+          decoded.selectedCount + option.selectedCount
+        const nextExtraOne =
+          decoded.extraOneCount + option.extraOneCount
+        const nextSlack =
+          decoded.slackCount + option.slackCount
+        const nextHall =
+          decoded.hallCapacity + option.hallCapacity
+        const nextHall2 =
+          decoded.hallCapacity2 + option.hallCapacity2
+        if (
+          nextSelected > 30 ||
+          nextExtraOne > 2 ||
+          nextSlack > 1 ||
+          nextHall > hallLimit ||
+          nextHall2 > hallLimit2
+        ) {
+          continue
         }
+        const shifted =
+          (source << BigInt(option.productionCost)) & costMask
+        if (shifted === 0n) continue
+        const targetIndex = stateIndex(
+          nextSelected,
+          nextExtraOne,
+          nextSlack,
+          nextHall,
+          nextHall2,
+        )
+        next.set(
+          targetIndex,
+          (next.get(targetIndex) ?? 0n) | shifted,
+        )
       }
     }
     return next
   }
 
-  let states = Array<bigint>(stateSize).fill(0n)
-  states[stateIndex(0, 0, 0, 0, 0)] = 1n
+  let states = new Map<number, bigint>([
+    [stateIndex(0, 0, 0, 0, 0), 1n],
+  ])
   const checkpointStride = 32
-  const checkpoints = new Map<number, bigint[]>([[0, states]])
+  const checkpoints = new Map<number, Map<number, bigint>>([
+    [0, states],
+  ])
 
   for (
     let maskIndex = 0;
@@ -11104,15 +11103,15 @@ function find311MaskCapacitySupportWitness(
       candidateHall2 += 1
     ) {
       if (
-        (states[
+        ((states.get(
           stateIndex(
             30,
             2,
             1,
             candidateHall,
             candidateHall2,
-          )
-        ] & targetBit) !== 0n
+          ),
+        ) ?? 0n) & targetBit) !== 0n
       ) {
         hallCapacity = candidateHall
         hallCapacity2 = candidateHall2
@@ -11142,7 +11141,9 @@ function find311MaskCapacitySupportWitness(
         `Missing support DP checkpoint at mask ${blockStart}`,
       )
     }
-    const blockSnapshots: bigint[][] = [checkpoint]
+    const blockSnapshots: Array<Map<number, bigint>> = [
+      checkpoint,
+    ]
     let blockState = checkpoint
     for (
       let forwardIndex = blockStart;
@@ -11182,15 +11183,15 @@ function find311MaskCapacitySupportWitness(
           continue
         }
         const sourceBits =
-          previous[
+          previous.get(
             stateIndex(
               sourceSelected,
               sourceExtraOne,
               sourceSlack,
               sourceHall,
               sourceHall2,
-            )
-          ]
+            ),
+          ) ?? 0n
         if (
           (sourceBits & (1n << BigInt(sourceCost))) === 0n
         ) {
