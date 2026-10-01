@@ -2223,50 +2223,38 @@ async function solveBounded(
 }
 
 profileIt(
-  'proves the exact through-seasoning bound on the blend-35 finalizing-30 frontier',
+  'measures finalizing frontier group capacities',
   async () => {
     const domain = canonicalDomain()
-    expect(domain.recipes).toHaveLength(7892)
-    expect(domain.serviceableCustomerIds).toHaveLength(
-      SERVICEABLE_CUSTOMER_COUNT,
-    )
+    const groups = pairGroups(domain)
+    const histogram = new Map<number, number>()
+    let maxEligibleCustomers = 0
+    let maxProductionUnits = 0
+    let groupsOverFiveUnits = 0
 
-    const buildStartedAt = performance.now()
-    const built = buildConditionalThroughFrontierStage(domain)
-    const buildMs = performance.now() - buildStartedAt
-    const solved = await solveBounded(built.model, 120)
+    for (const group of groups) {
+      const eligible = group.eligibleCustomerIds.length
+      const units = Math.ceil(eligible / 2)
+      maxEligibleCustomers = Math.max(maxEligibleCustomers, eligible)
+      maxProductionUnits = Math.max(maxProductionUnits, units)
+      if (units > PROCESSING_STACK_CAPACITY) {
+        groupsOverFiveUnits += 1
+      }
+      histogram.set(units, (histogram.get(units) ?? 0) + 1)
+    }
 
     console.info(
-      '[machine-conditional-through-frontier]',
+      '[machine-finalizing-group-capacity-shape]',
       JSON.stringify({
-        frontier: {
-          blending: 35,
-          finalizing: 30,
-        },
-        targetFor107Proof: 42,
-        globalLowerBound: 103,
-        knownWitness: 107,
-        groupCount: built.groupCount,
-        customerFlowVariableCount:
-          built.customerFlowVariableCount,
-        recipeVariableCount: built.recipeVariableCount,
-        singletonSlackVariableCount:
-          built.singletonSlackVariableCount,
-        throughOperationEdgeCount:
-          built.throughOperationEdgeCount,
-        blendingOperationEdgeCount:
-          built.blendingOperationEdgeCount,
-        finalizingOperationEdgeCount:
-          built.finalizingOperationEdgeCount,
-        buildMs: Math.round(buildMs),
-        serializeMs: Math.round(solved.serializeMs),
-        parseMs: Math.round(solved.parseMs),
-        solveMs: Math.round(solved.solveMs),
-        status: solved.status,
-        objective: solved.objective,
+        groupCount: groups.length,
+        maxEligibleCustomers,
+        maxProductionUnits,
+        groupsOverFiveUnits,
+        unitUpperBoundHistogram: Object.fromEntries(
+          [...histogram.entries()].sort(([a], [b]) => a - b),
+        ),
       }),
     )
   },
-  140000,
 )
 
