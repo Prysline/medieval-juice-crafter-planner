@@ -7984,6 +7984,7 @@ profileIt(
       { pattern: '2+1+1+1', thresholds: [4, 1, 0, 0] as const, slackExtras: [0, 1, 2] as const },
       { pattern: '1+1+1+1+1', thresholds: [5, 0, 0, 0] as const, slackExtras: [0, 1] as const },
     ]
+    const requestedCase = process.env.MACHINE_CONTINUATION_PROFILE_CASE
     const unresolved: Array<{
       pattern: string
       slackExtraCount: number
@@ -7993,6 +7994,8 @@ profileIt(
 
     for (const extraCase of cases) {
       for (const slackExtraCount of extraCase.slackExtras) {
+        const caseKey = `${extraCase.pattern}:${slackExtraCount}`
+        if (requestedCase && requestedCase !== caseKey) continue
         const built = buildOptimisticGroupOnlyFrontierMaster(
           domain,
           extraCase.thresholds,
@@ -8025,6 +8028,15 @@ profileIt(
       }
     }
 
+    if (requestedCase) {
+      const matched = cases.some((extraCase) =>
+        extraCase.slackExtras.some(
+          (slackExtraCount) =>
+            `${extraCase.pattern}:${slackExtraCount}` === requestedCase,
+        ),
+      )
+      expect(matched).toBe(true)
+    }
     expect(unresolved).toEqual([])
   },
   300000,
