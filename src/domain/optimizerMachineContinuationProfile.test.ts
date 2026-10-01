@@ -8131,7 +8131,7 @@ profileIt(
 )
 
 it.skip(
-  'decomposes remaining finalizing-30 support frontier exactly',,
+  'decomposes remaining finalizing-30 support frontier exactly',
   async () => {
     const domain = canonicalDomain()
     const requestedPattern =
