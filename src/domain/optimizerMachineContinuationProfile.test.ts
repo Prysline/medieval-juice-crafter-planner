@@ -11642,6 +11642,49 @@ function build311HallSignatureSupportMaster(
 }
 
 hallSignatureProfileIt(
+  'prefilters all unresolved 3+1+1 identities with exact Hall-signature cuts',
+  async () => {
+    const domain = canonicalDomain()
+    const groups = pairGroups(domain)
+    const hallCuts = await bootstrap311HallCutsFromDpWitnesses(domain, groups)
+    const results = []
+
+    for (const groupIndex of UNRESOLVED_311_EXTRA3_GROUP_INDEXES) {
+      const built = build311HallSignatureSupportMaster(
+        groups,
+        groupIndex,
+        hallCuts,
+      )
+      const solved = await solveBounded(built.model, 0.5)
+      results.push({
+        groupIndex,
+        groupCost: groups[groupIndex]?.ingredientCost ?? null,
+        eligibleCustomers:
+          groups[groupIndex]?.eligibleCustomerIds.length ?? null,
+        classCount: built.classes.length,
+        status: solved.status,
+        solveMs: Math.round(solved.solveMs),
+      })
+    }
+
+    console.info(
+      '[machine-hall-signature-prefilter-summary]',
+      JSON.stringify({
+        hallCuts: hallCuts.length,
+        closedIdentities: results
+          .filter((entry) => entry.status === 'infeasible')
+          .map((entry) => entry.groupIndex),
+        unresolvedIdentities: results
+          .filter((entry) => entry.status !== 'infeasible')
+          .map((entry) => entry.groupIndex),
+        results,
+      }),
+    )
+  },
+  120000,
+)
+
+hallSignatureProfileIt(
   'iterates exact Hall-signature support classes for one unresolved identity',
   async () => {
     const domain = canonicalDomain()
