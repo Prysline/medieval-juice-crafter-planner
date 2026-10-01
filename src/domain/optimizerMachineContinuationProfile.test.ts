@@ -6704,11 +6704,13 @@ function buildOptimisticGroupOnlyFrontierMaster(
       | 'equipment'
       | 'operation-signature'
       | 'structural-signature'
+    slackExtraCount?: number
   } = {},
 ) {
   const includeCustomerFlow = options.includeCustomerFlow ?? true
   const hallCuts = options.hallCuts ?? []
   const sharedBucketMode = options.sharedBucketMode ?? 'equipment'
+  const slackExtraCount = options.slackExtraCount
   const groups = pairGroups(domain)
   const model = new Model()
 
@@ -7061,6 +7063,27 @@ function buildOptimisticGroupOnlyFrontierMaster(
       `go_hall_cut_${cutIndex}`,
     )
   })
+
+  if (typeof slackExtraCount === 'number') {
+    const targetUnits = 1 + slackExtraCount
+    const bigM = PROCESSING_STACK_CAPACITY
+    groups.forEach((group, groupIndex) => {
+      if (group.ingredientCost !== SLACK_RECIPE_COST) return
+      const slack = slackByGroupIndex.get(groupIndex)
+      const production = groupProductionByIndex.get(groupIndex)
+      if (!slack || !production) return
+      model.addConstraint(
+        sum(production, slack.times(bigM)).leq(targetUnits + bigM),
+        `go_slack_extra_upper_${groupIndex}`,
+      )
+      model.addConstraint(
+        production
+          .minus(slack.times(bigM))
+          .geq(targetUnits - bigM),
+        `go_slack_extra_lower_${groupIndex}`,
+      )
+    })
+  }
 
   model.addConstraint(
     sum(...slackVars).eq(GLOBAL_SERVING_SLACK),
@@ -7575,7 +7598,7 @@ it.skip(
 )
 
 
-profileIt(
+it.skip(
   'checks structural-signature finalizing-30 extra frontiers',
   async () => {
     const domain = canonicalDomain()
@@ -7621,3 +7644,67 @@ profileIt(
 )
 
 // CI trigger: structural-signature exact frontier profile
+
+
+profileIt(
+  'checks singleton-group exact extra subcases',
+  async () => {
+    const domain = canonicalDomain()
+    const cases = [
+      {
+        pattern: '2+2+1',
+        thresholds: [3, 2, 0, 0] as const,
+        slackExtras: [0, 1, 2] as const,
+      },
+      {
+        pattern: '2+1+1+1',
+        thresholds: [4, 1, 0, 0] as const,
+        slackExtras: [0, 1, 2] as const,
+      },
+      {
+        pattern: '1+1+1+1+1',
+        thresholds: [5, 0, 0, 0] as const,
+        slackExtras: [0, 1] as const,
+      },
+    ]
+    const results = []
+    for (const extraCase of cases) {
+      for (const slackExtraCount of extraCase.slackExtras) {
+        const built = buildOptimisticGroupOnlyFrontierMaster(
+          domain,
+          extraCase.thresholds,
+          {
+            sharedBucketMode: 'structural-signature',
+            slackExtraCount,
+          },
+        )
+        const solved = await solveBoundedWithProgress(built.model, 10)
+        const result = {
+          pattern: extraCase.pattern,
+          slackExtraCount,
+          status: solved.status,
+          objective: solved.objective,
+          solveMs: Math.round(solved.solveMs),
+          progressTail: solved.progressTail,
+        }
+        results.push(result)
+        console.info(
+          '[machine-slack-extra-case]',
+          JSON.stringify(result),
+        )
+      }
+    }
+    console.info(
+      '[machine-slack-extra-summary]',
+      JSON.stringify(
+        results.map((result) => ({
+          pattern: result.pattern,
+          slackExtraCount: result.slackExtraCount,
+          status: result.status,
+          objective: result.objective,
+        })),
+      ),
+    )
+  },
+  150000,
+)
