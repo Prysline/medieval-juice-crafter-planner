@@ -1356,34 +1356,178 @@ async function solveBounded(
 }
 
 profileIt(
-  'profiles the exact non-final model with exact stack-ceiling links',
+  'profiles the exact 107 witness machine-edge structure',
   async () => {
     const domain = canonicalDomain()
-    expect(domain.recipes).toHaveLength(7892)
-
-    const built = buildFlowProjectedNonfinalStage(domain)
-    const solved = await solveBoundedWithProgress(
-      built.model,
-      60,
+    const partitionBuilt = buildPartitionOptimalPairStage(
+      domain,
+      new Set<ProductionStepKind>(['blending']),
     )
+    const pairSolution = await partitionBuilt.model.solve()
+    if (pairSolution.status !== 'optimal') {
+      throw new Error(
+        `Blending pairing ended with ${pairSolution.status}`,
+      )
+    }
+
+    const unitsByGroupKey = new Map<string, number>()
+    for (const group of partitionBuilt.groups) {
+      let units = 0
+      for (const variable of (
+        partitionBuilt.unitVarsByGroupKey.get(group.key) ?? []
+      )) {
+        const value = pairSolution.getValue(variable)
+        if (typeof value !== 'number' || !Number.isFinite(value)) {
+          throw new Error('Invalid pair variable value')
+        }
+        if (value > 0.5) units += 1
+      }
+      unitsByGroupKey.set(group.key, units)
+    }
+
+    const fullBuilt = buildFixedGroupFullMachineStage(
+      domain,
+      unitsByGroupKey,
+    )
+    const fullSolution = await fullBuilt.model.solve()
+    if (fullSolution.status !== 'optimal') {
+      throw new Error(
+        `Full-machine lift ended with ${fullSolution.status}`,
+      )
+    }
+
+    const selected = domain.recipes.flatMap((recipe) => {
+      const variable = fullBuilt.xByRecipeId.get(recipe.candidate.id)
+      if (!variable) return []
+      const value = fullSolution.getValue(variable)
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
+        throw new Error('Invalid recipe variable value')
+      }
+      const units = Math.round(value)
+      return units > 0 ? [{ recipe, units }] : []
+    })
+
+    const edgeQuantities = new Map<
+      string,
+      {
+        edge: EligibleOptimizationRecipe['productionPath']['edges'][number]
+        quantity: number
+      }
+    >()
+    for (const { recipe, units } of selected) {
+      for (const edge of recipe.productionPath.edges) {
+        const current = edgeQuantities.get(edge.key)
+        if (current) current.quantity += units
+        else edgeQuantities.set(edge.key, { edge, quantity: units })
+      }
+    }
+
+    const kindStats = new Map<
+      string,
+      { edges: number; operations: number; quantity: number }
+    >()
+    const quantityHistograms = new Map<string, Map<number, number>>()
+    const blendShapes = new Map<string, { edges: number; operations: number }>()
+    const seasoningShapes = new Map<string, { edges: number; operations: number }>()
+    for (const { edge, quantity } of edgeQuantities.values()) {
+      const operations = Math.ceil(
+        quantity / PROCESSING_STACK_CAPACITY,
+      )
+      const stats = kindStats.get(edge.kind) ?? {
+        edges: 0,
+        operations: 0,
+        quantity: 0,
+      }
+      stats.edges += 1
+      stats.operations += operations
+      stats.quantity += quantity
+      kindStats.set(edge.kind, stats)
+
+      const histogram =
+        quantityHistograms.get(edge.kind) ?? new Map<number, number>()
+      histogram.set(quantity, (histogram.get(quantity) ?? 0) + 1)
+      quantityHistograms.set(edge.kind, histogram)
+
+      if (edge.kind === 'blending') {
+        const shape =
+          `${edge.fromIngredientIds.length}+${edge.secondaryFromIngredientIds?.length ?? 0}->${edge.toIngredientIds.length}`
+        const current = blendShapes.get(shape) ?? {
+          edges: 0,
+          operations: 0,
+        }
+        current.edges += 1
+        current.operations += operations
+        blendShapes.set(shape, current)
+      } else if (edge.kind === 'seasoning') {
+        const shape =
+          `${edge.equipment}:to${edge.toIngredientIds.length}`
+        const current = seasoningShapes.get(shape) ?? {
+          edges: 0,
+          operations: 0,
+        }
+        current.edges += 1
+        current.operations += operations
+        seasoningShapes.set(shape, current)
+      }
+    }
+
+    const recipePathShapes = new Map<string, number>()
+    for (const { recipe, units } of selected) {
+      const counts = {
+        juicing: 0,
+        seasoning: 0,
+        blending: 0,
+        finalizing: 0,
+      }
+      for (const edge of recipe.productionPath.edges) {
+        counts[edge.kind] += 1
+      }
+      const key =
+        `j${counts.juicing}-s${counts.seasoning}-b${counts.blending}-f${counts.finalizing}`
+      recipePathShapes.set(
+        key,
+        (recipePathShapes.get(key) ?? 0) + units,
+      )
+    }
 
     console.info(
-      '[machine-exact-ceiling-nonfinal-progress]',
+      '[machine-107-witness-structure]',
       JSON.stringify({
-        expectedOptimum: 77,
-        exactPartitionLowerBounds: {
-          throughSeasoning: 38,
-          blending: 35,
-          total: 73,
-        },
-        knownWitness: 77,
-        status: solved.status,
-        objective: solved.objective,
-        solveMs: Math.round(solved.solveMs),
-        progressTail: solved.progressTail,
+        selectedRecipeCount: selected.length,
+        totalUnits: selected.reduce(
+          (total, entry) => total + entry.units,
+          0,
+        ),
+        breakdown: machineOperationBreakdownForSelection(
+          domain,
+          selected.map(({ recipe, units }) => ({
+            recipeId: recipe.candidate.id,
+            units,
+          })),
+        ),
+        kindStats: Object.fromEntries(kindStats),
+        quantityHistograms: Object.fromEntries(
+          [...quantityHistograms].map(([kind, histogram]) => [
+            kind,
+            Object.fromEntries(
+              [...histogram.entries()].sort(
+                ([left], [right]) => left - right,
+              ),
+            ),
+          ]),
+        ),
+        blendShapes: Object.fromEntries(
+          [...blendShapes.entries()].sort(),
+        ),
+        seasoningShapes: Object.fromEntries(
+          [...seasoningShapes.entries()].sort(),
+        ),
+        recipePathShapes: Object.fromEntries(
+          [...recipePathShapes.entries()].sort(),
+        ),
       }),
     )
   },
-  80000,
+  120000,
 )
 
