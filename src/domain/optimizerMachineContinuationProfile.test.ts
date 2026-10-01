@@ -11487,7 +11487,8 @@ function build311HallSignatureSupportMaster(
   const extraTerms = []
   const slackTerms = []
   const costTerms = []
-  const hallTerms = hallCuts.map(() => [])
+  const hallTerms: Array<Array<ReturnType<typeof sum>>> =
+    hallCuts.map(() => [])
   const classes: Array<{
     groupIndexes: number[]
     normalName: string
