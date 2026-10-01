@@ -6352,6 +6352,7 @@ function buildAggregateSharedEdgeFrontierMaster(
   let sharedBlendingQuantityUpperBound = 0
 
   let classVariableCount = 0
+  let conflictGroupCount = 0
   groups.forEach((group, groupIndex) => {
     const classes = new Map<
       string,
@@ -6415,6 +6416,55 @@ function buildAggregateSharedEdgeFrontierMaster(
         })
       }
     }
+    const classValues = [...classes.values()]
+    const minPrivateThrough = Math.min(
+      ...classValues.map((profile) => profile.privateThroughCount),
+    )
+    const minSharedThrough = Math.min(
+      ...classValues.map((profile) => profile.sharedThroughQuantity),
+    )
+    const minPrivateBlending = Math.min(
+      ...classValues.map((profile) => profile.privateBlendingCount),
+    )
+    const minSharedBlending = Math.min(
+      ...classValues.map((profile) => profile.sharedBlendingQuantity),
+    )
+    const jointMinimum = classValues.find(
+      (profile) =>
+        profile.privateThroughCount === minPrivateThrough &&
+        profile.sharedThroughQuantity === minSharedThrough &&
+        profile.privateBlendingCount === minPrivateBlending &&
+        profile.sharedBlendingQuantity === minSharedBlending,
+    )
+    const effectiveClasses = jointMinimum
+      ? [jointMinimum]
+      : classValues.filter(
+          (candidate) =>
+            !classValues.some(
+              (other) =>
+                other !== candidate &&
+                other.privateThroughCount <=
+                  candidate.privateThroughCount &&
+                other.sharedThroughQuantity <=
+                  candidate.sharedThroughQuantity &&
+                other.privateBlendingCount <=
+                  candidate.privateBlendingCount &&
+                other.sharedBlendingQuantity <=
+                  candidate.sharedBlendingQuantity &&
+                (
+                  other.privateThroughCount <
+                    candidate.privateThroughCount ||
+                  other.sharedThroughQuantity <
+                    candidate.sharedThroughQuantity ||
+                  other.privateBlendingCount <
+                    candidate.privateBlendingCount ||
+                  other.sharedBlendingQuantity <
+                    candidate.sharedBlendingQuantity
+                ),
+            ),
+        )
+    if (!jointMinimum) conflictGroupCount += 1
+
 
     const groupUpperBound = Math.min(
       PROCESSING_STACK_CAPACITY,
@@ -6426,7 +6476,7 @@ function buildAggregateSharedEdgeFrontierMaster(
     const groupProductionVars: ReturnType<Model['intVar']>[] = []
     const groupUseVars: ReturnType<Model['boolVar']>[] = []
 
-    for (const recipeClass of classes.values()) {
+    for (const recipeClass of effectiveClasses) {
       const x = model.intVar(
         0,
         groupUpperBound,
@@ -6635,6 +6685,7 @@ function buildAggregateSharedEdgeFrontierMaster(
     serviceMaskCount: maskCustomerIds.size,
     customerFlowVariableCount,
     classVariableCount,
+    conflictGroupCount,
     sharedThroughEdgeCount: sharedThroughEdgeKeys.size,
     sharedBlendingEdgeCount: sharedBlendingEdgeKeys.size,
   }
@@ -6978,13 +7029,12 @@ function buildOptimisticGroupOnlyFrontierMaster(
 }
 
 
+
 profileIt(
-  'checks optimistic group-only finalizing-30 extra frontiers',
+  'checks hybrid conflict-preserving finalizing-30 extra frontiers',
   async () => {
     const domain = canonicalDomain()
     const cases = [
-      { pattern: '4+1', thresholds: [2, 1, 1, 1] as const },
-      { pattern: '3+2', thresholds: [2, 2, 1, 0] as const },
       { pattern: '3+1+1', thresholds: [3, 1, 1, 0] as const },
       { pattern: '2+2+1', thresholds: [3, 2, 0, 0] as const },
       { pattern: '2+1+1+1', thresholds: [4, 1, 0, 0] as const },
@@ -6992,7 +7042,7 @@ profileIt(
     ]
     const results = []
     for (const extraCase of cases) {
-      const built = buildOptimisticGroupOnlyFrontierMaster(
+      const built = buildAggregateSharedEdgeFrontierMaster(
         domain,
         extraCase.thresholds,
       )
@@ -7002,18 +7052,18 @@ profileIt(
         status: solved.status,
         objective: solved.objective,
         solveMs: Math.round(solved.solveMs),
-        groupCount: built.groupCount,
-        serviceMaskCount: built.serviceMaskCount,
+        conflictGroupCount: built.conflictGroupCount,
+        classVariableCount: built.classVariableCount,
         progressTail: solved.progressTail,
       }
       results.push(result)
       console.info(
-        '[machine-group-only-case]',
+        '[machine-hybrid-conflict-case]',
         JSON.stringify(result),
       )
     }
     console.info(
-      '[machine-group-only-summary]',
+      '[machine-hybrid-conflict-summary]',
       JSON.stringify(
         results.map((result) => ({
           pattern: result.pattern,
@@ -7023,5 +7073,5 @@ profileIt(
       ),
     )
   },
-  120000,
+  90000,
 )
