@@ -6697,7 +6697,13 @@ function buildAggregateSharedEdgeFrontierMaster(
 function buildOptimisticGroupOnlyFrontierMaster(
   domain: BatchOptimizationModel,
   extraThresholdCounts: readonly [number, number, number, number],
+  options: {
+    includeCustomerFlow?: boolean
+    hallCuts?: readonly (readonly number[])[]
+  } = {},
 ) {
+  const includeCustomerFlow = options.includeCustomerFlow ?? true
+  const hallCuts = options.hallCuts ?? []
   const groups = pairGroups(domain)
   const model = new Model()
 
@@ -6719,27 +6725,29 @@ function buildOptimisticGroupOnlyFrontierMaster(
     string,
     ReturnType<Model['numVar']>[]
   >([...maskCustomerIds.keys()].map((maskKey) => [maskKey, []]))
-  domain.serviceableCustomerIds.forEach(
-    (customerId, customerIndex) => {
-      const terms: ReturnType<Model['numVar']>[] = []
-      ;[...maskCustomerIds.entries()].forEach(
-        ([maskKey, eligibleCustomerIds], maskIndex) => {
-          if (!eligibleCustomerIds.includes(customerId)) return
-          const y = model.numVar(
-            0,
-            1,
-            `goy_${customerIndex}_${maskIndex}`,
-          )
-          terms.push(y)
-          flowByMask.get(maskKey)!.push(y)
-        },
-      )
-      model.addConstraint(
-        sum(...terms).eq(1),
-        `go_customer_${customerIndex}`,
-      )
-    },
-  )
+  if (includeCustomerFlow) {
+    domain.serviceableCustomerIds.forEach(
+      (customerId, customerIndex) => {
+        const terms: ReturnType<Model['numVar']>[] = []
+        ;[...maskCustomerIds.entries()].forEach(
+          ([maskKey, eligibleCustomerIds], maskIndex) => {
+            if (!eligibleCustomerIds.includes(customerId)) return
+            const y = model.numVar(
+              0,
+              1,
+              `goy_${customerIndex}_${maskIndex}`,
+            )
+            terms.push(y)
+            flowByMask.get(maskKey)!.push(y)
+          },
+        )
+        model.addConstraint(
+          sum(...terms).eq(1),
+          `go_customer_${customerIndex}`,
+        )
+      },
+    )
+  }
 
   const throughOwners = new Map<string, Set<number>>()
   const blendingOwners = new Map<string, Set<number>>()
@@ -6977,24 +6985,46 @@ function buildOptimisticGroupOnlyFrontierMaster(
     }
   })
 
-  let maskIndex = 0
-  for (const [maskKey, groupIndexes] of groupIndexesByMask) {
-    const capacityTerms = groupIndexes.map((groupIndex) =>
-      groupProductionByIndex.get(groupIndex)!.times(2),
-    )
-    const maskSlacks = groupIndexes.flatMap((groupIndex) => {
+  if (includeCustomerFlow) {
+    let maskIndex = 0
+    for (const [maskKey, groupIndexes] of groupIndexesByMask) {
+      const capacityTerms = groupIndexes.map((groupIndex) =>
+        groupProductionByIndex.get(groupIndex)!.times(2),
+      )
+      const maskSlacks = groupIndexes.flatMap((groupIndex) => {
+        const slack = slackByGroupIndex.get(groupIndex)
+        return slack ? [slack] : []
+      })
+      model.addConstraint(
+        sum(...capacityTerms)
+          .minus(sum(...maskSlacks))
+          .minus(sum(...(flowByMask.get(maskKey) ?? [])))
+          .eq(0),
+        `go_mask_capacity_${maskIndex}`,
+      )
+      maskIndex += 1
+    }
+  }
+
+  hallCuts.forEach((groupIndexes, cutIndex) => {
+    const customerIds = new Set<string>()
+    const capacityTerms = groupIndexes.map((groupIndex) => {
+      for (const customerId of groups[groupIndex].eligibleCustomerIds) {
+        customerIds.add(customerId)
+      }
+      return groupProductionByIndex.get(groupIndex)!.times(2)
+    })
+    const cutSlacks = groupIndexes.flatMap((groupIndex) => {
       const slack = slackByGroupIndex.get(groupIndex)
       return slack ? [slack] : []
     })
     model.addConstraint(
       sum(...capacityTerms)
-        .minus(sum(...maskSlacks))
-        .minus(sum(...(flowByMask.get(maskKey) ?? [])))
-        .eq(0),
-      `go_mask_capacity_${maskIndex}`,
+        .minus(sum(...cutSlacks))
+        .leq(customerIds.size),
+      `go_hall_cut_${cutIndex}`,
     )
-    maskIndex += 1
-  }
+  })
 
   model.addConstraint(
     sum(...slackVars).eq(GLOBAL_SERVING_SLACK),
@@ -7088,6 +7118,9 @@ function buildOptimisticGroupOnlyFrontierMaster(
   model.minimize(sum(...productionVars))
   return {
     model,
+    groups,
+    groupProductionByIndex,
+    slackByGroupIndex,
     groupCount: groups.length,
     serviceMaskCount: maskCustomerIds.size,
   }
@@ -7256,4 +7289,199 @@ profileIt(
     )
   },
   90000,
+)
+
+
+function maximumAssignmentFlowForGroupCapacities(
+  groups: readonly PairGroup[],
+  serviceableCustomerIds: readonly string[],
+  capacities: readonly number[],
+): {
+  flow: number
+  violatingGroupIndexes: number[]
+} {
+  const source = 0
+  const groupOffset = 1
+  const customerOffset = groupOffset + groups.length
+  const sink = customerOffset + serviceableCustomerIds.length
+  const nodeCount = sink + 1
+  type Edge = { to: number; rev: number; capacity: number }
+  const graph: Edge[][] = Array.from({ length: nodeCount }, () => [])
+
+  const addEdge = (from: number, to: number, capacity: number) => {
+    const forward: Edge = { to, rev: graph[to].length, capacity }
+    const reverse: Edge = { to: from, rev: graph[from].length, capacity: 0 }
+    graph[from].push(forward)
+    graph[to].push(reverse)
+  }
+
+  const customerIndexById = new Map(
+    serviceableCustomerIds.map((id, index) => [id, index]),
+  )
+  groups.forEach((group, groupIndex) => {
+    const capacity = Math.max(0, Math.round(capacities[groupIndex] ?? 0))
+    if (capacity <= 0) return
+    addEdge(source, groupOffset + groupIndex, capacity)
+    for (const customerId of group.eligibleCustomerIds) {
+      const customerIndex = customerIndexById.get(customerId)
+      if (customerIndex === undefined) continue
+      addEdge(
+        groupOffset + groupIndex,
+        customerOffset + customerIndex,
+        serviceableCustomerIds.length + 1,
+      )
+    }
+  })
+  serviceableCustomerIds.forEach((_, customerIndex) => {
+    addEdge(customerOffset + customerIndex, sink, 1)
+  })
+
+  let flow = 0
+  while (true) {
+    const level = Array(nodeCount).fill(-1)
+    const queue = [source]
+    level[source] = 0
+    for (let head = 0; head < queue.length; head += 1) {
+      const node = queue[head]
+      for (const edge of graph[node]) {
+        if (edge.capacity <= 0 || level[edge.to] >= 0) continue
+        level[edge.to] = level[node] + 1
+        queue.push(edge.to)
+      }
+    }
+    if (level[sink] < 0) break
+
+    const next = Array(nodeCount).fill(0)
+    const dfs = (node: number, amount: number): number => {
+      if (node === sink) return amount
+      for (; next[node] < graph[node].length; next[node] += 1) {
+        const edge = graph[node][next[node]]
+        if (
+          edge.capacity <= 0 ||
+          level[edge.to] !== level[node] + 1
+        ) {
+          continue
+        }
+        const sent = dfs(edge.to, Math.min(amount, edge.capacity))
+        if (sent <= 0) continue
+        edge.capacity -= sent
+        graph[edge.to][edge.rev].capacity += sent
+        return sent
+      }
+      return 0
+    }
+
+    while (true) {
+      const sent = dfs(source, serviceableCustomerIds.length)
+      if (sent <= 0) break
+      flow += sent
+    }
+  }
+
+  const reachable = Array(nodeCount).fill(false)
+  const queue = [source]
+  reachable[source] = true
+  for (let head = 0; head < queue.length; head += 1) {
+    const node = queue[head]
+    for (const edge of graph[node]) {
+      if (edge.capacity <= 0 || reachable[edge.to]) continue
+      reachable[edge.to] = true
+      queue.push(edge.to)
+    }
+  }
+  const violatingGroupIndexes = groups.flatMap((_, groupIndex) =>
+    reachable[groupOffset + groupIndex] ? [groupIndex] : [],
+  )
+
+  return { flow, violatingGroupIndexes }
+}
+
+profileIt(
+  'checks Hall-cut decomposition of finalizing-30 extra frontiers',
+  async () => {
+    const domain = canonicalDomain()
+    const cases = [
+      { pattern: '3+1+1', thresholds: [3, 1, 1, 0] as const },
+      { pattern: '2+2+1', thresholds: [3, 2, 0, 0] as const },
+      { pattern: '2+1+1+1', thresholds: [4, 1, 0, 0] as const },
+      { pattern: '1+1+1+1+1', thresholds: [5, 0, 0, 0] as const },
+    ]
+    const results = []
+
+    for (const extraCase of cases) {
+      const hallCuts: number[][] = []
+      let finalStatus = 'iteration-limit'
+      let solveMs = 0
+      let flow = 0
+      let lastCutSize = 0
+
+      for (let iteration = 0; iteration < 40; iteration += 1) {
+        const built = buildOptimisticGroupOnlyFrontierMaster(
+          domain,
+          extraCase.thresholds,
+          { includeCustomerFlow: false, hallCuts },
+        )
+        const solved = await solveBoundedWithProgress(built.model, 3)
+        solveMs += solved.solveMs
+        if (solved.status !== 'optimal') {
+          finalStatus = solved.status
+          break
+        }
+
+        const capacities = built.groups.map((_, groupIndex) => {
+          const units = Math.round(
+            solved.solution
+              ? requiredFiniteNumber(
+                  solved.solution.getValue(
+                    built.groupProductionByIndex.get(groupIndex)!,
+                  ),
+                  `hall group production ${groupIndex}`,
+                )
+              : 0,
+          )
+          const slack = built.slackByGroupIndex.get(groupIndex)
+          const slackValue =
+            slack && solved.solution
+              ? Math.round(
+                  requiredFiniteNumber(
+                    solved.solution.getValue(slack),
+                    `hall group slack ${groupIndex}`,
+                  ),
+                )
+              : 0
+          return units * 2 - slackValue
+        })
+        const checked = maximumAssignmentFlowForGroupCapacities(
+          built.groups,
+          domain.serviceableCustomerIds,
+          capacities,
+        )
+        flow = checked.flow
+        if (flow === domain.serviceableCustomerIds.length) {
+          finalStatus = 'assignment-feasible-relaxation'
+          break
+        }
+        if (checked.violatingGroupIndexes.length === 0) {
+          finalStatus = 'invalid-empty-cut'
+          break
+        }
+        lastCutSize = checked.violatingGroupIndexes.length
+        hallCuts.push(checked.violatingGroupIndexes)
+      }
+
+      const result = {
+        pattern: extraCase.pattern,
+        status: finalStatus,
+        hallCuts: hallCuts.length,
+        assignmentFlow: flow,
+        lastCutSize,
+        totalSolveMs: Math.round(solveMs),
+      }
+      results.push(result)
+      console.info('[machine-hall-cut-case]', JSON.stringify(result))
+    }
+
+    console.info('[machine-hall-cut-summary]', JSON.stringify(results))
+  },
+  180000,
 )
