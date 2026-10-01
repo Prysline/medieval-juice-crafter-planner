@@ -4726,43 +4726,34 @@ async function solveBounded(
 }
 
 profileIt(
-  'proves blend35 seasoning with service-mask flow projection',
+  'captures progress for the mask-projected blend35 seasoning proof',
   async () => {
     const domain = canonicalDomain()
-    const buildStartedAt = performance.now()
     const built =
       buildMaskProjectedFinalizing30SeasoningStage(domain, 35)
-    const buildMs = performance.now() - buildStartedAt
-    const solved = await solveBounded(built.model, 120)
+    const solved = await solveBoundedWithProgress(
+      built.model,
+      60,
+    )
 
     console.info(
-      '[machine-finalizing30-blend35-mask-seasoning]',
+      '[machine-mask-seasoning-progress]',
       JSON.stringify({
         finalizing: 30,
         blending: 35,
-        juicingGlobalLowerBound: 20,
-        seasoningNeededFor106OrBetter: 21,
+        targetSeasoningFor107Proof: 22,
+        status: solved.status,
+        objective: solved.objective,
+        solveMs: Math.round(solved.solveMs),
         serviceMaskCount: built.serviceMaskCount,
         customerFlowVariableCount:
           built.customerFlowVariableCount,
-        groupCount: built.groupCount,
         classVariableCount: built.classVariableCount,
         classUseVariableCount: built.classUseVariableCount,
-        sharedSeasoningOperationEdgeCount:
-          built.sharedSeasoningOperationEdgeCount,
-        privateSeasoningOperationTermCount:
-          built.privateSeasoningOperationTermCount,
-        sharedBlendOperationEdgeCount:
-          built.sharedBlendOperationEdgeCount,
-        privateBlendOperationTermCount:
-          built.privateBlendOperationTermCount,
-        buildMs: Math.round(buildMs),
-        status: solved.status,
-        seasoningObjective: solved.objective,
-        solveMs: Math.round(solved.solveMs),
+        progressTail: solved.progressTail,
       }),
     )
   },
-  140000,
+  80000,
 )
 
