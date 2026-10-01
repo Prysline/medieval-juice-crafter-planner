@@ -6914,12 +6914,18 @@ function build311ExtraCostSumSupportMaster(
     hallCuts?: readonly (readonly number[])[]
     includeCustomerFlow?: boolean
     forcedCustomerIds?: readonly string[]
+    requiredUsedGroupIndexes?: readonly number[]
+    requiredSlackGroupIndexes?: readonly number[]
   } = {},
 ) {
   const supportCuts = options.supportCuts ?? []
   const hallCuts = options.hallCuts ?? []
   const includeCustomerFlow = options.includeCustomerFlow ?? true
   const forcedCustomerIds = new Set(options.forcedCustomerIds ?? [])
+  const requiredUsedGroupIndexes =
+    options.requiredUsedGroupIndexes ?? []
+  const requiredSlackGroupIndexes =
+    options.requiredSlackGroupIndexes ?? []
   const groups = pairGroups(domain)
   const model = new Model()
   const effectiveEligibleCustomerIds = groups.map((group, groupIndex) =>
@@ -7078,6 +7084,35 @@ function build311ExtraCostSumSupportMaster(
       capacityTerms.push(slack.times(-1))
     }
     capacityTermsByGroupIndex.set(groupIndex, capacityTerms)
+  })
+
+  requiredUsedGroupIndexes.forEach((groupIndex, index) => {
+    const used = usedGroupVars[groupIndex]
+    if (!used) {
+      model.addConstraint(
+        sum(...usedGroupVars).leq(-1),
+        `s31s_invalid_required_used_${index}`,
+      )
+      return
+    }
+    model.addConstraint(
+      used.eq(1),
+      `s31s_required_used_${index}`,
+    )
+  })
+  requiredSlackGroupIndexes.forEach((groupIndex, index) => {
+    const slack = slackByGroupIndex.get(groupIndex)
+    if (!slack) {
+      model.addConstraint(
+        sum(...usedGroupVars).leq(-1),
+        `s31s_invalid_required_slack_${index}`,
+      )
+      return
+    }
+    model.addConstraint(
+      slack.eq(1),
+      `s31s_required_slack_${index}`,
+    )
   })
 
   model.addConstraint(
@@ -7301,6 +7336,126 @@ forcedResidualProfileIt(
     console.info(
       '[machine-forced-residual-structure-summary]',
       JSON.stringify(results),
+    )
+  },
+  120000,
+)
+
+forcedResidualProfileIt(
+  'branches exact low-degree residual customer covers for identity 1279',
+  async () => {
+    const domain = canonicalDomain()
+    const groups = pairGroups(domain)
+    const groupIndex = 1279
+    const fixedCustomers = new Set(
+      groups[groupIndex].eligibleCustomerIds,
+    )
+    const residualCustomerIds =
+      domain.serviceableCustomerIds.filter(
+        (customerId) => !fixedCustomers.has(customerId),
+      )
+
+    const branchCustomers = residualCustomerIds.flatMap(
+      (customerId) => {
+        const candidates = groups.flatMap((group, candidateGroupIndex) => {
+          if (candidateGroupIndex === groupIndex) return []
+          const residualEligible = group.eligibleCustomerIds.filter(
+            (eligibleCustomerId) =>
+              !fixedCustomers.has(eligibleCustomerId),
+          )
+          if (!residualEligible.includes(customerId)) return []
+          const normal = residualEligible.length >= 2
+          const slack =
+            group.ingredientCost === SLACK_RECIPE_COST &&
+            residualEligible.length >= 1
+          return normal || slack
+            ? [{
+                groupIndex: candidateGroupIndex,
+                slackOnly: !normal && slack,
+              }]
+            : []
+        })
+        return candidates.length <= 3
+          ? [{ customerId, candidates }]
+          : []
+      },
+    )
+
+    let branches: Array<{
+      requiredUsedGroupIndexes: number[]
+      requiredSlackGroupIndexes: number[]
+      choices: Array<{ customerId: string; groupIndex: number }>
+    }> = [{
+      requiredUsedGroupIndexes: [],
+      requiredSlackGroupIndexes: [],
+      choices: [],
+    }]
+
+    for (const branchCustomer of branchCustomers) {
+      branches = branches.flatMap((branch) =>
+        branchCustomer.candidates.map((candidate) => ({
+          requiredUsedGroupIndexes: [
+            ...branch.requiredUsedGroupIndexes,
+            candidate.groupIndex,
+          ],
+          requiredSlackGroupIndexes: candidate.slackOnly
+            ? [...branch.requiredSlackGroupIndexes, candidate.groupIndex]
+            : branch.requiredSlackGroupIndexes,
+          choices: [
+            ...branch.choices,
+            {
+              customerId: branchCustomer.customerId,
+              groupIndex: candidate.groupIndex,
+            },
+          ],
+        })),
+      )
+    }
+
+    const results = []
+    for (let branchIndex = 0; branchIndex < branches.length; branchIndex += 1) {
+      const branch = branches[branchIndex]
+      const built = build311ExtraCostSumSupportMaster(
+        domain,
+        groupIndex,
+        undefined,
+        {
+          includeCustomerFlow: true,
+          forcedCustomerIds: groups[groupIndex].eligibleCustomerIds,
+          requiredUsedGroupIndexes: branch.requiredUsedGroupIndexes,
+          requiredSlackGroupIndexes: branch.requiredSlackGroupIndexes,
+        },
+      )
+      const solved = await solveBounded(built.model, 0.5)
+      results.push({
+        branchIndex,
+        choices: branch.choices,
+        status: solved.status,
+        solveMs: Math.round(solved.solveMs),
+      })
+    }
+
+    console.info(
+      '[machine-forced-residual-branch-summary]',
+      JSON.stringify({
+        groupIndex,
+        branchCustomerCount: branchCustomers.length,
+        branchCount: branches.length,
+        infeasibleBranches: results
+          .filter((entry) => entry.status === 'infeasible')
+          .map((entry) => entry.branchIndex),
+        optimalBranches: results
+          .filter((entry) => entry.status === 'optimal')
+          .map((entry) => entry.branchIndex),
+        unresolvedBranches: results
+          .filter(
+            (entry) =>
+              entry.status !== 'infeasible' &&
+              entry.status !== 'optimal',
+          )
+          .map((entry) => entry.branchIndex),
+        results,
+      }),
     )
   },
   120000,
