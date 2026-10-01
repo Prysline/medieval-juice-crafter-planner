@@ -11293,9 +11293,7 @@ supportDpProfileIt(
             cutWitness.capacities,
           )
         : null
-      const twoCutProbeGroupIndexes = new Set([
-        43, 187, 260, 262, 344, 399, 651, 1279,
-      ])
+      const twoCutProbeGroupIndexes = new Set([1279])
       const twoCutWitness =
         cutAssignment &&
         cutAssignment.flow < SERVICEABLE_CUSTOMER_COUNT &&
