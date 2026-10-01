@@ -5126,86 +5126,90 @@ async function solveBounded(
 }
 
 profileIt(
-  'profiles recipe-level ownership of non-juicing machine edges',
+  'profiles exact shared-edge machine quotient classes',
   async () => {
     const domain = canonicalDomain()
     const groups = pairGroups(domain)
-    const recipeOwnersByEdge = new Map<string, Set<string>>()
-    const groupOwnersByEdge = new Map<string, Set<string>>()
-    const kindByEdge = new Map<string, ProductionStepKind>()
 
+    const ownersByEdge = new Map<string, Set<string>>()
     for (const group of groups) {
       for (const recipe of group.recipes) {
-        const seen = new Set<string>()
         for (const edge of recipe.productionPath.edges) {
-          if (
-            edge.kind !== 'seasoning' &&
-            edge.kind !== 'blending' &&
-            edge.kind !== 'finalizing'
-          ) {
-            continue
-          }
-          if (seen.has(edge.key)) continue
-          seen.add(edge.key)
-          const recipeOwners =
-            recipeOwnersByEdge.get(edge.key) ?? new Set<string>()
-          recipeOwners.add(recipe.candidate.id)
-          recipeOwnersByEdge.set(edge.key, recipeOwners)
-          const groupOwners =
-            groupOwnersByEdge.get(edge.key) ?? new Set<string>()
-          groupOwners.add(group.key)
-          groupOwnersByEdge.set(edge.key, groupOwners)
-          kindByEdge.set(edge.key, edge.kind)
+          const owners =
+            ownersByEdge.get(edge.key) ?? new Set<string>()
+          owners.add(recipe.candidate.id)
+          ownersByEdge.set(edge.key, owners)
         }
       }
     }
 
-    const summary: Record<string, unknown> = {}
-    for (const kind of [
-      'seasoning',
-      'blending',
-      'finalizing',
-    ] as const) {
-      const edges = [...kindByEdge.entries()]
-        .filter(([, edgeKind]) => edgeKind === kind)
-        .map(([edgeKey]) => edgeKey)
-      const groupPrivate = edges.filter(
-        (edgeKey) =>
-          (groupOwnersByEdge.get(edgeKey)?.size ?? 0) === 1,
-      )
-      const recipeUnique = edges.filter(
-        (edgeKey) =>
-          (recipeOwnersByEdge.get(edgeKey)?.size ?? 0) === 1,
-      )
-      const groupPrivateButMultiRecipe = groupPrivate.filter(
-        (edgeKey) =>
-          (recipeOwnersByEdge.get(edgeKey)?.size ?? 0) > 1,
-      )
-      const multiRecipeHistogram = new Map<number, number>()
-      for (const edgeKey of groupPrivateButMultiRecipe) {
-        const count = recipeOwnersByEdge.get(edgeKey)?.size ?? 0
-        multiRecipeHistogram.set(
-          count,
-          (multiRecipeHistogram.get(count) ?? 0) + 1,
+    let classCount = 0
+    let maxClassesPerGroup = 0
+    const classHistogram = new Map<number, number>()
+
+    for (const group of groups) {
+      const classes = new Set<string>()
+
+      for (const recipe of group.recipes) {
+        const shared = new Map<string, number>()
+        let privateMachineEdgeCount = 0
+        let finalizingCount = 0
+
+        for (const edge of recipe.productionPath.edges) {
+          if (edge.kind === 'finalizing') {
+            finalizingCount += 1
+          }
+          const multiplicity =
+            (shared.get(edge.key) ?? 0) + 1
+          if ((ownersByEdge.get(edge.key)?.size ?? 0) === 1) {
+            privateMachineEdgeCount += 1
+          } else {
+            shared.set(edge.key, multiplicity)
+          }
+        }
+
+        if (finalizingCount !== 1) {
+          throw new Error(
+            `Expected one finalizing edge, got ${finalizingCount}`,
+          )
+        }
+
+        classes.add(
+          JSON.stringify({
+            shared: [...shared.entries()].sort(([a], [b]) =>
+              a.localeCompare(b),
+            ),
+            localCoefficient: privateMachineEdgeCount,
+          }),
         )
       }
-      summary[kind] = {
-        edgeCount: edges.length,
-        groupPrivateCount: groupPrivate.length,
-        recipeUniqueCount: recipeUnique.length,
-        groupPrivateButMultiRecipeCount:
-          groupPrivateButMultiRecipe.length,
-        multiRecipeHistogram: Object.fromEntries(
-          [...multiRecipeHistogram.entries()].sort(
-            ([a], [b]) => a - b,
-          ),
-        ),
-      }
+
+      classCount += classes.size
+      maxClassesPerGroup = Math.max(
+        maxClassesPerGroup,
+        classes.size,
+      )
+      classHistogram.set(
+        classes.size,
+        (classHistogram.get(classes.size) ?? 0) + 1,
+      )
     }
 
     console.info(
-      '[machine-edge-recipe-ownership]',
-      JSON.stringify(summary),
+      '[machine-exact-shared-edge-quotient-shape]',
+      JSON.stringify({
+        recipeCount: domain.recipes.length,
+        groupCount: groups.length,
+        classCount,
+        maxClassesPerGroup,
+        collapsedRecipeCount:
+          domain.recipes.length - classCount,
+        classHistogram: Object.fromEntries(
+          [...classHistogram.entries()].sort(
+            ([a], [b]) => a - b,
+          ),
+        ),
+      }),
     )
   },
   30000,
