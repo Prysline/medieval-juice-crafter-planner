@@ -5215,3 +5215,4 @@ profileIt(
   30000,
 )
 
+// CI retry after transient Rollup optional-dependency failure.
