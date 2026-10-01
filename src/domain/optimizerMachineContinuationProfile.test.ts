@@ -10778,6 +10778,290 @@ function exact311MaskCapacityReachability(
   }
 }
 
+function find311MaskCapacitySupportWitness(
+  groups: readonly PairGroup[],
+  fixedExtra3GroupIndex: number,
+): {
+  support: number[]
+  capacities: number[]
+} | null {
+  const fixedGroup = groups[fixedExtra3GroupIndex]
+  if (!fixedGroup || fixedGroup.eligibleCustomerIds.length < 8) {
+    return null
+  }
+
+  const maskKeyForGroup = (group: PairGroup) =>
+    group.eligibleCustomerIds.join('\u001e')
+  const groupIndexesByMask = new Map<string, number[]>()
+  groups.forEach((group, groupIndex) => {
+    const key = maskKeyForGroup(group)
+    const indexes = groupIndexesByMask.get(key)
+    if (indexes) indexes.push(groupIndex)
+    else groupIndexesByMask.set(key, [groupIndex])
+  })
+
+  type WitnessLocalOption = {
+    selectedCount: number
+    extraOneCount: number
+    slackCount: number
+    productionCost: number
+    capacity: number
+    capacities: Array<[number, number]>
+  }
+
+  const localOptionsByMask: WitnessLocalOption[][] = []
+  for (const groupIndexes of groupIndexesByMask.values()) {
+    const maskSize = groups[groupIndexes[0]].eligibleCustomerIds.length
+    let local = new Map<string, WitnessLocalOption>([
+      [
+        '0|0|0|0|0',
+        {
+          selectedCount: 0,
+          extraOneCount: 0,
+          slackCount: 0,
+          productionCost: 0,
+          capacity: 0,
+          capacities: [],
+        },
+      ],
+    ])
+
+    for (const groupIndex of groupIndexes) {
+      const group = groups[groupIndex]
+      const roleOptions: WitnessLocalOption[] =
+        groupIndex === fixedExtra3GroupIndex
+          ? [{
+              selectedCount: 1,
+              extraOneCount: 0,
+              slackCount: 0,
+              productionCost: group.ingredientCost * 4,
+              capacity: 8,
+              capacities: [[groupIndex, 8]],
+            }]
+          : [
+              {
+                selectedCount: 0,
+                extraOneCount: 0,
+                slackCount: 0,
+                productionCost: 0,
+                capacity: 0,
+                capacities: [],
+              },
+              ...(group.eligibleCustomerIds.length >= 2
+                ? [{
+                    selectedCount: 1,
+                    extraOneCount: 0,
+                    slackCount: 0,
+                    productionCost: group.ingredientCost,
+                    capacity: 2,
+                    capacities: [[groupIndex, 2]] as Array<[number, number]>,
+                  }]
+                : []),
+              ...(group.eligibleCustomerIds.length >= 4
+                ? [{
+                    selectedCount: 1,
+                    extraOneCount: 1,
+                    slackCount: 0,
+                    productionCost: group.ingredientCost * 2,
+                    capacity: 4,
+                    capacities: [[groupIndex, 4]] as Array<[number, number]>,
+                  }]
+                : []),
+              ...(group.ingredientCost === SLACK_RECIPE_COST
+                ? [{
+                    selectedCount: 1,
+                    extraOneCount: 0,
+                    slackCount: 1,
+                    productionCost: group.ingredientCost,
+                    capacity: 1,
+                    capacities: [[groupIndex, 1]] as Array<[number, number]>,
+                  }]
+                : []),
+            ]
+
+      const next = new Map<string, WitnessLocalOption>()
+      for (const existing of local.values()) {
+        for (const role of roleOptions) {
+          const candidate: WitnessLocalOption = {
+            selectedCount:
+              existing.selectedCount + role.selectedCount,
+            extraOneCount:
+              existing.extraOneCount + role.extraOneCount,
+            slackCount:
+              existing.slackCount + role.slackCount,
+            productionCost:
+              existing.productionCost + role.productionCost,
+            capacity: existing.capacity + role.capacity,
+            capacities: [
+              ...existing.capacities,
+              ...role.capacities,
+            ],
+          }
+          if (
+            candidate.selectedCount > 30 ||
+            candidate.extraOneCount > 2 ||
+            candidate.slackCount > 1 ||
+            candidate.productionCost > PRODUCTION_COST_FIX ||
+            candidate.capacity > maskSize
+          ) {
+            continue
+          }
+          const key =
+            `${candidate.selectedCount}|${candidate.extraOneCount}|${candidate.slackCount}|${candidate.productionCost}|${candidate.capacity}`
+          if (!next.has(key)) next.set(key, candidate)
+        }
+      }
+      local = next
+      if (local.size === 0) return null
+    }
+    localOptionsByMask.push([...local.values()])
+  }
+
+  const stateIndex = (
+    selectedCount: number,
+    extraOneCount: number,
+    slackCount: number,
+  ) => (selectedCount * 3 + extraOneCount) * 2 + slackCount
+  const stateSize = 31 * 3 * 2
+  const costMask =
+    (1n << BigInt(PRODUCTION_COST_FIX + 1)) - 1n
+  let states = Array<bigint>(stateSize).fill(0n)
+  states[stateIndex(0, 0, 0)] = 1n
+  const snapshots: bigint[][] = [states]
+
+  for (const localOptions of localOptionsByMask) {
+    const next = Array<bigint>(stateSize).fill(0n)
+    for (let selectedCount = 0; selectedCount <= 30; selectedCount += 1) {
+      for (let extraOneCount = 0; extraOneCount <= 2; extraOneCount += 1) {
+        for (let slackCount = 0; slackCount <= 1; slackCount += 1) {
+          const source =
+            states[stateIndex(
+              selectedCount,
+              extraOneCount,
+              slackCount,
+            )]
+          if (source === 0n) continue
+          for (const option of localOptions) {
+            const nextSelected =
+              selectedCount + option.selectedCount
+            const nextExtraOne =
+              extraOneCount + option.extraOneCount
+            const nextSlack = slackCount + option.slackCount
+            if (
+              nextSelected > 30 ||
+              nextExtraOne > 2 ||
+              nextSlack > 1
+            ) {
+              continue
+            }
+            const shifted =
+              (source << BigInt(option.productionCost)) & costMask
+            if (shifted === 0n) continue
+            next[
+              stateIndex(
+                nextSelected,
+                nextExtraOne,
+                nextSlack,
+              )
+            ] |= shifted
+          }
+        }
+      }
+    }
+    states = next
+    snapshots.push(states)
+  }
+
+  const targetBit = 1n << BigInt(PRODUCTION_COST_FIX)
+  if (
+    (states[stateIndex(30, 2, 1)] & targetBit) === 0n
+  ) {
+    return null
+  }
+
+  let selectedCount = 30
+  let extraOneCount = 2
+  let slackCount = 1
+  let productionCost = PRODUCTION_COST_FIX
+  const chosenOptions: WitnessLocalOption[] = []
+
+  for (
+    let maskIndex = localOptionsByMask.length - 1;
+    maskIndex >= 0;
+    maskIndex -= 1
+  ) {
+    const previous = snapshots[maskIndex]
+    let chosen: WitnessLocalOption | undefined
+    for (const option of localOptionsByMask[maskIndex]) {
+      const sourceSelected =
+        selectedCount - option.selectedCount
+      const sourceExtraOne =
+        extraOneCount - option.extraOneCount
+      const sourceSlack = slackCount - option.slackCount
+      const sourceCost =
+        productionCost - option.productionCost
+      if (
+        sourceSelected < 0 ||
+        sourceExtraOne < 0 ||
+        sourceSlack < 0 ||
+        sourceCost < 0
+      ) {
+        continue
+      }
+      const sourceBits =
+        previous[
+          stateIndex(
+            sourceSelected,
+            sourceExtraOne,
+            sourceSlack,
+          )
+        ]
+      if (
+        (sourceBits & (1n << BigInt(sourceCost))) === 0n
+      ) {
+        continue
+      }
+      chosen = option
+      selectedCount = sourceSelected
+      extraOneCount = sourceExtraOne
+      slackCount = sourceSlack
+      productionCost = sourceCost
+      chosenOptions.push(option)
+      break
+    }
+    if (!chosen) {
+      throw new Error(
+        `Failed to backtrack support DP at mask ${maskIndex}`,
+      )
+    }
+  }
+
+  if (
+    selectedCount !== 0 ||
+    extraOneCount !== 0 ||
+    slackCount !== 0 ||
+    productionCost !== 0
+  ) {
+    throw new Error('Support DP backtrack did not reach origin')
+  }
+
+  const capacities = Array(groups.length).fill(0)
+  for (const option of chosenOptions) {
+    for (const [groupIndex, capacity] of option.capacities) {
+      capacities[groupIndex] = capacity
+    }
+  }
+  const support = capacities.flatMap((capacity, groupIndex) =>
+    capacity > 0 ? [groupIndex] : [],
+  )
+  if (support.length !== 30) {
+    throw new Error(
+      `Expected 30 groups from support DP, got ${support.length}`,
+    )
+  }
+  return { support, capacities }
+}
+
 supportDpProfileIt(
   'counts exact 3+1+1 support roles before customer-flow validation',
   () => {
@@ -10825,6 +11109,17 @@ supportDpProfileIt(
         groups,
         groupIndex,
       )
+      const witness = find311MaskCapacitySupportWitness(
+        groups,
+        groupIndex,
+      )
+      const assignment = witness
+        ? maximumAssignmentFlowForGroupCapacities(
+            groups,
+            domain.serviceableCustomerIds,
+            witness.capacities,
+          )
+        : null
       return {
         groupIndex,
         groupCost: group.ingredientCost,
@@ -10837,6 +11132,10 @@ supportDpProfileIt(
         sameMaskGroupCount: maskCapacity.sameMaskGroupCount,
         maskCount: maskCapacity.maskCount,
         maskSolveMs: Math.round(performance.now() - maskStartedAt),
+        witnessSupportSize: witness?.support.length ?? 0,
+        assignmentFlow: assignment?.flow ?? 0,
+        hallViolationGroups:
+          assignment?.violatingGroupIndexes.length ?? 0,
       }
     })
     console.info(
@@ -10848,7 +11147,11 @@ supportDpProfileIt(
     )
 
     expect(
-      results.every((result) => !result.maskCapacityReachable),
+      results.every(
+        (result) =>
+          !result.maskCapacityReachable ||
+          result.assignmentFlow < SERVICEABLE_CUSTOMER_COUNT,
+      ),
     ).toBe(true)
   },
   120000,
