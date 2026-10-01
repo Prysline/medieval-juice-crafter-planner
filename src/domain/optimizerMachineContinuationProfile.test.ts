@@ -3227,6 +3227,7 @@ function buildFinalizing30CompressedFrontierStage(
   )
 
   const productionVars: ReturnType<Model['intVar']>[] = []
+  const extraUnitVars: ReturnType<Model['intVar']>[] = []
   const productionCostTerms: ReturnType<
     ReturnType<Model['intVar']>['times']
   >[] = []
@@ -3338,12 +3339,22 @@ function buildFinalizing30CompressedFrontierStage(
         `cu_${classUseVariableCount}`,
       )
       classUseVariableCount += 1
+      const extra = model.intVar(
+        0,
+        Math.max(0, groupUpperBound - 1),
+        `ce_${classVariableCount - 1}`,
+      )
+      extraUnitVars.push(extra)
 
       groupProductionVars.push(x)
       groupUseVars.push(used)
       productionVars.push(x)
       productionCostTerms.push(x.times(group.ingredientCost))
 
+      model.addConstraint(
+        x.minus(used).minus(extra).eq(0),
+        `class_exact_extra_${classVariableCount}`,
+      )
       model.addConstraint(
         x.minus(used.times(groupUpperBound)).leq(0),
         `class_use_upper_${classVariableCount}`,
@@ -3434,6 +3445,10 @@ function buildFinalizing30CompressedFrontierStage(
   model.addConstraint(
     sum(...usedGroupVars).eq(30),
     'finalizing30_used_groups',
+  )
+  model.addConstraint(
+    sum(...extraUnitVars).eq(PRODUCTION_UNITS_FIX - 30),
+    'finalizing30_exact_extra_units',
   )
 
   const throughOps: ReturnType<Model['intVar']>[] = []
@@ -5423,11 +5438,11 @@ async function solveBounded(
 }
 
 profileIt(
-  'solves the exact shared-edge machine continuation',
+  'proves the finalizing-30 blending-35 frontier with exact extra-unit sparsity',
   async () => {
     const domain = canonicalDomain()
     const buildStartedAt = performance.now()
-    const built = buildExactSharedEdgeMachineStage(domain)
+    const built = buildFinalizing30CompressedFrontierStage(domain)
     const buildMs = performance.now() - buildStartedAt
     const solved = await solveBoundedWithProgress(
       built.model,
@@ -5435,25 +5450,28 @@ profileIt(
     )
 
     console.info(
-      '[machine-exact-shared-edge-solve]',
+      '[machine-finalizing30-extra-unit-frontier]',
       JSON.stringify({
-        fixedOptima: {
-          productionUnits: PRODUCTION_UNITS_FIX,
-          assignedIngredientCost:
-            ASSIGNED_INGREDIENT_COST_FIX,
-          productionCost: PRODUCTION_COST_FIX,
+        frontier: {
+          finalizing: 30,
+          usedGroups: 30,
+          selectedRecipes: 30,
+          productionUnits: 35,
+          exactExtraUnits: 5,
+          blending: 35,
+          throughCap: 41,
+          totalCap: 106,
         },
         knownWitness: 107,
-        serviceMaskCount: built.serviceMaskCount,
-        customerFlowVariableCount:
-          built.customerFlowVariableCount,
         groupCount: built.groupCount,
         classVariableCount: built.classVariableCount,
-        localOperationVariableCount:
-          built.localOperationVariableCount,
-        sharedOperationEdgeCount:
-          built.sharedOperationEdgeCount,
-        collapsedRecipeCount: built.collapsedRecipeCount,
+        classUseVariableCount: built.classUseVariableCount,
+        sharedBlendOperationEdgeCount:
+          built.sharedBlendOperationEdgeCount,
+        privateBlendOperationTermCount:
+          built.privateBlendOperationTermCount,
+        throughOperationEdgeCount:
+          built.throughOperationEdgeCount,
         buildMs: Math.round(buildMs),
         status: solved.status,
         objective: solved.objective,
