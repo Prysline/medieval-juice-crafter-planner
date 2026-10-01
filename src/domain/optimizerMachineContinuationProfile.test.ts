@@ -6847,12 +6847,17 @@ function buildFinalizing30GroupSupportMaster(
       costs: readonly number[]
       count: number
     }
+    requiredExactExtraGroup?: {
+      groupIndex: number
+      extra: number
+    }
   } = {},
 ) {
   const slackExtraCount = options.slackExtraCount
   const extraIdentityCuts = options.extraIdentityCuts ?? []
   const requiredExactExtraCost = options.requiredExactExtraCost
   const allowedExactExtraCosts = options.allowedExactExtraCosts
+  const requiredExactExtraGroup = options.requiredExactExtraGroup
   const groups = pairGroups(domain)
   const model = new Model()
 
@@ -7127,6 +7132,28 @@ function buildFinalizing30GroupSupportMaster(
         .eq(allowedExactExtraCosts.count),
       `sg_allowed_exact_extra_costs_${allowedExactExtraCosts.extra}`,
     )
+  }
+  if (requiredExactExtraGroup) {
+    const { groupIndex, extra } = requiredExactExtraGroup
+    const thresholds =
+      extraThresholdVarsByGroupIndex.get(groupIndex) ?? []
+    if (extra <= 0 || extra > thresholds.length) {
+      model.addConstraint(
+        sum(...productionVars).leq(-1),
+        'sg_invalid_required_exact_extra_group',
+      )
+    } else {
+      model.addConstraint(
+        thresholds[extra - 1].eq(1),
+        `sg_required_exact_extra_group_${groupIndex}_${extra}`,
+      )
+      if (extra < thresholds.length) {
+        model.addConstraint(
+          thresholds[extra].eq(0),
+          `sg_required_exact_extra_group_upper_${groupIndex}_${extra}`,
+        )
+      }
+    }
   }
   extraIdentityCuts.forEach((entries, cutIndex) => {
     const activeThresholds = entries.flatMap(
@@ -8777,13 +8804,104 @@ profileIt(
           combinedStatus = combinedSolved.status
           combinedSolveMs = combinedSolved.solveMs
         }
+        let groupIdentitySplit:
+          | {
+              candidateGroups: number
+              infeasibleGroups: number
+              optimalGroups: number[]
+              unresolvedGroups: number[]
+              solveMs: number
+            }
+          | undefined
+        if (
+          extraCase.pattern === '3+1+1' &&
+          slackExtraCount === 0 &&
+          survivingCosts.length > 0 &&
+          combinedStatus !== 'infeasible'
+        ) {
+          const survivingCostSet = new Set(survivingCosts)
+          const candidateGroupIndexes = groups.flatMap(
+            (group, groupIndex) =>
+              survivingCostSet.has(group.ingredientCost) &&
+              maxExtraByGroupIndex[groupIndex] >= highestExtra
+                ? [groupIndex]
+                : [],
+          )
+          const identityResults: Array<{
+            groupIndex: number
+            status: string
+            solveMs: number
+          }> = []
+          for (const groupIndex of candidateGroupIndexes) {
+            const built = buildFinalizing30GroupSupportMaster(
+              domain,
+              thresholdCounts,
+              {
+                slackExtraCount,
+                allowedExactExtraCosts: {
+                  extra: highestExtra,
+                  costs: survivingCosts,
+                  count: highestExtraCount,
+                },
+                requiredExactExtraGroup: {
+                  groupIndex,
+                  extra: highestExtra,
+                },
+              },
+            )
+            const solved = await solveBounded(built.model, 0.75)
+            identityResults.push({
+              groupIndex,
+              status: solved.status,
+              solveMs: Math.round(solved.solveMs),
+            })
+          }
+          groupIdentitySplit = {
+            candidateGroups: candidateGroupIndexes.length,
+            infeasibleGroups: identityResults.filter(
+              (entry) => entry.status === 'infeasible',
+            ).length,
+            optimalGroups: identityResults
+              .filter((entry) => entry.status === 'optimal')
+              .map((entry) => entry.groupIndex),
+            unresolvedGroups: identityResults
+              .filter(
+                (entry) =>
+                  entry.status !== 'infeasible' &&
+                  entry.status !== 'optimal',
+              )
+              .map((entry) => entry.groupIndex),
+            solveMs: identityResults.reduce(
+              (total, entry) => total + entry.solveMs,
+              0,
+            ),
+          }
+          console.info(
+            '[machine-extra-group-identity-split]',
+            JSON.stringify({
+              pattern: extraCase.pattern,
+              slackExtraCount,
+              highestExtra,
+              survivingCosts,
+              ...groupIdentitySplit,
+            }),
+          )
+        }
+        const groupIdentityClosed =
+          groupIdentitySplit !== undefined &&
+          groupIdentitySplit.candidateGroups > 0 &&
+          groupIdentitySplit.infeasibleGroups ===
+            groupIdentitySplit.candidateGroups
         const subcase = {
           slackExtraCount,
           status:
             survivingCosts.length === 0 ||
-            combinedStatus === 'infeasible'
+            combinedStatus === 'infeasible' ||
+            groupIdentityClosed
               ? 'infeasible'
-              : 'cost-frontier-unresolved',
+              : groupIdentitySplit
+                ? 'group-identity-unresolved'
+                : 'cost-frontier-unresolved',
           highestExtra,
           highestExtraCount,
           candidateCosts: candidateCosts.length,
@@ -8797,8 +8915,10 @@ profileIt(
                 (total, entry) => total + entry.solveMs,
                 0,
               ) +
-              combinedSolveMs,
+              combinedSolveMs +
+              (groupIdentitySplit?.solveMs ?? 0),
           ),
+          groupIdentitySplit,
         }
         subcases.push(subcase)
         console.info(
