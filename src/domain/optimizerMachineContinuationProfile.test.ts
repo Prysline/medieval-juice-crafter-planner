@@ -11534,8 +11534,10 @@ singleSupportMasterProfileIt(
       let masterSolveMs = 0
       let exactSolveMs = 0
       let supportSize = 0
+      const roundFlows: Array<number | null> = []
+      const roundHallCutSizes: number[] = []
 
-      for (let round = 0; round < 4; round += 1) {
+      for (let round = 0; round < 16; round += 1) {
         const built = build311ExtraCostSumSupportMaster(
           domain,
           groupIndex,
@@ -11607,6 +11609,7 @@ singleSupportMasterProfileIt(
           capacities,
         )
         assignmentFlow = checked.flow
+        roundFlows.push(checked.flow)
 
         if (checked.flow < SERVICEABLE_CUSTOMER_COUNT) {
           if (checked.violatingGroupIndexes.length === 0) {
@@ -11620,6 +11623,7 @@ singleSupportMasterProfileIt(
           }
           sharedHallCutKeys.add(key)
           sharedHallCuts.push(checked.violatingGroupIndexes)
+          roundHallCutSizes.push(checked.violatingGroupIndexes.length)
           status = 'hall-cut'
           continue
         }
@@ -11661,6 +11665,8 @@ singleSupportMasterProfileIt(
         exactStatus,
         hallCuts: sharedHallCuts.length,
         supportCuts: supportCuts.length,
+        roundFlows,
+        roundHallCutSizes,
         masterSolveMs: Math.round(masterSolveMs),
         exactSolveMs: Math.round(exactSolveMs),
       })
