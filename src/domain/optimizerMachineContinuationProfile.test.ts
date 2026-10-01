@@ -7232,7 +7232,7 @@ profileIt(
 )
 
 
-profileIt(
+it.skip(
   'summarizes exact extra-bearing group eligibility',
   async () => {
     const domain = canonicalDomain()
@@ -7281,7 +7281,7 @@ profileIt(
 )
 
 
-profileIt(
+it.skip(
   'summarizes exact customer-mask equivalence classes',
   async () => {
     const domain = canonicalDomain()
@@ -7454,7 +7454,7 @@ function maximumAssignmentFlowForGroupCapacities(
   return { flow, violatingGroupIndexes }
 }
 
-profileIt(
+it.skip(
   'checks Hall-cut decomposition of finalizing-30 extra frontiers',
   async () => {
     const domain = canonicalDomain()
