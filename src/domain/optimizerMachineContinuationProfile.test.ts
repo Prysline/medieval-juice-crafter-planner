@@ -298,10 +298,32 @@ function buildFlowParityPartitionStage(
         `op_usage_${edgeIndex}`,
       )
       operationVars.push(operation)
+      const kind = kindByEdgeKey.get(edgeKey)
+      if (kind === 'juicing' || kind === 'seasoning') {
+        throughOperationVars.push(operation)
+      } else if (kind === 'blending') {
+        blendingOperationVars.push(operation)
+      }
     },
   )
 
-  model.minimize(sum(...operationVars))
+  model.addConstraint(
+    sum(...throughOperationVars).geq(38),
+    'through_lower_bound',
+  )
+  model.addConstraint(
+    sum(...blendingOperationVars).geq(35),
+    'blending_lower_bound',
+  )
+  if (typeof totalCap === 'number') {
+    model.addConstraint(
+      sum(...operationVars).leq(totalCap),
+      'nonfinal_total_cap',
+    )
+    model.minimize(sum(...productionUnitTerms))
+  } else {
+    model.minimize(sum(...operationVars))
+  }
 
   return {
     model,
@@ -670,6 +692,8 @@ function buildPartitionOptimalPairStage(
   )
 
   const operationVars: ReturnType<Model['intVar']>[] = []
+  const throughOperationVars: ReturnType<Model['intVar']>[] = []
+  const blendingOperationVars: ReturnType<Model['intVar']>[] = []
   ;[...quantityTermsByEdgeKey.entries()].forEach(
     ([edgeKey, terms], edgeIndex) => {
       const operation = model.intVar(
@@ -1005,6 +1029,7 @@ function buildFlowProjectedFullMachineCapFeasibility(
 
 function buildFlowProjectedNonfinalStage(
   domain: BatchOptimizationModel,
+  totalCap?: number,
 ) {
   const groups = pairGroups(domain)
   const model = new Model()
@@ -1045,6 +1070,7 @@ function buildFlowProjectedNonfinalStage(
     ReturnType<ReturnType<Model['intVar']>['times']>[]
   >()
   const quantityUpperBoundByEdgeKey = new Map<string, number>()
+  const kindByEdgeKey = new Map<string, ProductionStepKind>()
   let recipeVariableCount = 0
 
   groups.forEach((group, groupIndex) => {
@@ -1074,6 +1100,7 @@ function buildFlowProjectedNonfinalStage(
           edge.key,
           (multiplicityByEdgeKey.get(edge.key) ?? 0) + 1,
         )
+        kindByEdgeKey.set(edge.key, edge.kind)
       }
       for (const [edgeKey, multiplicity] of multiplicityByEdgeKey) {
         const terms = quantityTermsByEdgeKey.get(edgeKey)
@@ -1208,7 +1235,7 @@ async function solveBounded(
 }
 
 profileIt(
-  'proves the exact joint non-final machine lower bound',
+  'proves whether any exact non-final solution can beat 77',
   async () => {
     const domain = canonicalDomain()
     expect(domain.recipes).toHaveLength(7892)
@@ -1217,16 +1244,22 @@ profileIt(
     )
 
     const buildStartedAt = performance.now()
-    const built = buildFlowProjectedNonfinalStage(domain)
+    const built = buildFlowProjectedNonfinalStage(domain, 76)
     const buildMs = performance.now() - buildStartedAt
     const solved = await solveBounded(built.model, 150)
 
     console.info(
-      '[machine-joint-nonfinal-exact]',
+      '[machine-nonfinal-76-feasibility]',
       JSON.stringify({
-        targetFor107Certificate: 77,
+        cap: 76,
+        partitionLowerBounds: {
+          throughSeasoning: 38,
+          blending: 35,
+          total: 73,
+        },
+        knownNonfinalWitness: 77,
         finalizingExactLowerBound: 30,
-        knownWitness: 107,
+        knownFullWitness: 107,
         groupCount: built.groupCount,
         customerFlowVariableCount:
           built.customerFlowVariableCount,
