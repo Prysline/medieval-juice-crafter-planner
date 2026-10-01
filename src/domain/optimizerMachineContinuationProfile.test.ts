@@ -5976,6 +5976,7 @@ function buildFinalizing30MaskPartitionStage(
     min?: number
     max?: number
   },
+  slackExtraCount?: number,
 ) {
   const groups = pairGroups(domain)
   const model = new Model()
@@ -6168,6 +6169,24 @@ function buildFinalizing30MaskPartitionStage(
     sum(...slackVars).eq(GLOBAL_SERVING_SLACK),
     'mp_global_slack',
   )
+  if (typeof slackExtraCount === 'number') {
+    const targetUnits = 1 + slackExtraCount
+    const bigM = PROCESSING_STACK_CAPACITY
+    groups.forEach((group, groupIndex) => {
+      if (group.ingredientCost !== SLACK_RECIPE_COST) return
+      const slack = slackByGroupIndex.get(groupIndex)
+      const production = groupProductionByIndex.get(groupIndex)
+      if (!slack || !production) return
+      model.addConstraint(
+        sum(production, slack.times(bigM)).leq(targetUnits + bigM),
+        `mp_slack_extra_upper_${groupIndex}`,
+      )
+      model.addConstraint(
+        production.minus(slack.times(bigM)).geq(targetUnits - bigM),
+        `mp_slack_extra_lower_${groupIndex}`,
+      )
+    })
+  }
   model.addConstraint(
     sum(...productionVars).eq(PRODUCTION_UNITS_FIX),
     'mp_production_units',
@@ -8076,7 +8095,7 @@ it.skip(
 
 
 profileIt(
-  'certifies joint-class remaining finalizing-30 frontier',
+  'certifies exact non-final signatures on remaining finalizing-30 frontier',
   async () => {
     const domain = canonicalDomain()
     const requestedPattern =
@@ -8093,28 +8112,31 @@ profileIt(
     expect(extraCase).toBeDefined()
     if (!extraCase) return
 
-    const built = buildAggregateSharedEdgeFrontierMaster(
+    const built = buildFinalizing30MaskPartitionStage(
       domain,
+      new Set<ProductionStepKind>([
+        'juicing',
+        'seasoning',
+        'blending',
+      ]),
       extraCase.thresholds,
-      {
-        slackExtraCount: 0,
-        totalNonFinalCap: 76,
-      },
+      { max: 76 },
+      0,
     )
-    const solved = await solveBoundedWithProgress(built.model, 15)
+    const solved = await solveBoundedWithProgress(built.model, 20)
     console.info(
-      '[machine-joint-class-106-case]',
+      '[machine-exact-nonfinal-106-case]',
       JSON.stringify({
         pattern: extraCase.pattern,
         status: solved.status,
         objective: solved.objective,
         solveMs: Math.round(solved.solveMs),
         classVariableCount: built.classVariableCount,
-        conflictGroupCount: built.conflictGroupCount,
+        operationEdgeCount: built.operationEdgeCount,
         progressTail: solved.progressTail,
       }),
     )
     expect(solved.status).toBe('infeasible')
   },
-  60000,
+  90000,
 )
