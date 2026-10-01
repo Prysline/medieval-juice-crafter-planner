@@ -6700,10 +6700,12 @@ function buildOptimisticGroupOnlyFrontierMaster(
   options: {
     includeCustomerFlow?: boolean
     hallCuts?: readonly (readonly number[])[]
+    sharedBucketMode?: 'equipment' | 'operation-signature'
   } = {},
 ) {
   const includeCustomerFlow = options.includeCustomerFlow ?? true
   const hallCuts = options.hallCuts ?? []
+  const sharedBucketMode = options.sharedBucketMode ?? 'equipment'
   const groups = pairGroups(domain)
   const model = new Model()
 
@@ -6751,7 +6753,7 @@ function buildOptimisticGroupOnlyFrontierMaster(
 
   const throughOwners = new Map<string, Set<number>>()
   const blendingOwners = new Map<string, Set<number>>()
-  const equipmentByEdgeKey = new Map<string, string>()
+  const sharedBucketByEdgeKey = new Map<string, string>()
   groups.forEach((group, groupIndex) => {
     for (const recipe of group.recipes) {
       for (const edge of recipe.productionPath.edges) {
@@ -6762,7 +6764,18 @@ function buildOptimisticGroupOnlyFrontierMaster(
               ? blendingOwners
               : null
         if (!owners) continue
-        equipmentByEdgeKey.set(edge.key, edge.equipment)
+        const operationSignature =
+          edge.kind === 'juicing'
+            ? `juicing:${edge.addedIngredientId ?? edge.key}`
+            : edge.kind === 'seasoning'
+              ? `seasoning:${edge.equipment}:${edge.addedIngredientId ?? 'unknown'}`
+              : `blending:${edge.fromIngredientIds.length}:${edge.secondaryFromIngredientIds?.length ?? 0}`
+        sharedBucketByEdgeKey.set(
+          edge.key,
+          sharedBucketMode === 'equipment'
+            ? edge.equipment
+            : operationSignature,
+        )
         const current = owners.get(edge.key) ?? new Set<number>()
         current.add(groupIndex)
         owners.set(edge.key, current)
@@ -6855,7 +6868,7 @@ function buildOptimisticGroupOnlyFrontierMaster(
       const sharedThroughByEquipment = new Map<string, number>()
       for (const [key, multiplicity] of throughMultiplicity) {
         if (sharedThroughEdgeKeys.has(key)) {
-          const equipment = equipmentByEdgeKey.get(key) ?? 'unknown'
+          const equipment = sharedBucketByEdgeKey.get(key) ?? 'unknown'
           sharedThroughByEquipment.set(
             equipment,
             (sharedThroughByEquipment.get(equipment) ?? 0) +
@@ -6869,7 +6882,7 @@ function buildOptimisticGroupOnlyFrontierMaster(
       const sharedBlendByEquipment = new Map<string, number>()
       for (const [key, multiplicity] of blendMultiplicity) {
         if (sharedBlendingEdgeKeys.has(key)) {
-          const equipment = equipmentByEdgeKey.get(key) ?? 'unknown'
+          const equipment = sharedBucketByEdgeKey.get(key) ?? 'unknown'
           sharedBlendByEquipment.set(
             equipment,
             (sharedBlendByEquipment.get(equipment) ?? 0) +
@@ -7161,6 +7174,51 @@ profileIt(
     }
     console.info(
       '[machine-equipment-bucket-summary]',
+      JSON.stringify(
+        results.map((result) => ({
+          pattern: result.pattern,
+          status: result.status,
+          objective: result.objective,
+        })),
+      ),
+    )
+  },
+  90000,
+)
+
+
+profileIt(
+  'checks operation-signature-bucket finalizing-30 extra frontiers',
+  async () => {
+    const domain = canonicalDomain()
+    const cases = [
+      { pattern: '2+2+1', thresholds: [3, 2, 0, 0] as const },
+      { pattern: '2+1+1+1', thresholds: [4, 1, 0, 0] as const },
+      { pattern: '1+1+1+1+1', thresholds: [5, 0, 0, 0] as const },
+    ]
+    const results = []
+    for (const extraCase of cases) {
+      const built = buildOptimisticGroupOnlyFrontierMaster(
+        domain,
+        extraCase.thresholds,
+        { sharedBucketMode: 'operation-signature' },
+      )
+      const solved = await solveBoundedWithProgress(built.model, 10)
+      const result = {
+        pattern: extraCase.pattern,
+        status: solved.status,
+        objective: solved.objective,
+        solveMs: Math.round(solved.solveMs),
+        progressTail: solved.progressTail,
+      }
+      results.push(result)
+      console.info(
+        '[machine-operation-signature-case]',
+        JSON.stringify(result),
+      )
+    }
+    console.info(
+      '[machine-operation-signature-summary]',
       JSON.stringify(
         results.map((result) => ({
           pattern: result.pattern,
