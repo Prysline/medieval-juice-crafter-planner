@@ -96,6 +96,41 @@ function pairGroups(domain: BatchOptimizationModel): PairGroup[] {
   return [...groups.values()]
 }
 
+function customerMaskFlowTypes(
+  serviceableCustomerIds: readonly string[],
+  maskCustomerIds: ReadonlyMap<string, readonly string[]>,
+): Array<{
+  customerIds: string[]
+  neighborMaskKeys: string[]
+}> {
+  const maskKeys = [...maskCustomerIds.keys()]
+  const types = new Map<
+    string,
+    {
+      customerIds: string[]
+      neighborMaskKeys: string[]
+    }
+  >()
+
+  for (const customerId of serviceableCustomerIds) {
+    const neighborMaskKeys = maskKeys.filter((maskKey) =>
+      maskCustomerIds.get(maskKey)!.includes(customerId),
+    )
+    const signature = neighborMaskKeys.join('\u001d')
+    const current = types.get(signature)
+    if (current) {
+      current.customerIds.push(customerId)
+    } else {
+      types.set(signature, {
+        customerIds: [customerId],
+        neighborMaskKeys,
+      })
+    }
+  }
+
+  return [...types.values()]
+}
+
 function partitionSignature(
   recipe: EligibleOptimizationRecipe,
   kinds: ReadonlySet<ProductionStepKind>,
@@ -6010,29 +6045,30 @@ function buildFinalizing30MaskPartitionStage(
     string,
     ReturnType<Model['numVar']>[]
   >([...maskCustomerIds.keys()].map((maskKey) => [maskKey, []]))
-  let customerFlowVariableCount = 0
-  domain.serviceableCustomerIds.forEach(
-    (customerId, customerIndex) => {
-      const terms: ReturnType<Model['numVar']>[] = []
-      ;[...maskCustomerIds.entries()].forEach(
-        ([maskKey, eligibleCustomerIds], maskIndex) => {
-          if (!eligibleCustomerIds.includes(customerId)) return
-          const y = model.numVar(
-            0,
-            1,
-            `mpy_${customerIndex}_${maskIndex}`,
-          )
-          customerFlowVariableCount += 1
-          terms.push(y)
-          flowByMask.get(maskKey)!.push(y)
-        },
-      )
-      model.addConstraint(
-        sum(...terms).eq(1),
-        `mp_customer_${customerIndex}`,
-      )
-    },
+  const customerFlowTypes = customerMaskFlowTypes(
+    domain.serviceableCustomerIds,
+    maskCustomerIds,
   )
+  let customerFlowVariableCount = 0
+  customerFlowTypes.forEach((customerType, typeIndex) => {
+    const demand = customerType.customerIds.length
+    const terms = customerType.neighborMaskKeys.map(
+      (maskKey, neighborIndex) => {
+        const y = model.numVar(
+          0,
+          demand,
+          `mpy_${typeIndex}_${neighborIndex}`,
+        )
+        customerFlowVariableCount += 1
+        flowByMask.get(maskKey)!.push(y)
+        return y
+      },
+    )
+    model.addConstraint(
+      sum(...terms).eq(demand),
+      `mp_customer_type_${typeIndex}`,
+    )
+  })
 
   const productionVars: ReturnType<Model['intVar']>[] = []
   const productionCostTerms: ReturnType<
@@ -6827,29 +6863,30 @@ function buildFinalizing30GroupSupportMaster(
     string,
     ReturnType<Model['numVar']>[]
   >([...maskCustomerIds.keys()].map((maskKey) => [maskKey, []]))
-  let customerFlowVariableCount = 0
-  domain.serviceableCustomerIds.forEach(
-    (customerId, customerIndex) => {
-      const terms: ReturnType<Model['numVar']>[] = []
-      ;[...maskCustomerIds.entries()].forEach(
-        ([maskKey, eligibleCustomerIds], maskIndex) => {
-          if (!eligibleCustomerIds.includes(customerId)) return
-          const flow = model.numVar(
-            0,
-            1,
-            `sgy_${customerIndex}_${maskIndex}`,
-          )
-          customerFlowVariableCount += 1
-          terms.push(flow)
-          flowByMask.get(maskKey)!.push(flow)
-        },
-      )
-      model.addConstraint(
-        sum(...terms).eq(1),
-        `sg_customer_${customerIndex}`,
-      )
-    },
+  const customerFlowTypes = customerMaskFlowTypes(
+    domain.serviceableCustomerIds,
+    maskCustomerIds,
   )
+  let customerFlowVariableCount = 0
+  customerFlowTypes.forEach((customerType, typeIndex) => {
+    const demand = customerType.customerIds.length
+    const terms = customerType.neighborMaskKeys.map(
+      (maskKey, neighborIndex) => {
+        const flow = model.numVar(
+          0,
+          demand,
+          `sgy_${typeIndex}_${neighborIndex}`,
+        )
+        customerFlowVariableCount += 1
+        flowByMask.get(maskKey)!.push(flow)
+        return flow
+      },
+    )
+    model.addConstraint(
+      sum(...terms).eq(demand),
+      `sg_customer_type_${typeIndex}`,
+    )
+  })
 
   const productionVars: ReturnType<Model['intVar']>[] = []
   const productionCostTerms: ReturnType<
