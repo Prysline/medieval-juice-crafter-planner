@@ -1002,6 +1002,170 @@ function buildFlowProjectedFullMachineCapFeasibility(
   }
 }
 
+
+function buildFlowProjectedNonfinalStage(
+  domain: BatchOptimizationModel,
+) {
+  const groups = pairGroups(domain)
+  const model = new Model()
+  const flowByGroupKey = new Map<
+    string,
+    ReturnType<Model['numVar']>[]
+  >(groups.map((group) => [group.key, []]))
+  let customerFlowVariableCount = 0
+
+  domain.serviceableCustomerIds.forEach(
+    (customerId, customerIndex) => {
+      const customerTerms: ReturnType<Model['numVar']>[] = []
+      groups.forEach((group, groupIndex) => {
+        if (!group.eligibleCustomerIds.includes(customerId)) return
+        const y = model.numVar(
+          0,
+          1,
+          `y_${customerIndex}_${groupIndex}`,
+        )
+        customerFlowVariableCount += 1
+        customerTerms.push(y)
+        flowByGroupKey.get(group.key)!.push(y)
+      })
+      model.addConstraint(
+        sum(...customerTerms).eq(1),
+        `customer_${customerIndex}`,
+      )
+    },
+  )
+
+  const productionUnitTerms: ReturnType<Model['intVar']>[] = []
+  const productionCostTerms: ReturnType<
+    ReturnType<Model['intVar']>['times']
+  >[] = []
+  const singletonSlackVars: ReturnType<Model['boolVar']>[] = []
+  const quantityTermsByEdgeKey = new Map<
+    string,
+    ReturnType<ReturnType<Model['intVar']>['times']>[]
+  >()
+  const quantityUpperBoundByEdgeKey = new Map<string, number>()
+  let recipeVariableCount = 0
+
+  groups.forEach((group, groupIndex) => {
+    const groupUpperBound = Math.max(
+      1,
+      Math.ceil(group.eligibleCustomerIds.length / 2),
+    )
+    const groupRecipeVars: ReturnType<Model['intVar']>[] = []
+
+    for (const recipe of group.recipes) {
+      const x = model.intVar(
+        0,
+        groupUpperBound,
+        `x_${recipeVariableCount}`,
+      )
+      recipeVariableCount += 1
+      groupRecipeVars.push(x)
+      productionUnitTerms.push(x)
+      productionCostTerms.push(
+        x.times(recipe.juiceUnitIngredientCost),
+      )
+
+      const multiplicityByEdgeKey = new Map<string, number>()
+      for (const edge of recipe.productionPath.edges) {
+        if (edge.kind === 'finalizing') continue
+        multiplicityByEdgeKey.set(
+          edge.key,
+          (multiplicityByEdgeKey.get(edge.key) ?? 0) + 1,
+        )
+      }
+      for (const [edgeKey, multiplicity] of multiplicityByEdgeKey) {
+        const terms = quantityTermsByEdgeKey.get(edgeKey)
+        const term = x.times(multiplicity)
+        if (terms) terms.push(term)
+        else quantityTermsByEdgeKey.set(edgeKey, [term])
+        quantityUpperBoundByEdgeKey.set(
+          edgeKey,
+          (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) +
+            groupUpperBound * multiplicity,
+        )
+      }
+    }
+
+    const groupProductionUnits = sum(...groupRecipeVars)
+    const servedFlow = sum(...(flowByGroupKey.get(group.key) ?? []))
+    if (group.ingredientCost === SLACK_RECIPE_COST) {
+      const slack = model.boolVar(`slack_${groupIndex}`)
+      singletonSlackVars.push(slack)
+      model.addConstraint(
+        groupProductionUnits
+          .times(2)
+          .minus(servedFlow)
+          .minus(slack)
+          .eq(0),
+        `parity_${groupIndex}`,
+      )
+    } else {
+      model.addConstraint(
+        groupProductionUnits
+          .times(2)
+          .minus(servedFlow)
+          .eq(0),
+        `parity_${groupIndex}`,
+      )
+    }
+  })
+
+  model.addConstraint(
+    sum(...singletonSlackVars).eq(GLOBAL_SERVING_SLACK),
+    'global_slack',
+  )
+  model.addConstraint(
+    sum(...productionUnitTerms).eq(PRODUCTION_UNITS_FIX),
+    'production_units_fix',
+  )
+  model.addConstraint(
+    sum(...productionCostTerms).eq(PRODUCTION_COST_FIX),
+    'production_cost_fix',
+  )
+
+  const operationVars: ReturnType<Model['intVar']>[] = []
+  ;[...quantityTermsByEdgeKey.entries()].forEach(
+    ([edgeKey, terms], edgeIndex) => {
+      const operation = model.intVar(
+        0,
+        Math.max(
+          1,
+          Math.ceil(
+            (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) /
+              PROCESSING_STACK_CAPACITY,
+          ),
+        ),
+        `op_${edgeIndex}`,
+      )
+      const quantity = sum(...terms)
+      model.addConstraint(
+        quantity
+          .minus(operation.times(PROCESSING_STACK_CAPACITY))
+          .leq(0),
+        `op_capacity_${edgeIndex}`,
+      )
+      model.addConstraint(
+        operation.minus(quantity).leq(0),
+        `op_usage_${edgeIndex}`,
+      )
+      operationVars.push(operation)
+    },
+  )
+
+  model.minimize(sum(...operationVars))
+
+  return {
+    model,
+    groupCount: groups.length,
+    customerFlowVariableCount,
+    recipeVariableCount,
+    singletonSlackVariableCount: singletonSlackVars.length,
+    operationEdgeCount: operationVars.length,
+  }
+}
+
 async function solveBounded(
   model: Model,
   timeLimitSeconds: number,
@@ -1044,7 +1208,7 @@ async function solveBounded(
 }
 
 profileIt(
-  'proves 106-cap feasibility through exact integral-flow projection',
+  'proves the exact joint non-final machine lower bound',
   async () => {
     const domain = canonicalDomain()
     expect(domain.recipes).toHaveLength(7892)
@@ -1053,23 +1217,15 @@ profileIt(
     )
 
     const buildStartedAt = performance.now()
-    const built = buildFlowProjectedFullMachineCapFeasibility(
-      domain,
-      106,
-    )
+    const built = buildFlowProjectedNonfinalStage(domain)
     const buildMs = performance.now() - buildStartedAt
-    const solved = await solveBounded(built.model, 120)
+    const solved = await solveBounded(built.model, 150)
 
     console.info(
-      '[machine-flow-projected-106-feasibility]',
+      '[machine-joint-nonfinal-exact]',
       JSON.stringify({
-        cap: 106,
-        lowerBounds: {
-          throughSeasoning: 38,
-          blending: 35,
-          finalizing: 30,
-          total: 103,
-        },
+        targetFor107Certificate: 77,
+        finalizingExactLowerBound: 30,
         knownWitness: 107,
         groupCount: built.groupCount,
         customerFlowVariableCount:
@@ -1087,6 +1243,6 @@ profileIt(
       }),
     )
   },
-  140000,
+  175000,
 )
 
