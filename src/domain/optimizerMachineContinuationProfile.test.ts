@@ -233,6 +233,235 @@ async function findCostOptimalPairFeasibility(
 }
 
 
+
+
+function partitionSignature(
+  recipe: EligibleOptimizationRecipe,
+  kinds: ReadonlySet<ProductionStepKind>,
+): {
+  key: string
+  multiplicityByEdgeKey: Map<string, number>
+} {
+  const multiplicityByEdgeKey = new Map<string, number>()
+  for (const edge of recipe.productionPath.edges) {
+    if (!kinds.has(edge.kind)) continue
+    multiplicityByEdgeKey.set(
+      edge.key,
+      (multiplicityByEdgeKey.get(edge.key) ?? 0) + 1,
+    )
+  }
+  return {
+    key: [...multiplicityByEdgeKey.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([edgeKey, multiplicity]) => `${edgeKey}*${multiplicity}`)
+      .join('\u001f'),
+    multiplicityByEdgeKey,
+  }
+}
+
+function buildPairLiftedPartitionQuotientStage(
+  domain: BatchOptimizationModel,
+  kinds: ReadonlySet<ProductionStepKind>,
+) {
+  const groups = pairGroups(domain)
+  const model = new Model()
+  const coverageByCustomerId = new Map<
+    string,
+    ReturnType<Model['boolVar']>[]
+  >(
+    domain.serviceableCustomerIds.map((customerId) => [
+      customerId,
+      [],
+    ]),
+  )
+  const unitVarsByGroupKey = new Map<
+    string,
+    ReturnType<Model['boolVar']>[]
+  >(groups.map((group) => [group.key, []]))
+  const allUnitVars: ReturnType<Model['boolVar']>[] = []
+  const singletonVars: ReturnType<Model['boolVar']>[] = []
+  const assignedCostTerms: ReturnType<
+    ReturnType<Model['boolVar']>['times']
+  >[] = []
+
+  const addCoverage = (
+    customerId: string,
+    variable: ReturnType<Model['boolVar']>,
+  ) => {
+    const terms = coverageByCustomerId.get(customerId)
+    if (!terms) throw new Error(`Unknown customer ${customerId}`)
+    terms.push(variable)
+  }
+
+  let pairVariableCount = 0
+  let singletonVariableCount = 0
+  groups.forEach((group, groupIndex) => {
+    if (group.ingredientCost === SINGLETON_RECIPE_COST) {
+      group.eligibleCustomerIds.forEach(
+        (customerId, customerIndex) => {
+          const singleton = model.boolVar(
+            `single_${groupIndex}_${customerIndex}`,
+          )
+          singletonVariableCount += 1
+          singletonVars.push(singleton)
+          allUnitVars.push(singleton)
+          unitVarsByGroupKey.get(group.key)!.push(singleton)
+          addCoverage(customerId, singleton)
+          assignedCostTerms.push(
+            singleton.times(group.ingredientCost),
+          )
+        },
+      )
+    }
+
+    for (
+      let leftIndex = 0;
+      leftIndex < group.eligibleCustomerIds.length;
+      leftIndex += 1
+    ) {
+      for (
+        let rightIndex = leftIndex + 1;
+        rightIndex < group.eligibleCustomerIds.length;
+        rightIndex += 1
+      ) {
+        const pair = model.boolVar(
+          `pair_${groupIndex}_${leftIndex}_${rightIndex}`,
+        )
+        pairVariableCount += 1
+        allUnitVars.push(pair)
+        unitVarsByGroupKey.get(group.key)!.push(pair)
+        addCoverage(group.eligibleCustomerIds[leftIndex], pair)
+        addCoverage(group.eligibleCustomerIds[rightIndex], pair)
+        assignedCostTerms.push(
+          pair.times(group.ingredientCost * 2),
+        )
+      }
+    }
+  })
+
+  domain.serviceableCustomerIds.forEach(
+    (customerId, customerIndex) => {
+      model.addConstraint(
+        sum(...(coverageByCustomerId.get(customerId) ?? []))
+          .eq(1),
+        `cover_${customerIndex}`,
+      )
+    },
+  )
+  model.addConstraint(sum(...singletonVars).eq(1), 'singleton_total')
+  model.addConstraint(
+    sum(...allUnitVars).eq(PRODUCTION_UNITS_FIX),
+    'production_units_fix',
+  )
+  model.addConstraint(
+    sum(...assignedCostTerms).eq(ASSIGNED_INGREDIENT_COST_FIX),
+    'assigned_cost_fix',
+  )
+
+  const quantityTermsByEdgeKey = new Map<
+    string,
+    ReturnType<ReturnType<Model['intVar']>['times']>[]
+  >()
+  const quantityUpperBoundByEdgeKey = new Map<string, number>()
+  const productionCostTerms: ReturnType<
+    ReturnType<Model['intVar']>['times']
+  >[] = []
+  let quotientVariableCount = 0
+
+  groups.forEach((group, groupIndex) => {
+    const signatures = new Map<
+      string,
+      ReturnType<typeof partitionSignature>
+    >()
+    for (const recipe of group.recipes) {
+      const signature = partitionSignature(recipe, kinds)
+      if (!signatures.has(signature.key)) {
+        signatures.set(signature.key, signature)
+      }
+    }
+
+    const groupUpperBound = Math.max(
+      1,
+      Math.ceil(group.eligibleCustomerIds.length / 2),
+    )
+    const quotientVars: ReturnType<Model['intVar']>[] = []
+    for (const signature of signatures.values()) {
+      const x = model.intVar(
+        0,
+        groupUpperBound,
+        `qx_${quotientVariableCount}`,
+      )
+      quotientVariableCount += 1
+      quotientVars.push(x)
+      productionCostTerms.push(x.times(group.ingredientCost))
+
+      for (const [edgeKey, multiplicity] of signature.multiplicityByEdgeKey) {
+        const terms = quantityTermsByEdgeKey.get(edgeKey)
+        const term = x.times(multiplicity)
+        if (terms) terms.push(term)
+        else quantityTermsByEdgeKey.set(edgeKey, [term])
+        quantityUpperBoundByEdgeKey.set(
+          edgeKey,
+          (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) +
+            groupUpperBound * multiplicity,
+        )
+      }
+    }
+
+    model.addConstraint(
+      sum(...quotientVars)
+        .minus(sum(...(unitVarsByGroupKey.get(group.key) ?? [])))
+        .eq(0),
+      `group_units_${groupIndex}`,
+    )
+  })
+
+  model.addConstraint(
+    sum(...productionCostTerms).eq(PRODUCTION_COST_FIX),
+    'production_cost_fix',
+  )
+
+  const operationVars: ReturnType<Model['intVar']>[] = []
+  ;[...quantityTermsByEdgeKey.entries()].forEach(
+    ([edgeKey, terms], edgeIndex) => {
+      const operation = model.intVar(
+        0,
+        Math.max(
+          1,
+          Math.ceil(
+            (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) /
+              PROCESSING_STACK_CAPACITY,
+          ),
+        ),
+        `op_${edgeIndex}`,
+      )
+      const quantity = sum(...terms)
+      model.addConstraint(
+        quantity
+          .minus(operation.times(PROCESSING_STACK_CAPACITY))
+          .leq(0),
+        `op_capacity_${edgeIndex}`,
+      )
+      model.addConstraint(
+        operation.minus(quantity).leq(0),
+        `op_usage_${edgeIndex}`,
+      )
+      operationVars.push(operation)
+    },
+  )
+
+  model.minimize(sum(...operationVars))
+
+  return {
+    model,
+    groupCount: groups.length,
+    pairVariableCount,
+    singletonVariableCount,
+    quotientVariableCount,
+    operationEdgeCount: operationVars.length,
+  }
+}
+
 function buildPairLiftedMachineStage(
   domain: BatchOptimizationModel,
   machineOperationKinds?: ReadonlySet<ProductionStepKind>,
@@ -663,14 +892,6 @@ it(
       timeLimitSeconds: number
     }> = [
       {
-        name: 'throughSeasoning',
-        kinds: new Set<ProductionStepKind>([
-          'juicing',
-          'seasoning',
-        ]),
-        timeLimitSeconds: 45,
-      },
-      {
         name: 'blending',
         kinds: new Set<ProductionStepKind>(['blending']),
         timeLimitSeconds: 60,
@@ -719,6 +940,44 @@ it(
         }),
       )
     }
+
+    const throughKinds = new Set<ProductionStepKind>([
+      'juicing',
+      'seasoning',
+    ])
+    const quotientBuildStartedAt = performance.now()
+    const quotient = buildPairLiftedPartitionQuotientStage(
+      domain,
+      throughKinds,
+    )
+    const quotientBuildMs =
+      performance.now() - quotientBuildStartedAt
+    const quotientSolved = await solveBounded(
+      quotient.model,
+      75,
+    )
+    lowerBounds.throughSeasoning =
+      quotientSolved.status === 'optimal'
+        ? quotientSolved.objective
+        : null
+
+    console.info(
+      '[machine-pair-lifted-quotient]',
+      JSON.stringify({
+        name: 'throughSeasoning',
+        groupCount: quotient.groupCount,
+        pairVariableCount: quotient.pairVariableCount,
+        singletonVariableCount: quotient.singletonVariableCount,
+        quotientVariableCount: quotient.quotientVariableCount,
+        operationEdgeCount: quotient.operationEdgeCount,
+        buildMs: Math.round(quotientBuildMs),
+        serializeMs: Math.round(quotientSolved.serializeMs),
+        parseMs: Math.round(quotientSolved.parseMs),
+        solveMs: Math.round(quotientSolved.solveMs),
+        status: quotientSolved.status,
+        objective: quotientSolved.objective,
+      }),
+    )
 
     console.info(
       '[machine-partition-certificate-check]',
