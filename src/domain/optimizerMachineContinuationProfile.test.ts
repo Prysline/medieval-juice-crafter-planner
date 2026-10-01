@@ -7188,3 +7188,72 @@ profileIt(
   },
   90000,
 )
+
+
+profileIt(
+  'summarizes exact customer-mask equivalence classes',
+  async () => {
+    const domain = canonicalDomain()
+    const groups = pairGroups(domain)
+    const maskCustomerIds = new Map<string, string[]>()
+    for (const group of groups) {
+      const maskKey = group.eligibleCustomerIds.join('\u001e')
+      if (!maskCustomerIds.has(maskKey)) {
+        maskCustomerIds.set(maskKey, group.eligibleCustomerIds)
+      }
+    }
+
+    const maskKeys = [...maskCustomerIds.keys()]
+    const neighborsByCustomerId = new Map<string, string[]>(
+      domain.serviceableCustomerIds.map((customerId) => [
+        customerId,
+        maskKeys.filter((maskKey) =>
+          maskCustomerIds.get(maskKey)!.includes(customerId),
+        ),
+      ]),
+    )
+    const types = new Map<
+      string,
+      { customerIds: string[]; neighborMaskKeys: string[] }
+    >()
+    for (const customerId of domain.serviceableCustomerIds) {
+      const neighborMaskKeys = neighborsByCustomerId.get(customerId) ?? []
+      const signature = neighborMaskKeys.join('\u001d')
+      const current = types.get(signature)
+      if (current) current.customerIds.push(customerId)
+      else {
+        types.set(signature, {
+          customerIds: [customerId],
+          neighborMaskKeys,
+        })
+      }
+    }
+
+    const typeRows = [...types.values()]
+      .map((type) => ({
+        demand: type.customerIds.length,
+        neighborMasks: type.neighborMaskKeys.length,
+      }))
+      .sort(
+        (a, b) =>
+          b.demand - a.demand ||
+          b.neighborMasks - a.neighborMasks,
+      )
+    console.info(
+      '[machine-customer-mask-types]',
+      JSON.stringify({
+        customerCount: domain.serviceableCustomerIds.length,
+        serviceMaskCount: maskCustomerIds.size,
+        customerTypeCount: typeRows.length,
+        originalFlowVariables: [...neighborsByCustomerId.values()]
+          .reduce((sum, neighbors) => sum + neighbors.length, 0),
+        aggregatedFlowVariables: typeRows.reduce(
+          (sum, row) => sum + row.neighborMasks,
+          0,
+        ),
+        multiCustomerTypes: typeRows.filter((row) => row.demand > 1),
+      }),
+    )
+  },
+  90000,
+)
