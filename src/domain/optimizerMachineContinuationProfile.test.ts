@@ -11588,7 +11588,7 @@ hallSignatureProfileIt(
     const thresholdCounts = [3, 1, 1, 0] as const
     const rounds = []
 
-    for (let round = 0; round < 24; round += 1) {
+    for (let round = 0; round < 64; round += 1) {
       const built = build311HallSignatureSupportMaster(
         groups,
         groupIndex,
