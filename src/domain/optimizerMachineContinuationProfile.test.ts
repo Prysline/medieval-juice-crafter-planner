@@ -8146,6 +8146,7 @@ profileIt(
         domain,
         extraCase.thresholds,
         {
+          includeCustomerFlow: false,
           sharedBucketMode: 'structural-signature',
           slackExtraCount: 0,
           totalNonFinalCap: 76,
