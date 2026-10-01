@@ -3553,9 +3553,8 @@ function buildFinalizing30CompressedFrontierStage(
     ...privateBlendOperationTerms,
   )
   model.addConstraint(through.geq(38), 'through_lower_bound')
-  model.addConstraint(through.leq(41), 'through_cap_for_106')
-  model.addConstraint(blending.eq(35), 'blending35_frontier')
-  model.minimize(sum(...productionVars))
+  model.addConstraint(blending.geq(35), 'blending_lower_bound')
+  model.minimize(through.plus(blending))
 
   return {
     model,
@@ -5481,93 +5480,91 @@ async function solveBounded(
 }
 
 profileIt(
-  'audits exact extra-unit carrier group capacity',
+  'minimizes exact non-final machine operations for every five-extra partition',
   async () => {
     const domain = canonicalDomain()
-    const groups = pairGroups(domain)
-    const rows = groups.map((group, groupIndex) => {
-      const upperBound = Math.min(
-        PROCESSING_STACK_CAPACITY,
-        Math.max(
-          1,
-          Math.ceil(group.eligibleCustomerIds.length / 2),
-        ),
-      )
-      return {
-        groupIndex,
-        upperBound,
-        ingredientCost: group.ingredientCost,
-        eligibleCustomerCount: group.eligibleCustomerIds.length,
-        recipeCount: group.recipes.length,
-      }
-    })
+    expect(PROCESSING_STACK_CAPACITY).toBe(5)
 
-    const upperBoundCounts = Object.fromEntries(
-      Array.from(
-        { length: PROCESSING_STACK_CAPACITY },
-        (_, index) => {
-          const upperBound = index + 1
-          return [
-            upperBound,
-            rows.filter((row) => row.upperBound === upperBound).length,
-          ]
-        },
-      ),
-    )
-    const atLeastCounts = Object.fromEntries(
-      Array.from(
-        { length: PROCESSING_STACK_CAPACITY - 1 },
-        (_, index) => {
-          const extraThreshold = index + 1
-          return [
-            extraThreshold,
-            rows.filter(
-              (row) => row.upperBound >= extraThreshold + 1,
-            ).length,
-          ]
-        },
-      ),
-    )
-    const capacityByEligibleCustomerCount = Object.fromEntries(
-      [...new Set(rows.map((row) => row.eligibleCustomerCount))]
-        .sort((a, b) => a - b)
-        .map((count) => [
-          count,
-          rows.filter(
-            (row) => row.eligibleCustomerCount === count,
-          ).length,
-        ]),
-    )
-    const highCapacityGroups = rows.filter(
-      (row) => row.upperBound >= 4,
-    )
-    const highCapacityCosts = Object.fromEntries(
-      [...new Set(highCapacityGroups.map((row) => row.ingredientCost))]
-        .sort((a, b) => a - b)
-        .map((cost) => [
-          cost,
-          highCapacityGroups.filter(
-            (row) => row.ingredientCost === cost,
-          ).length,
-        ]),
-    )
+    const cases: Array<{
+      name: string
+      thresholdCounts: readonly [number, number, number, number]
+    }> = [
+      { name: '4+1', thresholdCounts: [2, 1, 1, 1] },
+      { name: '3+2', thresholdCounts: [2, 2, 1, 0] },
+      { name: '3+1+1', thresholdCounts: [3, 1, 1, 0] },
+      { name: '2+2+1', thresholdCounts: [3, 2, 0, 0] },
+      { name: '2+1+1+1', thresholdCounts: [4, 1, 0, 0] },
+      { name: '1+1+1+1+1', thresholdCounts: [5, 0, 0, 0] },
+    ]
+
+    const results: Array<{
+      extraPattern: string
+      status: string
+      objective: number | null
+      solveMs: number
+    }> = []
+
+    for (const extraCase of cases) {
+      const buildStartedAt = performance.now()
+      const built = buildFinalizing30CompressedFrontierStage(
+        domain,
+        extraCase.thresholdCounts,
+      )
+      const buildMs = performance.now() - buildStartedAt
+      const solved = await solveBoundedWithProgress(
+        built.model,
+        20,
+      )
+
+      results.push({
+        extraPattern: extraCase.name,
+        status: solved.status,
+        objective: solved.objective,
+        solveMs: Math.round(solved.solveMs),
+      })
+      console.info(
+        '[machine-finalizing30-extra-unit-optimum]',
+        JSON.stringify({
+          frontier: {
+            finalizing: 30,
+            usedGroups: 30,
+            selectedRecipes: 30,
+            productionUnits: 35,
+            exactExtraUnits: 5,
+            extraPattern: extraCase.name,
+            extraThresholdCounts: extraCase.thresholdCounts,
+            nonFinalCapToBeat107: 76,
+          },
+          globalLowerBounds: {
+            through: 38,
+            blending: 35,
+            nonFinal: 73,
+          },
+          groupCount: built.groupCount,
+          classVariableCount: built.classVariableCount,
+          classUseVariableCount: built.classUseVariableCount,
+          extraThresholdVariableCount:
+            built.extraThresholdVariableCount,
+          sharedBlendOperationEdgeCount:
+            built.sharedBlendOperationEdgeCount,
+          privateBlendOperationTermCount:
+            built.privateBlendOperationTermCount,
+          throughOperationEdgeCount:
+            built.throughOperationEdgeCount,
+          buildMs: Math.round(buildMs),
+          status: solved.status,
+          nonFinalObjective: solved.objective,
+          solveMs: Math.round(solved.solveMs),
+          progressTail: solved.progressTail,
+        }),
+      )
+    }
 
     console.info(
-      '[machine-extra-carrier-capacity]',
-      JSON.stringify({
-        groupCount: groups.length,
-        upperBoundCounts,
-        atLeastCounts,
-        capacityByEligibleCustomerCount,
-        highCapacityGroupCount: highCapacityGroups.length,
-        highCapacityCosts,
-        highCapacityGroups:
-          highCapacityGroups.length <= 100
-            ? highCapacityGroups
-            : highCapacityGroups.slice(0, 100),
-      }),
+      '[machine-finalizing30-extra-unit-optimum-summary]',
+      JSON.stringify(results),
     )
   },
-  20000,
+  150000,
 )
 
