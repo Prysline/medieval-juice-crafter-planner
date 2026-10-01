@@ -7508,9 +7508,21 @@ forcedResidualProfileIt(
             choice.groupIndex === 8,
         ),
       )
+    const octavius30Branches = branches
+      .map((branch, branchIndex) => ({ branch, branchIndex }))
+      .filter(({ branch }) =>
+        branch.choices.some(
+          (choice) =>
+            choice.customerId === 'octavius' &&
+            choice.groupIndex === 30,
+        ),
+      )
     const hugoResults = []
     if (hugo) {
-      for (const { branch, branchIndex } of octavius8Branches) {
+      for (const { branch, branchIndex } of [
+        ...octavius8Branches,
+        ...octavius30Branches,
+      ]) {
         for (
           let hugoChoiceIndex = 0;
           hugoChoiceIndex < hugo.candidates.length;
@@ -7552,7 +7564,10 @@ forcedResidualProfileIt(
     console.info(
       '[machine-forced-residual-hugo-summary]',
       JSON.stringify({
-        parentBranchCount: octavius8Branches.length,
+        parentBranchCount:
+          octavius8Branches.length + octavius30Branches.length,
+        octavius8ParentBranches: octavius8Branches.length,
+        octavius30ParentBranches: octavius30Branches.length,
         hugoChoiceCount: hugo?.candidates.length ?? 0,
         totalBranches: hugoResults.length,
         infeasibleCount: hugoResults.filter(
