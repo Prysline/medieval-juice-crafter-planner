@@ -9584,8 +9584,6 @@ partialSupportProfileIt(
     ].sort((left, right) => left - right)
 
     const identityResults = []
-    const sharedHallCuts: number[][] = []
-    const sharedHallCutKeys = new Set<string>()
     let globalWitness:
       | {
           groupIndex: number
@@ -9693,9 +9691,6 @@ partialSupportProfileIt(
         costResults.push({
           companionCost,
           status,
-          hallCutsAdded: sharedHallCuts.length - hallCutsAtStart,
-          sharedHallCuts: sharedHallCuts.length,
-          assignmentFlow,
           supportCuts: supportCuts.length,
           exactInfeasibleSupports,
           masterSolveMs: Math.round(masterSolveMs),
@@ -9709,9 +9704,6 @@ partialSupportProfileIt(
         .map((entry) => ({
           cost: entry.companionCost,
           status: entry.status,
-          hallCutsAdded: entry.hallCutsAdded,
-          sharedHallCuts: entry.sharedHallCuts,
-          assignmentFlow: entry.assignmentFlow,
           supportCuts: entry.supportCuts,
         }))
       const result = {
@@ -9745,7 +9737,6 @@ partialSupportProfileIt(
       '[machine-partial-support-summary]',
       JSON.stringify({
         targetGroupIndexes,
-        sharedHallCuts: sharedHallCuts.length,
         closedIdentities: identityResults
           .filter((entry) => entry.unresolvedCosts.length === 0)
           .map((entry) => entry.groupIndex),
