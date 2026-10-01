@@ -10990,11 +10990,10 @@ function find311MaskCapacitySupportWitness(
     31 * 3 * 2 * (hallLimit + 1) * (hallLimit2 + 1)
   const costMask =
     (1n << BigInt(PRODUCTION_COST_FIX + 1)) - 1n
-  let states = Array<bigint>(stateSize).fill(0n)
-  states[stateIndex(0, 0, 0, 0, 0)] = 1n
-  const snapshots: bigint[][] = [states]
-
-  for (const localOptions of localOptionsByMask) {
+  const advanceStates = (
+    sourceStates: readonly bigint[],
+    localOptions: readonly WitnessLocalOption[],
+  ): bigint[] => {
     const next = Array<bigint>(stateSize).fill(0n)
     for (let selectedCount = 0; selectedCount <= 30; selectedCount += 1) {
       for (let extraOneCount = 0; extraOneCount <= 2; extraOneCount += 1) {
@@ -11010,7 +11009,7 @@ function find311MaskCapacitySupportWitness(
               hallCapacity2 += 1
             ) {
               const source =
-                states[stateIndex(
+                sourceStates[stateIndex(
                   selectedCount,
                   extraOneCount,
                   slackCount,
@@ -11019,44 +11018,64 @@ function find311MaskCapacitySupportWitness(
                 )]
               if (source === 0n) continue
               for (const option of localOptions) {
-            const nextSelected =
-              selectedCount + option.selectedCount
-            const nextExtraOne =
-              extraOneCount + option.extraOneCount
-            const nextSlack = slackCount + option.slackCount
-            const nextHall =
-              hallCapacity + option.hallCapacity
-            const nextHall2 =
-              hallCapacity2 + option.hallCapacity2
-            if (
-              nextSelected > 30 ||
-              nextExtraOne > 2 ||
-              nextSlack > 1 ||
-              nextHall > hallLimit ||
-              nextHall2 > hallLimit2
-            ) {
-              continue
-            }
-            const shifted =
-              (source << BigInt(option.productionCost)) & costMask
-            if (shifted === 0n) continue
-            next[
-              stateIndex(
-                nextSelected,
-                nextExtraOne,
-                nextSlack,
-                nextHall,
-                nextHall2,
-              )
-            ] |= shifted
+                const nextSelected =
+                  selectedCount + option.selectedCount
+                const nextExtraOne =
+                  extraOneCount + option.extraOneCount
+                const nextSlack =
+                  slackCount + option.slackCount
+                const nextHall =
+                  hallCapacity + option.hallCapacity
+                const nextHall2 =
+                  hallCapacity2 + option.hallCapacity2
+                if (
+                  nextSelected > 30 ||
+                  nextExtraOne > 2 ||
+                  nextSlack > 1 ||
+                  nextHall > hallLimit ||
+                  nextHall2 > hallLimit2
+                ) {
+                  continue
+                }
+                const shifted =
+                  (source << BigInt(option.productionCost)) & costMask
+                if (shifted === 0n) continue
+                next[
+                  stateIndex(
+                    nextSelected,
+                    nextExtraOne,
+                    nextSlack,
+                    nextHall,
+                    nextHall2,
+                  )
+                ] |= shifted
               }
             }
           }
         }
       }
     }
-    states = next
-    snapshots.push(states)
+    return next
+  }
+
+  let states = Array<bigint>(stateSize).fill(0n)
+  states[stateIndex(0, 0, 0, 0, 0)] = 1n
+  const checkpointStride = 32
+  const checkpoints = new Map<number, bigint[]>([[0, states]])
+
+  for (
+    let maskIndex = 0;
+    maskIndex < localOptionsByMask.length;
+    maskIndex += 1
+  ) {
+    states = advanceStates(states, localOptionsByMask[maskIndex])
+    const processedMaskCount = maskIndex + 1
+    if (
+      processedMaskCount % checkpointStride === 0 ||
+      processedMaskCount === localOptionsByMask.length
+    ) {
+      checkpoints.set(processedMaskCount, states)
+    }
   }
 
   const targetBit = 1n << BigInt(PRODUCTION_COST_FIX)
@@ -11097,65 +11116,90 @@ function find311MaskCapacitySupportWitness(
   let slackCount = 1
   let productionCost = PRODUCTION_COST_FIX
   const chosenOptions: WitnessLocalOption[] = []
+  let maskIndex = localOptionsByMask.length - 1
 
-  for (
-    let maskIndex = localOptionsByMask.length - 1;
-    maskIndex >= 0;
-    maskIndex -= 1
-  ) {
-    const previous = snapshots[maskIndex]
-    let chosen: WitnessLocalOption | undefined
-    for (const option of localOptionsByMask[maskIndex]) {
-      const sourceSelected =
-        selectedCount - option.selectedCount
-      const sourceExtraOne =
-        extraOneCount - option.extraOneCount
-      const sourceSlack = slackCount - option.slackCount
-      const sourceCost =
-        productionCost - option.productionCost
-      const sourceHall =
-        hallCapacity - option.hallCapacity
-      const sourceHall2 =
-        hallCapacity2 - option.hallCapacity2
-      if (
-        sourceSelected < 0 ||
-        sourceExtraOne < 0 ||
-        sourceSlack < 0 ||
-        sourceCost < 0 ||
-        sourceHall < 0 ||
-        sourceHall2 < 0
-      ) {
-        continue
-      }
-      const sourceBits =
-        previous[
-          stateIndex(
-            sourceSelected,
-            sourceExtraOne,
-            sourceSlack,
-            sourceHall,
-            sourceHall2,
-          )
-        ]
-      if (
-        (sourceBits & (1n << BigInt(sourceCost))) === 0n
-      ) {
-        continue
-      }
-      chosen = option
-      selectedCount = sourceSelected
-      extraOneCount = sourceExtraOne
-      slackCount = sourceSlack
-      productionCost = sourceCost
-      hallCapacity = sourceHall
-      hallCapacity2 = sourceHall2
-      chosenOptions.push(option)
-      break
-    }
-    if (!chosen) {
+  while (maskIndex >= 0) {
+    const blockStart =
+      Math.floor(maskIndex / checkpointStride) * checkpointStride
+    const blockEnd = Math.min(
+      blockStart + checkpointStride,
+      localOptionsByMask.length,
+    )
+    const checkpoint = checkpoints.get(blockStart)
+    if (!checkpoint) {
       throw new Error(
-        `Failed to backtrack support DP at mask ${maskIndex}`,
+        `Missing support DP checkpoint at mask ${blockStart}`,
       )
+    }
+    const blockSnapshots: bigint[][] = [checkpoint]
+    let blockState = checkpoint
+    for (
+      let forwardIndex = blockStart;
+      forwardIndex < blockEnd;
+      forwardIndex += 1
+    ) {
+      blockState = advanceStates(
+        blockState,
+        localOptionsByMask[forwardIndex],
+      )
+      blockSnapshots.push(blockState)
+    }
+
+    for (; maskIndex >= blockStart; maskIndex -= 1) {
+      const previous = blockSnapshots[maskIndex - blockStart]
+      let chosen: WitnessLocalOption | undefined
+      for (const option of localOptionsByMask[maskIndex]) {
+        const sourceSelected =
+          selectedCount - option.selectedCount
+        const sourceExtraOne =
+          extraOneCount - option.extraOneCount
+        const sourceSlack = slackCount - option.slackCount
+        const sourceCost =
+          productionCost - option.productionCost
+        const sourceHall =
+          hallCapacity - option.hallCapacity
+        const sourceHall2 =
+          hallCapacity2 - option.hallCapacity2
+        if (
+          sourceSelected < 0 ||
+          sourceExtraOne < 0 ||
+          sourceSlack < 0 ||
+          sourceCost < 0 ||
+          sourceHall < 0 ||
+          sourceHall2 < 0
+        ) {
+          continue
+        }
+        const sourceBits =
+          previous[
+            stateIndex(
+              sourceSelected,
+              sourceExtraOne,
+              sourceSlack,
+              sourceHall,
+              sourceHall2,
+            )
+          ]
+        if (
+          (sourceBits & (1n << BigInt(sourceCost))) === 0n
+        ) {
+          continue
+        }
+        chosen = option
+        selectedCount = sourceSelected
+        extraOneCount = sourceExtraOne
+        slackCount = sourceSlack
+        productionCost = sourceCost
+        hallCapacity = sourceHall
+        hallCapacity2 = sourceHall2
+        chosenOptions.push(option)
+        break
+      }
+      if (!chosen) {
+        throw new Error(
+          `Failed to backtrack support DP at mask ${maskIndex}`,
+        )
+      }
     }
   }
 
