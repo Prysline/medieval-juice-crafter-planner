@@ -6866,8 +6866,15 @@ function build311FixedIdentitySupportMaster(
   domain: BatchOptimizationModel,
   fixedExtra3GroupIndex: number,
   fixedSlackGroupIndex: number,
-  supportCuts: readonly (readonly number[])[] = [],
+  options: {
+    supportCuts?: readonly (readonly number[])[]
+    hallCuts?: readonly (readonly number[])[]
+    includeCustomerFlow?: boolean
+  } = {},
 ) {
+  const supportCuts = options.supportCuts ?? []
+  const hallCuts = options.hallCuts ?? []
+  const includeCustomerFlow = options.includeCustomerFlow ?? true
   const groups = pairGroups(domain)
   const model = new Model()
 
@@ -6889,28 +6896,30 @@ function build311FixedIdentitySupportMaster(
     string,
     ReturnType<Model['numVar']>[]
   >([...maskCustomerIds.keys()].map((maskKey) => [maskKey, []]))
-  const customerFlowTypes = customerMaskFlowTypes(
-    domain.serviceableCustomerIds,
-    maskCustomerIds,
-  )
-  customerFlowTypes.forEach((customerType, typeIndex) => {
-    const demand = customerType.customerIds.length
-    const terms = customerType.neighborMaskKeys.map(
-      (maskKey, neighborIndex) => {
-        const flow = model.numVar(
-          0,
-          demand,
-          `s31y_${typeIndex}_${neighborIndex}`,
-        )
-        flowByMask.get(maskKey)!.push(flow)
-        return flow
-      },
+  if (includeCustomerFlow) {
+    const customerFlowTypes = customerMaskFlowTypes(
+      domain.serviceableCustomerIds,
+      maskCustomerIds,
     )
-    model.addConstraint(
-      sum(...terms).eq(demand),
-      `s31_customer_type_${typeIndex}`,
-    )
-  })
+    customerFlowTypes.forEach((customerType, typeIndex) => {
+      const demand = customerType.customerIds.length
+      const terms = customerType.neighborMaskKeys.map(
+        (maskKey, neighborIndex) => {
+          const flow = model.numVar(
+            0,
+            demand,
+            `s31y_${typeIndex}_${neighborIndex}`,
+          )
+          flowByMask.get(maskKey)!.push(flow)
+          return flow
+        },
+      )
+      model.addConstraint(
+        sum(...terms).eq(demand),
+        `s31_customer_type_${typeIndex}`,
+      )
+    })
+  }
 
   const usedGroupVars: ReturnType<Model['boolVar']>[] = []
   const extraOneByGroupIndex = new Map<
@@ -7007,26 +7016,47 @@ function build311FixedIdentitySupportMaster(
     's31_production_cost',
   )
 
-  let maskIndex = 0
-  for (const [maskKey, groupIndexes] of groupIndexesByMask) {
-    const capacityTerms = groupIndexes.flatMap(
-      (groupIndex) =>
-        capacityTermsByGroupIndex.get(groupIndex) ?? [],
-    )
-    const slackTerm = groupIndexes.includes(
-      fixedSlackGroupIndex,
-    )
+  if (includeCustomerFlow) {
+    let maskIndex = 0
+    for (const [maskKey, groupIndexes] of groupIndexesByMask) {
+      const capacityTerms = groupIndexes.flatMap(
+        (groupIndex) =>
+          capacityTermsByGroupIndex.get(groupIndex) ?? [],
+      )
+      const slackTerm = groupIndexes.includes(
+        fixedSlackGroupIndex,
+      )
+        ? [usedGroupVars[fixedSlackGroupIndex]]
+        : []
+      model.addConstraint(
+        sum(...capacityTerms)
+          .minus(sum(...slackTerm))
+          .minus(sum(...(flowByMask.get(maskKey) ?? [])))
+          .eq(0),
+        `s31_mask_capacity_${maskIndex}`,
+      )
+      maskIndex += 1
+    }
+  }
+
+  hallCuts.forEach((groupIndexes, cutIndex) => {
+    const customerIds = new Set<string>()
+    const capacityTerms = groupIndexes.flatMap((groupIndex) => {
+      for (const customerId of groups[groupIndex].eligibleCustomerIds) {
+        customerIds.add(customerId)
+      }
+      return capacityTermsByGroupIndex.get(groupIndex) ?? []
+    })
+    const slackTerm = groupIndexes.includes(fixedSlackGroupIndex)
       ? [usedGroupVars[fixedSlackGroupIndex]]
       : []
     model.addConstraint(
       sum(...capacityTerms)
         .minus(sum(...slackTerm))
-        .minus(sum(...(flowByMask.get(maskKey) ?? [])))
-        .eq(0),
-      `s31_mask_capacity_${maskIndex}`,
+        .leq(customerIds.size),
+      `s31_hall_cut_${cutIndex}`,
     )
-    maskIndex += 1
-  }
+  })
 
   supportCuts.forEach((support, cutIndex) => {
     model.addConstraint(
@@ -9533,17 +9563,23 @@ slackSplitProfileIt(
       const slackResults = []
       for (const slackGroupIndex of slackGroupIndexes) {
         const supportCuts: number[][] = []
+        const hallCuts: number[][] = []
         let status = 'round-limit'
         let exactInfeasibleSupports = 0
+        let assignmentFlow = 0
         let masterSolveMs = 0
         let exactSolveMs = 0
 
-        for (let round = 0; round < 3; round += 1) {
+        for (let round = 0; round < 4; round += 1) {
           const built = build311FixedIdentitySupportMaster(
             domain,
             groupIndex,
             slackGroupIndex,
-            supportCuts,
+            {
+              supportCuts,
+              hallCuts,
+              includeCustomerFlow: false,
+            },
           )
           const solved = await solveBounded(built.model, 0.5)
           masterSolveMs += solved.solveMs
@@ -9575,6 +9611,47 @@ slackSplitProfileIt(
             throw new Error(
               `Expected 30 support groups for extra group ${groupIndex} / slack group ${slackGroupIndex}, got ${support.length}`,
             )
+          }
+
+          const capacities = groups.map((_group, capacityGroupIndex) => {
+            const usedRaw = solved.namedSolution!.get(
+              `s31u_${capacityGroupIndex}`,
+            )
+            const used =
+              typeof usedRaw === 'number' &&
+              Number.isFinite(usedRaw) &&
+              usedRaw > 0.5
+                ? 1
+                : 0
+            if (capacityGroupIndex === groupIndex) return used * 8
+            const extraRaw = solved.namedSolution!.get(
+              `s31e1_${capacityGroupIndex}`,
+            )
+            const extra =
+              typeof extraRaw === 'number' &&
+              Number.isFinite(extraRaw) &&
+              extraRaw > 0.5
+                ? 1
+                : 0
+            return (
+              used * 2 +
+              extra * 2 -
+              (capacityGroupIndex === slackGroupIndex ? used : 0)
+            )
+          })
+          const checked = maximumAssignmentFlowForGroupCapacities(
+            groups,
+            domain.serviceableCustomerIds,
+            capacities,
+          )
+          assignmentFlow = checked.flow
+          if (checked.flow !== domain.serviceableCustomerIds.length) {
+            if (checked.violatingGroupIndexes.length === 0) {
+              status = 'invalid-empty-hall-cut'
+              break
+            }
+            hallCuts.push(checked.violatingGroupIndexes)
+            continue
           }
 
           const exact = buildFinalizing30MaskPartitionStage(
@@ -9614,6 +9691,8 @@ slackSplitProfileIt(
         slackResults.push({
           slackGroupIndex,
           status,
+          hallCuts: hallCuts.length,
+          assignmentFlow,
           supportCuts: supportCuts.length,
           exactInfeasibleSupports,
           masterSolveMs: Math.round(masterSolveMs),
