@@ -6838,10 +6838,15 @@ function buildFinalizing30GroupSupportMaster(
     extraIdentityCuts?: readonly (
       readonly { groupIndex: number; extra: number }[]
     )[]
+    requiredExactExtraCost?: {
+      extra: number
+      cost: number
+    }
   } = {},
 ) {
   const slackExtraCount = options.slackExtraCount
   const extraIdentityCuts = options.extraIdentityCuts ?? []
+  const requiredExactExtraCost = options.requiredExactExtraCost
   const groups = pairGroups(domain)
   const model = new Model()
 
@@ -7043,6 +7048,45 @@ function buildFinalizing30GroupSupportMaster(
       `sg_extra_count_${thresholdIndex + 1}`,
     )
   })
+  if (requiredExactExtraCost) {
+    const level = requiredExactExtraCost.extra - 1
+    if (
+      level < 0 ||
+      level >= PROCESSING_STACK_CAPACITY - 1
+    ) {
+      throw new Error(
+        `Invalid required exact extra multiplicity: ${requiredExactExtraCost.extra}`,
+      )
+    }
+    const currentLevel = groups.flatMap((group, groupIndex) => {
+      if (group.ingredientCost !== requiredExactExtraCost.cost) {
+        return []
+      }
+      const threshold =
+        extraThresholdVarsByGroupIndex.get(groupIndex)?.[level]
+      return threshold ? [threshold] : []
+    })
+    const nextLevel =
+      level + 1 < PROCESSING_STACK_CAPACITY - 1
+        ? groups.flatMap((group, groupIndex) => {
+            if (
+              group.ingredientCost !==
+              requiredExactExtraCost.cost
+            ) {
+              return []
+            }
+            const threshold =
+              extraThresholdVarsByGroupIndex.get(groupIndex)?.[
+                level + 1
+              ]
+            return threshold ? [threshold] : []
+          })
+        : []
+    model.addConstraint(
+      sum(...currentLevel).minus(sum(...nextLevel)).geq(1),
+      `sg_required_exact_extra_cost_${requiredExactExtraCost.extra}_${requiredExactExtraCost.cost}`,
+    )
+  }
   extraIdentityCuts.forEach((entries, cutIndex) => {
     const activeThresholds = entries.flatMap(
       ({ groupIndex, extra }) => {
@@ -8517,12 +8561,6 @@ profileIt(
       companionByRequested[requestedPattern],
       requestedPattern,
     ].filter((pattern): pattern is string => Boolean(pattern))
-    const exactPartitionKinds = new Set<ProductionStepKind>([
-      'juicing',
-      'seasoning',
-      'blending',
-    ])
-
     const maxExtraByGroupIndex = groups.map((group) => {
       const upperBound = Math.min(
         PROCESSING_STACK_CAPACITY,
@@ -8589,222 +8627,112 @@ profileIt(
 
       const subcases = []
       for (const slackExtraCount of slackExtraCounts) {
-        const extraIdentityCuts: Array<
-          Array<{ groupIndex: number; extra: number }>
-        > = []
-        const seenIdentityKeys = new Set<string>()
-        let finalStatus = 'iteration-limit'
-        let exactInfeasible = 0
-        let masterSolveMs = 0
-        let exactSolveMs = 0
+        const coarseMaster = buildFinalizing30GroupSupportMaster(
+          domain,
+          thresholdCounts,
+          { slackExtraCount },
+        )
+        const coarseSolved = await solveBounded(
+          coarseMaster.model,
+          1.5,
+        )
+        if (coarseSolved.status === 'infeasible') {
+          const subcase = {
+            slackExtraCount,
+            status: 'infeasible',
+            highestExtra: sortedExtras[0],
+            candidateCosts: 0,
+            infeasibleCosts: 0,
+            optimalCosts: [] as number[],
+            unresolvedCosts: [] as number[],
+            solveMs: Math.round(coarseSolved.solveMs),
+          }
+          subcases.push(subcase)
+          console.info(
+            '[machine-extra-cost-subcase]',
+            JSON.stringify({
+              pattern: extraCase.pattern,
+              ...subcase,
+            }),
+          )
+          continue
+        }
 
-        for (let iteration = 0; iteration < 96; iteration += 1) {
-          const master = buildFinalizing30GroupSupportMaster(
+        const highestExtra = sortedExtras[0]
+        const candidateCosts = [
+          ...new Set(
+            groups.flatMap((group, groupIndex) =>
+              maxExtraByGroupIndex[groupIndex] >= highestExtra
+                ? [group.ingredientCost]
+                : [],
+            ),
+          ),
+        ].sort((left, right) => left - right)
+        const costResults: Array<{
+          cost: number
+          status: string
+          solveMs: number
+        }> = []
+
+        for (const cost of candidateCosts) {
+          const built = buildFinalizing30GroupSupportMaster(
             domain,
             thresholdCounts,
             {
               slackExtraCount,
-              extraIdentityCuts,
+              requiredExactExtraCost: {
+                extra: highestExtra,
+                cost,
+              },
             },
           )
-          const masterSolved = await solveBounded(master.model, 2)
-          masterSolveMs += masterSolved.solveMs
-
-          if (masterSolved.status === 'infeasible') {
-            finalStatus = 'infeasible'
-            break
-          }
-          if (!masterSolved.namedSolution) {
-            finalStatus =
-              `master-${masterSolved.status}-no-incumbent`
-            break
-          }
-
-          const productionByGroup = groups.map(
-            (_group, groupIndex) => {
-              const raw = masterSolved.namedSolution!.get(
-                `sgx_${groupIndex}`,
-              )
-              return typeof raw === 'number' &&
-                Number.isFinite(raw) &&
-                Math.abs(raw - Math.round(raw)) <= 1e-6
-                ? Math.round(raw)
-                : Number.NaN
-            },
-          )
-          const usedByGroup = groups.map(
-            (_group, groupIndex) => {
-              const raw = masterSolved.namedSolution!.get(
-                `sgu_${groupIndex}`,
-              )
-              return typeof raw === 'number' &&
-                Number.isFinite(raw) &&
-                Math.abs(raw - Math.round(raw)) <= 1e-6
-                ? Math.round(raw)
-                : Number.NaN
-            },
-          )
-          const slackByGroup = groups.map(
-            (group, groupIndex) => {
-              if (
-                group.ingredientCost !== SLACK_RECIPE_COST
-              ) {
-                return 0
-              }
-              const raw = masterSolved.namedSolution!.get(
-                `sgs_${groupIndex}`,
-              )
-              return typeof raw === 'number' &&
-                Number.isFinite(raw) &&
-                Math.abs(raw - Math.round(raw)) <= 1e-6
-                ? Math.round(raw)
-                : Number.NaN
-            },
-          )
-          const supportInvariantValid =
-            productionByGroup.every(Number.isFinite) &&
-            usedByGroup.every(
-              (used) => used === 0 || used === 1,
-            ) &&
-            slackByGroup.every(
-              (slack) => slack === 0 || slack === 1,
-            ) &&
-            productionByGroup.reduce(
-              (total, units) => total + units,
-              0,
-            ) === PRODUCTION_UNITS_FIX &&
-            usedByGroup.reduce(
-              (total, used) => total + used,
-              0,
-            ) === 30 &&
-            slackByGroup.reduce(
-              (total, slack) => total + slack,
-              0,
-            ) === GLOBAL_SERVING_SLACK &&
-            groups.reduce(
-              (total, group, groupIndex) =>
-                total +
-                group.ingredientCost *
-                  productionByGroup[groupIndex],
-              0,
-            ) === PRODUCTION_COST_FIX &&
-            groups.every((_group, groupIndex) => {
-              const units = productionByGroup[groupIndex]
-              const used = usedByGroup[groupIndex]
-              return (
-                units >= used &&
-                (used === 1 || units === 0) &&
-                units <= PROCESSING_STACK_CAPACITY
-              )
-            })
-          const capacities = productionByGroup.map(
-            (units, groupIndex) =>
-              units * 2 - slackByGroup[groupIndex],
-          )
-          const assignmentFlow = supportInvariantValid
-            ? maximumAssignmentFlowForGroupCapacities(
-                groups,
-                domain.serviceableCustomerIds,
-                capacities,
-              ).flow
-            : -1
-          if (
-            !supportInvariantValid ||
-            assignmentFlow !==
-              domain.serviceableCustomerIds.length
-          ) {
-            finalStatus =
-              `master-${masterSolved.status}-invalid-incumbent`
-            break
-          }
-
-          const extraEntries = groups.flatMap(
-            (_group, groupIndex) => {
-              const extra =
-                productionByGroup[groupIndex] -
-                usedByGroup[groupIndex]
-              return extra > 0 ? [{ groupIndex, extra }] : []
-            },
-          )
-          extraEntries.sort(
-            (left, right) =>
-              left.groupIndex - right.groupIndex,
-          )
-          const identityKey = extraEntries
-            .map(
-              ({ groupIndex, extra }) =>
-                `${groupIndex}:${extra}`,
-            )
-            .join(',')
-          if (seenIdentityKeys.has(identityKey)) {
-            throw new Error(
-              `Duplicate extra-bearing identity candidate: ${identityKey}`,
-            )
-          }
-          seenIdentityKeys.add(identityKey)
-
-          const actualExtras = extraEntries
-            .map(({ extra }) => extra)
-            .sort((left, right) => right - left)
-          expect(actualExtras).toEqual(sortedExtras)
-
-          const exact = buildFinalizing30MaskPartitionStage(
-            domain,
-            exactPartitionKinds,
-            thresholdCounts,
-            { max: 76 },
-            slackExtraCount,
-            undefined,
-            undefined,
-            new Map(
-              extraEntries.map(({ groupIndex, extra }) => [
-                groupIndex,
-                extra,
-              ]),
-            ),
-          )
-          const exactSolved = await solveBounded(exact.model, 4)
-          exactSolveMs += exactSolved.solveMs
-          console.info(
-            '[machine-extra-identity-case]',
-            JSON.stringify({
-              pattern: extraCase.pattern,
-              slackExtraCount,
-              iteration: iteration + 1,
-              extraEntries,
-              masterStatus: masterSolved.status,
-              masterValidatedIncumbent: true,
-              exactStatus: exactSolved.status,
-              exactObjective: exactSolved.objective,
-              masterSolveMs: Math.round(masterSolved.solveMs),
-              exactSolveMs: Math.round(exactSolved.solveMs),
-            }),
-          )
-
-          if (exactSolved.status === 'infeasible') {
-            exactInfeasible += 1
-            extraIdentityCuts.push(extraEntries)
-            continue
-          }
-          if (exactSolved.status === 'optimal') {
-            finalStatus = 'feasible-exact'
-            break
-          }
-          finalStatus = `exact-${exactSolved.status}`
-          break
+          const solved = await solveBounded(built.model, 1.5)
+          costResults.push({
+            cost,
+            status: solved.status,
+            solveMs: Math.round(solved.solveMs),
+          })
         }
 
+        const infeasibleCosts = costResults
+          .filter((entry) => entry.status === 'infeasible')
+          .map((entry) => entry.cost)
+        const optimalCosts = costResults
+          .filter((entry) => entry.status === 'optimal')
+          .map((entry) => entry.cost)
+        const unresolvedCosts = costResults
+          .filter(
+            (entry) =>
+              entry.status !== 'infeasible' &&
+              entry.status !== 'optimal',
+          )
+          .map((entry) => entry.cost)
+        const survivingCosts = [
+          ...optimalCosts,
+          ...unresolvedCosts,
+        ].sort((left, right) => left - right)
         const subcase = {
           slackExtraCount,
-          status: finalStatus,
-          identityCases: seenIdentityKeys.size,
-          exactInfeasible,
-          masterSolveMs: Math.round(masterSolveMs),
-          exactSolveMs: Math.round(exactSolveMs),
+          status:
+            survivingCosts.length === 0
+              ? 'infeasible'
+              : 'cost-frontier-unresolved',
+          highestExtra,
+          candidateCosts: candidateCosts.length,
+          infeasibleCosts: infeasibleCosts.length,
+          optimalCosts,
+          unresolvedCosts,
+          solveMs: Math.round(
+            coarseSolved.solveMs +
+              costResults.reduce(
+                (total, entry) => total + entry.solveMs,
+                0,
+              ),
+          ),
         }
         subcases.push(subcase)
         console.info(
-          '[machine-extra-identity-subcase]',
+          '[machine-extra-cost-subcase]',
           JSON.stringify({
             pattern: extraCase.pattern,
             ...subcase,
