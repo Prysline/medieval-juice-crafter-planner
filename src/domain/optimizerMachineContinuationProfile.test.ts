@@ -9158,7 +9158,7 @@ partialSupportProfileIt(
           const support = groups.flatMap(
             (_group, supportGroupIndex) => {
               const raw = solved.namedSolution!.get(
-                \`sgu_\${supportGroupIndex}\`,
+                `sgu_${supportGroupIndex}`,
               )
               return typeof raw === 'number' &&
                 Number.isFinite(raw) &&
@@ -9169,7 +9169,7 @@ partialSupportProfileIt(
           )
           if (support.length !== 30) {
             throw new Error(
-              \`Expected 30 support groups for identity \${groupIndex} / cost \${companionCost}, got \${support.length}\`,
+              `Expected 30 support groups for identity ${groupIndex} / cost ${companionCost}, got ${support.length}`,
             )
           }
 
@@ -9202,7 +9202,7 @@ partialSupportProfileIt(
             }
             break
           }
-          status = \`exact-\${exactSolved.status}\`
+          status = `exact-${exactSolved.status}`
           break
         }
 
