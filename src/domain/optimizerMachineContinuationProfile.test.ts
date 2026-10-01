@@ -606,7 +606,20 @@ function buildPartitionOptimalPairStage(
     },
   )
 
-  model.minimize(sum(...operationVars))
+  const operations = sum(...operationVars)
+  if (typeof operationBounds?.min === 'number') {
+    model.addConstraint(
+      operations.geq(operationBounds.min),
+      'mp_operation_min',
+    )
+  }
+  if (typeof operationBounds?.max === 'number') {
+    model.addConstraint(
+      operations.leq(operationBounds.max),
+      'mp_operation_max',
+    )
+  }
+  model.minimize(operations)
   return {
     model,
     groups,
@@ -5972,6 +5985,10 @@ function buildFinalizing30MaskPartitionStage(
   domain: BatchOptimizationModel,
   partitionKinds: ReadonlySet<ProductionStepKind>,
   extraThresholdCounts: readonly [number, number, number, number],
+  operationBounds?: {
+    min?: number
+    max?: number
+  },
 ) {
   const groups = pairGroups(domain)
   const model = new Model()
@@ -6224,61 +6241,76 @@ function buildFinalizing30MaskPartitionStage(
 }
 
 profileIt(
-  'benchmarks mask-projected conditional partition proof',
+  'checks capped mask-projected finalizing-30 extra-pattern frontiers',
   async () => {
     const domain = canonicalDomain()
-    const thresholds = [5, 0, 0, 0] as const
+    const cases = [
+      { pattern: '4+1', thresholds: [2, 1, 1, 1] as const },
+      { pattern: '3+2', thresholds: [2, 2, 1, 0] as const },
+      { pattern: '3+1+1', thresholds: [3, 1, 1, 0] as const },
+      { pattern: '2+2+1', thresholds: [3, 2, 0, 0] as const },
+      { pattern: '2+1+1+1', thresholds: [4, 1, 0, 0] as const },
+      { pattern: '1+1+1+1+1', thresholds: [5, 0, 0, 0] as const },
+    ]
 
-    const throughBuilt = buildFinalizing30MaskPartitionStage(
-      domain,
-      new Set<ProductionStepKind>(['juicing', 'seasoning']),
-      thresholds,
-    )
-    const throughSolved = await solveBoundedWithProgress(
-      throughBuilt.model,
-      30,
-    )
+    const results = []
+    for (const extraCase of cases) {
+      const throughBuilt = buildFinalizing30MaskPartitionStage(
+        domain,
+        new Set<ProductionStepKind>(['juicing', 'seasoning']),
+        extraCase.thresholds,
+        { min: 38, max: 41 },
+      )
+      const throughSolved = await solveBoundedWithProgress(
+        throughBuilt.model,
+        8,
+      )
 
-    const blendBuilt = buildFinalizing30MaskPartitionStage(
-      domain,
-      new Set<ProductionStepKind>(['blending']),
-      thresholds,
-    )
-    const blendSolved = await solveBoundedWithProgress(
-      blendBuilt.model,
-      30,
-    )
+      const blendBuilt = buildFinalizing30MaskPartitionStage(
+        domain,
+        new Set<ProductionStepKind>(['blending']),
+        extraCase.thresholds,
+        { min: 35, max: 35 },
+      )
+      const blendSolved = await solveBoundedWithProgress(
+        blendBuilt.model,
+        8,
+      )
 
-    console.info(
-      '[machine-mask-partition-benchmark]',
-      JSON.stringify({
-        pattern: '1+1+1+1+1',
+      const result = {
+        pattern: extraCase.pattern,
         through: {
           status: throughSolved.status,
           objective: throughSolved.objective,
           solveMs: Math.round(throughSolved.solveMs),
-          metrics: {
-            classVariableCount: throughBuilt.classVariableCount,
-            operationEdgeCount: throughBuilt.operationEdgeCount,
-            customerFlowVariableCount:
-              throughBuilt.customerFlowVariableCount,
-          },
           progressTail: throughSolved.progressTail,
         },
-        blending: {
+        blending35: {
           status: blendSolved.status,
           objective: blendSolved.objective,
           solveMs: Math.round(blendSolved.solveMs),
-          metrics: {
-            classVariableCount: blendBuilt.classVariableCount,
-            operationEdgeCount: blendBuilt.operationEdgeCount,
-            customerFlowVariableCount:
-              blendBuilt.customerFlowVariableCount,
-          },
           progressTail: blendSolved.progressTail,
         },
-      }),
+      }
+      results.push(result)
+      console.info(
+        '[machine-mask-capped-extra-case]',
+        JSON.stringify(result),
+      )
+    }
+
+    console.info(
+      '[machine-mask-capped-extra-summary]',
+      JSON.stringify(
+        results.map((result) => ({
+          pattern: result.pattern,
+          throughStatus: result.through.status,
+          throughObjective: result.through.objective,
+          blending35Status: result.blending35.status,
+          blending35Objective: result.blending35.objective,
+        })),
+      ),
     )
   },
-  90000,
+  180000,
 )
