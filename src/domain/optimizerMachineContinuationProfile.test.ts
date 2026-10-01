@@ -345,6 +345,7 @@ function buildFullMachineCapFeasibility(
 function buildPartitionOptimalPairStage(
   domain: BatchOptimizationModel,
   partitionKinds: ReadonlySet<ProductionStepKind>,
+  extraThresholdCounts?: readonly [number, number, number, number],
 ) {
   const groups = pairGroups(domain)
   const model = new Model()
@@ -440,6 +441,11 @@ function buildPartitionOptimalPairStage(
     ReturnType<Model['intVar']>['times']
   >[] = []
   let quotientVariableCount = 0
+  const usedGroupVars: ReturnType<Model['boolVar']>[] = []
+  const extraThresholdVarsByLevel = Array.from(
+    { length: PROCESSING_STACK_CAPACITY - 1 },
+    () => [] as ReturnType<Model['boolVar']>[],
+  )
 
   groups.forEach((group, groupIndex) => {
     const signatures = new Map<
@@ -453,11 +459,20 @@ function buildPartitionOptimalPairStage(
       }
     }
 
-    const upperBound = Math.max(
-      1,
-      Math.ceil(group.eligibleCustomerIds.length / 2),
-    )
+    const upperBound = extraThresholdCounts
+      ? Math.min(
+          PROCESSING_STACK_CAPACITY,
+          Math.max(
+            1,
+            Math.ceil(group.eligibleCustomerIds.length / 2),
+          ),
+        )
+      : Math.max(
+          1,
+          Math.ceil(group.eligibleCustomerIds.length / 2),
+        )
     const quotientVars: ReturnType<Model['intVar']>[] = []
+    const quotientUseVars: ReturnType<Model['boolVar']>[] = []
 
     for (const signature of signatures.values()) {
       const x = model.intVar(
@@ -467,6 +482,20 @@ function buildPartitionOptimalPairStage(
       )
       quotientVariableCount += 1
       quotientVars.push(x)
+      if (extraThresholdCounts) {
+        const used = model.boolVar(
+          `qu_${quotientVariableCount - 1}`,
+        )
+        quotientUseVars.push(used)
+        model.addConstraint(
+          x.minus(used.times(upperBound)).leq(0),
+          `quotient_use_upper_${quotientVariableCount - 1}`,
+        )
+        model.addConstraint(
+          used.minus(x).leq(0),
+          `quotient_use_lower_${quotientVariableCount - 1}`,
+        )
+      }
       productionCostTerms.push(x.times(group.ingredientCost))
       for (const [edgeKey, multiplicity] of signature.multiplicityByEdgeKey) {
         const terms = quantityTermsByEdgeKey.get(edgeKey)
@@ -487,12 +516,66 @@ function buildPartitionOptimalPairStage(
         .eq(0),
       `group_units_${groupIndex}`,
     )
+
+    if (extraThresholdCounts) {
+      const usedGroup = model.boolVar(`pug_${groupIndex}`)
+      usedGroupVars.push(usedGroup)
+      model.addConstraint(
+        sum(...quotientUseVars).minus(usedGroup).eq(0),
+        `partition_one_signature_${groupIndex}`,
+      )
+      const groupUnits = sum(
+        ...(unitVarsByGroupKey.get(group.key) ?? []),
+      )
+      const extraThresholds = Array.from(
+        { length: Math.max(0, upperBound - 1) },
+        (_, thresholdIndex) => {
+          const threshold = model.boolVar(
+            `pextra_${thresholdIndex + 1}_${groupIndex}`,
+          )
+          extraThresholdVarsByLevel[thresholdIndex].push(threshold)
+          return threshold
+        },
+      )
+      model.addConstraint(
+        groupUnits
+          .minus(usedGroup)
+          .minus(sum(...extraThresholds))
+          .eq(0),
+        `partition_exact_extra_${groupIndex}`,
+      )
+      for (
+        let thresholdIndex = 1;
+        thresholdIndex < extraThresholds.length;
+        thresholdIndex += 1
+      ) {
+        model.addConstraint(
+          extraThresholds[thresholdIndex]
+            .minus(extraThresholds[thresholdIndex - 1])
+            .leq(0),
+          `partition_extra_monotone_${groupIndex}_${thresholdIndex}`,
+        )
+      }
+    }
   })
 
   model.addConstraint(
     sum(...productionCostTerms).eq(PRODUCTION_COST_FIX),
     'production_cost_fix',
   )
+
+  if (extraThresholdCounts) {
+    model.addConstraint(
+      sum(...usedGroupVars).eq(30),
+      'partition_finalizing30_used_groups',
+    )
+    extraThresholdCounts.forEach((count, thresholdIndex) => {
+      model.addConstraint(
+        sum(...extraThresholdVarsByLevel[thresholdIndex]).eq(count),
+        `partition_extra_count_${thresholdIndex + 1}`,
+      )
+    })
+  }
 
   const operationVars: ReturnType<Model['intVar']>[] = []
   ;[...quantityTermsByEdgeKey.entries()].forEach(
@@ -5885,7 +5968,7 @@ function buildServiceMaskCompressedNonfinalStage(
 }
 
 profileIt(
-  'rules out blending-35 sub-107 cases with aggregate seasoning lower bound',
+  'proves conditional partition lower bounds for every finalizing-30 extra pattern',
   async () => {
     const domain = canonicalDomain()
     const cases = [
@@ -5899,41 +5982,68 @@ profileIt(
 
     const results = []
     for (const extraCase of cases) {
-      const built = buildAggregateSeasoningLowerBoundStage(
+      const throughBuilt = buildPartitionOptimalPairStage(
         domain,
-        35,
+        new Set<ProductionStepKind>(['juicing', 'seasoning']),
         extraCase.thresholds,
-        21,
       )
-      const solved = await solveBoundedWithProgress(built.model, 20)
+      const throughSolved = await solveBoundedWithProgress(
+        throughBuilt.model,
+        15,
+      )
+      const blendBuilt = buildPartitionOptimalPairStage(
+        domain,
+        new Set<ProductionStepKind>(['blending']),
+        extraCase.thresholds,
+      )
+      const blendSolved = await solveBoundedWithProgress(
+        blendBuilt.model,
+        15,
+      )
+      const through =
+        throughSolved.status === 'optimal'
+          ? Math.round(throughSolved.objective ?? Number.NaN)
+          : null
+      const blending =
+        blendSolved.status === 'optimal'
+          ? Math.round(blendSolved.objective ?? Number.NaN)
+          : null
+      const conditionalNonFinalLowerBound =
+        through !== null && blending !== null
+          ? through + blending
+          : null
       const result = {
         pattern: extraCase.pattern,
-        finalizingExact: 30,
-        blendingExact: 35,
-        juicingGlobalLowerBound: 20,
-        seasoningCapForTotal106: 21,
-        status: solved.status,
-        feasibilityObjective: solved.objective,
-        solveMs: Math.round(solved.solveMs),
-        classVariableCount: built.classVariableCount,
-        progressTail: solved.progressTail,
+        throughStatus: throughSolved.status,
+        through,
+        throughSolveMs: Math.round(throughSolved.solveMs),
+        blendingStatus: blendSolved.status,
+        blending,
+        blendingSolveMs: Math.round(blendSolved.solveMs),
+        conditionalNonFinalLowerBound,
+        targetFor107Certificate: 77,
+        throughProgressTail: throughSolved.progressTail,
+        blendingProgressTail: blendSolved.progressTail,
       }
       results.push(result)
       console.info(
-        '[machine-b35-aggregate-seasoning-extra-case]',
+        '[machine-extra-conditional-partition-bound]',
         JSON.stringify(result),
       )
     }
 
     console.info(
-      '[machine-b35-aggregate-seasoning-extra-summary]',
+      '[machine-extra-conditional-partition-summary]',
       JSON.stringify(results.map((result) => ({
         pattern: result.pattern,
-        status: result.status,
-        feasibilityObjective: result.feasibilityObjective,
-        solveMs: result.solveMs,
+        throughStatus: result.throughStatus,
+        through: result.through,
+        blendingStatus: result.blendingStatus,
+        blending: result.blending,
+        conditionalNonFinalLowerBound:
+          result.conditionalNonFinalLowerBound,
       }))),
     )
   },
-  180000,
+  220000,
 )
