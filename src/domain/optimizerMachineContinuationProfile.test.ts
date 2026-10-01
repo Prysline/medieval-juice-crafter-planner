@@ -7429,21 +7429,33 @@ profileIt(
         }
 
         const capacities = built.groups.map((group, groupIndex) => {
-          const units = Math.round(
-            requiredFiniteNumber(
-              solved.namedSolution!.get(`gox_${groupIndex}`),
-              `hall group production ${groupIndex}`,
-            ),
+          const unitsRaw = solved.namedSolution!.get(
+            `gox_${groupIndex}`,
           )
-          const slackValue =
-            group.ingredientCost === SLACK_RECIPE_COST
-              ? Math.round(
-                  requiredFiniteNumber(
-                    solved.namedSolution!.get(`gos_${groupIndex}`),
-                    `hall group slack ${groupIndex}`,
-                  ),
-                )
-              : 0
+          if (
+            typeof unitsRaw !== 'number' ||
+            !Number.isFinite(unitsRaw)
+          ) {
+            throw new Error(
+              `Missing Hall group production ${groupIndex}`,
+            )
+          }
+          const units = Math.round(unitsRaw)
+          let slackValue = 0
+          if (group.ingredientCost === SLACK_RECIPE_COST) {
+            const slackRaw = solved.namedSolution!.get(
+              `gos_${groupIndex}`,
+            )
+            if (
+              typeof slackRaw !== 'number' ||
+              !Number.isFinite(slackRaw)
+            ) {
+              throw new Error(
+                `Missing Hall group slack ${groupIndex}`,
+              )
+            }
+            slackValue = Math.round(slackRaw)
+          }
           return units * 2 - slackValue
         })
         const checked = maximumAssignmentFlowForGroupCapacities(
