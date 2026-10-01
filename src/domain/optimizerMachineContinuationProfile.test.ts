@@ -2223,38 +2223,106 @@ async function solveBounded(
 }
 
 profileIt(
-  'measures finalizing frontier group capacities',
+  'proves the blend-35 finalizing-30 through frontier with the known 107 MIP start',
   async () => {
     const domain = canonicalDomain()
-    const groups = pairGroups(domain)
-    const histogram = new Map<number, number>()
-    let maxEligibleCustomers = 0
-    let maxProductionUnits = 0
-    let groupsOverFiveUnits = 0
+    expect(domain.recipes).toHaveLength(7892)
 
-    for (const group of groups) {
-      const eligible = group.eligibleCustomerIds.length
-      const units = Math.ceil(eligible / 2)
-      maxEligibleCustomers = Math.max(maxEligibleCustomers, eligible)
-      maxProductionUnits = Math.max(maxProductionUnits, units)
-      if (units > PROCESSING_STACK_CAPACITY) {
-        groupsOverFiveUnits += 1
-      }
-      histogram.set(units, (histogram.get(units) ?? 0) + 1)
+    const blendingBuilt = buildPartitionOptimalPairStage(
+      domain,
+      new Set<ProductionStepKind>(['blending']),
+    )
+    const blendingSolution = await blendingBuilt.model.solve()
+    if (blendingSolution.status !== 'optimal') {
+      throw new Error(
+        `Blending witness stage ended with ${blendingSolution.status}`,
+      )
     }
 
+    const unitsByGroupKey = new Map<string, number>()
+    for (const group of blendingBuilt.groups) {
+      let units = 0
+      for (const variable of (
+        blendingBuilt.unitVarsByGroupKey.get(group.key) ?? []
+      )) {
+        const value = blendingSolution.getValue(variable)
+        if (typeof value !== 'number' || !Number.isFinite(value)) {
+          throw new Error('Invalid blending pair variable value')
+        }
+        if (value > 0.5) units += 1
+      }
+      unitsByGroupKey.set(group.key, units)
+    }
+
+    const fullBuilt = buildFixedGroupFullMachineStage(
+      domain,
+      unitsByGroupKey,
+    )
+    const fullSolution = await fullBuilt.model.solve()
+    if (fullSolution.status !== 'optimal') {
+      throw new Error(
+        `Fixed-group full-machine witness ended with ${fullSolution.status}`,
+      )
+    }
+
+    const selectedUnitsByRecipeId = new Map<string, number>()
+    for (const recipe of domain.recipes) {
+      const variable = fullBuilt.xByRecipeId.get(recipe.candidate.id)
+      if (!variable) continue
+      const value = fullSolution.getValue(variable)
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
+        throw new Error('Invalid fixed-group recipe value')
+      }
+      const units = Math.round(value)
+      if (units > 0) {
+        selectedUnitsByRecipeId.set(recipe.candidate.id, units)
+      }
+    }
+
+    const selections = [...selectedUnitsByRecipeId].map(
+      ([recipeId, units]) => ({ recipeId, units }),
+    )
+    const breakdown = machineOperationBreakdownForSelection(
+      domain,
+      selections,
+    )
+    expect(breakdown.total).toBe(107)
+    expect(breakdown.blending).toBe(35)
+    expect(breakdown.finalizing).toBe(30)
+    expect(breakdown.juicing + breakdown.seasoning).toBe(42)
+
+    const startValues = mipStartValuesForFullWitness(
+      domain,
+      selectedUnitsByRecipeId,
+    )
+    const target = buildConditionalThroughFrontierStage(domain)
+    const solved = await solveBoundedWithMIPStart(
+      target.model,
+      startValues,
+      42,
+      120,
+    )
+
     console.info(
-      '[machine-finalizing-group-capacity-shape]',
+      '[machine-conditional-through-frontier-mip-start]',
       JSON.stringify({
-        groupCount: groups.length,
-        maxEligibleCustomers,
-        maxProductionUnits,
-        groupsOverFiveUnits,
-        unitUpperBoundHistogram: Object.fromEntries(
-          [...histogram.entries()].sort(([a], [b]) => a - b),
-        ),
+        frontier: {
+          blending: 35,
+          finalizing: 30,
+        },
+        witness: {
+          selectedRecipeCount: selectedUnitsByRecipeId.size,
+          startNonzeroValueCount: startValues.size,
+          breakdown,
+        },
+        targetFor107Proof: 42,
+        status: solved.status,
+        objective: solved.objective,
+        solveMs: Math.round(solved.solveMs),
+        progressTail: solved.progressTail,
       }),
     )
   },
+  210000,
 )
 
