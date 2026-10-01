@@ -1380,6 +1380,7 @@ function crossGroupDominatedRecipeIds(
 async function solveBoundedWithProgress(
   model: Model,
   timeLimitSeconds: number,
+  params?: Readonly<Record<string, boolean | number | string>>,
 ): Promise<{
   status: string
   objective: number | null
@@ -1396,6 +1397,9 @@ async function solveBoundedWithProgress(
   try {
     await highs.parse(model.print('mps'), 'mps')
     highs.setParam('time_limit', timeLimitSeconds)
+    for (const [name, value] of Object.entries(params ?? {})) {
+      highs.setParam(name, value)
+    }
     const startedAt = performance.now()
     const solution = await highs.solve()
     const solveMs = performance.now() - startedAt
@@ -1456,40 +1460,41 @@ async function solveBounded(
 }
 
 profileIt(
-  'measures exact cross-service-set recipe dominance',
+  'tests exact search heuristics on the blending-optimal machine slice',
   async () => {
     const domain = canonicalDomain()
     expect(domain.recipes).toHaveLength(7892)
 
-    const startedAt = performance.now()
-    const result = crossGroupDominatedRecipeIds(domain)
-    const elapsedMs = performance.now() - startedAt
+    const built = buildFlowProjectedNonfinalStage(domain, {
+      blendingCap: 35,
+    })
+    const params = {
+      mip_heuristic_effort: 1,
+      mip_heuristic_run_zi_round: true,
+      mip_heuristic_run_shifting: true,
+      mip_detect_symmetry: false,
+    } as const
+    const solved = await solveBoundedWithProgress(
+      built.model,
+      75,
+      params,
+    )
 
     console.info(
-      '[machine-cross-group-dominance]',
+      '[machine-blending35-search-tuning]',
       JSON.stringify({
-        recipeCount: domain.recipes.length,
-        dominatedRecipeCount: result.dominated.size,
-        retainedRecipeCount:
-          domain.recipes.length - result.dominated.size,
-        reductionRatio:
-          result.dominated.size / domain.recipes.length,
-        comparisonCount: result.comparisonCount,
-        maxCostBucketSize: result.maxCostBucketSize,
-        recipesWithInitialFinishedServings:
-          domain.recipes.filter(
-            (recipe) =>
-              (recipe.initialFinishedServings ?? 0) > 0,
-          ).length,
-        recipesWithProductionCaps:
-          domain.recipes.filter(
-            (recipe) =>
-              typeof recipe.maxProductionUnits === 'number',
-          ).length,
-        elapsedMs: Math.round(elapsedMs),
+        exactness: 'unchanged',
+        blendingExactLowerBound: 35,
+        throughExactLowerBound: 38,
+        knownNonfinalWitness: 77,
+        params,
+        status: solved.status,
+        objective: solved.objective,
+        solveMs: Math.round(solved.solveMs),
+        progressTail: solved.progressTail,
       }),
     )
   },
-  30000,
+  100000,
 )
 
