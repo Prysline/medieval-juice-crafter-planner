@@ -5522,93 +5522,314 @@ async function solveBounded(
   }
 }
 
-profileIt(
-  'minimizes exact non-final machine operations for every five-extra partition',
-  async () => {
-    const domain = canonicalDomain()
-    expect(PROCESSING_STACK_CAPACITY).toBe(5)
 
-    const cases: Array<{
-      name: string
-      thresholdCounts: readonly [number, number, number, number]
-    }> = [
-      { name: '4+1', thresholdCounts: [2, 1, 1, 1] },
-      { name: '3+2', thresholdCounts: [2, 2, 1, 0] },
-      { name: '3+1+1', thresholdCounts: [3, 1, 1, 0] },
-      { name: '2+2+1', thresholdCounts: [3, 2, 0, 0] },
-      { name: '2+1+1+1', thresholdCounts: [4, 1, 0, 0] },
-      { name: '1+1+1+1+1', thresholdCounts: [5, 0, 0, 0] },
-    ]
+function buildServiceMaskCompressedNonfinalStage(
+  domain: BatchOptimizationModel,
+) {
+  const groups = pairGroups(domain)
+  const model = new Model()
 
-    const results: Array<{
-      extraPattern: string
-      status: string
-      objective: number | null
-      solveMs: number
-    }> = []
+  const maskKeyForGroup = (group: PairGroup) =>
+    group.eligibleCustomerIds.join('\u001e')
+  const maskCustomerIds = new Map<string, string[]>()
+  const groupIndexesByMask = new Map<string, number[]>()
+  groups.forEach((group, groupIndex) => {
+    const maskKey = maskKeyForGroup(group)
+    if (!maskCustomerIds.has(maskKey)) {
+      maskCustomerIds.set(maskKey, group.eligibleCustomerIds)
+    }
+    const indexes = groupIndexesByMask.get(maskKey)
+    if (indexes) indexes.push(groupIndex)
+    else groupIndexesByMask.set(maskKey, [groupIndex])
+  })
 
-    for (const extraCase of cases) {
-      const buildStartedAt = performance.now()
-      const built = buildFinalizing30CompressedFrontierStage(
-        domain,
-        extraCase.thresholdCounts,
+  const customerFlowByMask = new Map<
+    string,
+    ReturnType<Model['numVar']>[]
+  >(
+    [...maskCustomerIds.keys()].map((maskKey) => [maskKey, []]),
+  )
+  let customerFlowVariableCount = 0
+
+  domain.serviceableCustomerIds.forEach(
+    (customerId, customerIndex) => {
+      const customerTerms: ReturnType<Model['numVar']>[] = []
+      ;[...maskCustomerIds.entries()].forEach(
+        ([maskKey, eligibleCustomerIds], maskIndex) => {
+          if (!eligibleCustomerIds.includes(customerId)) return
+          const y = model.numVar(
+            0,
+            1,
+            `ny_${customerIndex}_${maskIndex}`,
+          )
+          customerFlowVariableCount += 1
+          customerTerms.push(y)
+          customerFlowByMask.get(maskKey)!.push(y)
+        },
       )
-      const buildMs = performance.now() - buildStartedAt
-      const solved = await solveBoundedWithProgress(
-        built.model,
-        12,
+      model.addConstraint(
+        sum(...customerTerms).eq(1),
+        `nonfinal_customer_${customerIndex}`,
       )
+    },
+  )
 
-      results.push({
-        extraPattern: extraCase.name,
-        status: solved.status,
-        objective: solved.objective,
-        solveMs: Math.round(solved.solveMs),
-      })
-      console.info(
-        '[machine-finalizing30-extra-unit-optimum]',
-        JSON.stringify({
-          frontier: {
-            finalizing: 30,
-            usedGroups: 30,
-            selectedRecipes: 30,
-            productionUnits: 35,
-            exactExtraUnits: 5,
-            extraPattern: extraCase.name,
-            extraThresholdCounts: extraCase.thresholdCounts,
-            nonFinalCapToBeat107: 76,
-          },
-          globalLowerBounds: {
-            through: 38,
-            blending: 35,
-            nonFinal: 73,
-          },
-          serviceMaskCount: built.serviceMaskCount,
-          customerFlowVariableCount:
-            built.customerFlowVariableCount,
-          groupCount: built.groupCount,
-          classVariableCount: built.classVariableCount,
-          classUseVariableCount: built.classUseVariableCount,
-          extraThresholdVariableCount:
-            built.extraThresholdVariableCount,
-          sharedBlendOperationEdgeCount:
-            built.sharedBlendOperationEdgeCount,
-          privateBlendOperationTermCount:
-            built.privateBlendOperationTermCount,
-          throughOperationEdgeCount:
-            built.throughOperationEdgeCount,
-          buildMs: Math.round(buildMs),
-          status: solved.status,
-          nonFinalObjective: solved.objective,
-          solveMs: Math.round(solved.solveMs),
-          progressTail: solved.progressTail,
-        }),
-      )
+  const productionVars: ReturnType<Model['intVar']>[] = []
+  const productionCostTerms: ReturnType<
+    ReturnType<Model['intVar']>['times']
+  >[] = []
+  const groupProductionByIndex = new Map<
+    number,
+    ReturnType<typeof sum>
+  >()
+  const slackVarsByGroupIndex = new Map<
+    number,
+    ReturnType<Model['boolVar']>
+  >()
+  const slackVars: ReturnType<Model['boolVar']>[] = []
+
+  const quantityTermsByEdgeKey = new Map<
+    string,
+    ReturnType<ReturnType<Model['intVar']>['times']>[]
+  >()
+  const quantityUpperBoundByEdgeKey = new Map<string, number>()
+  const edgeKindByKey = new Map<string, 'through' | 'blending'>()
+
+  let classVariableCount = 0
+  let collapsedRecipeCount = 0
+
+  groups.forEach((group, groupIndex) => {
+    const classes = new Map<
+      string,
+      {
+        edges: Array<{
+          edgeKey: string
+          kind: 'through' | 'blending'
+          multiplicity: number
+        }>
+      }
+    >()
+
+    for (const recipe of group.recipes) {
+      const edgeMultiplicities = new Map<
+        string,
+        {
+          kind: 'through' | 'blending'
+          multiplicity: number
+        }
+      >()
+      for (const edge of recipe.productionPath.edges) {
+        if (edge.kind === 'finalizing') continue
+        const kind =
+          edge.kind === 'blending' ? 'blending' : 'through'
+        const current = edgeMultiplicities.get(edge.key)
+        edgeMultiplicities.set(edge.key, {
+          kind,
+          multiplicity: (current?.multiplicity ?? 0) + 1,
+        })
+      }
+
+      const edges = [...edgeMultiplicities.entries()]
+        .map(([edgeKey, value]) => ({
+          edgeKey,
+          kind: value.kind,
+          multiplicity: value.multiplicity,
+        }))
+        .sort((left, right) =>
+          left.edgeKey.localeCompare(right.edgeKey),
+        )
+      const signature = JSON.stringify(edges)
+      if (!classes.has(signature)) {
+        classes.set(signature, { edges })
+      }
     }
 
+    collapsedRecipeCount += group.recipes.length - classes.size
+
+    const groupUpperBound = Math.max(
+      1,
+      Math.ceil(group.eligibleCustomerIds.length / 2),
+    )
+    const groupProductionVars: ReturnType<Model['intVar']>[] = []
+
+    for (const recipeClass of classes.values()) {
+      const x = model.intVar(
+        0,
+        groupUpperBound,
+        `nx_${classVariableCount}`,
+      )
+      classVariableCount += 1
+      groupProductionVars.push(x)
+      productionVars.push(x)
+      productionCostTerms.push(x.times(group.ingredientCost))
+
+      for (const edge of recipeClass.edges) {
+        const terms = quantityTermsByEdgeKey.get(edge.edgeKey)
+        const term = x.times(edge.multiplicity)
+        if (terms) terms.push(term)
+        else quantityTermsByEdgeKey.set(edge.edgeKey, [term])
+        quantityUpperBoundByEdgeKey.set(
+          edge.edgeKey,
+          (quantityUpperBoundByEdgeKey.get(edge.edgeKey) ?? 0) +
+            groupUpperBound * edge.multiplicity,
+        )
+        const existingKind = edgeKindByKey.get(edge.edgeKey)
+        if (existingKind && existingKind !== edge.kind) {
+          throw new Error(
+            `Machine edge ${edge.edgeKey} changed kind across recipes`,
+          )
+        }
+        edgeKindByKey.set(edge.edgeKey, edge.kind)
+      }
+    }
+
+    const groupProduction = sum(...groupProductionVars)
+    groupProductionByIndex.set(groupIndex, groupProduction)
+
+    if (group.ingredientCost === SLACK_RECIPE_COST) {
+      const slack = model.boolVar(`nslack_${groupIndex}`)
+      slackVars.push(slack)
+      slackVarsByGroupIndex.set(groupIndex, slack)
+      model.addConstraint(
+        slack.minus(groupProduction).leq(0),
+        `nonfinal_slack_requires_production_${groupIndex}`,
+      )
+    }
+  })
+
+  let maskIndex = 0
+  for (const [maskKey, groupIndexes] of groupIndexesByMask) {
+    const capacityTerms = groupIndexes.map((groupIndex) =>
+      groupProductionByIndex.get(groupIndex)!.times(2),
+    )
+    const maskSlackVars = groupIndexes.flatMap((groupIndex) => {
+      const slack = slackVarsByGroupIndex.get(groupIndex)
+      return slack ? [slack] : []
+    })
+    model.addConstraint(
+      sum(...capacityTerms)
+        .minus(sum(...maskSlackVars))
+        .minus(sum(...(customerFlowByMask.get(maskKey) ?? [])))
+        .eq(0),
+      `nonfinal_mask_capacity_${maskIndex}`,
+    )
+    maskIndex += 1
+  }
+
+  model.addConstraint(
+    sum(...slackVars).eq(GLOBAL_SERVING_SLACK),
+    'nonfinal_global_slack',
+  )
+  model.addConstraint(
+    sum(...productionVars).eq(PRODUCTION_UNITS_FIX),
+    'nonfinal_production_units_fix',
+  )
+  model.addConstraint(
+    sum(...productionCostTerms).eq(PRODUCTION_COST_FIX),
+    'nonfinal_production_cost_fix',
+  )
+
+  const throughOps: ReturnType<Model['intVar']>[] = []
+  const blendingOps: ReturnType<Model['intVar']>[] = []
+
+  ;[...quantityTermsByEdgeKey.entries()].forEach(
+    ([edgeKey, terms], edgeIndex) => {
+      const operation = model.intVar(
+        0,
+        Math.max(
+          1,
+          Math.ceil(
+            (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) /
+              PROCESSING_STACK_CAPACITY,
+          ),
+        ),
+        `nop_${edgeIndex}`,
+      )
+      const quantity = sum(...terms)
+      model.addConstraint(
+        quantity
+          .minus(operation.times(PROCESSING_STACK_CAPACITY))
+          .leq(0),
+        `nonfinal_op_capacity_${edgeIndex}`,
+      )
+      model.addConstraint(
+        operation.minus(quantity).leq(0),
+        `nonfinal_op_usage_${edgeIndex}`,
+      )
+      if (edgeKindByKey.get(edgeKey) === 'blending') {
+        blendingOps.push(operation)
+      } else {
+        throughOps.push(operation)
+      }
+    },
+  )
+
+  const through = sum(...throughOps)
+  const blending = sum(...blendingOps)
+  model.addConstraint(
+    through.geq(38),
+    'nonfinal_through_lower_bound',
+  )
+  model.addConstraint(
+    blending.geq(35),
+    'nonfinal_blending_lower_bound',
+  )
+  model.minimize(through.plus(blending))
+
+  return {
+    model,
+    serviceMaskCount: maskCustomerIds.size,
+    customerFlowVariableCount,
+    groupCount: groups.length,
+    classVariableCount,
+    collapsedRecipeCount,
+    singletonSlackVariableCount: slackVars.length,
+    throughOperationEdgeCount: throughOps.length,
+    blendingOperationEdgeCount: blendingOps.length,
+  }
+}
+
+profileIt(
+  'proves the exact global non-final lower bound with service-mask recipe-class compression',
+  async () => {
+    const domain = canonicalDomain()
+    const buildStartedAt = performance.now()
+    const built = buildServiceMaskCompressedNonfinalStage(domain)
+    const buildMs = performance.now() - buildStartedAt
+    const solved = await solveBoundedWithProgress(
+      built.model,
+      120,
+    )
+
     console.info(
-      '[machine-finalizing30-extra-unit-optimum-summary]',
-      JSON.stringify(results),
+      '[machine-global-nonfinal-compressed]',
+      JSON.stringify({
+        targetFor107Certificate: 77,
+        finalizingExactLowerBound: 30,
+        knownFullWitness: 107,
+        globalPartitionLowerBounds: {
+          through: 38,
+          blending: 35,
+          nonFinal: 73,
+        },
+        serviceMaskCount: built.serviceMaskCount,
+        customerFlowVariableCount:
+          built.customerFlowVariableCount,
+        groupCount: built.groupCount,
+        classVariableCount: built.classVariableCount,
+        collapsedRecipeCount: built.collapsedRecipeCount,
+        singletonSlackVariableCount:
+          built.singletonSlackVariableCount,
+        throughOperationEdgeCount:
+          built.throughOperationEdgeCount,
+        blendingOperationEdgeCount:
+          built.blendingOperationEdgeCount,
+        buildMs: Math.round(buildMs),
+        status: solved.status,
+        nonFinalObjective: solved.objective,
+        solveMs: Math.round(solved.solveMs),
+        progressTail: solved.progressTail,
+      }),
     )
   },
   140000,
