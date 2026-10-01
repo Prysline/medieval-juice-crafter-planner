@@ -8590,8 +8590,19 @@ function maximumAssignmentFlowForGroupCapacities(
       queue.push(edge.to)
     }
   }
-  const violatingGroupIndexes = groups.flatMap((_, groupIndex) =>
-    reachable[groupOffset + groupIndex] ? [groupIndex] : [],
+  const violatingCustomerIds = new Set(
+    serviceableCustomerIds.filter(
+      (_customerId, customerIndex) =>
+        reachable[customerOffset + customerIndex],
+    ),
+  )
+  const violatingGroupIndexes = groups.flatMap((group, groupIndex) =>
+    group.eligibleCustomerIds.length > 0 &&
+    group.eligibleCustomerIds.every((customerId) =>
+      violatingCustomerIds.has(customerId),
+    )
+      ? [groupIndex]
+      : [],
   )
 
   return { flow, violatingGroupIndexes }
