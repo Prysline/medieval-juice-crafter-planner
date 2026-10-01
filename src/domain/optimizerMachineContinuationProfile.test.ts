@@ -6276,7 +6276,7 @@ function buildAggregateSharedEdgeFrontierMaster(
           const y = model.numVar(
             0,
             1,
-            \`amy_\${customerIndex}_\${maskIndex}\`,
+            `amy_${customerIndex}_${maskIndex}`,
           )
           customerFlowVariableCount += 1
           terms.push(y)
@@ -6285,7 +6285,7 @@ function buildAggregateSharedEdgeFrontierMaster(
       )
       model.addConstraint(
         sum(...terms).eq(1),
-        \`am_customer_\${customerIndex}\`,
+        `am_customer_${customerIndex}`,
       )
     },
   )
@@ -6430,9 +6430,9 @@ function buildAggregateSharedEdgeFrontierMaster(
       const x = model.intVar(
         0,
         groupUpperBound,
-        \`amx_\${classVariableCount}\`,
+        `amx_${classVariableCount}`,
       )
-      const used = model.boolVar(\`amu_\${classVariableCount}\`)
+      const used = model.boolVar(`amu_${classVariableCount}`)
       classVariableCount += 1
       groupProductionVars.push(x)
       groupUseVars.push(used)
@@ -6440,11 +6440,11 @@ function buildAggregateSharedEdgeFrontierMaster(
       productionCostTerms.push(x.times(group.ingredientCost))
       model.addConstraint(
         x.minus(used.times(groupUpperBound)).leq(0),
-        \`am_use_upper_\${classVariableCount}\`,
+        `am_use_upper_${classVariableCount}`,
       )
       model.addConstraint(
         used.minus(x).leq(0),
-        \`am_use_lower_\${classVariableCount}\`,
+        `am_use_lower_${classVariableCount}`,
       )
 
       if (recipeClass.privateThroughCount > 0) {
@@ -6476,15 +6476,15 @@ function buildAggregateSharedEdgeFrontierMaster(
     const groupProduction = sum(...groupProductionVars)
     groupProductionByIndex.set(groupIndex, groupProduction)
 
-    const usedGroup = model.boolVar(\`amg_\${groupIndex}\`)
+    const usedGroup = model.boolVar(`amg_${groupIndex}`)
     usedGroupVars.push(usedGroup)
     model.addConstraint(
       sum(...groupUseVars).minus(usedGroup).eq(0),
-      \`am_one_class_\${groupIndex}\`,
+      `am_one_class_${groupIndex}`,
     )
 
     if (group.ingredientCost === SLACK_RECIPE_COST) {
-      const slack = model.boolVar(\`amslack_\${groupIndex}\`)
+      const slack = model.boolVar(`amslack_${groupIndex}`)
       slackVars.push(slack)
       slackByGroupIndex.set(groupIndex, slack)
     }
@@ -6493,7 +6493,7 @@ function buildAggregateSharedEdgeFrontierMaster(
       { length: Math.max(0, groupUpperBound - 1) },
       (_, thresholdIndex) => {
         const threshold = model.boolVar(
-          \`ame_\${thresholdIndex + 1}_\${groupIndex}\`,
+          `ame_${thresholdIndex + 1}_${groupIndex}`,
         )
         extraThresholdVarsByLevel[thresholdIndex].push(threshold)
         return threshold
@@ -6504,7 +6504,7 @@ function buildAggregateSharedEdgeFrontierMaster(
         .minus(usedGroup)
         .minus(sum(...extraThresholds))
         .eq(0),
-      \`am_exact_extra_\${groupIndex}\`,
+      `am_exact_extra_${groupIndex}`,
     )
     for (
       let thresholdIndex = 1;
@@ -6515,7 +6515,7 @@ function buildAggregateSharedEdgeFrontierMaster(
         extraThresholds[thresholdIndex]
           .minus(extraThresholds[thresholdIndex - 1])
           .leq(0),
-        \`am_extra_monotone_\${groupIndex}_\${thresholdIndex}\`,
+        `am_extra_monotone_${groupIndex}_${thresholdIndex}`,
       )
     }
   })
@@ -6534,7 +6534,7 @@ function buildAggregateSharedEdgeFrontierMaster(
         .minus(sum(...maskSlacks))
         .minus(sum(...(flowByMask.get(maskKey) ?? [])))
         .eq(0),
-      \`am_mask_capacity_\${maskIndex}\`,
+      `am_mask_capacity_${maskIndex}`,
     )
     maskIndex += 1
   }
@@ -6558,7 +6558,7 @@ function buildAggregateSharedEdgeFrontierMaster(
   extraThresholdCounts.forEach((count, thresholdIndex) => {
     model.addConstraint(
       sum(...extraThresholdVarsByLevel[thresholdIndex]).eq(count),
-      \`am_extra_count_\${thresholdIndex + 1}\`,
+      `am_extra_count_${thresholdIndex + 1}`,
     )
   })
 
