@@ -72,6 +72,11 @@ const supportDpProfileIt =
     ? it
     : it.skip
 
+const hallSignatureProfileIt =
+  machineContinuationEnv.MACHINE_CONTINUATION_HALL_SIGNATURE === '1'
+    ? it
+    : it.skip
+
 const singleSupportMasterProfileIt =
   Boolean(machineContinuationEnv.MACHINE_CONTINUATION_SINGLE_MASTER_GROUPS)
     ? it
@@ -11359,7 +11364,7 @@ async function bootstrap311HallCutsFromDpWitnesses(
   return cuts
 }
 
-supportDpProfileIt(
+hallSignatureProfileIt(
   'profiles Hall-closure membership signatures for unresolved 3+1+1 support',
   async () => {
     const domain = canonicalDomain()
