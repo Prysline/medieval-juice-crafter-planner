@@ -447,6 +447,11 @@ function buildFullMachineCapFeasibility(
   )
 
   const operationVars: ReturnType<Model['intVar']>[] = []
+  const partitionOperationVars = {
+    throughSeasoning: [] as ReturnType<Model['intVar']>[],
+    blending: [] as ReturnType<Model['intVar']>[],
+    finalizing: [] as ReturnType<Model['intVar']>[],
+  }
   ;[...quantityTermsByEdgeKey.entries()].forEach(
     ([edgeKey, terms], edgeIndex) => {
       const operation = model.intVar(
