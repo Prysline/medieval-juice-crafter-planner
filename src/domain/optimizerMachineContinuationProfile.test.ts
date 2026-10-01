@@ -7495,6 +7495,90 @@ forcedResidualProfileIt(
         results,
       }),
     )
+
+    const hugo = nextSparseCustomers.find(
+      (entry) => entry.customerId === 'hugo',
+    )
+    const octavius8Branches = branches
+      .map((branch, branchIndex) => ({ branch, branchIndex }))
+      .filter(({ branch }) =>
+        branch.choices.some(
+          (choice) =>
+            choice.customerId === 'octavius' &&
+            choice.groupIndex === 8,
+        ),
+      )
+    const hugoResults = []
+    if (hugo) {
+      for (const { branch, branchIndex } of octavius8Branches) {
+        for (
+          let hugoChoiceIndex = 0;
+          hugoChoiceIndex < hugo.candidates.length;
+          hugoChoiceIndex += 1
+        ) {
+          const hugoChoice = hugo.candidates[hugoChoiceIndex]
+          const built = build311ExtraCostSumSupportMaster(
+            domain,
+            groupIndex,
+            undefined,
+            {
+              includeCustomerFlow: true,
+              forcedCustomerIds:
+                groups[groupIndex].eligibleCustomerIds,
+              requiredUsedGroupIndexes: [
+                ...branch.requiredUsedGroupIndexes,
+                hugoChoice.groupIndex,
+              ],
+              requiredSlackGroupIndexes: hugoChoice.slackOnly
+                ? [
+                    ...branch.requiredSlackGroupIndexes,
+                    hugoChoice.groupIndex,
+                  ]
+                : branch.requiredSlackGroupIndexes,
+            },
+          )
+          const solved = await solveBounded(built.model, 0.5)
+          hugoResults.push({
+            branchIndex,
+            hugoChoiceIndex,
+            hugoGroupIndex: hugoChoice.groupIndex,
+            status: solved.status,
+            solveMs: Math.round(solved.solveMs),
+          })
+        }
+      }
+    }
+
+    console.info(
+      '[machine-forced-residual-hugo-summary]',
+      JSON.stringify({
+        parentBranchCount: octavius8Branches.length,
+        hugoChoiceCount: hugo?.candidates.length ?? 0,
+        totalBranches: hugoResults.length,
+        infeasibleCount: hugoResults.filter(
+          (entry) => entry.status === 'infeasible',
+        ).length,
+        optimalCount: hugoResults.filter(
+          (entry) => entry.status === 'optimal',
+        ).length,
+        unresolvedCount: hugoResults.filter(
+          (entry) =>
+            entry.status !== 'infeasible' &&
+            entry.status !== 'optimal',
+        ).length,
+        unresolvedParentBranches: [
+          ...new Set(
+            hugoResults
+              .filter(
+                (entry) =>
+                  entry.status !== 'infeasible',
+              )
+              .map((entry) => entry.branchIndex),
+          ),
+        ],
+        results: hugoResults,
+      }),
+    )
   },
   120000,
 )
