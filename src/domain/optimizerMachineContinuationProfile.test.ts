@@ -7381,6 +7381,44 @@ forcedResidualProfileIt(
       },
     )
 
+    const branchCustomerIds = new Set(
+      branchCustomers.map((entry) => entry.customerId),
+    )
+    const nextSparseCustomers = residualCustomerIds
+      .filter((customerId) => !branchCustomerIds.has(customerId))
+      .map((customerId) => {
+        const candidates = groups.flatMap((group, candidateGroupIndex) => {
+          if (candidateGroupIndex === groupIndex) return []
+          const residualEligible = group.eligibleCustomerIds.filter(
+            (eligibleCustomerId) =>
+              !fixedCustomers.has(eligibleCustomerId),
+          )
+          if (!residualEligible.includes(customerId)) return []
+          const normal = residualEligible.length >= 2
+          const slack =
+            group.ingredientCost === SLACK_RECIPE_COST &&
+            residualEligible.length >= 1
+          return normal || slack
+            ? [{
+                groupIndex: candidateGroupIndex,
+                cost: group.ingredientCost,
+                slackOnly: !normal && slack,
+              }]
+            : []
+        })
+        return { customerId, candidates }
+      })
+      .sort(
+        (left, right) =>
+          left.candidates.length - right.candidates.length,
+      )
+      .slice(0, 6)
+
+    console.info(
+      '[machine-forced-residual-next-sparse]',
+      JSON.stringify(nextSparseCustomers),
+    )
+
     let branches: Array<{
       requiredUsedGroupIndexes: number[]
       requiredSlackGroupIndexes: number[]
