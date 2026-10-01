@@ -5977,6 +5977,7 @@ function buildFinalizing30MaskPartitionStage(
     max?: number
   },
   slackExtraCount?: number,
+  fixedUsedGroupIndexes?: ReadonlySet<number>,
 ) {
   const groups = pairGroups(domain)
   const model = new Model()
@@ -6199,6 +6200,14 @@ function buildFinalizing30MaskPartitionStage(
     sum(...usedGroupVars).eq(30),
     'mp_used_groups',
   )
+  if (fixedUsedGroupIndexes) {
+    usedGroupVars.forEach((usedGroup, groupIndex) => {
+      model.addConstraint(
+        usedGroup.eq(fixedUsedGroupIndexes.has(groupIndex) ? 1 : 0),
+        `mp_fixed_used_group_${groupIndex}`,
+      )
+    })
+  }
   extraThresholdCounts.forEach((count, thresholdIndex) => {
     model.addConstraint(
       sum(...extraThresholdVarsByLevel[thresholdIndex]).eq(count),
@@ -6270,6 +6279,7 @@ function buildAggregateSharedEdgeFrontierMaster(
 ) {
   const slackExtraCount = options.slackExtraCount
   const totalNonFinalCap = options.totalNonFinalCap
+  const supportCuts = options.supportCuts ?? []
   const groups = pairGroups(domain)
   const model = new Model()
 
@@ -6757,6 +6767,7 @@ function buildOptimisticGroupOnlyFrontierMaster(
     slackExtraCount?: number
     slackGroupIndex?: number
     totalNonFinalCap?: number
+    supportCuts?: readonly (readonly number[])[]
   } = {},
 ) {
   const includeCustomerFlow = options.includeCustomerFlow ?? true
@@ -7169,6 +7180,12 @@ function buildOptimisticGroupOnlyFrontierMaster(
     sum(...usedGroupVars).eq(30),
     'go_used_groups',
   )
+  supportCuts.forEach((support, cutIndex) => {
+    model.addConstraint(
+      sum(...support.map((groupIndex) => usedGroupVars[groupIndex])).leq(29),
+      `go_support_nogood_${cutIndex}`,
+    )
+  })
   extraThresholdCounts.forEach((count, thresholdIndex) => {
     model.addConstraint(
       sum(...extraThresholdVarsByLevel[thresholdIndex]).eq(count),
@@ -7263,6 +7280,7 @@ function buildOptimisticGroupOnlyFrontierMaster(
     groups,
     groupProductionByIndex,
     slackByGroupIndex,
+    usedGroupVars,
     groupCount: groups.length,
     serviceMaskCount: maskCustomerIds.size,
   }
@@ -8095,7 +8113,7 @@ it.skip(
 
 
 profileIt(
-  'certifies exact non-final signatures on remaining finalizing-30 frontier',
+  'decomposes remaining finalizing-30 support frontier exactly',
   async () => {
     const domain = canonicalDomain()
     const requestedPattern =
@@ -8112,31 +8130,96 @@ profileIt(
     expect(extraCase).toBeDefined()
     if (!extraCase) return
 
-    const built = buildFinalizing30MaskPartitionStage(
-      domain,
-      new Set<ProductionStepKind>([
-        'juicing',
-        'seasoning',
-        'blending',
-      ]),
-      extraCase.thresholds,
-      { max: 76 },
-      0,
-    )
-    const solved = await solveBoundedWithProgress(built.model, 20)
+    const supportCuts: number[][] = []
+    let finalStatus = 'iteration-limit'
+
+    for (let iteration = 0; iteration < 16; iteration += 1) {
+      const master = buildOptimisticGroupOnlyFrontierMaster(
+        domain,
+        extraCase.thresholds,
+        {
+          sharedBucketMode: 'structural-signature',
+          slackExtraCount: 0,
+          totalNonFinalCap: 76,
+          supportCuts,
+        },
+      )
+      const masterSolved = await solveBoundedWithProgress(master.model, 4)
+      if (masterSolved.status === 'infeasible') {
+        finalStatus = 'infeasible'
+        break
+      }
+      if (
+        masterSolved.status !== 'optimal' ||
+        !masterSolved.namedSolution
+      ) {
+        finalStatus = `master-${masterSolved.status}`
+        break
+      }
+
+      const support = master.usedGroupVars.flatMap(
+        (_usedGroup, groupIndex) => {
+          const raw = masterSolved.namedSolution!.get(
+            `gou_${groupIndex}`,
+          )
+          return typeof raw === 'number' && raw > 0.5
+            ? [groupIndex]
+            : []
+        },
+      )
+      if (support.length !== 30) {
+        throw new Error(
+          `Expected 30 used groups, got ${support.length}`,
+        )
+      }
+
+      const exact = buildFinalizing30MaskPartitionStage(
+        domain,
+        new Set<ProductionStepKind>([
+          'juicing',
+          'seasoning',
+          'blending',
+        ]),
+        extraCase.thresholds,
+        { max: 76 },
+        0,
+        new Set(support),
+      )
+      const exactSolved = await solveBoundedWithProgress(exact.model, 8)
+      console.info(
+        '[machine-support-decomposition-round]',
+        JSON.stringify({
+          pattern: extraCase.pattern,
+          iteration: iteration + 1,
+          supportCuts: supportCuts.length,
+          masterStatus: masterSolved.status,
+          exactStatus: exactSolved.status,
+          exactObjective: exactSolved.objective,
+          exactSolveMs: Math.round(exactSolved.solveMs),
+        }),
+      )
+
+      if (exactSolved.status === 'infeasible') {
+        supportCuts.push(support)
+        continue
+      }
+      if (exactSolved.status === 'optimal') {
+        finalStatus = 'feasible-support'
+        break
+      }
+      finalStatus = `exact-${exactSolved.status}`
+      break
+    }
+
     console.info(
-      '[machine-exact-nonfinal-106-case]',
+      '[machine-support-decomposition-summary]',
       JSON.stringify({
         pattern: extraCase.pattern,
-        status: solved.status,
-        objective: solved.objective,
-        solveMs: Math.round(solved.solveMs),
-        classVariableCount: built.classVariableCount,
-        operationEdgeCount: built.operationEdgeCount,
-        progressTail: solved.progressTail,
+        finalStatus,
+        supportCuts: supportCuts.length,
       }),
     )
-    expect(solved.status).not.toBe('timelimit')
+    expect(finalStatus).toBe('infeasible')
   },
-  90000,
+  240000,
 )
