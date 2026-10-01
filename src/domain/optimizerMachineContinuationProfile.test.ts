@@ -5986,6 +5986,7 @@ function buildFinalizing30MaskPartitionStage(
   },
   slackExtraCount?: number,
   fixedUsedGroupIndexes?: ReadonlySet<number>,
+  fixedSlackGroupIndex?: number,
 ) {
   const groups = pairGroups(domain)
   const model = new Model()
@@ -6178,6 +6179,20 @@ function buildFinalizing30MaskPartitionStage(
     sum(...slackVars).eq(GLOBAL_SERVING_SLACK),
     'mp_global_slack',
   )
+  if (typeof fixedSlackGroupIndex === 'number') {
+    const fixedSlack = slackByGroupIndex.get(fixedSlackGroupIndex)
+    if (!fixedSlack) {
+      model.addConstraint(
+        sum(...productionVars).leq(-1),
+        'mp_invalid_fixed_slack_group',
+      )
+    } else {
+      model.addConstraint(
+        fixedSlack.eq(1),
+        'mp_fixed_slack_group',
+      )
+    }
+  }
   if (typeof slackExtraCount === 'number') {
     const targetUnits = 1 + slackExtraCount
     const bigM = PROCESSING_STACK_CAPACITY
@@ -8083,18 +8098,20 @@ profileIt(
       ordinal += 1
     ) {
       const slackGroupIndex = slackGroupIndexes[ordinal]
-      const built = buildOptimisticGroupOnlyFrontierMaster(
+      const built = buildFinalizing30MaskPartitionStage(
         domain,
+        new Set<ProductionStepKind>([
+          'juicing',
+          'seasoning',
+          'blending',
+        ]),
         extraCase.thresholds,
-        {
-          includeCustomerFlow: false,
-          sharedBucketMode: 'structural-signature',
-          slackExtraCount: 0,
-          slackGroupIndex,
-          totalNonFinalCap: 76,
-        },
+        { max: 76 },
+        0,
+        undefined,
+        slackGroupIndex,
       )
-      const solved = await solveBoundedWithProgress(built.model, 2)
+      const solved = await solveBoundedWithProgress(built.model, 3)
       console.info(
         '[machine-singleton-identity-106-case]',
         JSON.stringify({
