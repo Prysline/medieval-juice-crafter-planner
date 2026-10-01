@@ -2588,6 +2588,127 @@ function buildConditionalThroughCapFeasibility(
   }
 }
 
+
+function buildFinalizingOptimalGroupCountStage(
+  domain: BatchOptimizationModel,
+  objective: 'minimum-groups' | 'maximum-groups',
+) {
+  const groups = pairGroups(domain)
+  const model = new Model()
+  const flowByGroupKey = new Map<
+    string,
+    ReturnType<Model['numVar']>[]
+  >(groups.map((group) => [group.key, []]))
+
+  domain.serviceableCustomerIds.forEach(
+    (customerId, customerIndex) => {
+      const terms: ReturnType<Model['numVar']>[] = []
+      groups.forEach((group, groupIndex) => {
+        if (!group.eligibleCustomerIds.includes(customerId)) return
+        const y = model.numVar(
+          0,
+          1,
+          `y_${customerIndex}_${groupIndex}`,
+        )
+        terms.push(y)
+        flowByGroupKey.get(group.key)!.push(y)
+      })
+      model.addConstraint(
+        sum(...terms).eq(1),
+        `customer_${customerIndex}`,
+      )
+    },
+  )
+
+  const productionVars: ReturnType<Model['intVar']>[] = []
+  const productionCostTerms: ReturnType<
+    ReturnType<Model['intVar']>['times']
+  >[] = []
+  const slackVars: ReturnType<Model['boolVar']>[] = []
+  const finalOperationVars: ReturnType<Model['intVar']>[] = []
+  const usedGroupVars: ReturnType<Model['boolVar']>[] = []
+
+  groups.forEach((group, groupIndex) => {
+    const upperBound = Math.max(
+      1,
+      Math.ceil(group.eligibleCustomerIds.length / 2),
+    )
+    const x = model.intVar(0, upperBound, `gx_${groupIndex}`)
+    productionVars.push(x)
+    productionCostTerms.push(x.times(group.ingredientCost))
+
+    const served = sum(...(flowByGroupKey.get(group.key) ?? []))
+    if (group.ingredientCost === SLACK_RECIPE_COST) {
+      const slack = model.boolVar(`slack_${groupIndex}`)
+      slackVars.push(slack)
+      model.addConstraint(
+        x.times(2).minus(served).minus(slack).eq(0),
+        `parity_${groupIndex}`,
+      )
+    } else {
+      model.addConstraint(
+        x.times(2).minus(served).eq(0),
+        `parity_${groupIndex}`,
+      )
+    }
+
+    const op = model.intVar(
+      0,
+      Math.max(1, Math.ceil(upperBound / PROCESSING_STACK_CAPACITY)),
+      `fop_${groupIndex}`,
+    )
+    finalOperationVars.push(op)
+    model.addConstraint(
+      x.minus(op.times(PROCESSING_STACK_CAPACITY)).leq(0),
+      `fop_capacity_${groupIndex}`,
+    )
+    model.addConstraint(
+      op.minus(x).leq(0),
+      `fop_usage_${groupIndex}`,
+    )
+
+    const used = model.boolVar(`used_${groupIndex}`)
+    usedGroupVars.push(used)
+    model.addConstraint(
+      x.minus(used.times(upperBound)).leq(0),
+      `used_upper_${groupIndex}`,
+    )
+    model.addConstraint(
+      used.minus(x).leq(0),
+      `used_lower_${groupIndex}`,
+    )
+  })
+
+  model.addConstraint(
+    sum(...slackVars).eq(GLOBAL_SERVING_SLACK),
+    'global_slack',
+  )
+  model.addConstraint(
+    sum(...productionVars).eq(PRODUCTION_UNITS_FIX),
+    'production_units_fix',
+  )
+  model.addConstraint(
+    sum(...productionCostTerms).eq(PRODUCTION_COST_FIX),
+    'production_cost_fix',
+  )
+  model.addConstraint(
+    sum(...finalOperationVars).eq(30),
+    'finalizing_optimum_fix',
+  )
+
+  if (objective === 'minimum-groups') {
+    model.minimize(sum(...usedGroupVars))
+  } else {
+    model.minimize(sum(...usedGroupVars.map((variable) => variable.times(-1))))
+  }
+
+  return {
+    model,
+    groupCount: groups.length,
+    usedGroupVars,
+  }
+}
+
 async function solveBounded(
   model: Model,
   timeLimitSeconds: number,
@@ -2630,56 +2751,59 @@ async function solveBounded(
 }
 
 profileIt(
-  'proves whether the blend-35 finalizing-30 frontier can beat 107',
+  'proves the used-group count on the exact finalizing-30 frontier',
   async () => {
     const domain = canonicalDomain()
     expect(domain.recipes).toHaveLength(7892)
 
-    const buildStartedAt = performance.now()
-    const built = buildConditionalThroughCapFeasibility(
-      domain,
-      41,
-    )
-    const buildMs = performance.now() - buildStartedAt
-    const solved = await solveBoundedWithProgress(
-      built.model,
-      150,
-      {
-        mip_rel_gap: 0,
-        mip_abs_gap: 0,
-      },
-    )
+    const results: Array<{
+      objective: 'minimum-groups' | 'maximum-groups'
+      status: string
+      value: number | null
+      solveMs: number
+    }> = []
+
+    for (const objective of [
+      'minimum-groups',
+      'maximum-groups',
+    ] as const) {
+      const built = buildFinalizingOptimalGroupCountStage(
+        domain,
+        objective,
+      )
+      const startedAt = performance.now()
+      const solution = await built.model.solve()
+      const solveMs = performance.now() - startedAt
+
+      let value: number | null = null
+      if (
+        solution.status === 'optimal' &&
+        typeof solution.objective === 'number' &&
+        Number.isFinite(solution.objective)
+      ) {
+        value =
+          objective === 'minimum-groups'
+            ? Math.round(solution.objective)
+            : Math.round(-solution.objective)
+      }
+
+      results.push({
+        objective,
+        status: solution.status,
+        value,
+        solveMs: Math.round(solveMs),
+      })
+    }
 
     console.info(
-      '[machine-conditional-through-41-feasibility]',
+      '[machine-finalizing-used-group-range]',
       JSON.stringify({
-        frontier: {
-          throughLowerBound: 38,
-          throughCap: 41,
-          blending: 35,
-          finalizing: 30,
-        },
-        implication: 'feasible => <=106 exists; infeasible => optimum 107',
-        groupCount: built.groupCount,
-        customerFlowVariableCount:
-          built.customerFlowVariableCount,
-        recipeVariableCount: built.recipeVariableCount,
-        singletonSlackVariableCount:
-          built.singletonSlackVariableCount,
-        throughOperationEdgeCount:
-          built.throughOperationEdgeCount,
-        blendingOperationEdgeCount:
-          built.blendingOperationEdgeCount,
-        finalizingOperationEdgeCount:
-          built.finalizingOperationEdgeCount,
-        buildMs: Math.round(buildMs),
-        status: solved.status,
-        objective: solved.objective,
-        solveMs: Math.round(solved.solveMs),
-        progressTail: solved.progressTail,
+        finalizingOptimum: 30,
+        productionUnits: PRODUCTION_UNITS_FIX,
+        results,
       }),
     )
   },
-  180000,
+  90000,
 )
 
