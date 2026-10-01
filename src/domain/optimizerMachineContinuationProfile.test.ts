@@ -262,7 +262,7 @@ function buildPairLiftedMachineStage(
     variable: ReturnType<Model['boolVar']>,
   ) => {
     const terms = coverageByCustomerId.get(customerId)
-    if (!terms) throw new Error(\`Unknown customer \${customerId}\`)
+    if (!terms) throw new Error(`Unknown customer ${customerId}`)
     terms.push(variable)
   }
 
@@ -274,7 +274,7 @@ function buildPairLiftedMachineStage(
       group.eligibleCustomerIds.forEach(
         (customerId, customerIndex) => {
           const singleton = model.boolVar(
-            \`single_\${groupIndex}_\${customerIndex}\`,
+            `single_${groupIndex}_${customerIndex}`,
           )
           singletonVariableCount += 1
           singletonVars.push(singleton)
@@ -299,7 +299,7 @@ function buildPairLiftedMachineStage(
         rightIndex += 1
       ) {
         const pair = model.boolVar(
-          \`pair_\${groupIndex}_\${leftIndex}_\${rightIndex}\`,
+          `pair_${groupIndex}_${leftIndex}_${rightIndex}`,
         )
         pairVariableCount += 1
         allUnitVars.push(pair)
@@ -318,7 +318,7 @@ function buildPairLiftedMachineStage(
       model.addConstraint(
         sum(...(coverageByCustomerId.get(customerId) ?? []))
           .eq(1),
-        \`cover_\${customerIndex}\`,
+        `cover_${customerIndex}`,
       )
     },
   )
@@ -354,7 +354,7 @@ function buildPairLiftedMachineStage(
       const x = model.intVar(
         0,
         groupUnitUpperBound,
-        \`x_\${recipeVariableIndex}\`,
+        `x_${recipeVariableIndex}`,
       )
       recipeVariableIndex += 1
       xByRecipeId.set(recipe.candidate.id, x)
@@ -384,7 +384,7 @@ function buildPairLiftedMachineStage(
       sum(...groupRecipeVars)
         .minus(sum(...(unitVarsByGroupKey.get(group.key) ?? [])))
         .eq(0),
-      \`group_recipe_units_\${groupIndex}\`,
+      `group_recipe_units_${groupIndex}`,
     )
   })
 
@@ -415,7 +415,7 @@ function buildPairLiftedMachineStage(
               PROCESSING_STACK_CAPACITY,
           ),
         ),
-        \`op_\${edgeIndex}\`,
+        `op_${edgeIndex}`,
       )
       operationByEdgeKey.set(edgeKey, operation)
       const quantity = sum(...quantityTerms)
@@ -423,11 +423,11 @@ function buildPairLiftedMachineStage(
         quantity
           .minus(operation.times(PROCESSING_STACK_CAPACITY))
           .leq(0),
-        \`op_capacity_\${edgeIndex}\`,
+        `op_capacity_${edgeIndex}`,
       )
       model.addConstraint(
         operation.minus(quantity).leq(0),
-        \`op_usage_\${edgeIndex}\`,
+        `op_usage_${edgeIndex}`,
       )
     },
   )
