@@ -135,225 +135,6 @@ function partitionSignature(
  * 2 * productionCost - assignedCost. This makes the assigned-cost fix
  * redundant while preserving it exactly.
  */
-function buildFlowParityPartitionStage(
-  domain: BatchOptimizationModel,
-  kinds: ReadonlySet<ProductionStepKind>,
-) {
-  const groups = pairGroups(domain)
-  const model = new Model()
-  const flowByGroupKey = new Map<
-    string,
-    ReturnType<Model['numVar']>[]
-  >(groups.map((group) => [group.key, []]))
-
-  let customerFlowVariableCount = 0
-  domain.serviceableCustomerIds.forEach(
-    (customerId, customerIndex) => {
-      const customerTerms: ReturnType<Model['numVar']>[] = []
-
-      groups.forEach((group, groupIndex) => {
-        if (!group.eligibleCustomerIds.includes(customerId)) return
-
-        const y = model.numVar(
-          0,
-          1,
-          `y_${customerIndex}_${groupIndex}`,
-        )
-        customerFlowVariableCount += 1
-        customerTerms.push(y)
-        flowByGroupKey.get(group.key)!.push(y)
-      })
-
-      model.addConstraint(
-        sum(...customerTerms).eq(1),
-        `customer_${customerIndex}`,
-      )
-    },
-  )
-
-  const slackFlowVars: ReturnType<Model['numVar']>[] = []
-  if (GLOBAL_SERVING_SLACK === 1) {
-    groups.forEach((group, groupIndex) => {
-      if (group.ingredientCost !== SLACK_RECIPE_COST) return
-
-      const slack = model.numVar(
-        0,
-        1,
-        `slack_${groupIndex}`,
-      )
-      slackFlowVars.push(slack)
-      flowByGroupKey.get(group.key)!.push(slack)
-    })
-    model.addConstraint(
-      sum(...slackFlowVars).eq(1),
-      'virtual_slack_serving',
-    )
-  } else {
-    expect(GLOBAL_SERVING_SLACK).toBe(0)
-  }
-
-  const quantityTermsByEdgeKey = new Map<
-    string,
-    ReturnType<ReturnType<Model['intVar']>['times']>[]
-  >()
-  const quantityUpperBoundByEdgeKey = new Map<string, number>()
-  const productionUnitTerms: ReturnType<Model['intVar']>[] = []
-  const productionCostTerms: ReturnType<
-    ReturnType<Model['intVar']>['times']
-  >[] = []
-  let quotientVariableCount = 0
-
-  groups.forEach((group, groupIndex) => {
-    const signatures = new Map<
-      string,
-      ReturnType<typeof partitionSignature>
-    >()
-
-    for (const recipe of group.recipes) {
-      const signature = partitionSignature(recipe, kinds)
-      if (!signatures.has(signature.key)) {
-        signatures.set(signature.key, signature)
-      }
-    }
-
-    const groupUpperBound = Math.max(
-      1,
-      Math.ceil(group.eligibleCustomerIds.length / 2),
-    )
-    const quotientVars: ReturnType<Model['intVar']>[] = []
-
-    for (const signature of signatures.values()) {
-      const x = model.intVar(
-        0,
-        groupUpperBound,
-        `qx_${quotientVariableCount}`,
-      )
-      quotientVariableCount += 1
-      quotientVars.push(x)
-      productionUnitTerms.push(x)
-      productionCostTerms.push(x.times(group.ingredientCost))
-
-      for (
-        const [edgeKey, multiplicity]
-        of signature.multiplicityByEdgeKey
-      ) {
-        const terms = quantityTermsByEdgeKey.get(edgeKey)
-        const term = x.times(multiplicity)
-        if (terms) terms.push(term)
-        else quantityTermsByEdgeKey.set(edgeKey, [term])
-        quantityUpperBoundByEdgeKey.set(
-          edgeKey,
-          (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) +
-            groupUpperBound * multiplicity,
-        )
-      }
-    }
-
-    model.addConstraint(
-      sum(...(flowByGroupKey.get(group.key) ?? []))
-        .minus(sum(...quotientVars).times(2))
-        .eq(0),
-      `group_flow_${groupIndex}`,
-    )
-  })
-
-  // Redundant with total real + virtual flow, retained as a proof guard.
-  model.addConstraint(
-    sum(...productionUnitTerms).eq(PRODUCTION_UNITS_FIX),
-    'production_units_fix',
-  )
-  model.addConstraint(
-    sum(...productionCostTerms).eq(PRODUCTION_COST_FIX),
-    'production_cost_fix',
-  )
-
-  const operationVars: ReturnType<Model['intVar']>[] = []
-  const partitionOperationVars = {
-    throughSeasoning: [] as ReturnType<Model['intVar']>[],
-    blending: [] as ReturnType<Model['intVar']>[],
-    finalizing: [] as ReturnType<Model['intVar']>[],
-  }
-  ;[...quantityTermsByEdgeKey.entries()].forEach(
-    ([edgeKey, quantityTerms], edgeIndex) => {
-      const operation = model.intVar(
-        0,
-        Math.max(
-          1,
-          Math.ceil(
-            (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) /
-              PROCESSING_STACK_CAPACITY,
-          ),
-        ),
-        `op_${edgeIndex}`,
-      )
-      const quantity = sum(...quantityTerms)
-      model.addConstraint(
-        quantity
-          .minus(operation.times(PROCESSING_STACK_CAPACITY))
-          .leq(0),
-        `op_capacity_${edgeIndex}`,
-      )
-      model.addConstraint(
-        operation.minus(quantity).leq(0),
-        `op_usage_${edgeIndex}`,
-      )
-      operationVars.push(operation)
-      const kind = kindByEdgeKey.get(edgeKey)
-      if (kind === 'juicing' || kind === 'seasoning') {
-        throughOperationVars.push(operation)
-      } else if (kind === 'blending') {
-        blendingOperationVars.push(operation)
-      }
-    },
-  )
-
-  model.addConstraint(
-    sum(...throughOperationVars).geq(38),
-    'through_lower_bound',
-  )
-  model.addConstraint(
-    sum(...blendingOperationVars).geq(35),
-    'blending_lower_bound',
-  )
-  if (typeof options?.throughExact === 'number') {
-    model.addConstraint(
-      sum(...throughOperationVars).eq(options.throughExact),
-      'through_exact',
-    )
-  }
-  if (typeof options?.blendingCap === 'number') {
-    model.addConstraint(
-      sum(...blendingOperationVars).leq(options.blendingCap),
-      'blending_cap',
-    )
-  }
-  if (typeof options?.totalCap === 'number') {
-    model.addConstraint(
-      sum(...operationVars).leq(options.totalCap),
-      'nonfinal_total_cap',
-    )
-  }
-  if (
-    typeof options?.totalCap === 'number' ||
-    typeof options?.throughExact === 'number' ||
-    typeof options?.blendingCap === 'number'
-  ) {
-    model.minimize(sum(...productionUnitTerms))
-  } else {
-    model.minimize(sum(...operationVars))
-  }
-
-  return {
-    model,
-    groupCount: groups.length,
-    customerFlowVariableCount,
-    slackFlowVariableCount: slackFlowVars.length,
-    quotientVariableCount,
-    operationEdgeCount: operationVars.length,
-  }
-}
-
-
 function buildFullMachineCapFeasibility(
   domain: BatchOptimizationModel,
   totalCap: number,
@@ -737,7 +518,22 @@ function buildPartitionOptimalPairStage(
         `op_usage_${edgeIndex}`,
       )
       operationVars.push(operation)
+      const kind = kindByEdgeKey.get(edgeKey)
+      if (kind === 'juicing' || kind === 'seasoning') {
+        throughOperationVars.push(operation)
+      } else if (kind === 'blending') {
+        blendingOperationVars.push(operation)
+      }
     },
+  )
+
+  model.addConstraint(
+    sum(...throughOperationVars).geq(38),
+    'through_lower_bound',
+  )
+  model.addConstraint(
+    sum(...blendingOperationVars).geq(35),
+    'blending_lower_bound',
   )
 
   model.minimize(sum(...operationVars))
@@ -807,6 +603,8 @@ function buildFixedGroupFullMachineStage(
   }
 
   const operationVars: ReturnType<Model['intVar']>[] = []
+  const throughOperationVars: ReturnType<Model['intVar']>[] = []
+  const blendingOperationVars: ReturnType<Model['intVar']>[] = []
   ;[...quantityTermsByEdgeKey.entries()].forEach(
     ([edgeKey, terms], edgeIndex) => {
       const operation = model.intVar(
