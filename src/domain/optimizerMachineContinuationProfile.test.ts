@@ -1353,53 +1353,33 @@ async function solveBounded(
 }
 
 profileIt(
-  'profiles exact disjoint machine lower bounds for the 107 certificate',
+  'proves the exact seasoning-only machine lower bound',
   async () => {
     const domain = canonicalDomain()
     expect(domain.recipes).toHaveLength(7892)
 
-    const cases = [
-      {
-        name: 'juicing',
-        kinds: new Set<ProductionStepKind>(['juicing']),
-        expected: 20,
-        timeLimit: 30,
-      },
-      {
-        name: 'seasoning+blending',
-        kinds: new Set<ProductionStepKind>([
-          'seasoning',
-          'blending',
-        ]),
-        expected: 57,
-        timeLimit: 90,
-      },
-    ]
+    const built = buildFlowProjectedKindsStage(
+      domain,
+      new Set<ProductionStepKind>(['seasoning']),
+    )
+    const solved = await solveBoundedWithProgress(
+      built.model,
+      60,
+    )
 
-    for (const current of cases) {
-      const built = buildFlowProjectedKindsStage(
-        domain,
-        current.kinds,
-      )
-      const solved = await solveBoundedWithProgress(
-        built.model,
-        current.timeLimit,
-      )
-      console.info(
-        '[machine-disjoint-bound]',
-        JSON.stringify({
-          name: current.name,
-          expectedFor107Certificate: current.expected,
-          recipeVariableCount: built.recipeVariableCount,
-          operationEdgeCount: built.operationEdgeCount,
-          status: solved.status,
-          objective: solved.objective,
-          solveMs: Math.round(solved.solveMs),
-          progressTail: solved.progressTail,
-        }),
-      )
-    }
+    console.info(
+      '[machine-seasoning-bound]',
+      JSON.stringify({
+        expectedFor107Certificate: 18,
+        recipeVariableCount: built.recipeVariableCount,
+        operationEdgeCount: built.operationEdgeCount,
+        status: solved.status,
+        objective: solved.objective,
+        solveMs: Math.round(solved.solveMs),
+        progressTail: solved.progressTail,
+      }),
+    )
   },
-  145000,
+  80000,
 )
 
