@@ -1112,6 +1112,168 @@ function exactDominatedRecipeIds(
 }
 
 
+
+function buildFlowProjectedKindsStage(
+  domain: BatchOptimizationModel,
+  kinds: ReadonlySet<ProductionStepKind>,
+) {
+  const groups = pairGroups(domain)
+  const model = new Model()
+  const flowByGroupKey = new Map<
+    string,
+    ReturnType<Model['numVar']>[]
+  >(groups.map((group) => [group.key, []]))
+
+  domain.serviceableCustomerIds.forEach(
+    (customerId, customerIndex) => {
+      const customerTerms: ReturnType<Model['numVar']>[] = []
+      groups.forEach((group, groupIndex) => {
+        if (!group.eligibleCustomerIds.includes(customerId)) return
+        const y = model.numVar(
+          0,
+          1,
+          `y_${customerIndex}_${groupIndex}`,
+        )
+        customerTerms.push(y)
+        flowByGroupKey.get(group.key)!.push(y)
+      })
+      model.addConstraint(
+        sum(...customerTerms).eq(1),
+        `customer_${customerIndex}`,
+      )
+    },
+  )
+
+  const productionUnitTerms: ReturnType<Model['intVar']>[] = []
+  const productionCostTerms: ReturnType<
+    ReturnType<Model['intVar']>['times']
+  >[] = []
+  const singletonSlackVars: ReturnType<Model['boolVar']>[] = []
+  const quantityTermsByEdgeKey = new Map<
+    string,
+    ReturnType<ReturnType<Model['intVar']>['times']>[]
+  >()
+  const quantityUpperBoundByEdgeKey = new Map<string, number>()
+  let recipeVariableCount = 0
+
+  groups.forEach((group, groupIndex) => {
+    const groupUpperBound = Math.max(
+      1,
+      Math.ceil(group.eligibleCustomerIds.length / 2),
+    )
+    const groupRecipeVars: ReturnType<Model['intVar']>[] = []
+
+    for (const recipe of group.recipes) {
+      const x = model.intVar(
+        0,
+        groupUpperBound,
+        `x_${recipeVariableCount}`,
+      )
+      recipeVariableCount += 1
+      groupRecipeVars.push(x)
+      productionUnitTerms.push(x)
+      productionCostTerms.push(
+        x.times(recipe.juiceUnitIngredientCost),
+      )
+
+      const multiplicityByEdgeKey = new Map<string, number>()
+      for (const edge of recipe.productionPath.edges) {
+        if (!kinds.has(edge.kind)) continue
+        multiplicityByEdgeKey.set(
+          edge.key,
+          (multiplicityByEdgeKey.get(edge.key) ?? 0) + 1,
+        )
+      }
+      for (const [edgeKey, multiplicity] of multiplicityByEdgeKey) {
+        const terms = quantityTermsByEdgeKey.get(edgeKey)
+        const term = x.times(multiplicity)
+        if (terms) terms.push(term)
+        else quantityTermsByEdgeKey.set(edgeKey, [term])
+        quantityUpperBoundByEdgeKey.set(
+          edgeKey,
+          Math.min(
+            PRODUCTION_UNITS_FIX * multiplicity,
+            (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) +
+              groupUpperBound * multiplicity,
+          ),
+        )
+      }
+    }
+
+    const groupProductionUnits = sum(...groupRecipeVars)
+    const servedFlow = sum(...(flowByGroupKey.get(group.key) ?? []))
+    if (group.ingredientCost === SLACK_RECIPE_COST) {
+      const slack = model.boolVar(`slack_${groupIndex}`)
+      singletonSlackVars.push(slack)
+      model.addConstraint(
+        groupProductionUnits
+          .times(2)
+          .minus(servedFlow)
+          .minus(slack)
+          .eq(0),
+        `parity_${groupIndex}`,
+      )
+    } else {
+      model.addConstraint(
+        groupProductionUnits
+          .times(2)
+          .minus(servedFlow)
+          .eq(0),
+        `parity_${groupIndex}`,
+      )
+    }
+  })
+
+  model.addConstraint(
+    sum(...singletonSlackVars).eq(GLOBAL_SERVING_SLACK),
+    'global_slack',
+  )
+  model.addConstraint(
+    sum(...productionUnitTerms).eq(PRODUCTION_UNITS_FIX),
+    'production_units_fix',
+  )
+  model.addConstraint(
+    sum(...productionCostTerms).eq(PRODUCTION_COST_FIX),
+    'production_cost_fix',
+  )
+
+  const operationVars: ReturnType<Model['intVar']>[] = []
+  ;[...quantityTermsByEdgeKey.entries()].forEach(
+    ([edgeKey, terms], edgeIndex) => {
+      const operation = model.intVar(
+        0,
+        Math.max(
+          1,
+          Math.ceil(
+            (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) /
+              PROCESSING_STACK_CAPACITY,
+          ),
+        ),
+        `op_${edgeIndex}`,
+      )
+      const quantity = sum(...terms)
+      model.addConstraint(
+        quantity
+          .minus(operation.times(PROCESSING_STACK_CAPACITY))
+          .leq(0),
+        `op_capacity_${edgeIndex}`,
+      )
+      model.addConstraint(
+        operation.minus(quantity).leq(0),
+        `op_usage_${edgeIndex}`,
+      )
+      operationVars.push(operation)
+    },
+  )
+
+  model.minimize(sum(...operationVars))
+  return {
+    model,
+    recipeVariableCount,
+    operationEdgeCount: operationVars.length,
+  }
+}
+
 async function solveBoundedWithProgress(
   model: Model,
   timeLimitSeconds: number,
@@ -1191,36 +1353,53 @@ async function solveBounded(
 }
 
 profileIt(
-  'captures the strengthened exact non-final dual bound',
+  'profiles exact disjoint machine lower bounds for the 107 certificate',
   async () => {
     const domain = canonicalDomain()
     expect(domain.recipes).toHaveLength(7892)
 
-    const built = buildFlowProjectedNonfinalStage(
-      domain,
-      { totalCap: 77 },
-    )
-    const solved = await solveBoundedWithProgress(
-      built.model,
-      60,
-    )
+    const cases = [
+      {
+        name: 'juicing',
+        kinds: new Set<ProductionStepKind>(['juicing']),
+        expected: 20,
+        timeLimit: 30,
+      },
+      {
+        name: 'seasoning+blending',
+        kinds: new Set<ProductionStepKind>([
+          'seasoning',
+          'blending',
+        ]),
+        expected: 57,
+        timeLimit: 90,
+      },
+    ]
 
-    console.info(
-      '[machine-strengthened-nonfinal-progress]',
-      JSON.stringify({
-        status: solved.status,
-        objective: solved.objective,
-        solveMs: Math.round(solved.solveMs),
-        exactPartitionLowerBounds: {
-          throughSeasoning: 38,
-          blending: 35,
-          total: 73,
-        },
-        knownNonfinalWitness: 77,
-        progressTail: solved.progressTail,
-      }),
-    )
+    for (const current of cases) {
+      const built = buildFlowProjectedKindsStage(
+        domain,
+        current.kinds,
+      )
+      const solved = await solveBoundedWithProgress(
+        built.model,
+        current.timeLimit,
+      )
+      console.info(
+        '[machine-disjoint-bound]',
+        JSON.stringify({
+          name: current.name,
+          expectedFor107Certificate: current.expected,
+          recipeVariableCount: built.recipeVariableCount,
+          operationEdgeCount: built.operationEdgeCount,
+          status: solved.status,
+          objective: solved.objective,
+          solveMs: Math.round(solved.solveMs),
+          progressTail: solved.progressTail,
+        }),
+      )
+    }
   },
-  80000,
+  145000,
 )
 
