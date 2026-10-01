@@ -28,3 +28,16 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run smoke:highs:pages-like
+
+
+  machine-continuation-profile:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Run isolated machine continuation profiler
+        run: MACHINE_CONTINUATION_PROFILE=1 npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
