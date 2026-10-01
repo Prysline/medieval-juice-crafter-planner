@@ -10569,6 +10569,215 @@ function exact311SupportArithmeticReachability(
   }
 }
 
+function exact311MaskCapacityReachability(
+  groups: readonly PairGroup[],
+  fixedExtra3GroupIndex: number,
+): {
+  reachable: boolean
+  fixedMaskSize: number
+  sameMaskGroupCount: number
+  maskCount: number
+} {
+  const fixedGroup = groups[fixedExtra3GroupIndex]
+  if (!fixedGroup || fixedGroup.eligibleCustomerIds.length < 8) {
+    return {
+      reachable: false,
+      fixedMaskSize: fixedGroup?.eligibleCustomerIds.length ?? 0,
+      sameMaskGroupCount: 0,
+      maskCount: 0,
+    }
+  }
+
+  const maskKeyForGroup = (group: PairGroup) =>
+    group.eligibleCustomerIds.join('\u001e')
+  const groupIndexesByMask = new Map<string, number[]>()
+  groups.forEach((group, groupIndex) => {
+    const key = maskKeyForGroup(group)
+    const indexes = groupIndexesByMask.get(key)
+    if (indexes) indexes.push(groupIndex)
+    else groupIndexesByMask.set(key, [groupIndex])
+  })
+
+  type LocalOption = {
+    selectedCount: number
+    extraOneCount: number
+    slackCount: number
+    productionCost: number
+    capacity: number
+  }
+
+  const localOptionsByMask: LocalOption[][] = []
+  for (const groupIndexes of groupIndexesByMask.values()) {
+    const maskSize = groups[groupIndexes[0]].eligibleCustomerIds.length
+    let local = new Map<string, LocalOption>([
+      [
+        '0|0|0|0|0',
+        {
+          selectedCount: 0,
+          extraOneCount: 0,
+          slackCount: 0,
+          productionCost: 0,
+          capacity: 0,
+        },
+      ],
+    ])
+
+    for (const groupIndex of groupIndexes) {
+      const group = groups[groupIndex]
+      const roleOptions: LocalOption[] =
+        groupIndex === fixedExtra3GroupIndex
+          ? [{
+              selectedCount: 1,
+              extraOneCount: 0,
+              slackCount: 0,
+              productionCost: group.ingredientCost * 4,
+              capacity: 8,
+            }]
+          : [
+              {
+                selectedCount: 0,
+                extraOneCount: 0,
+                slackCount: 0,
+                productionCost: 0,
+                capacity: 0,
+              },
+              ...(group.eligibleCustomerIds.length >= 2
+                ? [{
+                    selectedCount: 1,
+                    extraOneCount: 0,
+                    slackCount: 0,
+                    productionCost: group.ingredientCost,
+                    capacity: 2,
+                  }]
+                : []),
+              ...(group.eligibleCustomerIds.length >= 4
+                ? [{
+                    selectedCount: 1,
+                    extraOneCount: 1,
+                    slackCount: 0,
+                    productionCost: group.ingredientCost * 2,
+                    capacity: 4,
+                  }]
+                : []),
+              ...(group.ingredientCost === SLACK_RECIPE_COST
+                ? [{
+                    selectedCount: 1,
+                    extraOneCount: 0,
+                    slackCount: 1,
+                    productionCost: group.ingredientCost,
+                    capacity: 1,
+                  }]
+                : []),
+            ]
+
+      const next = new Map<string, LocalOption>()
+      for (const existing of local.values()) {
+        for (const role of roleOptions) {
+          const candidate: LocalOption = {
+            selectedCount:
+              existing.selectedCount + role.selectedCount,
+            extraOneCount:
+              existing.extraOneCount + role.extraOneCount,
+            slackCount:
+              existing.slackCount + role.slackCount,
+            productionCost:
+              existing.productionCost + role.productionCost,
+            capacity: existing.capacity + role.capacity,
+          }
+          if (
+            candidate.selectedCount > 30 ||
+            candidate.extraOneCount > 2 ||
+            candidate.slackCount > 1 ||
+            candidate.productionCost > PRODUCTION_COST_FIX ||
+            candidate.capacity > maskSize
+          ) {
+            continue
+          }
+          const key =
+            `${candidate.selectedCount}|${candidate.extraOneCount}|${candidate.slackCount}|${candidate.productionCost}|${candidate.capacity}`
+          next.set(key, candidate)
+        }
+      }
+      local = next
+      if (local.size === 0) break
+    }
+    if (local.size === 0) {
+      return {
+        reachable: false,
+        fixedMaskSize: fixedGroup.eligibleCustomerIds.length,
+        sameMaskGroupCount:
+          groupIndexesByMask.get(maskKeyForGroup(fixedGroup))?.length ?? 0,
+        maskCount: groupIndexesByMask.size,
+      }
+    }
+    localOptionsByMask.push([...local.values()])
+  }
+
+  const stateIndex = (
+    selectedCount: number,
+    extraOneCount: number,
+    slackCount: number,
+  ) => (selectedCount * 3 + extraOneCount) * 2 + slackCount
+  const stateSize = 31 * 3 * 2
+  const costMask =
+    (1n << BigInt(PRODUCTION_COST_FIX + 1)) - 1n
+  let states = Array<bigint>(stateSize).fill(0n)
+  states[stateIndex(0, 0, 0)] = 1n
+
+  for (const localOptions of localOptionsByMask) {
+    const next = Array<bigint>(stateSize).fill(0n)
+    for (let selectedCount = 0; selectedCount <= 30; selectedCount += 1) {
+      for (let extraOneCount = 0; extraOneCount <= 2; extraOneCount += 1) {
+        for (let slackCount = 0; slackCount <= 1; slackCount += 1) {
+          const source =
+            states[stateIndex(
+              selectedCount,
+              extraOneCount,
+              slackCount,
+            )]
+          if (source === 0n) continue
+          for (const option of localOptions) {
+            const nextSelected =
+              selectedCount + option.selectedCount
+            const nextExtraOne =
+              extraOneCount + option.extraOneCount
+            const nextSlack = slackCount + option.slackCount
+            if (
+              nextSelected > 30 ||
+              nextExtraOne > 2 ||
+              nextSlack > 1
+            ) {
+              continue
+            }
+            const shifted =
+              (source << BigInt(option.productionCost)) & costMask
+            if (shifted === 0n) continue
+            next[
+              stateIndex(
+                nextSelected,
+                nextExtraOne,
+                nextSlack,
+              )
+            ] |= shifted
+          }
+        }
+      }
+    }
+    states = next
+  }
+
+  const terminal = states[stateIndex(30, 2, 1)]
+  const targetBit = 1n << BigInt(PRODUCTION_COST_FIX)
+  const fixedMaskKey = maskKeyForGroup(fixedGroup)
+  return {
+    reachable: (terminal & targetBit) !== 0n,
+    fixedMaskSize: fixedGroup.eligibleCustomerIds.length,
+    sameMaskGroupCount:
+      groupIndexesByMask.get(fixedMaskKey)?.length ?? 0,
+    maskCount: groupIndexesByMask.size,
+  }
+}
+
 supportDpProfileIt(
   'counts exact 3+1+1 support roles before customer-flow validation',
   () => {
@@ -10611,6 +10820,11 @@ supportDpProfileIt(
         }
         cache.set(cacheKey, counted)
       }
+      const maskStartedAt = performance.now()
+      const maskCapacity = exact311MaskCapacityReachability(
+        groups,
+        groupIndex,
+      )
       return {
         groupIndex,
         groupCost: group.ingredientCost,
@@ -10618,6 +10832,11 @@ supportDpProfileIt(
         eligibleCustomers: group.eligibleCustomerIds.length,
         fixedCapacityFeasible,
         ...counted,
+        maskCapacityReachable: maskCapacity.reachable,
+        fixedMaskSize: maskCapacity.fixedMaskSize,
+        sameMaskGroupCount: maskCapacity.sameMaskGroupCount,
+        maskCount: maskCapacity.maskCount,
+        maskSolveMs: Math.round(performance.now() - maskStartedAt),
       }
     })
     console.info(
@@ -10629,7 +10848,7 @@ supportDpProfileIt(
     )
 
     expect(
-      results.every((result) => !result.reachable),
+      results.every((result) => !result.maskCapacityReachable),
     ).toBe(true)
   },
   120000,
