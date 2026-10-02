@@ -7435,11 +7435,13 @@ patriciaShardProfileIt(
     const tiffanyCandidates = candidatesForCustomer('tiffany')
     const solomonCandidates = candidatesForCustomer('solomon')
     const dominicCandidates = candidatesForCustomer('dominic')
+    const heloiseCandidates = candidatesForCustomer('heloise')
     expect(hugoCandidates.length).toBe(5)
     expect(patriciaCandidates.length).toBe(6)
     expect(tiffanyCandidates.length).toBe(7)
     expect(solomonCandidates.length).toBe(8)
     expect(dominicCandidates.length).toBe(8)
+    expect(heloiseCandidates.length).toBe(8)
 
     const requestedBaseBranches =
       (
@@ -7756,7 +7758,98 @@ patriciaShardProfileIt(
         unresolved: unresolvedDominic,
       }),
     )
-    expect(unresolvedDominic).toEqual([])
+
+    const heloiseResults = []
+    for (const parent of unresolvedDominic) {
+      const branch = baseBranches[parent.branchIndex]
+      const hugoChoice = hugoCandidates[parent.hugoChoiceIndex]
+      const patriciaChoice =
+        patriciaCandidates[parent.patriciaChoiceIndex]
+      const tiffanyChoice =
+        tiffanyCandidates[parent.tiffanyChoiceIndex]
+      const solomonChoice =
+        solomonCandidates[parent.solomonChoiceIndex]
+      const dominicChoice =
+        dominicCandidates[parent.dominicChoiceIndex]
+      for (
+        let heloiseChoiceIndex = 0;
+        heloiseChoiceIndex < heloiseCandidates.length;
+        heloiseChoiceIndex += 1
+      ) {
+        const heloiseChoice =
+          heloiseCandidates[heloiseChoiceIndex]
+        const built = build311ExtraCostSumSupportMaster(
+          domain,
+          groupIndex,
+          undefined,
+          {
+            includeCustomerFlow: true,
+            forcedCustomerIds:
+              groups[groupIndex].eligibleCustomerIds,
+            requiredUsedGroupIndexes: [
+              ...branch.requiredUsedGroupIndexes,
+              hugoChoice.groupIndex,
+              patriciaChoice.groupIndex,
+              tiffanyChoice.groupIndex,
+              solomonChoice.groupIndex,
+              dominicChoice.groupIndex,
+              heloiseChoice.groupIndex,
+            ],
+            requiredSlackGroupIndexes: [
+              ...branch.requiredSlackGroupIndexes,
+              ...(hugoChoice.slackOnly
+                ? [hugoChoice.groupIndex]
+                : []),
+              ...(patriciaChoice.slackOnly
+                ? [patriciaChoice.groupIndex]
+                : []),
+              ...(tiffanyChoice.slackOnly
+                ? [tiffanyChoice.groupIndex]
+                : []),
+              ...(solomonChoice.slackOnly
+                ? [solomonChoice.groupIndex]
+                : []),
+              ...(dominicChoice.slackOnly
+                ? [dominicChoice.groupIndex]
+                : []),
+              ...(heloiseChoice.slackOnly
+                ? [heloiseChoice.groupIndex]
+                : []),
+            ],
+          },
+        )
+        const solved = await solveBounded(built.model, 0.5)
+        heloiseResults.push({
+          branchIndex: parent.branchIndex,
+          hugoChoiceIndex: parent.hugoChoiceIndex,
+          patriciaChoiceIndex: parent.patriciaChoiceIndex,
+          tiffanyChoiceIndex: parent.tiffanyChoiceIndex,
+          solomonChoiceIndex: parent.solomonChoiceIndex,
+          dominicChoiceIndex: parent.dominicChoiceIndex,
+          heloiseChoiceIndex,
+          heloiseGroupIndex: heloiseChoice.groupIndex,
+          status: solved.status,
+          solveMs: Math.round(solved.solveMs),
+        })
+      }
+    }
+
+    const unresolvedHeloise = heloiseResults.filter(
+      (entry) => entry.status !== 'infeasible',
+    )
+    console.info(
+      '[machine-1279-heloise-shard-summary]',
+      JSON.stringify({
+        requestedBaseBranches,
+        parentBranches: unresolvedDominic.length,
+        totalBranches: heloiseResults.length,
+        infeasibleCount:
+          heloiseResults.length - unresolvedHeloise.length,
+        unresolvedCount: unresolvedHeloise.length,
+        unresolved: unresolvedHeloise,
+      }),
+    )
+    expect(unresolvedHeloise).toEqual([])
   },
   120000,
 )
