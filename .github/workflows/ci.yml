@@ -29,21 +29,29 @@ jobs:
       - run: npm run build
       - run: npm run smoke:highs:pages-like
 
-  machine-forced-role-307:
+  machine-forced-cost-role-307:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        branch: ['21', '26', '27', '32', '33', '38', '39', '44', '45', '50']
+        include:
+          - shard: required-next
+            cases: '20:0:required'
+            skip-sums: '98'
+          - shard: forbidden-next
+            cases: '20:0:forbidden'
+            skip-sums: '101'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Split remaining identity 307 branch by roles and slack
+      - name: Find next identity 307 branch 20 role-zero bucket
         env:
-          MACHINE_CONTINUATION_FORCED_ROLE_GROUP: '307'
-          MACHINE_CONTINUATION_FORCED_ROLE_BRANCHES: ${{ matrix.branch }}
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '307'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: ${{ matrix.cases }}
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SKIP_SUMS: ${{ matrix.skip-sums }}
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_IDENTITIES: '1'
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
