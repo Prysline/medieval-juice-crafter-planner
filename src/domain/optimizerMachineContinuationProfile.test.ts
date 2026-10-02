@@ -7590,6 +7590,15 @@ forcedCostRoleProfileIt(
         .filter(Boolean)
         .map((value) => Number(value))
         .filter((value) => Number.isFinite(value))
+      const skippedCostSums = (
+        machineContinuationEnv.MACHINE_CONTINUATION_FORCED_COST_ROLE_SKIP_SUMS ??
+        ''
+      )
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value))
       const requestedFirstIdentityGroupIndexes = (
         machineContinuationEnv.MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES ??
         ''
@@ -7599,12 +7608,15 @@ forcedCostRoleProfileIt(
         .filter(Boolean)
         .map((value) => Number(value))
         .filter((value) => Number.isInteger(value) && value >= 0)
+      const eligibleCostSums = sortedCostSums.filter(
+        (value) => !skippedCostSums.includes(value),
+      )
       const selectedCostSums =
         requestedCostSums.length > 0
-          ? sortedCostSums.filter((value) =>
+          ? eligibleCostSums.filter((value) =>
               requestedCostSums.includes(value),
             )
-          : sortedCostSums
+          : eligibleCostSums
       if (requestedCostSums.length > 0) {
         expect(selectedCostSums.length).toBe(
           new Set(requestedCostSums).size,
