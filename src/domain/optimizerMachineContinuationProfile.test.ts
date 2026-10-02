@@ -97,6 +97,11 @@ const forcedDeepProfileIt =
     ? it
     : it.skip
 
+const forcedSlackProfileIt =
+  Boolean(machineContinuationEnv.MACHINE_CONTINUATION_FORCED_SLACK_GROUP)
+    ? it
+    : it.skip
+
 const singleSupportMasterProfileIt =
   Boolean(machineContinuationEnv.MACHINE_CONTINUATION_SINGLE_MASTER_GROUPS)
     ? it
@@ -6931,6 +6936,7 @@ function build311ExtraCostSumSupportMaster(
     forcedCustomerIds?: readonly string[]
     requiredUsedGroupIndexes?: readonly number[]
     requiredSlackGroupIndexes?: readonly number[]
+    forbiddenSlackGroupIndexes?: readonly number[]
   } = {},
 ) {
   const supportCuts = options.supportCuts ?? []
@@ -6941,6 +6947,8 @@ function build311ExtraCostSumSupportMaster(
     options.requiredUsedGroupIndexes ?? []
   const requiredSlackGroupIndexes =
     options.requiredSlackGroupIndexes ?? []
+  const forbiddenSlackGroupIndexes =
+    options.forbiddenSlackGroupIndexes ?? []
   const groups = pairGroups(domain)
   const model = new Model()
   const effectiveEligibleCustomerIds = groups.map((group, groupIndex) =>
@@ -7129,6 +7137,14 @@ function build311ExtraCostSumSupportMaster(
       `s31s_required_slack_${index}`,
     )
   })
+  forbiddenSlackGroupIndexes.forEach((groupIndex, index) => {
+    const slack = slackByGroupIndex.get(groupIndex)
+    if (!slack) return
+    model.addConstraint(
+      slack.eq(0),
+      `s31s_forbidden_slack_${index}`,
+    )
+  })
 
   model.addConstraint(
     sum(...usedGroupVars).eq(30),
@@ -7231,6 +7247,149 @@ function build311ExtraCostSumSupportMaster(
   return { model, groups }
 }
 
+
+forcedSlackProfileIt(
+  'splits selected forced-customer branches by cost-43 slack identity',
+  async () => {
+    const domain = canonicalDomain()
+    const groups = pairGroups(domain)
+    const groupIndex = Number(
+      machineContinuationEnv.MACHINE_CONTINUATION_FORCED_SLACK_GROUP,
+    )
+    const slackGroupIndex = Number(
+      machineContinuationEnv.MACHINE_CONTINUATION_FORCED_SLACK_IDENTITY,
+    )
+    expect(Number.isInteger(groupIndex)).toBe(true)
+    expect(Number.isInteger(slackGroupIndex)).toBe(true)
+    expect(groups[groupIndex].eligibleCustomerIds.length).toBe(8)
+    expect(groups[slackGroupIndex].ingredientCost).toBe(SLACK_RECIPE_COST)
+
+    const fixedCustomers = new Set(
+      groups[groupIndex].eligibleCustomerIds,
+    )
+    const residualCustomerIds =
+      domain.serviceableCustomerIds.filter(
+        (customerId) => !fixedCustomers.has(customerId),
+      )
+    const candidatesForCustomer = (customerId: string) =>
+      groups.flatMap((group, candidateGroupIndex) => {
+        if (candidateGroupIndex === groupIndex) return []
+        const residualEligible = group.eligibleCustomerIds.filter(
+          (eligibleCustomerId) =>
+            !fixedCustomers.has(eligibleCustomerId),
+        )
+        if (!residualEligible.includes(customerId)) return []
+        const normal = residualEligible.length >= 2
+        const slack =
+          group.ingredientCost === SLACK_RECIPE_COST &&
+          residualEligible.length >= 1
+        return normal || slack
+          ? [{
+              groupIndex: candidateGroupIndex,
+              slackOnly: !normal && slack,
+            }]
+          : []
+      })
+    const branchCustomers = residualCustomerIds.flatMap(
+      (customerId) => {
+        const candidates = candidatesForCustomer(customerId)
+        return candidates.length <= 3
+          ? [{ customerId, candidates }]
+          : []
+      },
+    )
+    let branches: Array<{
+      requiredUsedGroupIndexes: number[]
+      requiredSlackGroupIndexes: number[]
+    }> = [{
+      requiredUsedGroupIndexes: [],
+      requiredSlackGroupIndexes: [],
+    }]
+    for (const branchCustomer of branchCustomers) {
+      branches = branches.flatMap((branch) =>
+        branchCustomer.candidates.map((candidate) => ({
+          requiredUsedGroupIndexes: [
+            ...branch.requiredUsedGroupIndexes,
+            candidate.groupIndex,
+          ],
+          requiredSlackGroupIndexes: candidate.slackOnly
+            ? [...branch.requiredSlackGroupIndexes, candidate.groupIndex]
+            : branch.requiredSlackGroupIndexes,
+        })),
+      )
+    }
+
+    const requestedBranches =
+      (
+        machineContinuationEnv.MACHINE_CONTINUATION_FORCED_SLACK_BRANCHES ??
+        ''
+      )
+        .split(',')
+        .map((value) => Number(value.trim()))
+        .filter(
+          (value) =>
+            Number.isInteger(value) &&
+            value >= 0 &&
+            value < branches.length,
+        )
+    expect(requestedBranches.length).toBeGreaterThan(0)
+
+    const results = []
+    for (const branchIndex of requestedBranches) {
+      const branch = branches[branchIndex]
+      for (const slackCase of ['required', 'forbidden'] as const) {
+        const built = build311ExtraCostSumSupportMaster(
+          domain,
+          groupIndex,
+          undefined,
+          {
+            includeCustomerFlow: true,
+            forcedCustomerIds:
+              groups[groupIndex].eligibleCustomerIds,
+            requiredUsedGroupIndexes:
+              branch.requiredUsedGroupIndexes,
+            requiredSlackGroupIndexes:
+              slackCase === 'required'
+                ? [
+                    ...branch.requiredSlackGroupIndexes,
+                    slackGroupIndex,
+                  ]
+                : branch.requiredSlackGroupIndexes,
+            forbiddenSlackGroupIndexes:
+              slackCase === 'forbidden'
+                ? [slackGroupIndex]
+                : [],
+          },
+        )
+        const solved = await solveBounded(built.model, 0.5)
+        results.push({
+          branchIndex,
+          slackCase,
+          status: solved.status,
+          solveMs: Math.round(solved.solveMs),
+        })
+      }
+    }
+
+    const unresolved = results.filter(
+      (entry) => entry.status !== 'infeasible',
+    )
+    console.info(
+      '[machine-forced-slack-split-summary]',
+      JSON.stringify({
+        groupIndex,
+        slackGroupIndex,
+        requestedBranches,
+        totalCases: results.length,
+        infeasibleCount: results.length - unresolved.length,
+        unresolvedCount: unresolved.length,
+        unresolved,
+      }),
+    )
+    expect(unresolved).toEqual([])
+  },
+  120000,
+)
 
 forcedDeepProfileIt(
   'refines selected forced-customer base branches by next sparse customer',
