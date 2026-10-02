@@ -31,8 +31,24 @@ jobs:
 
   machine-forced-cost-role-666:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-cost-role-666
+    name: machine-forced-cost-role-666 (${{ matrix.shard }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: a
+            cases: '20:1:forbidden;20:2:required;20:2:forbidden;21:1:required'
+          - shard: b
+            cases: '21:1:forbidden;21:2:required;21:2:forbidden;26:1:required'
+          - shard: c
+            cases: '26:1:forbidden;26:2:required;26:2:forbidden;27:1:required'
+          - shard: d
+            cases: '27:1:forbidden;27:2:required;27:2:forbidden;32:1:required'
+          - shard: e
+            cases: '32:1:forbidden;32:2:required;32:2:forbidden;33:1:required'
+          - shard: f
+            cases: '33:1:forbidden;33:2:forbidden'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -42,5 +58,5 @@ jobs:
       - name: Split forced identity 666 by exact extra-one cost
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '666'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '3:2:forbidden'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: ${{ matrix.cases }}
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
