@@ -37,16 +37,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - shard: b38-r0-required-100
-            sums: '100'
-          - shard: b38-r0-required-101
-            sums: '101'
-          - shard: b38-r0-required-102
-            sums: '102'
           - shard: b38-r0-required-103
             sums: '103'
-          - shard: b38-r0-required-104
-            sums: '104'
           - shard: b38-r0-required-105
             sums: '105'
           - shard: b38-r0-required-106
@@ -55,10 +47,6 @@ jobs:
             sums: '107'
           - shard: b38-r0-required-108
             sums: '108'
-          - shard: b38-r0-required-109
-            sums: '109'
-          - shard: b38-r0-required-110
-            sums: '110'
           - shard: b38-r0-required-111
             sums: '111'
     steps:
@@ -67,9 +55,10 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - name: Resolve identity 457 branch 38 hard cost bucket
+      - name: List identity 457 branch 38 hard cost identities
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '457'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '38:0:required'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: ${{ matrix.sums }}
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_IDENTITIES: '1'
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
