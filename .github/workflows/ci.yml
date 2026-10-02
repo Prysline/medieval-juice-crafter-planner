@@ -31,34 +31,19 @@ jobs:
 
   machine-forced-cost-role-457:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-cost-role-457 (${{ matrix.shard }})
+    name: machine-forced-cost-role-457 (b38-r0-required-103-c41)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - shard: b38-r0-required-103
-            sums: '103'
-          - shard: b38-r0-required-105
-            sums: '105'
-          - shard: b38-r0-required-106
-            sums: '106'
-          - shard: b38-r0-required-107
-            sums: '107'
-          - shard: b38-r0-required-108
-            sums: '108'
-          - shard: b38-r0-required-111
-            sums: '111'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: List identity 457 branch 38 hard cost identities
+      - name: Resolve identity 457 branch 38 sum 103 first-cost 41
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '457'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '38:0:required'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: ${{ matrix.sums }}
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_IDENTITIES: '1'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '103'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_COSTS: '41'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
