@@ -7882,7 +7882,85 @@ forcedDeepProfileIt(
         unresolved: unresolvedSecond,
       }),
     )
-    expect(unresolvedSecond).toEqual([])
+
+    const thirdSparse = nextSparseCustomers[2]
+    expect(thirdSparse).toBeDefined()
+    if (!thirdSparse) return
+    const thirdResults = []
+    for (const parent of unresolvedSecond) {
+      const branch = branches[parent.branchIndex]
+      const firstChoice =
+        nextSparse.candidates[parent.firstChoiceIndex]
+      const secondChoice =
+        secondSparse.candidates[parent.secondChoiceIndex]
+      for (
+        let thirdChoiceIndex = 0;
+        thirdChoiceIndex < thirdSparse.candidates.length;
+        thirdChoiceIndex += 1
+      ) {
+        const thirdChoice =
+          thirdSparse.candidates[thirdChoiceIndex]
+        const built = build311ExtraCostSumSupportMaster(
+          domain,
+          groupIndex,
+          undefined,
+          {
+            includeCustomerFlow: true,
+            forcedCustomerIds:
+              groups[groupIndex].eligibleCustomerIds,
+            requiredUsedGroupIndexes: [
+              ...branch.requiredUsedGroupIndexes,
+              firstChoice.groupIndex,
+              secondChoice.groupIndex,
+              thirdChoice.groupIndex,
+            ],
+            requiredSlackGroupIndexes: [
+              ...branch.requiredSlackGroupIndexes,
+              ...(firstChoice.slackOnly
+                ? [firstChoice.groupIndex]
+                : []),
+              ...(secondChoice.slackOnly
+                ? [secondChoice.groupIndex]
+                : []),
+              ...(thirdChoice.slackOnly
+                ? [thirdChoice.groupIndex]
+                : []),
+            ],
+          },
+        )
+        const solved = await solveBounded(built.model, 0.5)
+        thirdResults.push({
+          branchIndex: parent.branchIndex,
+          firstChoiceIndex: parent.firstChoiceIndex,
+          firstChoiceGroupIndex: firstChoice.groupIndex,
+          secondChoiceIndex: parent.secondChoiceIndex,
+          secondChoiceGroupIndex: secondChoice.groupIndex,
+          thirdChoiceIndex,
+          thirdChoiceGroupIndex: thirdChoice.groupIndex,
+          status: solved.status,
+          solveMs: Math.round(solved.solveMs),
+        })
+      }
+    }
+
+    const unresolvedThird = thirdResults.filter(
+      (entry) => entry.status !== 'infeasible',
+    )
+    console.info(
+      '[machine-forced-deep-third-summary]',
+      JSON.stringify({
+        groupIndex,
+        parentBranches: unresolvedSecond.length,
+        thirdSparseCustomer: thirdSparse.customerId,
+        thirdSparseCandidateCount: thirdSparse.candidates.length,
+        totalBranches: thirdResults.length,
+        infeasibleCount:
+          thirdResults.length - unresolvedThird.length,
+        unresolvedCount: unresolvedThird.length,
+        unresolved: unresolvedThird,
+      }),
+    )
+    expect(unresolvedThird).toEqual([])
   },
   120000,
 )
