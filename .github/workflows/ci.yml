@@ -36,14 +36,90 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - shard: required-cost-39
+          - shard: required-cost-40
             cases: '20:0:required'
             sums: '99'
-            first-cost: '39'
-          - shard: forbidden-cost-37
+            first-cost: '40'
+          - shard: required-cost-41
+            cases: '20:0:required'
+            sums: '99'
+            first-cost: '41'
+          - shard: required-cost-42
+            cases: '20:0:required'
+            sums: '99'
+            first-cost: '42'
+          - shard: required-cost-43
+            cases: '20:0:required'
+            sums: '99'
+            first-cost: '43'
+          - shard: required-cost-44
+            cases: '20:0:required'
+            sums: '99'
+            first-cost: '44'
+          - shard: required-cost-45
+            cases: '20:0:required'
+            sums: '99'
+            first-cost: '45'
+          - shard: required-cost-46
+            cases: '20:0:required'
+            sums: '99'
+            first-cost: '46'
+          - shard: required-cost-47
+            cases: '20:0:required'
+            sums: '99'
+            first-cost: '47'
+          - shard: required-cost-48
+            cases: '20:0:required'
+            sums: '99'
+            first-cost: '48'
+          - shard: required-cost-49
+            cases: '20:0:required'
+            sums: '99'
+            first-cost: '49'
+          - shard: forbidden-cost-38
             cases: '20:0:forbidden'
             sums: '97'
-            first-cost: '37'
+            first-cost: '38'
+          - shard: forbidden-cost-39
+            cases: '20:0:forbidden'
+            sums: '97'
+            first-cost: '39'
+          - shard: forbidden-cost-40
+            cases: '20:0:forbidden'
+            sums: '97'
+            first-cost: '40'
+          - shard: forbidden-cost-41
+            cases: '20:0:forbidden'
+            sums: '97'
+            first-cost: '41'
+          - shard: forbidden-cost-42
+            cases: '20:0:forbidden'
+            sums: '97'
+            first-cost: '42'
+          - shard: forbidden-cost-43
+            cases: '20:0:forbidden'
+            sums: '97'
+            first-cost: '43'
+          - shard: forbidden-cost-44
+            cases: '20:0:forbidden'
+            sums: '97'
+            first-cost: '44'
+          - shard: forbidden-cost-45
+            cases: '20:0:forbidden'
+            sums: '97'
+            first-cost: '45'
+          - shard: forbidden-cost-46
+            cases: '20:0:forbidden'
+            sums: '97'
+            first-cost: '46'
+          - shard: forbidden-cost-47
+            cases: '20:0:forbidden'
+            sums: '97'
+            first-cost: '47'
+          - shard: forbidden-cost-48
+            cases: '20:0:forbidden'
+            sums: '97'
+            first-cost: '48'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
