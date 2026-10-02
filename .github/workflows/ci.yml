@@ -37,9 +37,21 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - shard: branch-20-free-pair-pilot
+          - shard: branch-20-sum-97
             cases: '20:0:required'
-            sums: '97,99,100,101,102'
+            sums: '97'
+          - shard: branch-20-sum-99
+            cases: '20:0:required'
+            sums: '99'
+          - shard: branch-20-sum-100
+            cases: '20:0:required'
+            sums: '100'
+          - shard: branch-20-sum-101
+            cases: '20:0:required'
+            sums: '101'
+          - shard: branch-20-sum-102
+            cases: '20:0:required'
+            sums: '102'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
