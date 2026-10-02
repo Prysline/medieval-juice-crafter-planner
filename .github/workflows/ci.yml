@@ -29,17 +29,29 @@ jobs:
       - run: npm run build
       - run: npm run smoke:highs:pages-like
 
-  machine-forced-role-307:
+  machine-forced-cost-role-307:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: role-1
+            cases: '0:1:required;0:1:forbidden'
+          - shard: role-2
+            cases: '0:2:required;0:2:forbidden'
+          - shard: role-4
+            cases: '0:4:forbidden'
+          - shard: role-8
+            cases: '0:8:required;0:8:forbidden'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Split identity 307 branch 0 by extra-one roles and slack
+      - name: Exact identity 307 branch 0 cost-role shard
         env:
-          MACHINE_CONTINUATION_FORCED_ROLE_GROUP: '307'
-          MACHINE_CONTINUATION_FORCED_ROLE_BRANCHES: '0'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '307'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: ${{ matrix.cases }}
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
