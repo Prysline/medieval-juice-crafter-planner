@@ -7581,8 +7581,27 @@ forcedCostRoleProfileIt(
         (left, right) => left - right,
       )
       expect(sortedCostSums.length).toBeGreaterThan(0)
+      const requestedCostSums = (
+        machineContinuationEnv.MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS ??
+        ''
+      )
+        .split(',')
+        .map((value) => Number(value.trim()))
+        .filter((value) => Number.isFinite(value))
+      const selectedCostSums =
+        requestedCostSums.length > 0
+          ? sortedCostSums.filter((value) =>
+              requestedCostSums.includes(value),
+            )
+          : sortedCostSums
+      if (requestedCostSums.length > 0) {
+        expect(selectedCostSums.length).toBe(
+          new Set(requestedCostSums).size,
+        )
+      }
+      expect(selectedCostSums.length).toBeGreaterThan(0)
 
-      for (const extraOneCostSum of sortedCostSums) {
+      for (const extraOneCostSum of selectedCostSums) {
         const supportCuts: number[][] = []
         let status = 'round-limit'
         let masterSolveMs = 0
@@ -7684,22 +7703,65 @@ forcedCostRoleProfileIt(
         }> = []
         if (
           status === 'timelimit' &&
-          remainingExtraOneCount === 1
+          (remainingExtraOneCount === 1 ||
+            remainingExtraOneCount === 2)
         ) {
           const remainingExtraOneCost =
             extraOneCostSum - requiredExtraOneCost
           const identityCandidates =
-            remainingExtraOneGroups.filter(
-              (candidateGroupIndex) =>
-                groups[candidateGroupIndex].ingredientCost ===
-                remainingExtraOneCost,
-            )
+            remainingExtraOneCount === 1
+              ? remainingExtraOneGroups.filter(
+                  (candidateGroupIndex) =>
+                    groups[candidateGroupIndex].ingredientCost ===
+                    remainingExtraOneCost,
+                )
+              : remainingExtraOneGroups.filter(
+                  (candidateGroupIndex) => {
+                    const candidateCost =
+                      groups[candidateGroupIndex].ingredientCost
+                    if (
+                      candidateCost * 2 >
+                      remainingExtraOneCost
+                    ) {
+                      return false
+                    }
+                    const partnerCost =
+                      remainingExtraOneCost - candidateCost
+                    return remainingExtraOneGroups.some(
+                      (partnerGroupIndex) =>
+                        partnerGroupIndex !== candidateGroupIndex &&
+                        groups[partnerGroupIndex].ingredientCost ===
+                          partnerCost &&
+                        (candidateCost !== partnerCost ||
+                          partnerGroupIndex > candidateGroupIndex),
+                    )
+                  },
+                )
           expect(identityCandidates.length).toBeGreaterThan(0)
 
           for (const identityGroupIndex of identityCandidates) {
             identitySplitCases += 1
             const identitySupportCuts: number[][] = []
             let identityStatus = 'round-limit'
+            const identityForbiddenExtraOneGroupIndexes = [
+              ...forbiddenExtraOneGroupIndexes,
+            ]
+            if (remainingExtraOneCount === 2) {
+              const identityCost =
+                groups[identityGroupIndex].ingredientCost
+              const partnerCost =
+                remainingExtraOneCost - identityCost
+              if (identityCost === partnerCost) {
+                identityForbiddenExtraOneGroupIndexes.push(
+                  ...remainingExtraOneGroups.filter(
+                    (candidateGroupIndex) =>
+                      candidateGroupIndex < identityGroupIndex &&
+                      groups[candidateGroupIndex].ingredientCost ===
+                        identityCost,
+                  ),
+                )
+              }
+            }
 
             for (let round = 0; round < 8; round += 1) {
               const built = build311ExtraCostSumSupportMaster(
@@ -7718,7 +7780,8 @@ forcedCostRoleProfileIt(
                     ...requiredExtraOneGroupIndexes,
                     identityGroupIndex,
                   ],
-                  forbiddenExtraOneGroupIndexes,
+                  forbiddenExtraOneGroupIndexes:
+                    identityForbiddenExtraOneGroupIndexes,
                   supportCuts: identitySupportCuts,
                 },
               )
