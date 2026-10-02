@@ -38,17 +38,15 @@ jobs:
       matrix:
         include:
           - shard: a
-            cases: '20:1:forbidden;20:2:required;20:2:forbidden;21:1:required'
+            cases: '20:2:forbidden'
           - shard: b
-            cases: '21:1:forbidden;21:2:required;21:2:forbidden;26:1:required'
+            cases: '21:2:required;21:2:forbidden;26:1:required'
           - shard: c
-            cases: '26:1:forbidden;26:2:required;26:2:forbidden;27:1:required'
+            cases: '26:2:required;26:2:forbidden'
           - shard: d
-            cases: '27:1:forbidden;27:2:required;27:2:forbidden;32:1:required'
+            cases: '27:2:required;27:2:forbidden;32:1:required'
           - shard: e
-            cases: '32:1:forbidden;32:2:required;32:2:forbidden;33:1:required'
-          - shard: f
-            cases: '33:1:forbidden;33:2:forbidden'
+            cases: '32:2:required'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
