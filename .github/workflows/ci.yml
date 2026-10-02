@@ -29,9 +29,9 @@ jobs:
       - run: npm run build
       - run: npm run smoke:highs:pages-like
 
-  machine-forced-deep-666:
+  machine-forced-role-666:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-deep-666
+    name: machine-forced-role-666
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,8 +39,8 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - name: Refine forced identity 666 by next sparse customer
+      - name: Split forced identity 666 by extra-one roles
         env:
-          MACHINE_CONTINUATION_FORCED_DEEP_GROUP: '666'
-          MACHINE_CONTINUATION_FORCED_DEEP_BRANCHES: '3,20,21,26,27,32,33'
+          MACHINE_CONTINUATION_FORCED_ROLE_GROUP: '666'
+          MACHINE_CONTINUATION_FORCED_ROLE_BRANCHES: '3,20,21,26,27,32,33'
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
