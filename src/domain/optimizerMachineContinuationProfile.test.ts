@@ -112,6 +112,11 @@ const forcedFifthProfileIt =
     ? it
     : it.skip
 
+const forcedSixthProfileIt =
+  Boolean(machineContinuationEnv.MACHINE_CONTINUATION_FORCED_SIXTH_GROUP)
+    ? it
+    : it.skip
+
 const forcedSlackProfileIt =
   Boolean(machineContinuationEnv.MACHINE_CONTINUATION_FORCED_SLACK_GROUP)
     ? it
@@ -7654,6 +7659,258 @@ forcedSlackProfileIt(
         slackGroupIndex,
         requestedBranches,
         totalCases: results.length,
+        infeasibleCount: results.length - unresolved.length,
+        unresolvedCount: unresolved.length,
+        unresolved,
+      }),
+    )
+    expect(unresolved).toEqual([])
+  },
+  120000,
+)
+
+forcedSixthProfileIt(
+  'checks fixed sixth-level sparse-customer shards for a forced identity',
+  async () => {
+    const domain = canonicalDomain()
+    const groups = pairGroups(domain)
+    const groupIndex = Number(
+      machineContinuationEnv.MACHINE_CONTINUATION_FORCED_SIXTH_GROUP,
+    )
+    expect(Number.isInteger(groupIndex)).toBe(true)
+    expect(groups[groupIndex]).toBeDefined()
+    expect(groups[groupIndex].eligibleCustomerIds.length).toBe(8)
+
+    const fixedCustomers = new Set(
+      groups[groupIndex].eligibleCustomerIds,
+    )
+    const residualCustomerIds =
+      domain.serviceableCustomerIds.filter(
+        (customerId) => !fixedCustomers.has(customerId),
+      )
+    const candidatesForCustomer = (customerId: string) =>
+      groups.flatMap((group, candidateGroupIndex) => {
+        if (candidateGroupIndex === groupIndex) return []
+        const residualEligible = group.eligibleCustomerIds.filter(
+          (eligibleCustomerId) =>
+            !fixedCustomers.has(eligibleCustomerId),
+        )
+        if (!residualEligible.includes(customerId)) return []
+        const normal = residualEligible.length >= 2
+        const slack =
+          group.ingredientCost === SLACK_RECIPE_COST &&
+          residualEligible.length >= 1
+        return normal || slack
+          ? [{
+              groupIndex: candidateGroupIndex,
+              slackOnly: !normal && slack,
+            }]
+          : []
+      })
+
+    const branchCustomers = residualCustomerIds.flatMap(
+      (customerId) => {
+        const candidates = candidatesForCustomer(customerId)
+        return candidates.length <= 3
+          ? [{ customerId, candidates }]
+          : []
+      },
+    )
+    const branchCustomerIds = new Set(
+      branchCustomers.map((entry) => entry.customerId),
+    )
+    const sparseCustomers = residualCustomerIds
+      .filter((customerId) => !branchCustomerIds.has(customerId))
+      .map((customerId) => ({
+        customerId,
+        candidates: candidatesForCustomer(customerId),
+      }))
+      .sort(
+        (left, right) =>
+          left.candidates.length - right.candidates.length,
+      )
+    const firstSparse = sparseCustomers[0]
+    const secondSparse = sparseCustomers[1]
+    const thirdSparse = sparseCustomers[2]
+    const fourthSparse = sparseCustomers[3]
+    const fifthSparse = sparseCustomers[4]
+    const sixthSparse = sparseCustomers[5]
+    expect(firstSparse).toBeDefined()
+    expect(secondSparse).toBeDefined()
+    expect(thirdSparse).toBeDefined()
+    expect(fourthSparse).toBeDefined()
+    expect(fifthSparse).toBeDefined()
+    expect(sixthSparse).toBeDefined()
+    if (
+      !firstSparse ||
+      !secondSparse ||
+      !thirdSparse ||
+      !fourthSparse ||
+      !fifthSparse ||
+      !sixthSparse
+    ) return
+
+    let branches: Array<{
+      requiredUsedGroupIndexes: number[]
+      requiredSlackGroupIndexes: number[]
+    }> = [{
+      requiredUsedGroupIndexes: [],
+      requiredSlackGroupIndexes: [],
+    }]
+    for (const branchCustomer of branchCustomers) {
+      branches = branches.flatMap((branch) =>
+        branchCustomer.candidates.map((candidate) => ({
+          requiredUsedGroupIndexes: [
+            ...branch.requiredUsedGroupIndexes,
+            candidate.groupIndex,
+          ],
+          requiredSlackGroupIndexes: candidate.slackOnly
+            ? [...branch.requiredSlackGroupIndexes, candidate.groupIndex]
+            : branch.requiredSlackGroupIndexes,
+        })),
+      )
+    }
+
+    const requestedCases =
+      (
+        machineContinuationEnv.MACHINE_CONTINUATION_FORCED_SIXTH_CASES ??
+        ''
+      )
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .map((value) => {
+          const [
+            branchIndex,
+            firstChoiceIndex,
+            secondChoiceIndex,
+            thirdChoiceIndex,
+            fourthChoiceIndex,
+            fifthChoiceIndex,
+          ] = value.split(':').map(Number)
+          return {
+            branchIndex,
+            firstChoiceIndex,
+            secondChoiceIndex,
+            thirdChoiceIndex,
+            fourthChoiceIndex,
+            fifthChoiceIndex,
+          }
+        })
+        .filter((entry) =>
+          Number.isInteger(entry.branchIndex) &&
+          entry.branchIndex >= 0 &&
+          entry.branchIndex < branches.length &&
+          Number.isInteger(entry.firstChoiceIndex) &&
+          entry.firstChoiceIndex >= 0 &&
+          entry.firstChoiceIndex < firstSparse.candidates.length &&
+          Number.isInteger(entry.secondChoiceIndex) &&
+          entry.secondChoiceIndex >= 0 &&
+          entry.secondChoiceIndex < secondSparse.candidates.length &&
+          Number.isInteger(entry.thirdChoiceIndex) &&
+          entry.thirdChoiceIndex >= 0 &&
+          entry.thirdChoiceIndex < thirdSparse.candidates.length &&
+          Number.isInteger(entry.fourthChoiceIndex) &&
+          entry.fourthChoiceIndex >= 0 &&
+          entry.fourthChoiceIndex < fourthSparse.candidates.length &&
+          Number.isInteger(entry.fifthChoiceIndex) &&
+          entry.fifthChoiceIndex >= 0 &&
+          entry.fifthChoiceIndex < fifthSparse.candidates.length
+        )
+    expect(requestedCases.length).toBeGreaterThan(0)
+
+    const results = []
+    for (const requested of requestedCases) {
+      const branch = branches[requested.branchIndex]
+      const firstChoice =
+        firstSparse.candidates[requested.firstChoiceIndex]
+      const secondChoice =
+        secondSparse.candidates[requested.secondChoiceIndex]
+      const thirdChoice =
+        thirdSparse.candidates[requested.thirdChoiceIndex]
+      const fourthChoice =
+        fourthSparse.candidates[requested.fourthChoiceIndex]
+      const fifthChoice =
+        fifthSparse.candidates[requested.fifthChoiceIndex]
+      for (
+        let sixthChoiceIndex = 0;
+        sixthChoiceIndex < sixthSparse.candidates.length;
+        sixthChoiceIndex += 1
+      ) {
+        const sixthChoice =
+          sixthSparse.candidates[sixthChoiceIndex]
+        const built = build311ExtraCostSumSupportMaster(
+          domain,
+          groupIndex,
+          undefined,
+          {
+            includeCustomerFlow: true,
+            forcedCustomerIds:
+              groups[groupIndex].eligibleCustomerIds,
+            requiredUsedGroupIndexes: [
+              ...branch.requiredUsedGroupIndexes,
+              firstChoice.groupIndex,
+              secondChoice.groupIndex,
+              thirdChoice.groupIndex,
+              fourthChoice.groupIndex,
+              fifthChoice.groupIndex,
+              sixthChoice.groupIndex,
+            ],
+            requiredSlackGroupIndexes: [
+              ...branch.requiredSlackGroupIndexes,
+              ...(firstChoice.slackOnly
+                ? [firstChoice.groupIndex]
+                : []),
+              ...(secondChoice.slackOnly
+                ? [secondChoice.groupIndex]
+                : []),
+              ...(thirdChoice.slackOnly
+                ? [thirdChoice.groupIndex]
+                : []),
+              ...(fourthChoice.slackOnly
+                ? [fourthChoice.groupIndex]
+                : []),
+              ...(fifthChoice.slackOnly
+                ? [fifthChoice.groupIndex]
+                : []),
+              ...(sixthChoice.slackOnly
+                ? [sixthChoice.groupIndex]
+                : []),
+            ],
+          },
+        )
+        const solved = await solveBounded(built.model, 0.5)
+        results.push({
+          branchIndex: requested.branchIndex,
+          firstChoiceIndex: requested.firstChoiceIndex,
+          secondChoiceIndex: requested.secondChoiceIndex,
+          thirdChoiceIndex: requested.thirdChoiceIndex,
+          fourthChoiceIndex: requested.fourthChoiceIndex,
+          fifthChoiceIndex: requested.fifthChoiceIndex,
+          sixthChoiceIndex,
+          sixthChoiceGroupIndex: sixthChoice.groupIndex,
+          status: solved.status,
+          solveMs: Math.round(solved.solveMs),
+        })
+      }
+    }
+
+    const unresolved = results.filter(
+      (entry) => entry.status !== 'infeasible',
+    )
+    console.info(
+      '[machine-forced-sixth-shard-summary]',
+      JSON.stringify({
+        groupIndex,
+        firstSparseCustomer: firstSparse.customerId,
+        secondSparseCustomer: secondSparse.customerId,
+        thirdSparseCustomer: thirdSparse.customerId,
+        fourthSparseCustomer: fourthSparse.customerId,
+        fifthSparseCustomer: fifthSparse.customerId,
+        sixthSparseCustomer: sixthSparse.customerId,
+        sixthSparseCandidateCount: sixthSparse.candidates.length,
+        requestedCases,
+        totalBranches: results.length,
         infeasibleCount: results.length - unresolved.length,
         unresolvedCount: unresolved.length,
         unresolved,
