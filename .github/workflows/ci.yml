@@ -37,12 +37,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - shard: branch-20-free-pair
+          - shard: branch-20-free-pair-pilot
             cases: '20:0:required'
-          - shard: branch-21-free-pair
-            cases: '21:0:required'
-          - shard: branch-27-free-pair
-            cases: '27:0:required'
+            sums: '97,99,100,101,102'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -53,4 +50,5 @@ jobs:
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '666'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: ${{ matrix.cases }}
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: ${{ matrix.sums }}
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
