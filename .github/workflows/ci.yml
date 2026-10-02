@@ -52,17 +52,28 @@ jobs:
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
 
 
-  machine-forced-deep-609:
+  machine-forced-third-609:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
+    name: machine-forced-third-609 (${{ matrix.slice.name }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        slice:
+          - { name: a, cases: '20:1:1,20:1:3,20:2:1,20:2:3' }
+          - { name: b, cases: '20:2:5,20:3:1,21:1:1,21:1:3' }
+          - { name: c, cases: '21:1:4,21:1:5,21:2:1,21:2:3' }
+          - { name: d, cases: '21:2:5,21:3:1,21:3:3,21:3:5' }
+          - { name: e, cases: '21:4:4,32:1:3,32:1:4,32:2:1' }
+          - { name: f, cases: '32:2:3,32:2:4,32:3:1,32:3:4' }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Refine forced identity 609
+      - name: Check fixed third-level identity 609 shard
         env:
-          MACHINE_CONTINUATION_FORCED_DEEP_GROUP: '609'
-          MACHINE_CONTINUATION_FORCED_DEEP_BRANCHES: '20,21,32'
+          MACHINE_CONTINUATION_FORCED_THIRD_GROUP: '609'
+          MACHINE_CONTINUATION_FORCED_THIRD_CASES: ${{ matrix.slice.cases }}
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
