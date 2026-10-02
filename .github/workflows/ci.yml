@@ -37,17 +37,29 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - shard: b40-r2-required
-            cases: '40:2:required'
-          - shard: b40-r2-forbidden
-            cases: '40:2:forbidden'
+          - shard: b22-r1-forbidden
+            cases: '22:1:forbidden'
+          - shard: b22-r2-forbidden
+            cases: '22:2:forbidden'
+          - shard: b23-r1-forbidden
+            cases: '23:1:forbidden'
+          - shard: b23-r2-forbidden
+            cases: '23:2:forbidden'
+          - shard: b24-r1-forbidden
+            cases: '24:1:forbidden'
+          - shard: b24-r4-forbidden
+            cases: '24:4:forbidden'
+          - shard: b28-r1-forbidden
+            cases: '28:1:forbidden'
+          - shard: b28-r2-forbidden
+            cases: '28:2:forbidden'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Split identity 457 branch 40 role-two by exact extra-one cost
+      - name: Close smallest identity 457 cost-role cases
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '457'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: ${{ matrix.cases }}
