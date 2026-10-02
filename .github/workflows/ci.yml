@@ -40,18 +40,23 @@ jobs:
           - shard: branch-20-sum-97
             cases: '20:0:required'
             sums: '97'
+            first: '763'
           - shard: branch-20-sum-99
             cases: '20:0:required'
             sums: '99'
+            first: '335,337'
           - shard: branch-20-sum-100
             cases: '20:0:required'
             sums: '100'
+            first: '47,49,50,51,148,279,404,405,458,459,885'
           - shard: branch-20-sum-101
             cases: '20:0:required'
             sums: '101'
+            first: '128,130,133,309,416,1078'
           - shard: branch-20-sum-102
             cases: '20:0:required'
             sums: '102'
+            first: '138,143,149,314,869,872'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -63,4 +68,5 @@ jobs:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '666'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: ${{ matrix.cases }}
           MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: ${{ matrix.sums }}
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: ${{ matrix.first }}
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
