@@ -52,28 +52,26 @@ jobs:
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
 
 
-  machine-forced-fifth-609:
+  machine-forced-sixth-609:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-fifth-609 (${{ matrix.slice.name }})
+    name: machine-forced-sixth-609 (${{ matrix.slice.name }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         slice:
-          - { name: a, cases: '20:1:1:0:1,20:1:1:1:4,20:1:1:5:4,20:2:3:5:6' }
-          - { name: b, cases: '20:2:5:5:4,21:1:3:1:0,21:1:3:1:1,21:1:3:5:4' }
-          - { name: c, cases: '21:1:5:5:4,21:2:1:5:4,21:2:3:5:4,21:2:5:5:0' }
-          - { name: d, cases: '21:3:1:5:4,21:3:5:5:0,21:3:5:5:2,21:3:5:5:4' }
-          - { name: e, cases: '32:1:3:2:6,32:1:3:5:7,32:1:4:1:1,32:2:1:5:4' }
-          - { name: f, cases: '32:2:1:5:6,32:2:3:5:4,32:2:3:5:6' }
+          - { name: a, cases: '20:1:1:1:4:2,20:1:1:1:4:5,20:1:1:5:4:6,20:2:3:5:6:5' }
+          - { name: b, cases: '21:1:3:5:4:5,21:1:3:5:4:6,21:1:5:5:4:2,21:1:5:5:4:6' }
+          - { name: c, cases: '21:2:1:5:4:2,21:2:1:5:4:7,21:2:3:5:4:5,21:2:3:5:4:6' }
+          - { name: d, cases: '21:3:1:5:4:6,32:1:3:5:7:5,32:2:1:5:4:5,32:2:1:5:4:6' }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Check fixed fifth-level identity 609 shard
+      - name: Check fixed sixth-level identity 609 shard
         env:
-          MACHINE_CONTINUATION_FORCED_FIFTH_GROUP: '609'
-          MACHINE_CONTINUATION_FORCED_FIFTH_CASES: ${{ matrix.slice.cases }}
+          MACHINE_CONTINUATION_FORCED_SIXTH_GROUP: '609'
+          MACHINE_CONTINUATION_FORCED_SIXTH_CASES: ${{ matrix.slice.cases }}
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
