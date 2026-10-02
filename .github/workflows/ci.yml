@@ -29,7 +29,7 @@ jobs:
       - run: npm run build
       - run: npm run smoke:highs:pages-like
 
-  machine-forced-role-223:
+  machine-forced-cost-role-223:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     steps:
@@ -38,8 +38,9 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - name: Split identity 223 unresolved branches by exact extra-one roles
+      - name: Close identity 223 branch 33 exact cost buckets
         env:
-          MACHINE_CONTINUATION_FORCED_ROLE_GROUP: '223'
-          MACHINE_CONTINUATION_FORCED_ROLE_BRANCHES: '3,9,20,21,27,33'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '223'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '33:1:required;33:1:forbidden;33:2:forbidden'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
