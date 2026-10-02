@@ -87,6 +87,11 @@ const patriciaShardProfileIt =
     ? it
     : it.skip
 
+const forcedBaseProfileIt =
+  Boolean(machineContinuationEnv.MACHINE_CONTINUATION_FORCED_BASE_GROUP)
+    ? it
+    : it.skip
+
 const singleSupportMasterProfileIt =
   Boolean(machineContinuationEnv.MACHINE_CONTINUATION_SINGLE_MASTER_GROUPS)
     ? it
@@ -7221,6 +7226,134 @@ function build311ExtraCostSumSupportMaster(
   return { model, groups }
 }
 
+
+forcedBaseProfileIt(
+  'checks exact low-degree base covers for one forced-customer identity',
+  async () => {
+    const domain = canonicalDomain()
+    const groups = pairGroups(domain)
+    const groupIndex = Number(
+      machineContinuationEnv.MACHINE_CONTINUATION_FORCED_BASE_GROUP,
+    )
+    expect(Number.isInteger(groupIndex)).toBe(true)
+    expect(groups[groupIndex]).toBeDefined()
+    expect(groups[groupIndex].eligibleCustomerIds.length).toBe(8)
+
+    const fixedCustomers = new Set(
+      groups[groupIndex].eligibleCustomerIds,
+    )
+    const residualCustomerIds =
+      domain.serviceableCustomerIds.filter(
+        (customerId) => !fixedCustomers.has(customerId),
+      )
+
+    const candidatesForCustomer = (customerId: string) =>
+      groups.flatMap((group, candidateGroupIndex) => {
+        if (candidateGroupIndex === groupIndex) return []
+        const residualEligible = group.eligibleCustomerIds.filter(
+          (eligibleCustomerId) =>
+            !fixedCustomers.has(eligibleCustomerId),
+        )
+        if (!residualEligible.includes(customerId)) return []
+        const normal = residualEligible.length >= 2
+        const slack =
+          group.ingredientCost === SLACK_RECIPE_COST &&
+          residualEligible.length >= 1
+        return normal || slack
+          ? [{
+              groupIndex: candidateGroupIndex,
+              slackOnly: !normal && slack,
+            }]
+          : []
+      })
+
+    const branchCustomers = residualCustomerIds.flatMap(
+      (customerId) => {
+        const candidates = candidatesForCustomer(customerId)
+        return candidates.length <= 3
+          ? [{ customerId, candidates }]
+          : []
+      },
+    )
+    expect(branchCustomers.length).toBeGreaterThan(0)
+
+    let branches: Array<{
+      requiredUsedGroupIndexes: number[]
+      requiredSlackGroupIndexes: number[]
+      choices: Array<{ customerId: string; groupIndex: number }>
+    }> = [{
+      requiredUsedGroupIndexes: [],
+      requiredSlackGroupIndexes: [],
+      choices: [],
+    }]
+    for (const branchCustomer of branchCustomers) {
+      branches = branches.flatMap((branch) =>
+        branchCustomer.candidates.map((candidate) => ({
+          requiredUsedGroupIndexes: [
+            ...branch.requiredUsedGroupIndexes,
+            candidate.groupIndex,
+          ],
+          requiredSlackGroupIndexes: candidate.slackOnly
+            ? [...branch.requiredSlackGroupIndexes, candidate.groupIndex]
+            : branch.requiredSlackGroupIndexes,
+          choices: [
+            ...branch.choices,
+            {
+              customerId: branchCustomer.customerId,
+              groupIndex: candidate.groupIndex,
+            },
+          ],
+        })),
+      )
+    }
+
+    const results = []
+    for (let branchIndex = 0; branchIndex < branches.length; branchIndex += 1) {
+      const branch = branches[branchIndex]
+      const built = build311ExtraCostSumSupportMaster(
+        domain,
+        groupIndex,
+        undefined,
+        {
+          includeCustomerFlow: true,
+          forcedCustomerIds:
+            groups[groupIndex].eligibleCustomerIds,
+          requiredUsedGroupIndexes:
+            branch.requiredUsedGroupIndexes,
+          requiredSlackGroupIndexes:
+            branch.requiredSlackGroupIndexes,
+        },
+      )
+      const solved = await solveBounded(built.model, 0.5)
+      results.push({
+        branchIndex,
+        choices: branch.choices,
+        status: solved.status,
+        solveMs: Math.round(solved.solveMs),
+      })
+    }
+
+    const unresolved = results.filter(
+      (entry) => entry.status !== 'infeasible',
+    )
+    console.info(
+      '[machine-forced-base-cover-summary]',
+      JSON.stringify({
+        groupIndex,
+        groupCost: groups[groupIndex].ingredientCost,
+        branchCustomers: branchCustomers.map((entry) => ({
+          customerId: entry.customerId,
+          candidateCount: entry.candidates.length,
+        })),
+        totalBranches: results.length,
+        infeasibleCount: results.length - unresolved.length,
+        unresolvedCount: unresolved.length,
+        unresolved,
+      }),
+    )
+  },
+  120000,
+)
 
 patriciaShardProfileIt(
   'checks sharded exact Hugo + Patricia branches for identity 1279',
