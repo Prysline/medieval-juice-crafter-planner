@@ -7608,6 +7608,20 @@ forcedCostRoleProfileIt(
         (left, right) => left - right,
       )
       expect(sortedCostSums.length).toBeGreaterThan(0)
+      if (
+        machineContinuationEnv.MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_SUMS ===
+        '1'
+      ) {
+        throw new Error(
+          `MACHINE_FORCED_COST_ROLE_SUMS ${JSON.stringify({
+            groupIndex,
+            branchIndex: requested.branchIndex,
+            roleMask: requested.roleMask,
+            slackCase: requested.slackCase,
+            sortedCostSums,
+          })}`,
+        )
+      }
       const requestedCostSums = (
         machineContinuationEnv.MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS ??
         ''
