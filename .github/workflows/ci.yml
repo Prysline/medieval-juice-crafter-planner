@@ -29,43 +29,215 @@ jobs:
       - run: npm run build
       - run: npm run smoke:highs:pages-like
 
-  machine-forced-cost-role-457-list:
+  machine-forced-cost-role-457:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-cost-role-457 (b27-r0-required-c${{ matrix.cost }}-list)
+    name: machine-forced-cost-role-457 (b27-r0-s${{ matrix.sum }}-f${{ matrix.first }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        cost: [100, 102, 103, 104, 105, 106, 107, 108, 110, 111, 114]
+        include:
+          - sum: 100
+            first: 38
+          - sum: 100
+            first: 39
+          - sum: 100
+            first: 40
+          - sum: 100
+            first: 41
+          - sum: 100
+            first: 42
+          - sum: 100
+            first: 43
+          - sum: 100
+            first: 44
+          - sum: 100
+            first: 45
+          - sum: 100
+            first: 46
+          - sum: 100
+            first: 47
+          - sum: 100
+            first: 48
+          - sum: 100
+            first: 49
+          - sum: 100
+            first: 50
+          - sum: 102
+            first: 40
+          - sum: 102
+            first: 41
+          - sum: 102
+            first: 42
+          - sum: 102
+            first: 43
+          - sum: 102
+            first: 44
+          - sum: 102
+            first: 45
+          - sum: 102
+            first: 46
+          - sum: 102
+            first: 47
+          - sum: 102
+            first: 48
+          - sum: 102
+            first: 49
+          - sum: 102
+            first: 50
+          - sum: 102
+            first: 51
+          - sum: 104
+            first: 42
+          - sum: 104
+            first: 43
+          - sum: 104
+            first: 44
+          - sum: 104
+            first: 45
+          - sum: 104
+            first: 46
+          - sum: 104
+            first: 47
+          - sum: 104
+            first: 48
+          - sum: 104
+            first: 49
+          - sum: 104
+            first: 50
+          - sum: 104
+            first: 51
+          - sum: 104
+            first: 52
+          - sum: 105
+            first: 43
+          - sum: 105
+            first: 44
+          - sum: 105
+            first: 45
+          - sum: 105
+            first: 46
+          - sum: 105
+            first: 47
+          - sum: 105
+            first: 48
+          - sum: 105
+            first: 49
+          - sum: 105
+            first: 50
+          - sum: 105
+            first: 51
+          - sum: 105
+            first: 52
+          - sum: 106
+            first: 44
+          - sum: 106
+            first: 45
+          - sum: 106
+            first: 46
+          - sum: 106
+            first: 47
+          - sum: 106
+            first: 48
+          - sum: 106
+            first: 49
+          - sum: 106
+            first: 50
+          - sum: 106
+            first: 51
+          - sum: 106
+            first: 52
+          - sum: 106
+            first: 53
+          - sum: 107
+            first: 45
+          - sum: 107
+            first: 46
+          - sum: 107
+            first: 47
+          - sum: 107
+            first: 48
+          - sum: 107
+            first: 49
+          - sum: 107
+            first: 50
+          - sum: 107
+            first: 51
+          - sum: 107
+            first: 52
+          - sum: 107
+            first: 53
+          - sum: 108
+            first: 46
+          - sum: 108
+            first: 47
+          - sum: 108
+            first: 48
+          - sum: 108
+            first: 49
+          - sum: 108
+            first: 50
+          - sum: 108
+            first: 51
+          - sum: 108
+            first: 52
+          - sum: 108
+            first: 53
+          - sum: 108
+            first: 54
+          - sum: 110
+            first: 48
+          - sum: 110
+            first: 49
+          - sum: 110
+            first: 50
+          - sum: 110
+            first: 51
+          - sum: 110
+            first: 52
+          - sum: 110
+            first: 53
+          - sum: 110
+            first: 54
+          - sum: 110
+            first: 55
+          - sum: 111
+            first: 49
+          - sum: 111
+            first: 50
+          - sum: 111
+            first: 51
+          - sum: 111
+            first: 52
+          - sum: 111
+            first: 53
+          - sum: 111
+            first: 54
+          - sum: 111
+            first: 55
+          - sum: 114
+            first: 52
+          - sum: 114
+            first: 53
+          - sum: 114
+            first: 54
+          - sum: 114
+            first: 55
+          - sum: 114
+            first: 56
+          - sum: 114
+            first: 57
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: List first-identity frontier for expensive cost bucket
+      - name: Resolve exact first-cost class
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '457'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '27:0:required'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.cost }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_IDENTITIES: '1'
-        run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
-
-  machine-forced-cost-role-457-c115:
-    if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-cost-role-457 (b27-r0-required-c115-pair)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: npm install
-      - name: Resolve the remaining cost-115 extra-one pair by sparse customer
-        env:
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '457'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '27:0:required'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '115'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '1089'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.sum }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_COSTS: '${{ matrix.first }}'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
