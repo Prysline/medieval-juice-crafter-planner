@@ -32,27 +32,15 @@ jobs:
   machine-forced-cost-role-223:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        case:
-          - '20:0:forbidden'
-          - '20:1:required'
-          - '20:1:forbidden'
-          - '20:2:required'
-          - '20:2:forbidden'
-          - '20:4:forbidden'
-          - '20:8:required'
-          - '20:8:forbidden'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Close identity 223 branch 20 case ${{ matrix.case }}
+      - name: List identity 223 branch 20 difficult cost frontier
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '223'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: ${{ matrix.case }}
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '20:0:forbidden'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_IDENTITIES: '1'
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
