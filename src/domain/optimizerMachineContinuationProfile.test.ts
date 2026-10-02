@@ -7758,6 +7758,23 @@ forcedCostRoleProfileIt(
                     ),
                 )
               : canonicalIdentityCandidates
+          if (
+            machineContinuationEnv.MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_IDENTITIES ===
+            '1'
+          ) {
+            throw new Error(
+              `MACHINE_FORCED_COST_ROLE_IDENTITIES ${JSON.stringify({
+                groupIndex,
+                branchIndex: requested.branchIndex,
+                roleMask: requested.roleMask,
+                slackCase: requested.slackCase,
+                extraOneCostSum,
+                remainingExtraOneCount,
+                candidateGroupIndexes:
+                  canonicalIdentityCandidates,
+              })}`,
+            )
+          }
           if (requestedFirstIdentityGroupIndexes.length > 0) {
             expect(identityCandidates.length).toBe(
               new Set(requestedFirstIdentityGroupIndexes).size,
