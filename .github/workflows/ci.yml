@@ -37,46 +37,49 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - shard: branch-20-sum-104
-            cases: '20:0:required'
-            sums: '104'
-          - shard: branch-20-sum-106
-            cases: '20:0:required'
-            sums: '106'
-          - shard: branch-20-sum-107
-            cases: '20:0:required'
-            sums: '107'
-          - shard: branch-20-sum-108
-            cases: '20:0:required'
-            sums: '108'
-          - shard: branch-20-sum-111
-            cases: '20:0:required'
-            sums: '111'
-          - shard: branch-20-sum-114
-            cases: '20:0:required'
-            sums: '114'
-          - shard: branch-20-sum-115
-            cases: '20:0:required'
-            sums: '115'
-          - shard: branch-20-sum-117
-            cases: '20:0:required'
-            sums: '117'
-          - shard: branch-20-sum-118
-            cases: '20:0:required'
-            sums: '118'
-          - shard: branch-20-sum-119
+          - shard: branch-20-sum-119-first-1287
             cases: '20:0:required'
             sums: '119'
+            first: '1287'
+          - shard: branch-20-sum-117-first-43
+            cases: '20:0:required'
+            sums: '117'
+            first: '43'
+          - shard: branch-20-sum-117-first-141
+            cases: '20:0:required'
+            sums: '117'
+            first: '141'
+          - shard: branch-20-sum-117-first-182
+            cases: '20:0:required'
+            sums: '117'
+            first: '182'
+          - shard: branch-20-sum-117-first-185
+            cases: '20:0:required'
+            sums: '117'
+            first: '185'
+          - shard: branch-20-sum-117-first-187
+            cases: '20:0:required'
+            sums: '117'
+            first: '187'
+          - shard: branch-20-sum-117-first-189
+            cases: '20:0:required'
+            sums: '117'
+            first: '189'
+          - shard: branch-20-sum-117-first-1032
+            cases: '20:0:required'
+            sums: '117'
+            first: '1032'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Split forced identity 666 by exact extra-one cost
+      - name: Split forced identity 666 fixed extra-one pairs by sparse customer
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '666'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: ${{ matrix.cases }}
           MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: ${{ matrix.sums }}
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: ${{ matrix.first || '-1' }}
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: ${{ matrix.first }}
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
