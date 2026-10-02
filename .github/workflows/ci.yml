@@ -36,14 +36,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - shard: required-cost-37
+          - shard: required-cost-38
             cases: '20:0:required'
             sums: '99'
-            first-cost: '37'
-          - shard: forbidden-cost-35
+            first-cost: '38'
+          - shard: forbidden-cost-36
             cases: '20:0:forbidden'
             sums: '97'
-            first-cost: '35'
+            first-cost: '36'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
