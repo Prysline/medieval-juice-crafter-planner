@@ -35,20 +35,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - shard: b20-r0-required
-            cases: '20:0:required'
-          - shard: b20-r0-forbidden
-            cases: '20:0:forbidden'
+        first-cost: ['36', '37', '38', '39', '40', '41', '42', '43', '44', '45', '46', '47', '48', '49']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: List identity 307 branch 20 role-zero cost frontier
+      - name: Exact identity 307 branch 20 required cost-pair class
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '307'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: ${{ matrix.cases }}
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_IDENTITIES: '1'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '20:0:required'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '98'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_COSTS: ${{ matrix.first-cost }}
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
