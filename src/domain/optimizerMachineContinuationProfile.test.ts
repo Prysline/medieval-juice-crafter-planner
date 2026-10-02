@@ -7595,7 +7595,9 @@ forcedCostRoleProfileIt(
         ''
       )
         .split(',')
-        .map((value) => Number(value.trim()))
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .map((value) => Number(value))
         .filter((value) => Number.isInteger(value) && value >= 0)
       const selectedCostSums =
         requestedCostSums.length > 0
