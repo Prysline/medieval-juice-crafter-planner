@@ -92,6 +92,11 @@ const forcedBaseProfileIt =
     ? it
     : it.skip
 
+const forcedDeepProfileIt =
+  Boolean(machineContinuationEnv.MACHINE_CONTINUATION_FORCED_DEEP_GROUP)
+    ? it
+    : it.skip
+
 const singleSupportMasterProfileIt =
   Boolean(machineContinuationEnv.MACHINE_CONTINUATION_SINGLE_MASTER_GROUPS)
     ? it
@@ -7226,6 +7231,174 @@ function build311ExtraCostSumSupportMaster(
   return { model, groups }
 }
 
+
+forcedDeepProfileIt(
+  'refines selected forced-customer base branches by next sparse customer',
+  async () => {
+    const domain = canonicalDomain()
+    const groups = pairGroups(domain)
+    const groupIndex = Number(
+      machineContinuationEnv.MACHINE_CONTINUATION_FORCED_DEEP_GROUP,
+    )
+    expect(Number.isInteger(groupIndex)).toBe(true)
+    expect(groups[groupIndex]).toBeDefined()
+    expect(groups[groupIndex].eligibleCustomerIds.length).toBe(8)
+
+    const fixedCustomers = new Set(
+      groups[groupIndex].eligibleCustomerIds,
+    )
+    const residualCustomerIds =
+      domain.serviceableCustomerIds.filter(
+        (customerId) => !fixedCustomers.has(customerId),
+      )
+    const candidatesForCustomer = (customerId: string) =>
+      groups.flatMap((group, candidateGroupIndex) => {
+        if (candidateGroupIndex === groupIndex) return []
+        const residualEligible = group.eligibleCustomerIds.filter(
+          (eligibleCustomerId) =>
+            !fixedCustomers.has(eligibleCustomerId),
+        )
+        if (!residualEligible.includes(customerId)) return []
+        const normal = residualEligible.length >= 2
+        const slack =
+          group.ingredientCost === SLACK_RECIPE_COST &&
+          residualEligible.length >= 1
+        return normal || slack
+          ? [{
+              groupIndex: candidateGroupIndex,
+              slackOnly: !normal && slack,
+            }]
+          : []
+      })
+
+    const branchCustomers = residualCustomerIds.flatMap(
+      (customerId) => {
+        const candidates = candidatesForCustomer(customerId)
+        return candidates.length <= 3
+          ? [{ customerId, candidates }]
+          : []
+      },
+    )
+    const branchCustomerIds = new Set(
+      branchCustomers.map((entry) => entry.customerId),
+    )
+    const nextSparseCustomers = residualCustomerIds
+      .filter((customerId) => !branchCustomerIds.has(customerId))
+      .map((customerId) => ({
+        customerId,
+        candidates: candidatesForCustomer(customerId),
+      }))
+      .sort(
+        (left, right) =>
+          left.candidates.length - right.candidates.length,
+      )
+    const nextSparse = nextSparseCustomers[0]
+    expect(nextSparse).toBeDefined()
+    if (!nextSparse) return
+
+    let branches: Array<{
+      requiredUsedGroupIndexes: number[]
+      requiredSlackGroupIndexes: number[]
+      choices: Array<{ customerId: string; groupIndex: number }>
+    }> = [{
+      requiredUsedGroupIndexes: [],
+      requiredSlackGroupIndexes: [],
+      choices: [],
+    }]
+    for (const branchCustomer of branchCustomers) {
+      branches = branches.flatMap((branch) =>
+        branchCustomer.candidates.map((candidate) => ({
+          requiredUsedGroupIndexes: [
+            ...branch.requiredUsedGroupIndexes,
+            candidate.groupIndex,
+          ],
+          requiredSlackGroupIndexes: candidate.slackOnly
+            ? [...branch.requiredSlackGroupIndexes, candidate.groupIndex]
+            : branch.requiredSlackGroupIndexes,
+          choices: [
+            ...branch.choices,
+            {
+              customerId: branchCustomer.customerId,
+              groupIndex: candidate.groupIndex,
+            },
+          ],
+        })),
+      )
+    }
+
+    const requestedBranches =
+      (
+        machineContinuationEnv.MACHINE_CONTINUATION_FORCED_DEEP_BRANCHES ??
+        ''
+      )
+        .split(',')
+        .map((value) => Number(value.trim()))
+        .filter(
+          (value) =>
+            Number.isInteger(value) &&
+            value >= 0 &&
+            value < branches.length,
+        )
+    expect(requestedBranches.length).toBeGreaterThan(0)
+
+    const results = []
+    for (const branchIndex of requestedBranches) {
+      const branch = branches[branchIndex]
+      for (
+        let choiceIndex = 0;
+        choiceIndex < nextSparse.candidates.length;
+        choiceIndex += 1
+      ) {
+        const choice = nextSparse.candidates[choiceIndex]
+        const built = build311ExtraCostSumSupportMaster(
+          domain,
+          groupIndex,
+          undefined,
+          {
+            includeCustomerFlow: true,
+            forcedCustomerIds:
+              groups[groupIndex].eligibleCustomerIds,
+            requiredUsedGroupIndexes: [
+              ...branch.requiredUsedGroupIndexes,
+              choice.groupIndex,
+            ],
+            requiredSlackGroupIndexes: [
+              ...branch.requiredSlackGroupIndexes,
+              ...(choice.slackOnly ? [choice.groupIndex] : []),
+            ],
+          },
+        )
+        const solved = await solveBounded(built.model, 0.5)
+        results.push({
+          branchIndex,
+          choiceIndex,
+          choiceGroupIndex: choice.groupIndex,
+          status: solved.status,
+          solveMs: Math.round(solved.solveMs),
+        })
+      }
+    }
+
+    const unresolved = results.filter(
+      (entry) => entry.status !== 'infeasible',
+    )
+    console.info(
+      '[machine-forced-deep-summary]',
+      JSON.stringify({
+        groupIndex,
+        requestedBranches,
+        nextSparseCustomer: nextSparse.customerId,
+        nextSparseCandidateCount: nextSparse.candidates.length,
+        totalBranches: results.length,
+        infeasibleCount: results.length - unresolved.length,
+        unresolvedCount: unresolved.length,
+        unresolved,
+      }),
+    )
+    expect(unresolved).toEqual([])
+  },
+  120000,
+)
 
 forcedBaseProfileIt(
   'checks exact low-degree base covers for one forced-customer identity',
