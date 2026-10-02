@@ -37,49 +37,29 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - shard: branch-20-sum-119-first-1287
+          - shard: list-branch-20-sum-106
             cases: '20:0:required'
-            sums: '119'
-            first: '1287'
-          - shard: branch-20-sum-117-first-43
+            sums: '106'
+          - shard: list-branch-20-sum-107
             cases: '20:0:required'
-            sums: '117'
-            first: '43'
-          - shard: branch-20-sum-117-first-141
+            sums: '107'
+          - shard: list-branch-20-sum-108
             cases: '20:0:required'
-            sums: '117'
-            first: '141'
-          - shard: branch-20-sum-117-first-182
+            sums: '108'
+          - shard: list-branch-20-sum-114
             cases: '20:0:required'
-            sums: '117'
-            first: '182'
-          - shard: branch-20-sum-117-first-185
-            cases: '20:0:required'
-            sums: '117'
-            first: '185'
-          - shard: branch-20-sum-117-first-187
-            cases: '20:0:required'
-            sums: '117'
-            first: '187'
-          - shard: branch-20-sum-117-first-189
-            cases: '20:0:required'
-            sums: '117'
-            first: '189'
-          - shard: branch-20-sum-117-first-1032
-            cases: '20:0:required'
-            sums: '117'
-            first: '1032'
+            sums: '114'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Split forced identity 666 fixed extra-one pairs by sparse customer
+      - name: List forced identity 666 exact cost-bucket candidates
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '666'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: ${{ matrix.cases }}
           MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: ${{ matrix.sums }}
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: ${{ matrix.first }}
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '-1'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_IDENTITIES: '1'
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
