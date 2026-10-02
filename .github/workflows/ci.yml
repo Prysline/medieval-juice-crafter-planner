@@ -70,3 +70,19 @@ jobs:
         env:
           MACHINE_CONTINUATION_FORCED_BASE_GROUP: ${{ matrix.group }}
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
+
+
+  machine-forced-deep-247:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Refine forced identity 247
+        env:
+          MACHINE_CONTINUATION_FORCED_DEEP_GROUP: '247'
+          MACHINE_CONTINUATION_FORCED_DEEP_BRANCHES: '32,33'
+        run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
