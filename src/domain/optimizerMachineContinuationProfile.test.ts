@@ -7441,7 +7441,67 @@ forcedRoleProfileIt(
         unresolved,
       }),
     )
-    expect(unresolved).toEqual([])
+
+    const slackGroupIndex = 1243
+    expect(groups[slackGroupIndex].ingredientCost).toBe(SLACK_RECIPE_COST)
+    const combinedResults = []
+    for (const parent of unresolved) {
+      const branch = branches[parent.branchIndex]
+      for (const slackCase of ['required', 'forbidden'] as const) {
+        const built = build311ExtraCostSumSupportMaster(
+          domain,
+          groupIndex,
+          undefined,
+          {
+            includeCustomerFlow: true,
+            forcedCustomerIds:
+              groups[groupIndex].eligibleCustomerIds,
+            requiredUsedGroupIndexes:
+              branch.requiredUsedGroupIndexes,
+            requiredSlackGroupIndexes:
+              slackCase === 'required'
+                ? [
+                    ...branch.requiredSlackGroupIndexes,
+                    slackGroupIndex,
+                  ]
+                : branch.requiredSlackGroupIndexes,
+            forbiddenSlackGroupIndexes:
+              slackCase === 'forbidden'
+                ? [slackGroupIndex]
+                : [],
+            requiredExtraOneGroupIndexes:
+              parent.requiredExtraOneGroupIndexes,
+            forbiddenExtraOneGroupIndexes:
+              parent.forbiddenExtraOneGroupIndexes,
+          },
+        )
+        const solved = await solveBounded(built.model, 0.5)
+        combinedResults.push({
+          branchIndex: parent.branchIndex,
+          roleMask: parent.roleMask,
+          slackCase,
+          status: solved.status,
+          solveMs: Math.round(solved.solveMs),
+        })
+      }
+    }
+
+    const unresolvedCombined = combinedResults.filter(
+      (entry) => entry.status !== 'infeasible',
+    )
+    console.info(
+      '[machine-forced-role-slack-summary]',
+      JSON.stringify({
+        groupIndex,
+        parentCases: unresolved.length,
+        totalCases: combinedResults.length,
+        infeasibleCount:
+          combinedResults.length - unresolvedCombined.length,
+        unresolvedCount: unresolvedCombined.length,
+        unresolved: unresolvedCombined,
+      }),
+    )
+    expect(unresolvedCombined).toEqual([])
   },
   120000,
 )
