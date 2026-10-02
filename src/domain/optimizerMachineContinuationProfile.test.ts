@@ -7586,7 +7586,9 @@ forcedCostRoleProfileIt(
         ''
       )
         .split(',')
-        .map((value) => Number(value.trim()))
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .map((value) => Number(value))
         .filter((value) => Number.isFinite(value))
       const requestedFirstIdentityGroupIndexes = (
         machineContinuationEnv.MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES ??
