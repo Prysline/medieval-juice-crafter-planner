@@ -29,32 +29,19 @@ jobs:
       - run: npm run build
       - run: npm run smoke:highs:pages-like
 
-  machine-forced-role-223:
+  machine-forced-cost-role-223:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-role-223 (${{ matrix.shard }})
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - shard: role-01
-            branches: '0,1,2,3,4,5,7,8,9'
-          - shard: role-02
-            branches: '10,11,12,13,14,15,16,17,18'
-          - shard: role-03
-            branches: '19,20,21,22,23,24,25,26,27'
-          - shard: role-04
-            branches: '29,32,33,35,37,38,39,41,43'
-          - shard: role-05
-            branches: '44,45,47,48,49,50,51,52,53'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Split forced identity 223 by extra-one role and slack
+      - name: Probe identity 223 branch 47 exact cost continuation
         env:
-          MACHINE_CONTINUATION_FORCED_ROLE_GROUP: '223'
-          MACHINE_CONTINUATION_FORCED_ROLE_BRANCHES: ${{ matrix.branches }}
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '223'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '47:2:forbidden'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '-1'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
