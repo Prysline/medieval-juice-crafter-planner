@@ -56,3 +56,23 @@ jobs:
         env:
           MACHINE_CONTINUATION_1279_BASE_BRANCHES: ${{ matrix.slice.branches }}
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
+
+
+  machine-forced-base-cover:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
+    name: machine-forced-base-cover (${{ matrix.group }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [187, 223, 247, 307, 344, 457, 609, 666]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Prove forced-customer base covers
+        env:
+          MACHINE_CONTINUATION_FORCED_BASE_GROUP: ${{ matrix.group }}
+        run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
