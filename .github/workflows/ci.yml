@@ -219,10 +219,19 @@ jobs:
           MACHINE_CONTINUATION_FORCED_NINTH_CASES: '27:1:1:5:4:5:2:1:7,27:1:1:5:4:5:2:1:10,27:1:3:5:4:5:2:14:7,27:1:3:5:4:5:2:14:10,27:2:3:5:4:5:2:14:15,27:3:3:5:4:5:2:7:10,27:3:3:5:4:5:2:14:7,27:3:3:5:4:5:2:14:10,27:3:3:5:4:5:5:7:10'
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
 
+
   machine-forced-tenth-609:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-tenth-609
+    name: machine-forced-tenth-609 (${{ matrix.slice.name }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        slice:
+          - { name: a, cases: '27:1:1:5:4:5:2:1:7:2,27:1:1:5:4:5:2:1:7:5,27:1:1:5:4:5:2:1:7:13' }
+          - { name: b, cases: '27:1:1:5:4:5:2:1:10:5,27:1:1:5:4:5:2:1:10:9,27:1:1:5:4:5:2:1:10:13' }
+          - { name: c, cases: '27:1:1:5:4:5:2:1:10:14,27:1:1:5:4:5:2:1:10:19,27:1:3:5:4:5:2:14:10:18' }
+          - { name: d, cases: '27:3:3:5:4:5:2:7:10:18,27:3:3:5:4:5:2:14:10:13,27:3:3:5:4:5:2:14:10:18' }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -232,6 +241,5 @@ jobs:
       - name: Refine final identity 609 branch by tenth sparse customer
         env:
           MACHINE_CONTINUATION_FORCED_TENTH_GROUP: '609'
-          MACHINE_CONTINUATION_FORCED_TENTH_CASES: '27:1:1:5:4:5:2:1:7:2,27:1:1:5:4:5:2:1:7:5,27:1:1:5:4:5:2:1:7:13,27:1:1:5:4:5:2:1:10:5,27:1:1:5:4:5:2:1:10:9,27:1:1:5:4:5:2:1:10:13,27:1:1:5:4:5:2:1:10:14,27:1:1:5:4:5:2:1:10:19,27:1:3:5:4:5:2:14:10:18,27:3:3:5:4:5:2:7:10:18,27:3:3:5:4:5:2:14:10:13,27:3:3:5:4:5:2:14:10:18'
+          MACHINE_CONTINUATION_FORCED_TENTH_CASES: ${{ matrix.slice.cases }}
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
-
