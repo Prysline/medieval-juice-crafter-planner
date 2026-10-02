@@ -29,23 +29,43 @@ jobs:
       - run: npm run build
       - run: npm run smoke:highs:pages-like
 
-  machine-forced-cost-role-457:
+  machine-forced-cost-role-457-list:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-cost-role-457 (b27-r0-required-c${{ matrix.cost }})
+    name: machine-forced-cost-role-457 (b27-r0-required-c${{ matrix.cost }}-list)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        cost: [97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116]
+        cost: [100, 102, 103, 104, 105, 106, 107, 108, 110, 111, 114]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Resolve identity 457 branch 27 role-zero required cost bucket
+      - name: List first-identity frontier for expensive cost bucket
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '457'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '27:0:required'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.cost }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_IDENTITIES: '1'
+        run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
+
+  machine-forced-cost-role-457-c115:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
+    name: machine-forced-cost-role-457 (b27-r0-required-c115-pair)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Resolve the remaining cost-115 extra-one pair by sparse customer
+        env:
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '457'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '27:0:required'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '115'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '1089'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
