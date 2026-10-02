@@ -167,6 +167,11 @@ const forcedRoleProfileIt =
     ? it
     : it.skip
 
+const forcedCostRoleProfileIt =
+  Boolean(machineContinuationEnv.MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP)
+    ? it
+    : it.skip
+
 const singleSupportMasterProfileIt =
   Boolean(machineContinuationEnv.MACHINE_CONTINUATION_SINGLE_MASTER_GROUPS)
     ? it
@@ -7340,6 +7345,379 @@ function build311ExtraCostSumSupportMaster(
   return { model, groups }
 }
 
+
+forcedCostRoleProfileIt(
+  'splits forced-customer role/slack cases by exact extra-one cost sum',
+  async () => {
+    const domain = canonicalDomain()
+    const groups = pairGroups(domain)
+    const groupIndex = Number(
+      machineContinuationEnv.MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP,
+    )
+    expect(Number.isInteger(groupIndex)).toBe(true)
+    expect(groups[groupIndex]).toBeDefined()
+    expect(groups[groupIndex].eligibleCustomerIds.length).toBe(8)
+
+    const fixedCustomers = new Set(
+      groups[groupIndex].eligibleCustomerIds,
+    )
+    const residualCustomerIds =
+      domain.serviceableCustomerIds.filter(
+        (customerId) => !fixedCustomers.has(customerId),
+      )
+    const candidatesForCustomer = (customerId: string) =>
+      groups.flatMap((group, candidateGroupIndex) => {
+        if (candidateGroupIndex === groupIndex) return []
+        const residualEligible = group.eligibleCustomerIds.filter(
+          (eligibleCustomerId) =>
+            !fixedCustomers.has(eligibleCustomerId),
+        )
+        if (!residualEligible.includes(customerId)) return []
+        const normal = residualEligible.length >= 2
+        const slack =
+          group.ingredientCost === SLACK_RECIPE_COST &&
+          residualEligible.length >= 1
+        return normal || slack
+          ? [{
+              groupIndex: candidateGroupIndex,
+              slackOnly: !normal && slack,
+            }]
+          : []
+      })
+
+    const branchCustomers = residualCustomerIds.flatMap(
+      (customerId) => {
+        const candidates = candidatesForCustomer(customerId)
+        return candidates.length <= 3
+          ? [{ customerId, candidates }]
+          : []
+      },
+    )
+    let branches: Array<{
+      requiredUsedGroupIndexes: number[]
+      requiredSlackGroupIndexes: number[]
+    }> = [{
+      requiredUsedGroupIndexes: [],
+      requiredSlackGroupIndexes: [],
+    }]
+    for (const branchCustomer of branchCustomers) {
+      branches = branches.flatMap((branch) =>
+        branchCustomer.candidates.map((candidate) => ({
+          requiredUsedGroupIndexes: [
+            ...branch.requiredUsedGroupIndexes,
+            candidate.groupIndex,
+          ],
+          requiredSlackGroupIndexes: candidate.slackOnly
+            ? [...branch.requiredSlackGroupIndexes, candidate.groupIndex]
+            : branch.requiredSlackGroupIndexes,
+        })),
+      )
+    }
+
+    const requestedCases =
+      (
+        machineContinuationEnv.MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES ??
+        ''
+      )
+        .split(';')
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .map((value) => {
+          const [branchValue, roleMaskValue, slackCase] =
+            value.split(':')
+          return {
+            branchIndex: Number(branchValue),
+            roleMask: Number(roleMaskValue),
+            slackCase,
+          }
+        })
+        .filter(
+          (entry) =>
+            Number.isInteger(entry.branchIndex) &&
+            entry.branchIndex >= 0 &&
+            entry.branchIndex < branches.length &&
+            Number.isInteger(entry.roleMask) &&
+            entry.roleMask >= 0 &&
+            (entry.slackCase === 'required' ||
+              entry.slackCase === 'forbidden'),
+        )
+    expect(requestedCases.length).toBeGreaterThan(0)
+
+    const slackGroupIndex = 1243
+    expect(groups[slackGroupIndex].ingredientCost).toBe(
+      SLACK_RECIPE_COST,
+    )
+    const thresholdCounts = [3, 1, 1, 0] as const
+    const results = []
+    let globalWitness:
+      | {
+          branchIndex: number
+          roleMask: number
+          slackCase: string
+          extraOneCostSum: number
+          support: number[]
+          objective: number | null
+        }
+      | undefined
+
+    for (const requested of requestedCases) {
+      const branch = branches[requested.branchIndex]
+      const eligibleRoleGroups = [...new Set(
+        branch.requiredUsedGroupIndexes.filter(
+          (requiredGroupIndex) => {
+            if (requiredGroupIndex === groupIndex) return false
+            const residualEligible =
+              groups[requiredGroupIndex].eligibleCustomerIds.filter(
+                (customerId) => !fixedCustomers.has(customerId),
+              )
+            return residualEligible.length >= 4
+          },
+        ),
+      )]
+      const roleCaseCount = 1 << eligibleRoleGroups.length
+      expect(requested.roleMask).toBeLessThan(roleCaseCount)
+
+      const requiredExtraOneGroupIndexes =
+        eligibleRoleGroups.filter(
+          (_roleGroupIndex, bitIndex) =>
+            (requested.roleMask & (1 << bitIndex)) !== 0,
+        )
+      const forbiddenExtraOneGroupIndexes =
+        eligibleRoleGroups.filter(
+          (_roleGroupIndex, bitIndex) =>
+            (requested.roleMask & (1 << bitIndex)) === 0,
+        )
+      const requiredSlackGroupIndexes =
+        requested.slackCase === 'required'
+          ? [
+              ...branch.requiredSlackGroupIndexes,
+              slackGroupIndex,
+            ]
+          : branch.requiredSlackGroupIndexes
+      const forbiddenSlackGroupIndexes =
+        requested.slackCase === 'forbidden'
+          ? [slackGroupIndex]
+          : []
+
+      const allExtraOneGroupIndexes = groups.flatMap(
+        (group, candidateGroupIndex) => {
+          if (candidateGroupIndex === groupIndex) return []
+          const residualEligibleCount =
+            group.eligibleCustomerIds.filter(
+              (customerId) => !fixedCustomers.has(customerId),
+            ).length
+          const upperBound = Math.min(
+            PROCESSING_STACK_CAPACITY,
+            Math.ceil(residualEligibleCount / 2),
+          )
+          return upperBound >= 2
+            ? [candidateGroupIndex]
+            : []
+        },
+      )
+      const requiredExtraOneSet = new Set(
+        requiredExtraOneGroupIndexes,
+      )
+      const forbiddenExtraOneSet = new Set(
+        forbiddenExtraOneGroupIndexes,
+      )
+      if (requested.slackCase === 'required') {
+        forbiddenExtraOneSet.add(slackGroupIndex)
+      }
+      const remainingExtraOneCount =
+        2 - requiredExtraOneGroupIndexes.length
+      expect(remainingExtraOneCount).toBeGreaterThanOrEqual(0)
+
+      const remainingExtraOneGroups =
+        allExtraOneGroupIndexes.filter(
+          (candidateGroupIndex) =>
+            !requiredExtraOneSet.has(candidateGroupIndex) &&
+            !forbiddenExtraOneSet.has(candidateGroupIndex),
+        )
+      const requiredExtraOneCost =
+        requiredExtraOneGroupIndexes.reduce(
+          (total, requiredGroupIndex) =>
+            total + groups[requiredGroupIndex].ingredientCost,
+          0,
+        )
+      const costSums = new Set<number>()
+      if (remainingExtraOneCount === 0) {
+        costSums.add(requiredExtraOneCost)
+      } else if (remainingExtraOneCount === 1) {
+        for (const candidateGroupIndex of remainingExtraOneGroups) {
+          costSums.add(
+            requiredExtraOneCost +
+              groups[candidateGroupIndex].ingredientCost,
+          )
+        }
+      } else if (remainingExtraOneCount === 2) {
+        for (
+          let leftIndex = 0;
+          leftIndex < remainingExtraOneGroups.length;
+          leftIndex += 1
+        ) {
+          for (
+            let rightIndex = leftIndex + 1;
+            rightIndex < remainingExtraOneGroups.length;
+            rightIndex += 1
+          ) {
+            costSums.add(
+              requiredExtraOneCost +
+                groups[
+                  remainingExtraOneGroups[leftIndex]
+                ].ingredientCost +
+                groups[
+                  remainingExtraOneGroups[rightIndex]
+                ].ingredientCost,
+            )
+          }
+        }
+      } else {
+        throw new Error(
+          `Unsupported remaining extra-one count ${remainingExtraOneCount}`,
+        )
+      }
+      const sortedCostSums = [...costSums].sort(
+        (left, right) => left - right,
+      )
+      expect(sortedCostSums.length).toBeGreaterThan(0)
+
+      for (const extraOneCostSum of sortedCostSums) {
+        const supportCuts: number[][] = []
+        let status = 'round-limit'
+        let masterSolveMs = 0
+        let exactSolveMs = 0
+        let exactInfeasibleSupports = 0
+        let supportSize = 0
+
+        for (let round = 0; round < 8; round += 1) {
+          const built = build311ExtraCostSumSupportMaster(
+            domain,
+            groupIndex,
+            extraOneCostSum,
+            {
+              includeCustomerFlow: true,
+              forcedCustomerIds:
+                groups[groupIndex].eligibleCustomerIds,
+              requiredUsedGroupIndexes:
+                branch.requiredUsedGroupIndexes,
+              requiredSlackGroupIndexes,
+              forbiddenSlackGroupIndexes,
+              requiredExtraOneGroupIndexes,
+              forbiddenExtraOneGroupIndexes,
+              supportCuts,
+            },
+          )
+          const solved = await solveBounded(built.model, 0.5)
+          masterSolveMs += solved.solveMs
+          if (solved.status === 'infeasible') {
+            status = 'infeasible'
+            break
+          }
+          if (
+            solved.status !== 'optimal' ||
+            !solved.namedSolution
+          ) {
+            status = solved.status
+            break
+          }
+
+          const support = groups.flatMap(
+            (_group, supportGroupIndex) => {
+              const raw = solved.namedSolution!.get(
+                `s31su_${supportGroupIndex}`,
+              )
+              return typeof raw === 'number' &&
+                Number.isFinite(raw) &&
+                raw > 0.5
+                ? [supportGroupIndex]
+                : []
+            },
+          )
+          supportSize = support.length
+          if (support.length !== 30) {
+            throw new Error(
+              `Expected 30 support groups for forced identity ${groupIndex} / branch ${requested.branchIndex} / cost sum ${extraOneCostSum}, got ${support.length}`,
+            )
+          }
+
+          const exact = buildFinalizing30MaskPartitionStage(
+            domain,
+            new Set<ProductionStepKind>([
+              'juicing',
+              'seasoning',
+              'blending',
+            ]),
+            thresholdCounts,
+            { max: 76 },
+            0,
+            new Set(support),
+          )
+          const exactSolved = await solveBounded(exact.model, 3)
+          exactSolveMs += exactSolved.solveMs
+          if (exactSolved.status === 'infeasible') {
+            exactInfeasibleSupports += 1
+            supportCuts.push(support)
+            continue
+          }
+          if (exactSolved.status === 'optimal') {
+            status = 'global-witness'
+            globalWitness = {
+              branchIndex: requested.branchIndex,
+              roleMask: requested.roleMask,
+              slackCase: requested.slackCase,
+              extraOneCostSum,
+              support,
+              objective: exactSolved.objective,
+            }
+            break
+          }
+          status = `exact-${exactSolved.status}`
+          break
+        }
+
+        results.push({
+          branchIndex: requested.branchIndex,
+          roleMask: requested.roleMask,
+          slackCase: requested.slackCase,
+          eligibleRoleGroups,
+          requiredExtraOneGroupIndexes,
+          forbiddenExtraOneGroupIndexes,
+          extraOneCostSum,
+          status,
+          supportCuts: supportCuts.length,
+          exactInfeasibleSupports,
+          supportSize,
+          masterSolveMs: Math.round(masterSolveMs),
+          exactSolveMs: Math.round(exactSolveMs),
+        })
+        if (globalWitness) break
+      }
+      if (globalWitness) break
+    }
+
+    const unresolved = results.filter(
+      (entry) => entry.status !== 'infeasible',
+    )
+    console.info(
+      '[machine-forced-cost-role-summary]',
+      JSON.stringify({
+        groupIndex,
+        requestedCases,
+        totalCostBuckets: results.length,
+        infeasibleCostBuckets:
+          results.length - unresolved.length,
+        unresolvedCount: unresolved.length,
+        unresolved,
+        globalWitness,
+      }),
+    )
+
+    expect(globalWitness).toBeUndefined()
+    expect(unresolved).toEqual([])
+  },
+  300000,
+)
 
 forcedRoleProfileIt(
   'splits selected forced-customer branches by fixed-group extra-one roles',
