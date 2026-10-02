@@ -8014,6 +8014,249 @@ forcedCostRoleProfileIt(
                   break
                 }
 
+                if (
+                  pairStatus === 'timelimit' &&
+                  machineContinuationEnv.MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER ===
+                    '1'
+                ) {
+                  const alreadyRequiredUsedGroupIndexes = new Set([
+                    ...branch.requiredUsedGroupIndexes,
+                    ...requiredExtraOneGroupIndexes,
+                    identityGroupIndex,
+                    secondIdentityGroupIndex,
+                    ...requiredSlackGroupIndexes,
+                  ])
+                  const baseBranchCustomerIds = new Set(
+                    branchCustomers.map((entry) => entry.customerId),
+                  )
+                  const pairSparseCustomers = residualCustomerIds
+                    .filter(
+                      (customerId) =>
+                        !baseBranchCustomerIds.has(customerId),
+                    )
+                    .map((customerId) => ({
+                      customerId,
+                      candidates:
+                        candidatesForCustomer(customerId),
+                    }))
+                    .filter(
+                      (entry) =>
+                        entry.candidates.length > 0 &&
+                        entry.candidates.every(
+                          (candidate) =>
+                            !alreadyRequiredUsedGroupIndexes.has(
+                              candidate.groupIndex,
+                            ),
+                        ),
+                    )
+                    .sort(
+                      (left, right) =>
+                        left.candidates.length -
+                        right.candidates.length,
+                    )
+                  const pairSparse = pairSparseCustomers[0]
+                  expect(pairSparse).toBeDefined()
+                  if (pairSparse) {
+                    const pairCustomerUnresolved: Array<{
+                      choiceGroupIndex: number
+                      status: string
+                      supportCuts: number
+                    }> = []
+
+                    for (const choice of pairSparse.candidates) {
+                      const customerSupportCuts: number[][] = []
+                      let customerStatus = 'round-limit'
+
+                      for (
+                        let customerRound = 0;
+                        customerRound < 8;
+                        customerRound += 1
+                      ) {
+                        const customerBuilt =
+                          build311ExtraCostSumSupportMaster(
+                            domain,
+                            groupIndex,
+                            extraOneCostSum,
+                            {
+                              includeCustomerFlow: true,
+                              forcedCustomerIds:
+                                groups[groupIndex]
+                                  .eligibleCustomerIds,
+                              requiredUsedGroupIndexes: [
+                                ...branch.requiredUsedGroupIndexes,
+                                choice.groupIndex,
+                              ],
+                              requiredSlackGroupIndexes: [
+                                ...requiredSlackGroupIndexes,
+                                ...(choice.slackOnly
+                                  ? [choice.groupIndex]
+                                  : []),
+                              ],
+                              forbiddenSlackGroupIndexes,
+                              requiredExtraOneGroupIndexes: [
+                                ...requiredExtraOneGroupIndexes,
+                                identityGroupIndex,
+                                secondIdentityGroupIndex,
+                              ],
+                              forbiddenExtraOneGroupIndexes:
+                                identityForbiddenExtraOneGroupIndexes,
+                              supportCuts:
+                                customerSupportCuts,
+                            },
+                          )
+                        const customerSolved =
+                          await solveBounded(
+                            customerBuilt.model,
+                            0.5,
+                          )
+                        masterSolveMs +=
+                          customerSolved.solveMs
+                        if (
+                          customerSolved.status ===
+                          'infeasible'
+                        ) {
+                          customerStatus = 'infeasible'
+                          break
+                        }
+                        if (
+                          customerSolved.status !==
+                            'optimal' ||
+                          !customerSolved.namedSolution
+                        ) {
+                          customerStatus =
+                            customerSolved.status
+                          break
+                        }
+
+                        const customerSupport =
+                          groups.flatMap(
+                            (
+                              _group,
+                              supportGroupIndex,
+                            ) => {
+                              const raw =
+                                customerSolved.namedSolution!.get(
+                                  `s31su_${supportGroupIndex}`,
+                                )
+                              return typeof raw ===
+                                'number' &&
+                                Number.isFinite(raw) &&
+                                raw > 0.5
+                                ? [supportGroupIndex]
+                                : []
+                            },
+                          )
+                        supportSize =
+                          customerSupport.length
+                        if (
+                          customerSupport.length !== 30
+                        ) {
+                          throw new Error(
+                            `Expected 30 support groups for forced identity ${groupIndex} / branch ${requested.branchIndex} / cost sum ${extraOneCostSum} / extra-one pair ${identityGroupIndex}+${secondIdentityGroupIndex} / sparse customer ${pairSparse.customerId} / choice ${choice.groupIndex}, got ${customerSupport.length}`,
+                          )
+                        }
+
+                        const customerExact =
+                          buildFinalizing30MaskPartitionStage(
+                            domain,
+                            new Set<ProductionStepKind>([
+                              'juicing',
+                              'seasoning',
+                              'blending',
+                            ]),
+                            thresholdCounts,
+                            { max: 76 },
+                            0,
+                            new Set(customerSupport),
+                          )
+                        const customerExactSolved =
+                          await solveBounded(
+                            customerExact.model,
+                            3,
+                          )
+                        exactSolveMs +=
+                          customerExactSolved.solveMs
+                        if (
+                          customerExactSolved.status ===
+                          'infeasible'
+                        ) {
+                          exactInfeasibleSupports += 1
+                          customerSupportCuts.push(
+                            customerSupport,
+                          )
+                          continue
+                        }
+                        if (
+                          customerExactSolved.status ===
+                          'optimal'
+                        ) {
+                          customerStatus =
+                            'global-witness'
+                          globalWitness = {
+                            branchIndex:
+                              requested.branchIndex,
+                            roleMask:
+                              requested.roleMask,
+                            slackCase:
+                              requested.slackCase,
+                            extraOneCostSum,
+                            support: customerSupport,
+                            objective:
+                              customerExactSolved.objective,
+                          }
+                          break
+                        }
+                        customerStatus =
+                          `exact-${customerExactSolved.status}`
+                        break
+                      }
+
+                      if (
+                        customerStatus !== 'infeasible'
+                      ) {
+                        pairCustomerUnresolved.push({
+                          choiceGroupIndex:
+                            choice.groupIndex,
+                          status: customerStatus,
+                          supportCuts:
+                            customerSupportCuts.length,
+                        })
+                      }
+                      if (globalWitness) break
+                    }
+
+                    console.info(
+                      '[machine-forced-cost-role-pair-customer-summary]',
+                      JSON.stringify({
+                        groupIndex,
+                        branchIndex:
+                          requested.branchIndex,
+                        extraOneCostSum,
+                        firstIdentityGroupIndex:
+                          identityGroupIndex,
+                        secondIdentityGroupIndex,
+                        sparseCustomer:
+                          pairSparse.customerId,
+                        candidateCount:
+                          pairSparse.candidates.length,
+                        unresolved:
+                          pairCustomerUnresolved,
+                      }),
+                    )
+
+                    if (
+                      !globalWitness &&
+                      pairCustomerUnresolved.length ===
+                        0
+                    ) {
+                      pairStatus = 'infeasible'
+                    } else if (!globalWitness) {
+                      pairStatus =
+                        'customer-split-unresolved'
+                    }
+                  }
+                }
+
                 if (pairStatus !== 'infeasible') {
                   secondIdentityUnresolved.push({
                     groupIndex: secondIdentityGroupIndex,
