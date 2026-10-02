@@ -52,7 +52,7 @@ jobs:
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
 
 
-  machine-forced-slack-247:
+  machine-forced-role-247:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     steps:
@@ -61,9 +61,8 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - name: Split forced identity 247 by slack role
+      - name: Split forced identity 247 by extra-one roles
         env:
-          MACHINE_CONTINUATION_FORCED_SLACK_GROUP: '247'
-          MACHINE_CONTINUATION_FORCED_SLACK_IDENTITY: '1243'
-          MACHINE_CONTINUATION_FORCED_SLACK_BRANCHES: '32,33'
+          MACHINE_CONTINUATION_FORCED_ROLE_GROUP: '247'
+          MACHINE_CONTINUATION_FORCED_ROLE_BRANCHES: '32,33'
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
