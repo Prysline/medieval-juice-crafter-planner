@@ -7009,6 +7009,10 @@ function build311ExtraCostSumSupportMaster(
     forbiddenSlackGroupIndexes?: readonly number[]
     requiredExtraOneGroupIndexes?: readonly number[]
     forbiddenExtraOneGroupIndexes?: readonly number[]
+    requiredExtraOneCostCounts?: readonly {
+      ingredientCost: number
+      count: number
+    }[]
   } = {},
 ) {
   const supportCuts = options.supportCuts ?? []
@@ -7025,6 +7029,8 @@ function build311ExtraCostSumSupportMaster(
     options.requiredExtraOneGroupIndexes ?? []
   const forbiddenExtraOneGroupIndexes =
     options.forbiddenExtraOneGroupIndexes ?? []
+  const requiredExtraOneCostCounts =
+    options.requiredExtraOneCostCounts ?? []
   const groups = pairGroups(domain)
   const model = new Model()
   const effectiveEligibleCustomerIds = groups.map((group, groupIndex) =>
@@ -7243,6 +7249,27 @@ function build311ExtraCostSumSupportMaster(
       `s31s_forbidden_extra_one_${index}`,
     )
   })
+  requiredExtraOneCostCounts.forEach(
+    ({ ingredientCost, count }, index) => {
+      const terms = [...extraOneByGroupIndex.entries()].flatMap(
+        ([groupIndex, extraOne]) =>
+          groups[groupIndex].ingredientCost === ingredientCost
+            ? [extraOne]
+            : [],
+      )
+      if (terms.length === 0) {
+        model.addConstraint(
+          sum(...usedGroupVars).leq(-1),
+          `s31s_invalid_extra_one_cost_count_${index}`,
+        )
+        return
+      }
+      model.addConstraint(
+        sum(...terms).eq(count),
+        `s31s_extra_one_cost_count_${index}`,
+      )
+    },
+  )
 
   model.addConstraint(
     sum(...usedGroupVars).eq(30),
@@ -7608,6 +7635,15 @@ forcedCostRoleProfileIt(
         .filter(Boolean)
         .map((value) => Number(value))
         .filter((value) => Number.isInteger(value) && value >= 0)
+      const requestedFirstIdentityCosts = (
+        machineContinuationEnv.MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_COSTS ??
+        ''
+      )
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value))
       const eligibleCostSums = sortedCostSums.filter(
         (value) => !skippedCostSums.includes(value),
       )
@@ -7625,6 +7661,23 @@ forcedCostRoleProfileIt(
       expect(selectedCostSums.length).toBeGreaterThan(0)
 
       for (const extraOneCostSum of selectedCostSums) {
+        let requiredExtraOneCostCounts:
+          Array<{ ingredientCost: number; count: number }> = []
+        if (requestedFirstIdentityCosts.length > 0) {
+          expect(requiredExtraOneGroupIndexes).toEqual([])
+          expect(remainingExtraOneCount).toBe(2)
+          expect(requestedFirstIdentityCosts.length).toBe(1)
+          const firstCost = requestedFirstIdentityCosts[0]
+          const partnerCost = extraOneCostSum - firstCost
+          expect(firstCost).toBeLessThanOrEqual(partnerCost)
+          requiredExtraOneCostCounts =
+            firstCost === partnerCost
+              ? [{ ingredientCost: firstCost, count: 2 }]
+              : [
+                  { ingredientCost: firstCost, count: 1 },
+                  { ingredientCost: partnerCost, count: 1 },
+                ]
+        }
         const supportCuts: number[][] = []
         let status = 'round-limit'
         let masterSolveMs = 0
@@ -7647,6 +7700,7 @@ forcedCostRoleProfileIt(
               forbiddenSlackGroupIndexes,
               requiredExtraOneGroupIndexes,
               forbiddenExtraOneGroupIndexes,
+              requiredExtraOneCostCounts,
               supportCuts,
             },
           )
@@ -7765,15 +7819,24 @@ forcedCostRoleProfileIt(
                     )
                   },
                 )
+          const costFilteredCanonicalIdentityCandidates =
+            requestedFirstIdentityCosts.length > 0
+              ? canonicalIdentityCandidates.filter(
+                  (candidateGroupIndex) =>
+                    requestedFirstIdentityCosts.includes(
+                      groups[candidateGroupIndex].ingredientCost,
+                    ),
+                )
+              : canonicalIdentityCandidates
           const identityCandidates =
             requestedFirstIdentityGroupIndexes.length > 0
-              ? canonicalIdentityCandidates.filter(
+              ? costFilteredCanonicalIdentityCandidates.filter(
                   (candidateGroupIndex) =>
                     requestedFirstIdentityGroupIndexes.includes(
                       candidateGroupIndex,
                     ),
                 )
-              : canonicalIdentityCandidates
+              : costFilteredCanonicalIdentityCandidates
           if (
             machineContinuationEnv.MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_IDENTITIES ===
             '1'
@@ -7787,10 +7850,10 @@ forcedCostRoleProfileIt(
                 extraOneCostSum,
                 remainingExtraOneCount,
                 candidateGroupIndexes:
-                  canonicalIdentityCandidates,
+                  costFilteredCanonicalIdentityCandidates,
                 candidateCostCounts: [
                   ...new Set(
-                    canonicalIdentityCandidates.map(
+                    costFilteredCanonicalIdentityCandidates.map(
                       (candidateGroupIndex) =>
                         groups[candidateGroupIndex].ingredientCost,
                     ),
@@ -7799,7 +7862,7 @@ forcedCostRoleProfileIt(
                   .sort((left, right) => left - right)
                   .map((ingredientCost) => ({
                     ingredientCost,
-                    count: canonicalIdentityCandidates.filter(
+                    count: costFilteredCanonicalIdentityCandidates.filter(
                       (candidateGroupIndex) =>
                         groups[candidateGroupIndex].ingredientCost ===
                         ingredientCost,
@@ -7858,6 +7921,7 @@ forcedCostRoleProfileIt(
                   ],
                   forbiddenExtraOneGroupIndexes:
                     identityForbiddenExtraOneGroupIndexes,
+                  requiredExtraOneCostCounts,
                   supportCuts: identitySupportCuts,
                 },
               )
@@ -7986,6 +8050,7 @@ forcedCostRoleProfileIt(
                         ],
                         forbiddenExtraOneGroupIndexes:
                           identityForbiddenExtraOneGroupIndexes,
+                        requiredExtraOneCostCounts,
                         supportCuts: pairSupportCuts,
                       },
                     )
