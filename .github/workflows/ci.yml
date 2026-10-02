@@ -29,9 +29,9 @@ jobs:
       - run: npm run build
       - run: npm run smoke:highs:pages-like
 
-  machine-forced-twelfth-609:
+  machine-forced-thirteenth-609:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-twelfth-609
+    name: machine-forced-thirteenth-609
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,8 +39,8 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - name: Close final identity 609 case by twelfth sparse customer
+      - name: Close final identity 609 case by thirteenth sparse customer
         env:
-          MACHINE_CONTINUATION_FORCED_TWELFTH_GROUP: '609'
-          MACHINE_CONTINUATION_FORCED_TWELFTH_CASES: '27:3:3:5:4:5:2:7:10:18:6:0'
+          MACHINE_CONTINUATION_FORCED_THIRTEENTH_GROUP: '609'
+          MACHINE_CONTINUATION_FORCED_THIRTEENTH_CASES: '27:3:3:5:4:5:2:7:10:18:6:0:19'
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
