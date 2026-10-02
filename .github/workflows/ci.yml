@@ -52,26 +52,17 @@ jobs:
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
 
 
-  machine-forced-eighth-609:
+  machine-forced-ninth-609:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-eighth-609 (${{ matrix.slice.name }})
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        slice:
-          - { name: a, cases: '21:2:3:5:4:6:2:13,21:2:3:5:4:6:5:1' }
-          - { name: b, cases: '21:2:3:5:4:6:5:2,32:2:1:5:4:5:2:1' }
-          - { name: c, cases: '32:2:1:5:4:5:3:0,32:2:1:5:4:5:3:1' }
-          - { name: d, cases: '32:2:1:5:4:5:4:1,32:2:1:5:4:5:5:1' }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Check fixed eighth-level identity 609 shard
+      - name: Check final fixed ninth-level identity 609 cases
         env:
-          MACHINE_CONTINUATION_FORCED_EIGHTH_GROUP: '609'
-          MACHINE_CONTINUATION_FORCED_EIGHTH_CASES: ${{ matrix.slice.cases }}
+          MACHINE_CONTINUATION_FORCED_NINTH_GROUP: '609'
+          MACHINE_CONTINUATION_FORCED_NINTH_CASES: '32:2:1:5:4:5:2:1:7,32:2:1:5:4:5:2:1:10,32:2:1:5:4:5:3:1:4'
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
