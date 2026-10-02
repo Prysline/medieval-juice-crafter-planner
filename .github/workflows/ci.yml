@@ -30,6 +30,28 @@ jobs:
       - run: npm run smoke:highs:pages-like
 
 
+  machine-1279-robustness:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
+    name: machine-1279-robustness (${{ matrix.slice.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        slice:
+          - { name: e, branches: '12,13,14' }
+          - { name: g, branches: '18,19,20' }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Recheck historically flaky 1279 shards
+        env:
+          MACHINE_CONTINUATION_1279_BASE_BRANCHES: ${{ matrix.slice.branches }}
+        run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
+
+
   machine-forced-base-cover:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
     name: machine-forced-base-cover (${{ matrix.group }})
