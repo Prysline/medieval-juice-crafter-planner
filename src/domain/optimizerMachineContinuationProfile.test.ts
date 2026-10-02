@@ -7301,10 +7301,12 @@ patriciaShardProfileIt(
     const patriciaCandidates = candidatesForCustomer('patricia')
     const tiffanyCandidates = candidatesForCustomer('tiffany')
     const solomonCandidates = candidatesForCustomer('solomon')
+    const dominicCandidates = candidatesForCustomer('dominic')
     expect(hugoCandidates.length).toBe(5)
     expect(patriciaCandidates.length).toBe(6)
     expect(tiffanyCandidates.length).toBe(7)
     expect(solomonCandidates.length).toBe(8)
+    expect(dominicCandidates.length).toBe(8)
 
     const requestedBaseBranches =
       (
@@ -7537,7 +7539,91 @@ patriciaShardProfileIt(
         unresolved: unresolvedSolomon,
       }),
     )
-    expect(unresolvedSolomon).toEqual([])
+
+    const dominicResults = []
+    for (const parent of unresolvedSolomon) {
+      const branch = baseBranches[parent.branchIndex]
+      const hugoChoice = hugoCandidates[parent.hugoChoiceIndex]
+      const patriciaChoice =
+        patriciaCandidates[parent.patriciaChoiceIndex]
+      const tiffanyChoice =
+        tiffanyCandidates[parent.tiffanyChoiceIndex]
+      const solomonChoice =
+        solomonCandidates[parent.solomonChoiceIndex]
+      for (
+        let dominicChoiceIndex = 0;
+        dominicChoiceIndex < dominicCandidates.length;
+        dominicChoiceIndex += 1
+      ) {
+        const dominicChoice =
+          dominicCandidates[dominicChoiceIndex]
+        const built = build311ExtraCostSumSupportMaster(
+          domain,
+          groupIndex,
+          undefined,
+          {
+            includeCustomerFlow: true,
+            forcedCustomerIds:
+              groups[groupIndex].eligibleCustomerIds,
+            requiredUsedGroupIndexes: [
+              ...branch.requiredUsedGroupIndexes,
+              hugoChoice.groupIndex,
+              patriciaChoice.groupIndex,
+              tiffanyChoice.groupIndex,
+              solomonChoice.groupIndex,
+              dominicChoice.groupIndex,
+            ],
+            requiredSlackGroupIndexes: [
+              ...branch.requiredSlackGroupIndexes,
+              ...(hugoChoice.slackOnly
+                ? [hugoChoice.groupIndex]
+                : []),
+              ...(patriciaChoice.slackOnly
+                ? [patriciaChoice.groupIndex]
+                : []),
+              ...(tiffanyChoice.slackOnly
+                ? [tiffanyChoice.groupIndex]
+                : []),
+              ...(solomonChoice.slackOnly
+                ? [solomonChoice.groupIndex]
+                : []),
+              ...(dominicChoice.slackOnly
+                ? [dominicChoice.groupIndex]
+                : []),
+            ],
+          },
+        )
+        const solved = await solveBounded(built.model, 0.5)
+        dominicResults.push({
+          branchIndex: parent.branchIndex,
+          hugoChoiceIndex: parent.hugoChoiceIndex,
+          patriciaChoiceIndex: parent.patriciaChoiceIndex,
+          tiffanyChoiceIndex: parent.tiffanyChoiceIndex,
+          solomonChoiceIndex: parent.solomonChoiceIndex,
+          dominicChoiceIndex,
+          dominicGroupIndex: dominicChoice.groupIndex,
+          status: solved.status,
+          solveMs: Math.round(solved.solveMs),
+        })
+      }
+    }
+
+    const unresolvedDominic = dominicResults.filter(
+      (entry) => entry.status !== 'infeasible',
+    )
+    console.info(
+      '[machine-1279-dominic-shard-summary]',
+      JSON.stringify({
+        requestedBaseBranches,
+        parentBranches: unresolvedSolomon.length,
+        totalBranches: dominicResults.length,
+        infeasibleCount:
+          dominicResults.length - unresolvedDominic.length,
+        unresolvedCount: unresolvedDominic.length,
+        unresolved: unresolvedDominic,
+      }),
+    )
+    expect(unresolvedDominic).toEqual([])
   },
   120000,
 )
