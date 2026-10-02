@@ -243,3 +243,20 @@ jobs:
           MACHINE_CONTINUATION_FORCED_TENTH_GROUP: '609'
           MACHINE_CONTINUATION_FORCED_TENTH_CASES: ${{ matrix.slice.cases }}
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
+
+  machine-forced-eleventh-609:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
+    name: machine-forced-eleventh-609
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Close final identity 609 cases by eleventh sparse customer
+        env:
+          MACHINE_CONTINUATION_FORCED_ELEVENTH_GROUP: '609'
+          MACHINE_CONTINUATION_FORCED_ELEVENTH_CASES: '27:3:3:5:4:5:2:7:10:18:6,27:3:3:5:4:5:2:7:10:18:11,27:3:3:5:4:5:2:14:10:18:14'
+        run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
+
