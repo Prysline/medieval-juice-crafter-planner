@@ -7676,6 +7676,140 @@ forcedCostRoleProfileIt(
           break
         }
 
+        let identitySplitCases = 0
+        const identitySplitUnresolved: Array<{
+          groupIndex: number
+          status: string
+          supportCuts: number
+        }> = []
+        if (
+          status === 'timelimit' &&
+          remainingExtraOneCount === 1
+        ) {
+          const remainingExtraOneCost =
+            extraOneCostSum - requiredExtraOneCost
+          const identityCandidates =
+            remainingExtraOneGroups.filter(
+              (candidateGroupIndex) =>
+                groups[candidateGroupIndex].ingredientCost ===
+                remainingExtraOneCost,
+            )
+          expect(identityCandidates.length).toBeGreaterThan(0)
+
+          for (const identityGroupIndex of identityCandidates) {
+            identitySplitCases += 1
+            const identitySupportCuts: number[][] = []
+            let identityStatus = 'round-limit'
+
+            for (let round = 0; round < 8; round += 1) {
+              const built = build311ExtraCostSumSupportMaster(
+                domain,
+                groupIndex,
+                extraOneCostSum,
+                {
+                  includeCustomerFlow: true,
+                  forcedCustomerIds:
+                    groups[groupIndex].eligibleCustomerIds,
+                  requiredUsedGroupIndexes:
+                    branch.requiredUsedGroupIndexes,
+                  requiredSlackGroupIndexes,
+                  forbiddenSlackGroupIndexes,
+                  requiredExtraOneGroupIndexes: [
+                    ...requiredExtraOneGroupIndexes,
+                    identityGroupIndex,
+                  ],
+                  forbiddenExtraOneGroupIndexes,
+                  supportCuts: identitySupportCuts,
+                },
+              )
+              const solved = await solveBounded(built.model, 0.5)
+              masterSolveMs += solved.solveMs
+              if (solved.status === 'infeasible') {
+                identityStatus = 'infeasible'
+                break
+              }
+              if (
+                solved.status !== 'optimal' ||
+                !solved.namedSolution
+              ) {
+                identityStatus = solved.status
+                break
+              }
+
+              const support = groups.flatMap(
+                (_group, supportGroupIndex) => {
+                  const raw = solved.namedSolution!.get(
+                    `s31su_${supportGroupIndex}`,
+                  )
+                  return typeof raw === 'number' &&
+                    Number.isFinite(raw) &&
+                    raw > 0.5
+                    ? [supportGroupIndex]
+                    : []
+                },
+              )
+              supportSize = support.length
+              if (support.length !== 30) {
+                throw new Error(
+                  `Expected 30 support groups for forced identity ${groupIndex} / branch ${requested.branchIndex} / cost sum ${extraOneCostSum} / extra-one identity ${identityGroupIndex}, got ${support.length}`,
+                )
+              }
+
+              const exact = buildFinalizing30MaskPartitionStage(
+                domain,
+                new Set<ProductionStepKind>([
+                  'juicing',
+                  'seasoning',
+                  'blending',
+                ]),
+                thresholdCounts,
+                { max: 76 },
+                0,
+                new Set(support),
+              )
+              const exactSolved = await solveBounded(exact.model, 3)
+              exactSolveMs += exactSolved.solveMs
+              if (exactSolved.status === 'infeasible') {
+                exactInfeasibleSupports += 1
+                identitySupportCuts.push(support)
+                continue
+              }
+              if (exactSolved.status === 'optimal') {
+                identityStatus = 'global-witness'
+                globalWitness = {
+                  branchIndex: requested.branchIndex,
+                  roleMask: requested.roleMask,
+                  slackCase: requested.slackCase,
+                  extraOneCostSum,
+                  support,
+                  objective: exactSolved.objective,
+                }
+                break
+              }
+              identityStatus = `exact-${exactSolved.status}`
+              break
+            }
+
+            if (identityStatus !== 'infeasible') {
+              identitySplitUnresolved.push({
+                groupIndex: identityGroupIndex,
+                status: identityStatus,
+                supportCuts: identitySupportCuts.length,
+              })
+            }
+            if (globalWitness) break
+          }
+
+          if (
+            !globalWitness &&
+            identitySplitUnresolved.length === 0
+          ) {
+            status = 'infeasible'
+          } else if (!globalWitness) {
+            status = 'identity-split-unresolved'
+          }
+        }
+
         results.push({
           branchIndex: requested.branchIndex,
           roleMask: requested.roleMask,
@@ -7688,6 +7822,8 @@ forcedCostRoleProfileIt(
           supportCuts: supportCuts.length,
           exactInfeasibleSupports,
           supportSize,
+          identitySplitCases,
+          identitySplitUnresolved,
           masterSolveMs: Math.round(masterSolveMs),
           exactSolveMs: Math.round(exactSolveMs),
         })
