@@ -37,31 +37,25 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - shard: s111-c49
-            first_cost: '49'
-          - shard: s111-c50
-            first_cost: '50'
-          - shard: s111-c51
-            first_cost: '51'
-          - shard: s111-c52
-            first_cost: '52'
-          - shard: s111-c53
-            first_cost: '53'
-          - shard: s111-c54
-            first_cost: '54'
-          - shard: s111-c55
-            first_cost: '55'
+          - shard: b27-r0-required
+            cases: '27:0:required'
+          - shard: b27-r1-required
+            cases: '27:1:required'
+          - shard: b27-r1-forbidden
+            cases: '27:1:forbidden'
+          - shard: b27-r2-required
+            cases: '27:2:required'
+          - shard: b27-r2-forbidden
+            cases: '27:2:forbidden'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Resolve identity 457 branch 38 sum 111 by first cost
+      - name: Resolve identity 457 branch 27 cost-role cases
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '457'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '38:0:required'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '111'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_COSTS: ${{ matrix.first_cost }}
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: ${{ matrix.cases }}
           MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
