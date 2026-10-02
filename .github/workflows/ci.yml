@@ -37,40 +37,37 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - shard: c46-1
-            first_ids: '18,39,40,41,135'
-          - shard: c46-2
-            first_ids: '136,138,139,256,268'
-          - shard: c46-3
-            first_ids: '318,420,422,429,430'
-          - shard: c46-4
-            first_ids: '431,440,444,445,447'
-          - shard: c46-5
-            first_ids: '448,449,452,453,454'
-          - shard: c46-6
-            first_ids: '463,534,536,540,542'
-          - shard: c46-7
-            first_ids: '638,655,679,779,780'
-          - shard: c46-8
-            first_ids: '781,816,817,818,828'
-          - shard: c46-9
-            first_ids: '829,830,832,834,835'
-          - shard: c46-10
-            first_ids: '855,894,897,1075,1124'
-          - shard: c46-11
-            first_ids: '1169,1170,1264,1309,1313'
+          - shard: s106-c44
+            first_cost: '44'
+          - shard: s106-c45
+            first_cost: '45'
+          - shard: s106-c46
+            first_cost: '46'
+          - shard: s106-c47
+            first_cost: '47'
+          - shard: s106-c48
+            first_cost: '48'
+          - shard: s106-c49
+            first_cost: '49'
+          - shard: s106-c50
+            first_cost: '50'
+          - shard: s106-c51
+            first_cost: '51'
+          - shard: s106-c52
+            first_cost: '52'
+          - shard: s106-c53
+            first_cost: '53'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Resolve identity 457 branch 38 sum 103 cost 46 identities
+      - name: Resolve identity 457 branch 38 sum 106 by first cost
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '457'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '38:0:required'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '103'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_COSTS: '46'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: ${{ matrix.first_ids }}
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '106'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_COSTS: ${{ matrix.first_cost }}
           MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
