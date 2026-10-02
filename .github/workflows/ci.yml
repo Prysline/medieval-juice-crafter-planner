@@ -78,5 +78,5 @@ jobs:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '666'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: ${{ matrix.cases }}
           MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: ${{ matrix.sums }}
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: ${{ matrix.first }}
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: ${{ matrix.first || '-1' }}
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
