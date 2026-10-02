@@ -36,33 +36,31 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - shard: b2-r1-req
-            cases: '2:1:required'
-          - shard: b2-r1-forb
-            cases: '2:1:forbidden'
-          - shard: b2-r2-forb
-            cases: '2:2:forbidden'
-          - shard: b2-r4-forb
-            cases: '2:4:forbidden'
-          - shard: b2-r8-forb
-            cases: '2:8:forbidden'
-          - shard: b3-r1-req
-            cases: '3:1:required'
-          - shard: b3-r1-forb
-            cases: '3:1:forbidden'
-          - shard: b3-r2-req
-            cases: '3:2:required'
-          - shard: b3-r2-forb
-            cases: '3:2:forbidden'
-          - shard: b3-r4-forb
-            cases: '3:4:forbidden'
+          - shard: b20-r0-req
+            cases: '20:0:required'
+          - shard: b20-r0-forb
+            cases: '20:0:forbidden'
+          - shard: b20-r1-req
+            cases: '20:1:required'
+          - shard: b20-r1-forb
+            cases: '20:1:forbidden'
+          - shard: b20-r2-req
+            cases: '20:2:required'
+          - shard: b20-r2-forb
+            cases: '20:2:forbidden'
+          - shard: b20-r4-forb
+            cases: '20:4:forbidden'
+          - shard: b20-r8-req
+            cases: '20:8:required'
+          - shard: b20-r8-forb
+            cases: '20:8:forbidden'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Exact identity 307 branch 2/3 cost-role shard
+      - name: Exact identity 307 branch 20 cost-role shard
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '307'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: ${{ matrix.cases }}
