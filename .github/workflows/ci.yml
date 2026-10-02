@@ -29,34 +29,26 @@ jobs:
       - run: npm run build
       - run: npm run smoke:highs:pages-like
 
-  machine-forced-role-457:
+  machine-forced-cost-role-457:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-role-457 (${{ matrix.shard }})
+    name: machine-forced-cost-role-457 (${{ matrix.shard }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - shard: a
-            branches: '0,2,3,4,8,9'
-          - shard: b
-            branches: '14,15,18,19,20,21'
-          - shard: c
-            branches: '22,23,24,26,27,28'
-          - shard: d
-            branches: '29,30,31,32,33,34'
-          - shard: e
-            branches: '35,38,39,40,43,44'
-          - shard: f
-            branches: '45,50,51'
+          - shard: b40-r2-required
+            cases: '40:2:required'
+          - shard: b40-r2-forbidden
+            cases: '40:2:forbidden'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Split identity 457 unresolved branches by exact extra-one roles
+      - name: Split identity 457 branch 40 role-two by exact extra-one cost
         env:
-          MACHINE_CONTINUATION_FORCED_ROLE_GROUP: '457'
-          MACHINE_CONTINUATION_FORCED_ROLE_BRANCHES: ${{ matrix.branches }}
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '457'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: ${{ matrix.cases }}
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
