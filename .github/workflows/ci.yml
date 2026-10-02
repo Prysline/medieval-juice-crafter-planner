@@ -37,35 +37,31 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - shard: s108-c46
-            first_cost: '46'
-          - shard: s108-c47
-            first_cost: '47'
-          - shard: s108-c48
-            first_cost: '48'
-          - shard: s108-c49
+          - shard: s111-c49
             first_cost: '49'
-          - shard: s108-c50
+          - shard: s111-c50
             first_cost: '50'
-          - shard: s108-c51
+          - shard: s111-c51
             first_cost: '51'
-          - shard: s108-c52
+          - shard: s111-c52
             first_cost: '52'
-          - shard: s108-c53
+          - shard: s111-c53
             first_cost: '53'
-          - shard: s108-c54
+          - shard: s111-c54
             first_cost: '54'
+          - shard: s111-c55
+            first_cost: '55'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Resolve identity 457 branch 38 sum 108 by first cost
+      - name: Resolve identity 457 branch 38 sum 111 by first cost
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '457'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '38:0:required'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '108'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '111'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_COSTS: ${{ matrix.first_cost }}
           MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
