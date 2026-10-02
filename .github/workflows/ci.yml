@@ -37,29 +37,37 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - shard: b38-r0-required-01
-            sums: '21,28,29,30,31,32,33,34,35,36,37,38,39'
-          - shard: b38-r0-required-02
-            sums: '40,41,42,43,44,45,46,47,48,49,50,51'
-          - shard: b38-r0-required-03
-            sums: '52,53,54,55,56,57,58,59,60,61,62,63'
-          - shard: b38-r0-required-04
-            sums: '64,65,66,67,68,69,70,71,72,73,74,75'
-          - shard: b38-r0-required-05
-            sums: '76,77,78,79,80,81,82,83,84,85,86,87'
-          - shard: b38-r0-required-06
-            sums: '88,89,90,91,92,93,94,95,96,97,98,99'
-          - shard: b38-r0-required-07
-            sums: '100,101,102,103,104,105,106,107,108,109,110,111'
-          - shard: b38-r0-required-08
-            sums: '112,113,114,115,116,117,118,119,120,121,122,123,124'
+          - shard: b38-r0-required-100
+            sums: '100'
+          - shard: b38-r0-required-101
+            sums: '101'
+          - shard: b38-r0-required-102
+            sums: '102'
+          - shard: b38-r0-required-103
+            sums: '103'
+          - shard: b38-r0-required-104
+            sums: '104'
+          - shard: b38-r0-required-105
+            sums: '105'
+          - shard: b38-r0-required-106
+            sums: '106'
+          - shard: b38-r0-required-107
+            sums: '107'
+          - shard: b38-r0-required-108
+            sums: '108'
+          - shard: b38-r0-required-109
+            sums: '109'
+          - shard: b38-r0-required-110
+            sums: '110'
+          - shard: b38-r0-required-111
+            sums: '111'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Shard identity 457 branch 38 role-zero required costs
+      - name: Resolve identity 457 branch 38 hard cost bucket
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '457'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '38:0:required'
