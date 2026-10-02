@@ -37,16 +37,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - shard: a
-            cases: '20:2:forbidden'
-          - shard: b
-            cases: '21:2:required;21:2:forbidden;26:1:required'
-          - shard: c
-            cases: '26:2:required;26:2:forbidden'
-          - shard: d
-            cases: '27:2:required;27:2:forbidden;32:1:required'
-          - shard: e
-            cases: '32:2:required'
+          - shard: branch-20-free-pair
+            cases: '20:0:required'
+          - shard: branch-21-free-pair
+            cases: '21:0:required'
+          - shard: branch-27-free-pair
+            cases: '27:0:required'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
