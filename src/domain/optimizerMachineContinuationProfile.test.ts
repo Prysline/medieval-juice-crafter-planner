@@ -7788,6 +7788,23 @@ forcedCostRoleProfileIt(
                 remainingExtraOneCount,
                 candidateGroupIndexes:
                   canonicalIdentityCandidates,
+                candidateCostCounts: [
+                  ...new Set(
+                    canonicalIdentityCandidates.map(
+                      (candidateGroupIndex) =>
+                        groups[candidateGroupIndex].ingredientCost,
+                    ),
+                  ),
+                ]
+                  .sort((left, right) => left - right)
+                  .map((ingredientCost) => ({
+                    ingredientCost,
+                    count: canonicalIdentityCandidates.filter(
+                      (candidateGroupIndex) =>
+                        groups[candidateGroupIndex].ingredientCost ===
+                        ingredientCost,
+                    ).length,
+                  })),
               })}`,
             )
           }
