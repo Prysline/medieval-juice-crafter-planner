@@ -52,7 +52,7 @@ jobs:
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
 
 
-  machine-forced-role-247:
+  machine-forced-deep-609:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     steps:
@@ -61,8 +61,8 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - name: Split forced identity 247 by extra-one roles
+      - name: Refine forced identity 609
         env:
-          MACHINE_CONTINUATION_FORCED_ROLE_GROUP: '247'
-          MACHINE_CONTINUATION_FORCED_ROLE_BRANCHES: '32,33'
+          MACHINE_CONTINUATION_FORCED_DEEP_GROUP: '609'
+          MACHINE_CONTINUATION_FORCED_DEEP_BRANCHES: '20,21,32'
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
