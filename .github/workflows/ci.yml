@@ -36,181 +36,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - shard: forbidden-cost-42-id-75
+          - shard: required-cost-45
+            cases: '20:0:required'
+            sums: '99'
+            first-cost: '45'
+          - shard: forbidden-cost-44
             cases: '20:0:forbidden'
             sums: '97'
-            first-cost: '42'
-            first-identity: '75'
-          - shard: forbidden-cost-42-id-109
+            first-cost: '44'
+          - shard: forbidden-cost-45
             cases: '20:0:forbidden'
             sums: '97'
-            first-cost: '42'
-            first-identity: '109'
-          - shard: forbidden-cost-42-id-155
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '155'
-          - shard: forbidden-cost-42-id-156
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '156'
-          - shard: forbidden-cost-42-id-158
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '158'
-          - shard: forbidden-cost-42-id-159
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '159'
-          - shard: forbidden-cost-42-id-231
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '231'
-          - shard: forbidden-cost-42-id-233
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '233'
-          - shard: forbidden-cost-42-id-244
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '244'
-          - shard: forbidden-cost-42-id-245
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '245'
-          - shard: forbidden-cost-42-id-259
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '259'
-          - shard: forbidden-cost-42-id-388
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '388'
-          - shard: forbidden-cost-42-id-407
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '407'
-          - shard: forbidden-cost-42-id-409
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '409'
-          - shard: forbidden-cost-42-id-410
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '410'
-          - shard: forbidden-cost-42-id-519
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '519'
-          - shard: forbidden-cost-42-id-590
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '590'
-          - shard: forbidden-cost-42-id-593
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '593'
-          - shard: forbidden-cost-42-id-595
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '595'
-          - shard: forbidden-cost-42-id-597
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '597'
-          - shard: forbidden-cost-42-id-598
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '598'
-          - shard: forbidden-cost-42-id-599
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '599'
-          - shard: forbidden-cost-42-id-643
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '643'
-          - shard: forbidden-cost-42-id-711
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '711'
-          - shard: forbidden-cost-42-id-857
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '857'
-          - shard: forbidden-cost-42-id-927
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '927'
-          - shard: forbidden-cost-42-id-929
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '929'
-          - shard: forbidden-cost-42-id-1105
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '1105'
-          - shard: forbidden-cost-42-id-1120
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '1120'
-          - shard: forbidden-cost-42-id-1131
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '1131'
-          - shard: forbidden-cost-42-id-1133
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '1133'
-          - shard: forbidden-cost-42-id-1135
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '1135'
-          - shard: forbidden-cost-42-id-1248
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '1248'
-          - shard: forbidden-cost-42-id-1250
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '1250'
-          - shard: forbidden-cost-42-id-1298
-            cases: '20:0:forbidden'
-            sums: '97'
-            first-cost: '42'
-            first-identity: '1298'
+            first-cost: '45'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -223,5 +60,4 @@ jobs:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: ${{ matrix.cases }}
           MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: ${{ matrix.sums }}
           MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_COSTS: ${{ matrix.first-cost }}
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: ${{ matrix.first-identity }}
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
