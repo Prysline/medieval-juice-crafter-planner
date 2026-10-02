@@ -7395,7 +7395,77 @@ forcedDeepProfileIt(
         unresolved,
       }),
     )
-    expect(unresolved).toEqual([])
+
+    const secondSparse = nextSparseCustomers[1]
+    expect(secondSparse).toBeDefined()
+    if (!secondSparse) return
+    const secondResults = []
+    for (const parent of unresolved) {
+      const branch = branches[parent.branchIndex]
+      const firstChoice =
+        nextSparse.candidates[parent.choiceIndex]
+      for (
+        let secondChoiceIndex = 0;
+        secondChoiceIndex < secondSparse.candidates.length;
+        secondChoiceIndex += 1
+      ) {
+        const secondChoice =
+          secondSparse.candidates[secondChoiceIndex]
+        const built = build311ExtraCostSumSupportMaster(
+          domain,
+          groupIndex,
+          undefined,
+          {
+            includeCustomerFlow: true,
+            forcedCustomerIds:
+              groups[groupIndex].eligibleCustomerIds,
+            requiredUsedGroupIndexes: [
+              ...branch.requiredUsedGroupIndexes,
+              firstChoice.groupIndex,
+              secondChoice.groupIndex,
+            ],
+            requiredSlackGroupIndexes: [
+              ...branch.requiredSlackGroupIndexes,
+              ...(firstChoice.slackOnly
+                ? [firstChoice.groupIndex]
+                : []),
+              ...(secondChoice.slackOnly
+                ? [secondChoice.groupIndex]
+                : []),
+            ],
+          },
+        )
+        const solved = await solveBounded(built.model, 0.5)
+        secondResults.push({
+          branchIndex: parent.branchIndex,
+          firstChoiceIndex: parent.choiceIndex,
+          firstChoiceGroupIndex: firstChoice.groupIndex,
+          secondChoiceIndex,
+          secondChoiceGroupIndex: secondChoice.groupIndex,
+          status: solved.status,
+          solveMs: Math.round(solved.solveMs),
+        })
+      }
+    }
+
+    const unresolvedSecond = secondResults.filter(
+      (entry) => entry.status !== 'infeasible',
+    )
+    console.info(
+      '[machine-forced-deep-second-summary]',
+      JSON.stringify({
+        groupIndex,
+        parentBranches: unresolved.length,
+        secondSparseCustomer: secondSparse.customerId,
+        secondSparseCandidateCount: secondSparse.candidates.length,
+        totalBranches: secondResults.length,
+        infeasibleCount:
+          secondResults.length - unresolvedSecond.length,
+        unresolvedCount: unresolvedSecond.length,
+        unresolved: unresolvedSecond,
+      }),
+    )
+    expect(unresolvedSecond).toEqual([])
   },
   120000,
 )
