@@ -52,17 +52,24 @@ jobs:
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
 
 
-  machine-forced-ninth-609:
+  machine-forced-tenth-609:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
+    name: machine-forced-tenth-609 (${{ matrix.slice.name }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        slice:
+          - { name: a, cases: '32:2:1:5:4:5:2:1:7:2,32:2:1:5:4:5:2:1:10:5,32:2:1:5:4:5:2:1:10:9' }
+          - { name: b, cases: '32:2:1:5:4:5:2:1:10:14,32:2:1:5:4:5:2:1:10:18' }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Check final fixed ninth-level identity 609 cases
+      - name: Check fixed tenth-level identity 609 shard
         env:
-          MACHINE_CONTINUATION_FORCED_NINTH_GROUP: '609'
-          MACHINE_CONTINUATION_FORCED_NINTH_CASES: '32:2:1:5:4:5:2:1:7,32:2:1:5:4:5:2:1:10,32:2:1:5:4:5:3:1:4'
+          MACHINE_CONTINUATION_FORCED_TENTH_GROUP: '609'
+          MACHINE_CONTINUATION_FORCED_TENTH_CASES: ${{ matrix.slice.cases }}
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
