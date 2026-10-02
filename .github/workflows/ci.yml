@@ -31,213 +31,29 @@ jobs:
 
   machine-forced-cost-role-457:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-cost-role-457 (b27-r0-s${{ matrix.sum }}-f${{ matrix.first }})
+    name: machine-forced-cost-role-457 (b27-r${{ matrix.role }}-${{ matrix.slack }}-list)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - sum: 100
-            first: 38
-          - sum: 100
-            first: 39
-          - sum: 100
-            first: 40
-          - sum: 100
-            first: 41
-          - sum: 100
-            first: 42
-          - sum: 100
-            first: 43
-          - sum: 100
-            first: 44
-          - sum: 100
-            first: 45
-          - sum: 100
-            first: 46
-          - sum: 100
-            first: 47
-          - sum: 100
-            first: 48
-          - sum: 100
-            first: 49
-          - sum: 100
-            first: 50
-          - sum: 102
-            first: 40
-          - sum: 102
-            first: 41
-          - sum: 102
-            first: 42
-          - sum: 102
-            first: 43
-          - sum: 102
-            first: 44
-          - sum: 102
-            first: 45
-          - sum: 102
-            first: 46
-          - sum: 102
-            first: 47
-          - sum: 102
-            first: 48
-          - sum: 102
-            first: 49
-          - sum: 102
-            first: 50
-          - sum: 102
-            first: 51
-          - sum: 104
-            first: 42
-          - sum: 104
-            first: 43
-          - sum: 104
-            first: 44
-          - sum: 104
-            first: 45
-          - sum: 104
-            first: 46
-          - sum: 104
-            first: 47
-          - sum: 104
-            first: 48
-          - sum: 104
-            first: 49
-          - sum: 104
-            first: 50
-          - sum: 104
-            first: 51
-          - sum: 104
-            first: 52
-          - sum: 105
-            first: 43
-          - sum: 105
-            first: 44
-          - sum: 105
-            first: 45
-          - sum: 105
-            first: 46
-          - sum: 105
-            first: 47
-          - sum: 105
-            first: 48
-          - sum: 105
-            first: 49
-          - sum: 105
-            first: 50
-          - sum: 105
-            first: 51
-          - sum: 105
-            first: 52
-          - sum: 106
-            first: 44
-          - sum: 106
-            first: 45
-          - sum: 106
-            first: 46
-          - sum: 106
-            first: 47
-          - sum: 106
-            first: 48
-          - sum: 106
-            first: 49
-          - sum: 106
-            first: 50
-          - sum: 106
-            first: 51
-          - sum: 106
-            first: 52
-          - sum: 106
-            first: 53
-          - sum: 107
-            first: 45
-          - sum: 107
-            first: 46
-          - sum: 107
-            first: 47
-          - sum: 107
-            first: 48
-          - sum: 107
-            first: 49
-          - sum: 107
-            first: 50
-          - sum: 107
-            first: 51
-          - sum: 107
-            first: 52
-          - sum: 107
-            first: 53
-          - sum: 108
-            first: 46
-          - sum: 108
-            first: 47
-          - sum: 108
-            first: 48
-          - sum: 108
-            first: 49
-          - sum: 108
-            first: 50
-          - sum: 108
-            first: 51
-          - sum: 108
-            first: 52
-          - sum: 108
-            first: 53
-          - sum: 108
-            first: 54
-          - sum: 110
-            first: 48
-          - sum: 110
-            first: 49
-          - sum: 110
-            first: 50
-          - sum: 110
-            first: 51
-          - sum: 110
-            first: 52
-          - sum: 110
-            first: 53
-          - sum: 110
-            first: 54
-          - sum: 110
-            first: 55
-          - sum: 111
-            first: 49
-          - sum: 111
-            first: 50
-          - sum: 111
-            first: 51
-          - sum: 111
-            first: 52
-          - sum: 111
-            first: 53
-          - sum: 111
-            first: 54
-          - sum: 111
-            first: 55
-          - sum: 114
-            first: 52
-          - sum: 114
-            first: 53
-          - sum: 114
-            first: 54
-          - sum: 114
-            first: 55
-          - sum: 114
-            first: 56
-          - sum: 114
-            first: 57
+          - role: 1
+            slack: required
+          - role: 1
+            slack: forbidden
+          - role: 2
+            slack: required
+          - role: 2
+            slack: forbidden
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Resolve exact first-cost class
+      - name: List exact cost frontier for remaining branch-27 role/slack case
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '457'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '27:0:required'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.sum }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_COSTS: '${{ matrix.first }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '27:${{ matrix.role }}:${{ matrix.slack }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_SUMS: '1'
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
