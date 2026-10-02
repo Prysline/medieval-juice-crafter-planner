@@ -7588,6 +7588,13 @@ forcedCostRoleProfileIt(
         .split(',')
         .map((value) => Number(value.trim()))
         .filter((value) => Number.isFinite(value))
+      const requestedFirstIdentityGroupIndexes = (
+        machineContinuationEnv.MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES ??
+        ''
+      )
+        .split(',')
+        .map((value) => Number(value.trim()))
+        .filter((value) => Number.isInteger(value) && value >= 0)
       const selectedCostSums =
         requestedCostSums.length > 0
           ? sortedCostSums.filter((value) =>
@@ -7700,6 +7707,11 @@ forcedCostRoleProfileIt(
           groupIndex: number
           status: string
           supportCuts: number
+          secondIdentityUnresolved?: Array<{
+            groupIndex: number
+            status: string
+            supportCuts: number
+          }>
         }> = []
         if (
           status === 'timelimit' &&
@@ -7708,7 +7720,7 @@ forcedCostRoleProfileIt(
         ) {
           const remainingExtraOneCost =
             extraOneCostSum - requiredExtraOneCost
-          const identityCandidates =
+          const canonicalIdentityCandidates =
             remainingExtraOneCount === 1
               ? remainingExtraOneGroups.filter(
                   (candidateGroupIndex) =>
@@ -7737,6 +7749,20 @@ forcedCostRoleProfileIt(
                     )
                   },
                 )
+          const identityCandidates =
+            requestedFirstIdentityGroupIndexes.length > 0
+              ? canonicalIdentityCandidates.filter(
+                  (candidateGroupIndex) =>
+                    requestedFirstIdentityGroupIndexes.includes(
+                      candidateGroupIndex,
+                    ),
+                )
+              : canonicalIdentityCandidates
+          if (requestedFirstIdentityGroupIndexes.length > 0) {
+            expect(identityCandidates.length).toBe(
+              new Set(requestedFirstIdentityGroupIndexes).size,
+            )
+          }
           expect(identityCandidates.length).toBeGreaterThan(0)
 
           for (const identityGroupIndex of identityCandidates) {
@@ -7853,11 +7879,167 @@ forcedCostRoleProfileIt(
               break
             }
 
+            let secondIdentityUnresolved:
+              | Array<{
+                  groupIndex: number
+                  status: string
+                  supportCuts: number
+                }>
+              | undefined
+            if (
+              identityStatus === 'timelimit' &&
+              remainingExtraOneCount === 2
+            ) {
+              const identityCost =
+                groups[identityGroupIndex].ingredientCost
+              const partnerCost =
+                remainingExtraOneCost - identityCost
+              const secondIdentityCandidates =
+                remainingExtraOneGroups.filter(
+                  (candidateGroupIndex) =>
+                    candidateGroupIndex !== identityGroupIndex &&
+                    groups[candidateGroupIndex].ingredientCost ===
+                      partnerCost &&
+                    (identityCost !== partnerCost ||
+                      candidateGroupIndex > identityGroupIndex),
+                )
+              expect(
+                secondIdentityCandidates.length,
+              ).toBeGreaterThan(0)
+              secondIdentityUnresolved = []
+
+              for (
+                const secondIdentityGroupIndex of
+                secondIdentityCandidates
+              ) {
+                const pairSupportCuts: number[][] = []
+                let pairStatus = 'round-limit'
+
+                for (let round = 0; round < 8; round += 1) {
+                  const built =
+                    build311ExtraCostSumSupportMaster(
+                      domain,
+                      groupIndex,
+                      extraOneCostSum,
+                      {
+                        includeCustomerFlow: true,
+                        forcedCustomerIds:
+                          groups[groupIndex].eligibleCustomerIds,
+                        requiredUsedGroupIndexes:
+                          branch.requiredUsedGroupIndexes,
+                        requiredSlackGroupIndexes,
+                        forbiddenSlackGroupIndexes,
+                        requiredExtraOneGroupIndexes: [
+                          ...requiredExtraOneGroupIndexes,
+                          identityGroupIndex,
+                          secondIdentityGroupIndex,
+                        ],
+                        forbiddenExtraOneGroupIndexes:
+                          identityForbiddenExtraOneGroupIndexes,
+                        supportCuts: pairSupportCuts,
+                      },
+                    )
+                  const solved = await solveBounded(
+                    built.model,
+                    0.5,
+                  )
+                  masterSolveMs += solved.solveMs
+                  if (solved.status === 'infeasible') {
+                    pairStatus = 'infeasible'
+                    break
+                  }
+                  if (
+                    solved.status !== 'optimal' ||
+                    !solved.namedSolution
+                  ) {
+                    pairStatus = solved.status
+                    break
+                  }
+
+                  const support = groups.flatMap(
+                    (_group, supportGroupIndex) => {
+                      const raw = solved.namedSolution!.get(
+                        `s31su_${supportGroupIndex}`,
+                      )
+                      return typeof raw === 'number' &&
+                        Number.isFinite(raw) &&
+                        raw > 0.5
+                        ? [supportGroupIndex]
+                        : []
+                    },
+                  )
+                  supportSize = support.length
+                  if (support.length !== 30) {
+                    throw new Error(
+                      `Expected 30 support groups for forced identity ${groupIndex} / branch ${requested.branchIndex} / cost sum ${extraOneCostSum} / extra-one pair ${identityGroupIndex}+${secondIdentityGroupIndex}, got ${support.length}`,
+                    )
+                  }
+
+                  const exact =
+                    buildFinalizing30MaskPartitionStage(
+                      domain,
+                      new Set<ProductionStepKind>([
+                        'juicing',
+                        'seasoning',
+                        'blending',
+                      ]),
+                      thresholdCounts,
+                      { max: 76 },
+                      0,
+                      new Set(support),
+                    )
+                  const exactSolved = await solveBounded(
+                    exact.model,
+                    3,
+                  )
+                  exactSolveMs += exactSolved.solveMs
+                  if (exactSolved.status === 'infeasible') {
+                    exactInfeasibleSupports += 1
+                    pairSupportCuts.push(support)
+                    continue
+                  }
+                  if (exactSolved.status === 'optimal') {
+                    pairStatus = 'global-witness'
+                    globalWitness = {
+                      branchIndex: requested.branchIndex,
+                      roleMask: requested.roleMask,
+                      slackCase: requested.slackCase,
+                      extraOneCostSum,
+                      support,
+                      objective: exactSolved.objective,
+                    }
+                    break
+                  }
+                  pairStatus = `exact-${exactSolved.status}`
+                  break
+                }
+
+                if (pairStatus !== 'infeasible') {
+                  secondIdentityUnresolved.push({
+                    groupIndex: secondIdentityGroupIndex,
+                    status: pairStatus,
+                    supportCuts: pairSupportCuts.length,
+                  })
+                }
+                if (globalWitness) break
+              }
+
+              if (
+                !globalWitness &&
+                secondIdentityUnresolved.length === 0
+              ) {
+                identityStatus = 'infeasible'
+              } else if (!globalWitness) {
+                identityStatus = 'pair-split-unresolved'
+              }
+            }
+
             if (identityStatus !== 'infeasible') {
               identitySplitUnresolved.push({
                 groupIndex: identityGroupIndex,
                 status: identityStatus,
                 supportCuts: identitySupportCuts.length,
+                secondIdentityUnresolved,
               })
             }
             if (globalWitness) break
