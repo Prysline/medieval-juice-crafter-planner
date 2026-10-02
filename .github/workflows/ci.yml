@@ -29,7 +29,7 @@ jobs:
       - run: npm run build
       - run: npm run smoke:highs:pages-like
 
-  machine-forced-base-307:
+  machine-forced-cost-role-307:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     steps:
@@ -38,7 +38,9 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - name: Audit identity 307 exact base-cover frontier
+      - name: Probe identity 307 branch 0 exact cost/role identity frontier
         env:
-          MACHINE_CONTINUATION_FORCED_BASE_GROUP: '307'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '307'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '0:0:forbidden'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_IDENTITIES: '1'
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
