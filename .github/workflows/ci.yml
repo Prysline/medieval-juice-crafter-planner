@@ -29,34 +29,38 @@ jobs:
       - run: npm run build
       - run: npm run smoke:highs:pages-like
 
-  machine-forced-deep-187:
+  machine-forced-pair-187:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-deep-187 (${{ matrix.shard }})
+    name: machine-forced-pair-187 (${{ matrix.shard }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
           - shard: a
-            branches: '0,1,2,3,4,8'
+            branches: '14,15'
           - shard: b
-            branches: '9,14,15,18,19,20'
+            branches: '20,21'
           - shard: c
-            branches: '21,22,23,24,25,26'
+            branches: '26,27'
           - shard: d
-            branches: '27,28,29,30,31,32'
+            branches: '32,33'
           - shard: e
-            branches: '33,34,35,36,38'
+            branches: '34,38'
           - shard: f
-            branches: '39,44,45,50,51'
+            branches: '39,44'
+          - shard: g
+            branches: '45,50'
+          - shard: h
+            branches: '51'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Refine identity 187 unresolved base branches by next sparse customer
+      - name: Refine identity 187 by deterministic Hugo + Patricia pairs
         env:
-          MACHINE_CONTINUATION_FORCED_DEEP_GROUP: '187'
-          MACHINE_CONTINUATION_FORCED_DEEP_BRANCHES: '${{ matrix.branches }}'
+          MACHINE_CONTINUATION_FORCED_PAIR_GROUP: '187'
+          MACHINE_CONTINUATION_FORCED_PAIR_BRANCHES: '${{ matrix.branches }}'
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
