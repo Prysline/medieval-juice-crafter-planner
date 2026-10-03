@@ -29,7 +29,7 @@ jobs:
       - run: npm run build
       - run: npm run smoke:highs:pages-like
 
-  machine-forced-ninth-187-last-small-tail:
+  machine-forced-role-187-frontier:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     steps:
@@ -38,17 +38,17 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - name: Close identity 187 final small tail by ninth-level cases
+      - name: Probe identity 187 base branches by extra-one role and slack
         env:
-          MACHINE_CONTINUATION_FORCED_NINTH_GROUP: '187'
-          MACHINE_CONTINUATION_FORCED_NINTH_CASES: '38:3:5:5:0:0:0:0:0'
+          MACHINE_CONTINUATION_FORCED_ROLE_GROUP: '187'
+          MACHINE_CONTINUATION_FORCED_ROLE_BRANCHES: '20,21,26,27,32,33,38'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-ninth-187.log
-      - name: Upload identity 187 ninth-level diagnosis log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-role-187.log
+      - name: Upload identity 187 role/slack diagnosis log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: machine-forced-ninth-187
-          path: machine-forced-ninth-187.log
+          name: machine-forced-role-187
+          path: machine-forced-role-187.log
           if-no-files-found: error
