@@ -31,21 +31,8 @@ jobs:
 
   machine-forced-cost-role-187-branch20-hugo-choice:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-cost-role-187-branch20-hugo-choice (${{ matrix.id }})
+    name: machine-forced-cost-role-187-branch20-hugo-choice (second1184-choice452-next-customer)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - id: second1184-choice452
-            secondIdentity: '1184'
-            customerChoice: '452'
-          - id: second1184-choice453
-            secondIdentity: '1184'
-            customerChoice: '453'
-          - id: second1208-choice453
-            secondIdentity: '1208'
-            customerChoice: '453'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -60,16 +47,17 @@ jobs:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '20:0:required'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '120'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '1210'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SECOND_IDENTITIES: '${{ matrix.secondIdentity }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SECOND_IDENTITIES: '1184'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER_CHOICES: '${{ matrix.customerChoice }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER_CHOICES: '452'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_NEXT_CUSTOMER: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch20-hugo-choice-${{ matrix.id }}.log
-      - name: Upload identity 187 branch 20 Hugo choice log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch20-hugo-choice-second1184-choice452-next-customer.log
+      - name: Upload identity 187 branch 20 next-customer log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: machine-forced-cost-role-187-branch20-hugo-choice-${{ matrix.id }}
-          path: machine-forced-cost-role-187-branch20-hugo-choice-${{ matrix.id }}.log
+          name: machine-forced-cost-role-187-branch20-hugo-choice-second1184-choice452-next-customer
+          path: machine-forced-cost-role-187-branch20-hugo-choice-second1184-choice452-next-customer.log
           if-no-files-found: error
