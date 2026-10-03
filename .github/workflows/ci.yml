@@ -29,254 +29,158 @@ jobs:
       - run: npm run build
       - run: npm run smoke:highs:pages-like
 
-  machine-forced-cost-role-187-branch20:
+  machine-forced-cost-role-187-branch20-single-sum:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-cost-role-187-branch20 (${{ matrix.id }})
+    name: machine-forced-cost-role-187-branch20-single-sum (${{ matrix.id }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - id: r0-required-01
+          - id: r0-required-s97
             case: '20:0:required'
-            sums: '19,25,26,28,29,30'
-          - id: r0-required-02
+            sums: '97'
+          - id: r0-required-s98
             case: '20:0:required'
-            sums: '31,32,33,34,35,36'
-          - id: r0-required-03
+            sums: '98'
+          - id: r0-required-s99
             case: '20:0:required'
-            sums: '37,38,39,40,41,42'
-          - id: r0-required-04
+            sums: '99'
+          - id: r0-required-s100
             case: '20:0:required'
-            sums: '43,44,45,46,47,48'
-          - id: r0-required-05
+            sums: '100'
+          - id: r0-required-s101
             case: '20:0:required'
-            sums: '49,50,51,52,53,54'
-          - id: r0-required-06
+            sums: '101'
+          - id: r0-required-s102
             case: '20:0:required'
-            sums: '55,56,57,58,59,60'
-          - id: r0-required-07
+            sums: '102'
+          - id: r0-required-s103
             case: '20:0:required'
-            sums: '61,62,63,64,65,66'
-          - id: r0-required-08
+            sums: '103'
+          - id: r0-required-s104
             case: '20:0:required'
-            sums: '67,68,69,70,71,72'
-          - id: r0-required-09
+            sums: '104'
+          - id: r0-required-s105
             case: '20:0:required'
-            sums: '73,74,75,76,77,78'
-          - id: r0-required-10
+            sums: '105'
+          - id: r0-required-s106
             case: '20:0:required'
-            sums: '79,80,81,82,83,84'
-          - id: r0-required-11
+            sums: '106'
+          - id: r0-required-s107
             case: '20:0:required'
-            sums: '85,86,87,88,89,90'
-          - id: r0-required-12
+            sums: '107'
+          - id: r0-required-s108
             case: '20:0:required'
-            sums: '91,92,93,94,95,96'
-          - id: r0-required-13
+            sums: '108'
+          - id: r0-required-s109
             case: '20:0:required'
-            sums: '97,98,99,100,101,102'
-          - id: r0-required-14
+            sums: '109'
+          - id: r0-required-s110
             case: '20:0:required'
-            sums: '103,104,105,106,107,108'
-          - id: r0-required-15
+            sums: '110'
+          - id: r0-required-s111
             case: '20:0:required'
-            sums: '109,110,111,112,113,114'
-          - id: r0-required-16
+            sums: '111'
+          - id: r0-required-s112
             case: '20:0:required'
-            sums: '115,116,117,118,119,120'
-          - id: r0-required-17
+            sums: '112'
+          - id: r0-required-s113
             case: '20:0:required'
-            sums: '121,122,123,124'
-          - id: r0-forbidden-01
+            sums: '113'
+          - id: r0-required-s114
+            case: '20:0:required'
+            sums: '114'
+          - id: r0-required-s115
+            case: '20:0:required'
+            sums: '115'
+          - id: r0-required-s116
+            case: '20:0:required'
+            sums: '116'
+          - id: r0-required-s117
+            case: '20:0:required'
+            sums: '117'
+          - id: r0-required-s118
+            case: '20:0:required'
+            sums: '118'
+          - id: r0-required-s119
+            case: '20:0:required'
+            sums: '119'
+          - id: r0-required-s120
+            case: '20:0:required'
+            sums: '120'
+          - id: r0-forbidden-s97
             case: '20:0:forbidden'
-            sums: '19,25,26,28,29,30'
-          - id: r0-forbidden-02
+            sums: '97'
+          - id: r0-forbidden-s98
             case: '20:0:forbidden'
-            sums: '31,32,33,34,35,36'
-          - id: r0-forbidden-03
+            sums: '98'
+          - id: r0-forbidden-s99
             case: '20:0:forbidden'
-            sums: '37,38,39,40,41,42'
-          - id: r0-forbidden-04
+            sums: '99'
+          - id: r0-forbidden-s100
             case: '20:0:forbidden'
-            sums: '43,44,45,46,47,48'
-          - id: r0-forbidden-05
+            sums: '100'
+          - id: r0-forbidden-s101
             case: '20:0:forbidden'
-            sums: '49,50,51,52,53,54'
-          - id: r0-forbidden-06
+            sums: '101'
+          - id: r0-forbidden-s102
             case: '20:0:forbidden'
-            sums: '55,56,57,58,59,60'
-          - id: r0-forbidden-07
+            sums: '102'
+          - id: r0-forbidden-s103
             case: '20:0:forbidden'
-            sums: '61,62,63,64,65,66'
-          - id: r0-forbidden-08
+            sums: '103'
+          - id: r0-forbidden-s104
             case: '20:0:forbidden'
-            sums: '67,68,69,70,71,72'
-          - id: r0-forbidden-09
+            sums: '104'
+          - id: r0-forbidden-s105
             case: '20:0:forbidden'
-            sums: '73,74,75,76,77,78'
-          - id: r0-forbidden-10
+            sums: '105'
+          - id: r0-forbidden-s106
             case: '20:0:forbidden'
-            sums: '79,80,81,82,83,84'
-          - id: r0-forbidden-11
+            sums: '106'
+          - id: r0-forbidden-s107
             case: '20:0:forbidden'
-            sums: '85,86,87,88,89,90'
-          - id: r0-forbidden-12
+            sums: '107'
+          - id: r0-forbidden-s108
             case: '20:0:forbidden'
-            sums: '91,92,93,94,95,96'
-          - id: r0-forbidden-13
+            sums: '108'
+          - id: r0-forbidden-s109
             case: '20:0:forbidden'
-            sums: '97,98,99,100,101,102'
-          - id: r0-forbidden-14
+            sums: '109'
+          - id: r0-forbidden-s110
             case: '20:0:forbidden'
-            sums: '103,104,105,106,107,108'
-          - id: r0-forbidden-15
+            sums: '110'
+          - id: r0-forbidden-s111
             case: '20:0:forbidden'
-            sums: '109,110,111,112,113,114'
-          - id: r0-forbidden-16
+            sums: '111'
+          - id: r0-forbidden-s112
             case: '20:0:forbidden'
-            sums: '115,116,117,118,119,120'
-          - id: r0-forbidden-17
+            sums: '112'
+          - id: r0-forbidden-s113
             case: '20:0:forbidden'
-            sums: '121,122,123,124'
-          - id: r1-required-01
-            case: '20:1:required'
-            sums: '58,59,65,68,69,70'
-          - id: r1-required-02
-            case: '20:1:required'
-            sums: '71,72,73,74,75,76'
-          - id: r1-required-03
-            case: '20:1:required'
-            sums: '77,78,79,80,81,82'
-          - id: r1-required-04
-            case: '20:1:required'
-            sums: '83,84,85,86,87,88'
-          - id: r1-required-05
-            case: '20:1:required'
-            sums: '89,90,91,92,93,94'
-          - id: r1-required-06
-            case: '20:1:required'
-            sums: '95,96,97,98,99,100'
-          - id: r1-required-07
-            case: '20:1:required'
-            sums: '101,102,103,104,105,106'
-          - id: r1-required-08
-            case: '20:1:required'
-            sums: '107,108,109,110,111'
-          - id: r1-forbidden-01
-            case: '20:1:forbidden'
-            sums: '58,59,65,68,69,70'
-          - id: r1-forbidden-02
-            case: '20:1:forbidden'
-            sums: '71,72,73,74,75,76'
-          - id: r1-forbidden-03
-            case: '20:1:forbidden'
-            sums: '77,78,79,80,81,82'
-          - id: r1-forbidden-04
-            case: '20:1:forbidden'
-            sums: '83,84,85,86,87,88'
-          - id: r1-forbidden-05
-            case: '20:1:forbidden'
-            sums: '89,90,91,92,93,94'
-          - id: r1-forbidden-06
-            case: '20:1:forbidden'
-            sums: '95,96,97,98,99,100'
-          - id: r1-forbidden-07
-            case: '20:1:forbidden'
-            sums: '101,102,103,104,105,106'
-          - id: r1-forbidden-08
-            case: '20:1:forbidden'
-            sums: '107,108,109,110,111'
-          - id: r2-required-01
-            case: '20:2:required'
-            sums: '67,68,74,77,78,79'
-          - id: r2-required-02
-            case: '20:2:required'
-            sums: '80,81,82,83,84,85'
-          - id: r2-required-03
-            case: '20:2:required'
-            sums: '86,87,88,89,90,91'
-          - id: r2-required-04
-            case: '20:2:required'
-            sums: '92,93,94,95,96,97'
-          - id: r2-required-05
-            case: '20:2:required'
-            sums: '98,99,100,101,102,103'
-          - id: r2-required-06
-            case: '20:2:required'
-            sums: '104,105,106,107,108,109'
-          - id: r2-required-07
-            case: '20:2:required'
-            sums: '110,111,112,113,114,115'
-          - id: r2-required-08
-            case: '20:2:required'
-            sums: '116,117,118,119,120'
-          - id: r2-forbidden-01
-            case: '20:2:forbidden'
-            sums: '67,68,74,77,78,79'
-          - id: r2-forbidden-02
-            case: '20:2:forbidden'
-            sums: '80,81,82,83,84,85'
-          - id: r2-forbidden-03
-            case: '20:2:forbidden'
-            sums: '86,87,88,89,90,91'
-          - id: r2-forbidden-04
-            case: '20:2:forbidden'
-            sums: '92,93,94,95,96,97'
-          - id: r2-forbidden-05
-            case: '20:2:forbidden'
-            sums: '98,99,100,101,102,103'
-          - id: r2-forbidden-06
-            case: '20:2:forbidden'
-            sums: '104,105,106,107,108,109'
-          - id: r2-forbidden-07
-            case: '20:2:forbidden'
-            sums: '110,111,112,113,114,115'
-          - id: r2-forbidden-08
-            case: '20:2:forbidden'
-            sums: '116,117,118,119,120'
-          - id: r4-forbidden-01
-            case: '20:4:forbidden'
-            sums: '52,53,59,62,63,64'
-          - id: r4-forbidden-02
-            case: '20:4:forbidden'
-            sums: '65,66,67,68,69,70'
-          - id: r4-forbidden-03
-            case: '20:4:forbidden'
-            sums: '71,72,73,74,75,76'
-          - id: r4-forbidden-04
-            case: '20:4:forbidden'
-            sums: '77,78,79,80,81,82'
-          - id: r4-forbidden-05
-            case: '20:4:forbidden'
-            sums: '83,84,85,86,87,88'
-          - id: r4-forbidden-06
-            case: '20:4:forbidden'
-            sums: '89,90,91,92,93,94'
-          - id: r4-forbidden-07
-            case: '20:4:forbidden'
-            sums: '95,96,97,98,99,100'
-          - id: r4-forbidden-08
-            case: '20:4:forbidden'
-            sums: '101,102,103,104,105'
+            sums: '113'
+          - id: r0-forbidden-s114
+            case: '20:0:forbidden'
+            sums: '114'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Solve identity 187 branch 20 cost-role shard
+      - name: Solve identity 187 branch 20 single-sum case
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '${{ matrix.case }}'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.sums }}'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch20-${{ matrix.id }}.log
-      - name: Upload identity 187 branch 20 shard log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch20-single-sum-${{ matrix.id }}.log
+      - name: Upload identity 187 branch 20 single-sum log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: machine-forced-cost-role-187-branch20-${{ matrix.id }}
-          path: machine-forced-cost-role-187-branch20-${{ matrix.id }}.log
+          name: machine-forced-cost-role-187-branch20-single-sum-${{ matrix.id }}
+          path: machine-forced-cost-role-187-branch20-single-sum-${{ matrix.id }}.log
           if-no-files-found: error
