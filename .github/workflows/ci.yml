@@ -53,7 +53,7 @@ jobs:
           node-version: 22
       - run: npm install
       - name: Apply diagnosis-only branch 20 selectors
-        run: git apply --check .github/diagnostics/branch20-pair-choice-selectors.patch && git apply .github/diagnostics/branch20-pair-choice-selectors.patch
+        run: python .github/diagnostics/apply-branch20-pair-choice-selectors.py
       - name: Solve identity 187 branch 20 Hugo choice survivor
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
