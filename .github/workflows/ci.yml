@@ -29,9 +29,9 @@ jobs:
       - run: npm run build
       - run: npm run smoke:highs:pages-like
 
-  machine-forced-cost-role-187-branch20-single-sum:
+  machine-forced-cost-role-187-branch20-single-sum-identities:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-cost-role-187-branch20-single-sum (required-s100)
+    name: machine-forced-cost-role-187-branch20-single-sum-identities (required-s100)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,18 +39,19 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - name: Solve identity 187 branch 20 required sum100
+      - name: List identity 187 branch 20 required sum100 first identities
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '20:0:required'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '100'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_IDENTITIES: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch20-required-s100.log
-      - name: Upload identity 187 branch 20 required sum100 log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch20-required-s100-identities.log
+      - name: Upload identity 187 branch 20 required sum100 identity list
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: machine-forced-cost-role-187-branch20-required-s100
-          path: machine-forced-cost-role-187-branch20-required-s100.log
+          name: machine-forced-cost-role-187-branch20-required-s100-identities
+          path: machine-forced-cost-role-187-branch20-required-s100-identities.log
           if-no-files-found: error
