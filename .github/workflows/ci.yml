@@ -79,4 +79,13 @@ jobs:
         env:
           MACHINE_CONTINUATION_FORCED_THIRD_GROUP: '187'
           MACHINE_CONTINUATION_FORCED_THIRD_CASES: '${{ matrix.cases }}'
-        run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
+        run: |
+          set -o pipefail
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-third-187-${{ matrix.shard }}.log
+      - name: Upload identity 187 third-level diagnosis log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: machine-forced-third-187-${{ matrix.shard }}
+          path: machine-forced-third-187-${{ matrix.shard }}.log
+          if-no-files-found: error
