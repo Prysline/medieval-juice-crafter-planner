@@ -29,29 +29,34 @@ jobs:
       - run: npm run build
       - run: npm run smoke:highs:pages-like
 
-  machine-forced-cost-role-187-branch38-identity-list:
+  machine-forced-cost-role-187-branch38-first-identity:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
+    name: machine-forced-cost-role-187-branch38-first-identity (${{ matrix.identity }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        identity: [20, 24, 149, 150, 151, 188, 197, 291, 292, 293, 297, 313, 334, 336, 339, 341, 406, 585, 586, 588, 591, 617, 618, 619, 625, 626, 627, 639, 667, 668, 669, 690, 692, 706, 707, 782, 790, 810, 811, 812, 820, 821, 822, 848, 892, 895, 983, 989, 990, 991, 996, 1014, 1022, 1027, 1034, 1076, 1092, 1161, 1162, 1266, 1291, 1296, 1303, 1310, 1311]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: List identity 187 branch 38 final cost-pair candidates
+      - name: Solve identity 187 branch 38 fixed first identity
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '38:0:forbidden'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '105'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_COSTS: '51'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_IDENTITIES: '1'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '${{ matrix.identity }}'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-identity-list-187.log
-      - name: Upload identity 187 branch 38 final candidate log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-first-identity-187-${{ matrix.identity }}.log
+      - name: Upload identity 187 branch 38 fixed-identity log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: machine-forced-cost-role-identity-list-187
-          path: machine-forced-cost-role-identity-list-187.log
+          name: machine-forced-cost-role-first-identity-187-${{ matrix.identity }}
+          path: machine-forced-cost-role-first-identity-187-${{ matrix.identity }}.log
           if-no-files-found: error
