@@ -31,7 +31,7 @@ jobs:
 
   machine-forced-cost-role-187-branch20-hugo-choice:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-cost-role-187-branch20-hugo-choice (second1184-choice452-next-customer)
+    name: machine-forced-cost-role-187-branch20-hugo-choice (hugo452-patricia334-third-customer)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,8 +40,10 @@ jobs:
           node-version: 22
       - run: npm install
       - name: Apply diagnosis-only branch 20 selectors
-        run: python .github/diagnostics/apply-branch20-pair-choice-selectors.py
-      - name: Solve identity 187 branch 20 Hugo choice survivor
+        run: |
+          python .github/diagnostics/apply-branch20-pair-choice-selectors.py
+          python .github/diagnostics/apply-branch20-third-sparse-selector.py
+      - name: Solve identity 187 branch 20 sparse-customer survivor
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '20:0:required'
@@ -51,13 +53,15 @@ jobs:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER_CHOICES: '452'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_NEXT_CUSTOMER: '1'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_NEXT_CUSTOMER_CHOICES: '334'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_THIRD_CUSTOMER: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch20-hugo-choice-second1184-choice452-next-customer.log
-      - name: Upload identity 187 branch 20 next-customer log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch20-hugo452-patricia334-third-customer.log
+      - name: Upload identity 187 branch 20 third-customer log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: machine-forced-cost-role-187-branch20-hugo-choice-second1184-choice452-next-customer
-          path: machine-forced-cost-role-187-branch20-hugo-choice-second1184-choice452-next-customer.log
+          name: machine-forced-cost-role-187-branch20-hugo452-patricia334-third-customer
+          path: machine-forced-cost-role-187-branch20-hugo452-patricia334-third-customer.log
           if-no-files-found: error
