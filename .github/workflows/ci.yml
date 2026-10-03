@@ -29,26 +29,126 @@ jobs:
       - run: npm run build
       - run: npm run smoke:highs:pages-like
 
-  machine-forced-role-187-frontier:
+  machine-forced-cost-sums-187:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
+    name: machine-forced-cost-sums-187 (${{ matrix.id }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: '01'
+            case: '20:0:required'
+          - id: '02'
+            case: '20:0:forbidden'
+          - id: '03'
+            case: '20:1:required'
+          - id: '04'
+            case: '20:1:forbidden'
+          - id: '05'
+            case: '20:2:required'
+          - id: '06'
+            case: '20:2:forbidden'
+          - id: '07'
+            case: '20:4:forbidden'
+          - id: '08'
+            case: '21:0:required'
+          - id: '09'
+            case: '21:0:forbidden'
+          - id: '10'
+            case: '21:1:required'
+          - id: '11'
+            case: '21:1:forbidden'
+          - id: '12'
+            case: '21:2:required'
+          - id: '13'
+            case: '21:2:forbidden'
+          - id: '14'
+            case: '21:4:forbidden'
+          - id: '15'
+            case: '26:0:required'
+          - id: '16'
+            case: '26:0:forbidden'
+          - id: '17'
+            case: '26:1:required'
+          - id: '18'
+            case: '26:1:forbidden'
+          - id: '19'
+            case: '26:2:required'
+          - id: '20'
+            case: '26:2:forbidden'
+          - id: '21'
+            case: '26:4:forbidden'
+          - id: '22'
+            case: '27:0:required'
+          - id: '23'
+            case: '27:0:forbidden'
+          - id: '24'
+            case: '27:1:required'
+          - id: '25'
+            case: '27:1:forbidden'
+          - id: '26'
+            case: '27:2:required'
+          - id: '27'
+            case: '27:2:forbidden'
+          - id: '28'
+            case: '27:4:forbidden'
+          - id: '29'
+            case: '32:0:required'
+          - id: '30'
+            case: '32:0:forbidden'
+          - id: '31'
+            case: '32:1:required'
+          - id: '32'
+            case: '32:1:forbidden'
+          - id: '33'
+            case: '32:2:required'
+          - id: '34'
+            case: '32:2:forbidden'
+          - id: '35'
+            case: '32:4:forbidden'
+          - id: '36'
+            case: '33:0:required'
+          - id: '37'
+            case: '33:0:forbidden'
+          - id: '38'
+            case: '33:1:required'
+          - id: '39'
+            case: '33:1:forbidden'
+          - id: '40'
+            case: '33:2:required'
+          - id: '41'
+            case: '33:2:forbidden'
+          - id: '42'
+            case: '33:4:forbidden'
+          - id: '43'
+            case: '38:0:required'
+          - id: '44'
+            case: '38:0:forbidden'
+          - id: '45'
+            case: '38:1:required'
+          - id: '46'
+            case: '38:2:required'
+          - id: '47'
+            case: '38:2:forbidden'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Probe identity 187 base branches by extra-one role and slack
+      - name: List exact extra-one cost sums for identity 187 role/slack case
         env:
-          MACHINE_CONTINUATION_FORCED_ROLE_GROUP: '187'
-          MACHINE_CONTINUATION_FORCED_ROLE_BRANCHES: '20,21,26,27,32,33,38'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '${{ matrix.case }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_SUMS: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-role-187.log
-      - name: Upload identity 187 role/slack diagnosis log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-sums-187-${{ matrix.id }}.log
+      - name: Upload identity 187 exact cost-sum frontier
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: machine-forced-role-187
-          path: machine-forced-role-187.log
+          name: machine-forced-cost-sums-187-${{ matrix.id }}
+          path: machine-forced-cost-sums-187-${{ matrix.id }}.log
           if-no-files-found: error
