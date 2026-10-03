@@ -29,32 +29,17 @@ jobs:
       - run: npm run build
       - run: npm run smoke:highs:pages-like
 
-  machine-forced-cost-role-187-branch38:
+  machine-forced-cost-role-187-branch38-identities:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-cost-role-187-branch38 (${{ matrix.id }})
+    name: machine-forced-cost-role-187-branch38-identities (${{ matrix.id }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - id: 'r097'
-            case: '38:0:required'
-            sums: '97'
           - id: 'r098'
             case: '38:0:required'
             sums: '98'
-          - id: 'r099'
-            case: '38:0:required'
-            sums: '99'
-          - id: 'r100'
-            case: '38:0:required'
-            sums: '100'
-          - id: 'r101'
-            case: '38:0:required'
-            sums: '101'
-          - id: 'r102'
-            case: '38:0:required'
-            sums: '102'
           - id: 'r103'
             case: '38:0:required'
             sums: '103'
@@ -70,30 +55,6 @@ jobs:
           - id: 'r107'
             case: '38:0:required'
             sums: '107'
-          - id: 'r108'
-            case: '38:0:required'
-            sums: '108'
-          - id: 'r115'
-            case: '38:0:required'
-            sums: '115'
-          - id: 'r116'
-            case: '38:0:required'
-            sums: '116'
-          - id: 'r117'
-            case: '38:0:required'
-            sums: '117'
-          - id: 'r118'
-            case: '38:0:required'
-            sums: '118'
-          - id: 'r119'
-            case: '38:0:required'
-            sums: '119'
-          - id: 'r120'
-            case: '38:0:required'
-            sums: '120'
-          - id: 'f103'
-            case: '38:0:forbidden'
-            sums: '103'
           - id: 'f104'
             case: '38:0:forbidden'
             sums: '104'
@@ -106,27 +67,25 @@ jobs:
           - id: 'f107'
             case: '38:0:forbidden'
             sums: '107'
-          - id: 'f108'
-            case: '38:0:forbidden'
-            sums: '108'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Solve identity 187 branch 38 exact cost-role frontier
+      - name: List identity 187 branch 38 exact cost-role candidates
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '${{ matrix.case }}'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.sums }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_IDENTITIES: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-${{ matrix.id }}.log
-      - name: Upload identity 187 branch 38 exact cost-role log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-identities-187-${{ matrix.id }}.log
+      - name: Upload identity 187 branch 38 candidate log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: machine-forced-cost-role-187-${{ matrix.id }}
-          path: machine-forced-cost-role-187-${{ matrix.id }}.log
+          name: machine-forced-cost-role-identities-187-${{ matrix.id }}
+          path: machine-forced-cost-role-identities-187-${{ matrix.id }}.log
           if-no-files-found: error
