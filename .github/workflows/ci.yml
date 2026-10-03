@@ -31,29 +31,117 @@ jobs:
 
   machine-forced-cost-role-457:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-cost-role-457 (b27-r${{ matrix.role }}-${{ matrix.slack }}-list)
+    name: machine-forced-cost-role-457 (${{ matrix.case }}-${{ matrix.shard }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - role: 1
-            slack: required
-          - role: 1
-            slack: forbidden
-          - role: 2
-            slack: required
-          - role: 2
-            slack: forbidden
+          - case: b27-r1-required
+            branch_role_slack: '27:1:required'
+            shard: a
+            sums: '59,60,67,69,70,71,72,73'
+          - case: b27-r1-required
+            branch_role_slack: '27:1:required'
+            shard: b
+            sums: '74,75,76,77,78,79,80,81'
+          - case: b27-r1-required
+            branch_role_slack: '27:1:required'
+            shard: c
+            sums: '82,83,84,85,86,87,88,89'
+          - case: b27-r1-required
+            branch_role_slack: '27:1:required'
+            shard: d
+            sums: '90,91,92,93,94,95,96,97'
+          - case: b27-r1-required
+            branch_role_slack: '27:1:required'
+            shard: e
+            sums: '98,99,100,101,102,103,104,105'
+          - case: b27-r1-required
+            branch_role_slack: '27:1:required'
+            shard: f
+            sums: '106,107,108,109,110,111'
+          - case: b27-r1-forbidden
+            branch_role_slack: '27:1:forbidden'
+            shard: a
+            sums: '59,60,67,69,70,71,72,73'
+          - case: b27-r1-forbidden
+            branch_role_slack: '27:1:forbidden'
+            shard: b
+            sums: '74,75,76,77,78,79,80,81'
+          - case: b27-r1-forbidden
+            branch_role_slack: '27:1:forbidden'
+            shard: c
+            sums: '82,83,84,85,86,87,88,89'
+          - case: b27-r1-forbidden
+            branch_role_slack: '27:1:forbidden'
+            shard: d
+            sums: '90,91,92,93,94,95,96,97'
+          - case: b27-r1-forbidden
+            branch_role_slack: '27:1:forbidden'
+            shard: e
+            sums: '98,99,100,101,102,103,104,105'
+          - case: b27-r1-forbidden
+            branch_role_slack: '27:1:forbidden'
+            shard: f
+            sums: '106,107,108,109,110,111'
+          - case: b27-r2-required
+            branch_role_slack: '27:2:required'
+            shard: a
+            sums: '68,69,76,78,79,80,81,82'
+          - case: b27-r2-required
+            branch_role_slack: '27:2:required'
+            shard: b
+            sums: '83,84,85,86,87,88,89,90'
+          - case: b27-r2-required
+            branch_role_slack: '27:2:required'
+            shard: c
+            sums: '91,92,93,94,95,96,97,98'
+          - case: b27-r2-required
+            branch_role_slack: '27:2:required'
+            shard: d
+            sums: '99,100,101,102,103,104,105,106'
+          - case: b27-r2-required
+            branch_role_slack: '27:2:required'
+            shard: e
+            sums: '107,108,109,110,111,112,113,114'
+          - case: b27-r2-required
+            branch_role_slack: '27:2:required'
+            shard: f
+            sums: '115,116,117,118,119,120'
+          - case: b27-r2-forbidden
+            branch_role_slack: '27:2:forbidden'
+            shard: a
+            sums: '68,69,76,78,79,80,81,82'
+          - case: b27-r2-forbidden
+            branch_role_slack: '27:2:forbidden'
+            shard: b
+            sums: '83,84,85,86,87,88,89,90'
+          - case: b27-r2-forbidden
+            branch_role_slack: '27:2:forbidden'
+            shard: c
+            sums: '91,92,93,94,95,96,97,98'
+          - case: b27-r2-forbidden
+            branch_role_slack: '27:2:forbidden'
+            shard: d
+            sums: '99,100,101,102,103,104,105,106'
+          - case: b27-r2-forbidden
+            branch_role_slack: '27:2:forbidden'
+            shard: e
+            sums: '107,108,109,110,111,112,113,114'
+          - case: b27-r2-forbidden
+            branch_role_slack: '27:2:forbidden'
+            shard: f
+            sums: '115,116,117,118,119,120'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: List exact cost frontier for remaining branch-27 role/slack case
+      - name: Prove exact cost-sum shard for remaining branch-27 role/slack case
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '457'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '27:${{ matrix.role }}:${{ matrix.slack }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_SUMS: '1'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '${{ matrix.branch_role_slack }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.sums }}'
         run: npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1
