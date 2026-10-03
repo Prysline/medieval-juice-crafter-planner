@@ -29,33 +29,29 @@ jobs:
       - run: npm run build
       - run: npm run smoke:highs:pages-like
 
-  machine-forced-cost-role-187-branch20-forbidden-sum108-cost-pairs:
+  machine-forced-cost-role-187-branch20-forbidden-sum109-identity-audit:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-cost-role-187-branch20-forbidden-sum108-cost-pairs (firstCost${{ matrix.firstCost }})
+    name: machine-forced-cost-role-187-branch20-forbidden-sum109-identity-audit
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        firstCost: ['46', '47', '48', '49', '50', '51', '52', '53', '54']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Solve identity 187 branch 20 forbidden sum108 exact cost pair
+      - name: List identity 187 branch 20 forbidden sum109 first identities
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '20:0:forbidden'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '108'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_COSTS: '${{ matrix.firstCost }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '109'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_IDENTITIES: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch20-forbidden-s108-c${{ matrix.firstCost }}.log
-      - name: Upload identity 187 branch 20 forbidden sum108 cost-pair log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch20-forbidden-s109-identity-audit.log
+      - name: Upload identity 187 branch 20 forbidden sum109 identity audit log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: machine-forced-cost-role-187-branch20-forbidden-s108-c${{ matrix.firstCost }}
-          path: machine-forced-cost-role-187-branch20-forbidden-s108-c${{ matrix.firstCost }}.log
+          name: machine-forced-cost-role-187-branch20-forbidden-s109-identity-audit
+          path: machine-forced-cost-role-187-branch20-forbidden-s109-identity-audit.log
           if-no-files-found: error
