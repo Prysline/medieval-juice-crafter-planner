@@ -31,28 +31,32 @@ jobs:
 
   machine-forced-cost-role-187-branch20-first-identities:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-cost-role-187-branch20-first-identities (required-s105-c51)
+    name: machine-forced-cost-role-187-branch20-first-identities (required-s105-c51-i${{ matrix.firstIdentity }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        firstIdentity: ['20', '24', '149', '150', '151', '188', '197', '291', '292', '293', '297', '313', '334', '336', '339', '341', '406', '585', '586', '588', '591', '617', '618', '619', '625', '626', '627', '639', '667', '668', '669', '690', '692', '706', '707', '782', '790', '810', '811', '812', '820', '821', '822', '848', '892', '895', '983', '989', '990', '991', '996', '1014', '1022', '1027', '1034', '1076', '1092', '1161', '1162', '1266', '1291', '1296', '1303', '1310', '1311']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: List identity 187 branch 20 required sum105 cost51 first identities
+      - name: Solve identity 187 branch 20 required sum105 cost51 first identity
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '20:0:required'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '105'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_COSTS: '51'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_IDENTITIES: '1'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '${{ matrix.firstIdentity }}'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch20-required-s105-c51-identities.log
-      - name: Upload identity 187 branch 20 required sum105 cost51 identity list
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch20-required-s105-c51-i${{ matrix.firstIdentity }}.log
+      - name: Upload identity 187 branch 20 required sum105 cost51 first-identity log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: machine-forced-cost-role-187-branch20-required-s105-c51-identities
-          path: machine-forced-cost-role-187-branch20-required-s105-c51-identities.log
+          name: machine-forced-cost-role-187-branch20-required-s105-c51-i${{ matrix.firstIdentity }}
+          path: machine-forced-cost-role-187-branch20-required-s105-c51-i${{ matrix.firstIdentity }}.log
           if-no-files-found: error
