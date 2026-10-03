@@ -29,158 +29,46 @@ jobs:
       - run: npm run build
       - run: npm run smoke:highs:pages-like
 
-  machine-forced-cost-role-187-branch20-single-sum:
+  machine-forced-cost-role-187-branch20-pair-survivors:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-cost-role-187-branch20-single-sum (${{ matrix.id }})
+    name: machine-forced-cost-role-187-branch20-pair-survivors (${{ matrix.id }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - id: r0-required-s97
+          - id: r0-required-s115-first573
             case: '20:0:required'
-            sums: '97'
-          - id: r0-required-s98
+            sum: '115'
+            firstIdentity: '573'
+          - id: r0-required-s120-first260
             case: '20:0:required'
-            sums: '98'
-          - id: r0-required-s99
+            sum: '120'
+            firstIdentity: '260'
+          - id: r0-required-s120-first1210
             case: '20:0:required'
-            sums: '99'
-          - id: r0-required-s100
-            case: '20:0:required'
-            sums: '100'
-          - id: r0-required-s101
-            case: '20:0:required'
-            sums: '101'
-          - id: r0-required-s102
-            case: '20:0:required'
-            sums: '102'
-          - id: r0-required-s103
-            case: '20:0:required'
-            sums: '103'
-          - id: r0-required-s104
-            case: '20:0:required'
-            sums: '104'
-          - id: r0-required-s105
-            case: '20:0:required'
-            sums: '105'
-          - id: r0-required-s106
-            case: '20:0:required'
-            sums: '106'
-          - id: r0-required-s107
-            case: '20:0:required'
-            sums: '107'
-          - id: r0-required-s108
-            case: '20:0:required'
-            sums: '108'
-          - id: r0-required-s109
-            case: '20:0:required'
-            sums: '109'
-          - id: r0-required-s110
-            case: '20:0:required'
-            sums: '110'
-          - id: r0-required-s111
-            case: '20:0:required'
-            sums: '111'
-          - id: r0-required-s112
-            case: '20:0:required'
-            sums: '112'
-          - id: r0-required-s113
-            case: '20:0:required'
-            sums: '113'
-          - id: r0-required-s114
-            case: '20:0:required'
-            sums: '114'
-          - id: r0-required-s115
-            case: '20:0:required'
-            sums: '115'
-          - id: r0-required-s116
-            case: '20:0:required'
-            sums: '116'
-          - id: r0-required-s117
-            case: '20:0:required'
-            sums: '117'
-          - id: r0-required-s118
-            case: '20:0:required'
-            sums: '118'
-          - id: r0-required-s119
-            case: '20:0:required'
-            sums: '119'
-          - id: r0-required-s120
-            case: '20:0:required'
-            sums: '120'
-          - id: r0-forbidden-s97
-            case: '20:0:forbidden'
-            sums: '97'
-          - id: r0-forbidden-s98
-            case: '20:0:forbidden'
-            sums: '98'
-          - id: r0-forbidden-s99
-            case: '20:0:forbidden'
-            sums: '99'
-          - id: r0-forbidden-s100
-            case: '20:0:forbidden'
-            sums: '100'
-          - id: r0-forbidden-s101
-            case: '20:0:forbidden'
-            sums: '101'
-          - id: r0-forbidden-s102
-            case: '20:0:forbidden'
-            sums: '102'
-          - id: r0-forbidden-s103
-            case: '20:0:forbidden'
-            sums: '103'
-          - id: r0-forbidden-s104
-            case: '20:0:forbidden'
-            sums: '104'
-          - id: r0-forbidden-s105
-            case: '20:0:forbidden'
-            sums: '105'
-          - id: r0-forbidden-s106
-            case: '20:0:forbidden'
-            sums: '106'
-          - id: r0-forbidden-s107
-            case: '20:0:forbidden'
-            sums: '107'
-          - id: r0-forbidden-s108
-            case: '20:0:forbidden'
-            sums: '108'
-          - id: r0-forbidden-s109
-            case: '20:0:forbidden'
-            sums: '109'
-          - id: r0-forbidden-s110
-            case: '20:0:forbidden'
-            sums: '110'
-          - id: r0-forbidden-s111
-            case: '20:0:forbidden'
-            sums: '111'
-          - id: r0-forbidden-s112
-            case: '20:0:forbidden'
-            sums: '112'
-          - id: r0-forbidden-s113
-            case: '20:0:forbidden'
-            sums: '113'
-          - id: r0-forbidden-s114
-            case: '20:0:forbidden'
-            sums: '114'
+            sum: '120'
+            firstIdentity: '1210'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Solve identity 187 branch 20 single-sum case
+      - name: Solve identity 187 branch 20 pair survivor
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '${{ matrix.case }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.sums }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.sum }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '${{ matrix.firstIdentity }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch20-single-sum-${{ matrix.id }}.log
-      - name: Upload identity 187 branch 20 single-sum log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch20-pair-survivors-${{ matrix.id }}.log
+      - name: Upload identity 187 branch 20 pair survivor log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: machine-forced-cost-role-187-branch20-single-sum-${{ matrix.id }}
-          path: machine-forced-cost-role-187-branch20-single-sum-${{ matrix.id }}.log
+          name: machine-forced-cost-role-187-branch20-pair-survivors-${{ matrix.id }}
+          path: machine-forced-cost-role-187-branch20-pair-survivors-${{ matrix.id }}.log
           if-no-files-found: error
