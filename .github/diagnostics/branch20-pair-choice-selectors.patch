@@ -1,0 +1,85 @@
+diff --git a/src/domain/optimizerMachineContinuationProfile.test.ts b/src/domain/optimizerMachineContinuationProfile.test.ts
+--- a/src/domain/optimizerMachineContinuationProfile.test.ts
++++ b/src/domain/optimizerMachineContinuationProfile.test.ts
+@@ -7726,6 +7726,24 @@ forcedCostRoleProfileIt(
+         .map((value) => Number(value))
+         .filter((value) => Number.isFinite(value))
++      const requestedSecondIdentityGroupIndexes = (
++        machineContinuationEnv.MACHINE_CONTINUATION_FORCED_COST_ROLE_SECOND_IDENTITIES ??
++        ''
++      )
++        .split(',')
++        .map((value) => value.trim())
++        .filter(Boolean)
++        .map((value) => Number(value))
++        .filter((value) => Number.isInteger(value) && value >= 0)
++      const requestedPairCustomerChoiceGroupIndexes = (
++        machineContinuationEnv.MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER_CHOICES ??
++        ''
++      )
++        .split(',')
++        .map((value) => value.trim())
++        .filter(Boolean)
++        .map((value) => Number(value))
++        .filter((value) => Number.isInteger(value) && value >= 0)
+       const eligibleCostSums = sortedCostSums.filter(
+         (value) => !skippedCostSums.includes(value),
+       )
+@@ -8000,11 +8018,25 @@ forcedCostRoleProfileIt(
+                     ),
+                 )
+               expect(
+                 secondIdentityCandidates.length,
+               ).toBeGreaterThan(0)
++              const selectedSecondIdentityCandidates =
++                requestedSecondIdentityGroupIndexes.length > 0
++                  ? secondIdentityCandidates.filter(
++                      (candidateGroupIndex) =>
++                        requestedSecondIdentityGroupIndexes.includes(
++                          candidateGroupIndex,
++                        ),
++                    )
++                  : secondIdentityCandidates
++              if (requestedSecondIdentityGroupIndexes.length > 0) {
++                expect(selectedSecondIdentityCandidates.length).toBe(
++                  new Set(requestedSecondIdentityGroupIndexes).size,
++                )
++              }
++              expect(selectedSecondIdentityCandidates.length).toBeGreaterThan(0)
+               secondIdentityUnresolved = []
+ 
+               for (
+                 const secondIdentityGroupIndex of
+-                secondIdentityCandidates
++                selectedSecondIdentityCandidates
+               ) {
+                 const pairSupportCuts: number[][] = []
+                 let pairStatus = 'round-limit'
+@@ -8142,8 +8174,23 @@ forcedCostRoleProfileIt(
+                   const pairSparse = pairSparseCustomers[0]
+                   expect(pairSparse).toBeDefined()
+                   if (pairSparse) {
++                    const selectedPairSparseCandidates =
++                      requestedPairCustomerChoiceGroupIndexes.length > 0
++                        ? pairSparse.candidates.filter((candidate) =>
++                            requestedPairCustomerChoiceGroupIndexes.includes(
++                              candidate.groupIndex,
++                            ),
++                          )
++                        : pairSparse.candidates
++                    if (requestedPairCustomerChoiceGroupIndexes.length > 0) {
++                      expect(selectedPairSparseCandidates.length).toBe(
++                        new Set(requestedPairCustomerChoiceGroupIndexes).size,
++                      )
++                    }
++                    expect(selectedPairSparseCandidates.length).toBeGreaterThan(0)
+                     const pairCustomerUnresolved: Array<{
+                       choiceGroupIndex: number
+                       status: string
+                       supportCuts: number
+                     }> = []
+ 
+-                    for (const choice of pairSparse.candidates) {
++                    for (const choice of selectedPairSparseCandidates) {
+                       const customerSupportCuts: number[][] = []
+                       let customerStatus = 'round-limit'
