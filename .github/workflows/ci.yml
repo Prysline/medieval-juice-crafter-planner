@@ -29,34 +29,34 @@ jobs:
       - run: npm run build
       - run: npm run smoke:highs:pages-like
 
-  machine-forced-cost-role-187-branch20-sum106-cost50-identities:
+  machine-forced-cost-role-187-branch20-sum106-first1087-second43-sparse:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-cost-role-187-branch20-sum106-cost50-identities (first${{ matrix.firstIdentity }})
+    name: machine-forced-cost-role-187-branch20-sum106-first1087-second43-sparse
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        firstIdentity: ['35', '36', '49', '50', '51', '171', '172', '173', '237', '238', '250', '251', '263', '270', '279', '311', '315', '321', '322', '411', '425', '426', '427', '458', '459', '558', '559', '561', '563', '582', '613', '630', '631', '632', '644', '661', '682', '699', '702', '704', '760', '761', '766', '772', '794', '799', '824', '825', '826', '858', '873', '881', '896', '900', '992', '1017', '1030', '1042', '1087', '1100', '1145', '1202', '1276', '1333', '1337', '1338', '1371']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Solve identity 187 branch 20 required sum106 cost50 first identity
+      - name: Apply diagnosis-only branch 20 selectors
+        run: python .github/diagnostics/apply-branch20-pair-choice-selectors.py
+      - name: Split identity 187 branch 20 sum106 survivor by sparse customer
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '20:0:required'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '106'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_COSTS: '50'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '${{ matrix.firstIdentity }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '1087'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SECOND_IDENTITIES: '43'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch20-required-s106-c50-first${{ matrix.firstIdentity }}.log
-      - name: Upload identity 187 branch 20 required sum106 cost50 identity log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch20-sum106-first1087-second43-sparse.log
+      - name: Upload identity 187 branch 20 sum106 sparse-customer log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: machine-forced-cost-role-187-branch20-required-s106-c50-first${{ matrix.firstIdentity }}
-          path: machine-forced-cost-role-187-branch20-required-s106-c50-first${{ matrix.firstIdentity }}.log
+          name: machine-forced-cost-role-187-branch20-sum106-first1087-second43-sparse
+          path: machine-forced-cost-role-187-branch20-sum106-first1087-second43-sparse.log
           if-no-files-found: error
