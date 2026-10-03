@@ -28,3 +28,29 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run smoke:highs:pages-like
+
+  machine-forced-cost-role-187-branch20-required-sum109:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
+    name: machine-forced-cost-role-187-branch20-required-sum109
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Solve identity 187 branch 20 required sum109 exactly
+        env:
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '20:0:required'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '109'
+        run: |
+          set -o pipefail
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch20-required-s109.log
+      - name: Upload identity 187 branch 20 required sum109 log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: machine-forced-cost-role-187-branch20-required-s109
+          path: machine-forced-cost-role-187-branch20-required-s109.log
+          if-no-files-found: error
