@@ -29,33 +29,28 @@ jobs:
       - run: npm run build
       - run: npm run smoke:highs:pages-like
 
-  machine-forced-cost-role-187-branch20-cost-pairs:
+  machine-forced-cost-role-187-branch20-single-sum:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-cost-role-187-branch20-cost-pairs (required-s100-c${{ matrix.firstCost }})
+    name: machine-forced-cost-role-187-branch20-single-sum (required-s102)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        firstCost: ['38', '39', '40', '41', '42', '43', '44', '45', '46', '47', '48', '49', '50']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Solve identity 187 branch 20 required sum100 exact cost pair
+      - name: Solve identity 187 branch 20 required sum102
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '20:0:required'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '100'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_COSTS: '${{ matrix.firstCost }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '102'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch20-required-s100-c${{ matrix.firstCost }}.log
-      - name: Upload identity 187 branch 20 required sum100 cost-pair log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch20-required-s102.log
+      - name: Upload identity 187 branch 20 required sum102 log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: machine-forced-cost-role-187-branch20-required-s100-c${{ matrix.firstCost }}
-          path: machine-forced-cost-role-187-branch20-required-s100-c${{ matrix.firstCost }}.log
+          name: machine-forced-cost-role-187-branch20-required-s102
+          path: machine-forced-cost-role-187-branch20-required-s102.log
           if-no-files-found: error
