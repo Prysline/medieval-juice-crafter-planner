@@ -1,275 +1,77 @@
-name: Branch27 exact single-sum shards
+name: Branch27 focused survivor refinement
 
 on:
   pull_request:
 
 jobs:
-  machine-forced-cost-role-187-branch27-single-sums:
+  machine-forced-cost-role-187-branch27-survivors:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - id: r0req-85
-            case: '27:0:required'
-            sum: '85'
-          - id: r0req-86
-            case: '27:0:required'
-            sum: '86'
-          - id: r0req-87
-            case: '27:0:required'
-            sum: '87'
-          - id: r0req-88
-            case: '27:0:required'
-            sum: '88'
-          - id: r0req-89
-            case: '27:0:required'
-            sum: '89'
-          - id: r0req-90
-            case: '27:0:required'
-            sum: '90'
-          - id: r0req-91
-            case: '27:0:required'
-            sum: '91'
-          - id: r0req-92
-            case: '27:0:required'
-            sum: '92'
-          - id: r0req-93
-            case: '27:0:required'
-            sum: '93'
-          - id: r0req-94
-            case: '27:0:required'
-            sum: '94'
-          - id: r0req-95
-            case: '27:0:required'
-            sum: '95'
-          - id: r0req-96
-            case: '27:0:required'
-            sum: '96'
-          - id: r0req-97
-            case: '27:0:required'
-            sum: '97'
-          - id: r0req-98
-            case: '27:0:required'
-            sum: '98'
-          - id: r0req-99
-            case: '27:0:required'
-            sum: '99'
-          - id: r0req-100
-            case: '27:0:required'
-            sum: '100'
-          - id: r0req-101
-            case: '27:0:required'
-            sum: '101'
-          - id: r0req-102
-            case: '27:0:required'
-            sum: '102'
-          - id: r0req-103
-            case: '27:0:required'
-            sum: '103'
-          - id: r0req-104
-            case: '27:0:required'
-            sum: '104'
-          - id: r0req-105
-            case: '27:0:required'
-            sum: '105'
-          - id: r0req-106
-            case: '27:0:required'
-            sum: '106'
-          - id: r0req-107
-            case: '27:0:required'
-            sum: '107'
-          - id: r0req-108
-            case: '27:0:required'
-            sum: '108'
-          - id: r0req-109
-            case: '27:0:required'
-            sum: '109'
-          - id: r0req-110
-            case: '27:0:required'
-            sum: '110'
-          - id: r0req-111
-            case: '27:0:required'
-            sum: '111'
-          - id: r0req-112
-            case: '27:0:required'
-            sum: '112'
-          - id: r0req-113
-            case: '27:0:required'
-            sum: '113'
-          - id: r0req-114
-            case: '27:0:required'
-            sum: '114'
-          - id: r0req-115
+          - id: r0req-115-first46
             case: '27:0:required'
             sum: '115'
-          - id: r0req-116
+            firstIdentity: '46'
+            listIdentities: '0'
+          - id: r0req-115-first573
             case: '27:0:required'
-            sum: '116'
-          - id: r0req-117
+            sum: '115'
+            firstIdentity: '573'
+            listIdentities: '0'
+          - id: r0req-115-first666
             case: '27:0:required'
-            sum: '117'
-          - id: r0req-118
+            sum: '115'
+            firstIdentity: '666'
+            listIdentities: '0'
+          - id: r0req-115-first1257
             case: '27:0:required'
-            sum: '118'
-          - id: r0req-119
+            sum: '115'
+            firstIdentity: '1257'
+            listIdentities: '0'
+          - id: r0req-115-first1305
             case: '27:0:required'
-            sum: '119'
-          - id: r0req-120
+            sum: '115'
+            firstIdentity: '1305'
+            listIdentities: '0'
+          - id: r0req-120-first1210
             case: '27:0:required'
             sum: '120'
-          - id: r0req-121
+            firstIdentity: '1210'
+            listIdentities: '0'
+          - id: r0req-99-list
             case: '27:0:required'
-            sum: '121'
-          - id: r0req-122
-            case: '27:0:required'
-            sum: '122'
-          - id: r0req-123
-            case: '27:0:required'
-            sum: '123'
-          - id: r0req-124
-            case: '27:0:required'
-            sum: '124'
-          - id: r0forbid-85
-            case: '27:0:forbidden'
-            sum: '85'
-          - id: r0forbid-86
-            case: '27:0:forbidden'
-            sum: '86'
-          - id: r0forbid-87
-            case: '27:0:forbidden'
-            sum: '87'
-          - id: r0forbid-88
-            case: '27:0:forbidden'
-            sum: '88'
-          - id: r0forbid-89
-            case: '27:0:forbidden'
-            sum: '89'
-          - id: r0forbid-90
-            case: '27:0:forbidden'
-            sum: '90'
-          - id: r0forbid-91
-            case: '27:0:forbidden'
-            sum: '91'
-          - id: r0forbid-92
-            case: '27:0:forbidden'
-            sum: '92'
-          - id: r0forbid-93
-            case: '27:0:forbidden'
-            sum: '93'
-          - id: r0forbid-94
-            case: '27:0:forbidden'
-            sum: '94'
-          - id: r0forbid-95
-            case: '27:0:forbidden'
-            sum: '95'
-          - id: r0forbid-96
-            case: '27:0:forbidden'
-            sum: '96'
-          - id: r0forbid-97
-            case: '27:0:forbidden'
-            sum: '97'
-          - id: r0forbid-98
-            case: '27:0:forbidden'
-            sum: '98'
-          - id: r0forbid-99
-            case: '27:0:forbidden'
             sum: '99'
-          - id: r0forbid-100
-            case: '27:0:forbidden'
-            sum: '100'
-          - id: r0forbid-101
-            case: '27:0:forbidden'
-            sum: '101'
-          - id: r0forbid-102
-            case: '27:0:forbidden'
-            sum: '102'
-          - id: r0forbid-103
-            case: '27:0:forbidden'
-            sum: '103'
-          - id: r0forbid-104
-            case: '27:0:forbidden'
-            sum: '104'
-          - id: r0forbid-105
+            firstIdentity: ''
+            listIdentities: '1'
+          - id: r0forbid-105-list
             case: '27:0:forbidden'
             sum: '105'
-          - id: r0forbid-106
-            case: '27:0:forbidden'
-            sum: '106'
-          - id: r0forbid-107
-            case: '27:0:forbidden'
-            sum: '107'
-          - id: r0forbid-108
-            case: '27:0:forbidden'
-            sum: '108'
-          - id: r0forbid-109
-            case: '27:0:forbidden'
-            sum: '109'
-          - id: r0forbid-110
-            case: '27:0:forbidden'
-            sum: '110'
-          - id: r0forbid-111
-            case: '27:0:forbidden'
-            sum: '111'
-          - id: r0forbid-112
-            case: '27:0:forbidden'
-            sum: '112'
-          - id: r0forbid-113
-            case: '27:0:forbidden'
-            sum: '113'
-          - id: r0forbid-114
-            case: '27:0:forbidden'
-            sum: '114'
-          - id: r0forbid-115
-            case: '27:0:forbidden'
-            sum: '115'
-          - id: r0forbid-116
-            case: '27:0:forbidden'
-            sum: '116'
-          - id: r0forbid-117
-            case: '27:0:forbidden'
-            sum: '117'
-          - id: r0forbid-118
-            case: '27:0:forbidden'
-            sum: '118'
-          - id: r0forbid-119
-            case: '27:0:forbidden'
-            sum: '119'
-          - id: r0forbid-120
-            case: '27:0:forbidden'
-            sum: '120'
-          - id: r0forbid-121
-            case: '27:0:forbidden'
-            sum: '121'
-          - id: r0forbid-122
-            case: '27:0:forbidden'
-            sum: '122'
-          - id: r0forbid-123
-            case: '27:0:forbidden'
-            sum: '123'
-          - id: r0forbid-124
-            case: '27:0:forbidden'
-            sum: '124'
-    name: machine-forced-cost-role-187-branch27-single-sum (${{ matrix.id }})
+            firstIdentity: ''
+            listIdentities: '1'
+    name: machine-forced-cost-role-187-branch27-survivor (${{ matrix.id }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Solve branch 27 exact single-sum shard
+      - name: Refine branch 27 exact survivor
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '${{ matrix.case }}'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.sum }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '${{ matrix.firstIdentity }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_IDENTITIES: '${{ matrix.listIdentities }}'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch27-single-sum-${{ matrix.id }}.log
-      - name: Upload branch 27 single-sum log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch27-survivor-${{ matrix.id }}.log
+      - name: Upload branch 27 survivor log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: branch27-single-sum-${{ matrix.id }}
-          path: branch27-single-sum-${{ matrix.id }}.log
+          name: branch27-survivor-${{ matrix.id }}
+          path: branch27-survivor-${{ matrix.id }}.log
           if-no-files-found: error
