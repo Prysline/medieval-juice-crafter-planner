@@ -1,41 +1,86 @@
-name: Branch33 cost-sum audit
+name: Branch33 exact cost-sum shards
 
 on:
   pull_request:
 
 jobs:
-  machine-forced-cost-role-187-branch33-list-sums:
+  machine-forced-cost-role-187-branch33-cost-sums:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        case:
-          - { id: role0-required, spec: '33:0:required' }
-          - { id: role1-required, spec: '33:1:required' }
-          - { id: role1-forbidden, spec: '33:1:forbidden' }
-          - { id: role2-required, spec: '33:2:required' }
-          - { id: role2-forbidden, spec: '33:2:forbidden' }
-    name: machine-forced-cost-role-187-branch33-list-sums (${{ matrix.case.id }})
+        include:
+          - id: r0req-0
+            case: '33:0:required'
+            sums: '19,25,26,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44'
+          - id: r0req-1
+            case: '33:0:required'
+            sums: '45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64'
+          - id: r0req-2
+            case: '33:0:required'
+            sums: '65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84'
+          - id: r0req-3
+            case: '33:0:required'
+            sums: '85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104'
+          - id: r0req-4
+            case: '33:0:required'
+            sums: '105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124'
+          - id: r1req-0
+            case: '33:1:required'
+            sums: '58,59,65,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84'
+          - id: r1req-1
+            case: '33:1:required'
+            sums: '85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104'
+          - id: r1req-2
+            case: '33:1:required'
+            sums: '105,106,107,108,109,110,111'
+          - id: r1forbid-0
+            case: '33:1:forbidden'
+            sums: '58,59,65,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84'
+          - id: r1forbid-1
+            case: '33:1:forbidden'
+            sums: '85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104'
+          - id: r1forbid-2
+            case: '33:1:forbidden'
+            sums: '105,106,107,108,109,110,111'
+          - id: r2req-0
+            case: '33:2:required'
+            sums: '67,68,74,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93'
+          - id: r2req-1
+            case: '33:2:required'
+            sums: '94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113'
+          - id: r2req-2
+            case: '33:2:required'
+            sums: '114,115,116,117,118,119,120'
+          - id: r2forbid-0
+            case: '33:2:forbidden'
+            sums: '67,68,74,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93'
+          - id: r2forbid-1
+            case: '33:2:forbidden'
+            sums: '94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113'
+          - id: r2forbid-2
+            case: '33:2:forbidden'
+            sums: '114,115,116,117,118,119,120'
+    name: machine-forced-cost-role-187-branch33-cost-sums (${{ matrix.id }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: List branch 33 canonical cost sums
-        continue-on-error: true
+      - name: Solve branch 33 exact cost-sum shard
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '${{ matrix.case.spec }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_SUMS: '1'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '${{ matrix.case }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.sums }}'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch33-cost-sums-${{ matrix.case.id }}.log
-      - name: Upload branch 33 cost-sum audit log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch33-cost-sums-${{ matrix.id }}.log
+      - name: Upload branch 33 shard log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: branch33-cost-sums-${{ matrix.case.id }}
-          path: branch33-cost-sums-${{ matrix.case.id }}.log
+          name: branch33-cost-sums-${{ matrix.id }}
+          path: branch33-cost-sums-${{ matrix.id }}.log
           if-no-files-found: error
