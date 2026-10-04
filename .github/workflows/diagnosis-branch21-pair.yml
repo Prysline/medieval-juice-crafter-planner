@@ -1,29 +1,41 @@
-name: Branch32 role audit
+name: Branch32 cost-sum audit
 
 on:
   pull_request:
 
 jobs:
-  machine-forced-role-187-branch32:
+  machine-forced-cost-role-187-branch32-list-sums:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        case:
+          - { id: role0-required, spec: '32:0:required' }
+          - { id: role1-required, spec: '32:1:required' }
+          - { id: role1-forbidden, spec: '32:1:forbidden' }
+          - { id: role2-required, spec: '32:2:required' }
+          - { id: role2-forbidden, spec: '32:2:forbidden' }
+    name: machine-forced-cost-role-187-branch32-list-sums (${{ matrix.case.id }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Audit branch 32 exact role and slack frontier
+      - name: List branch 32 canonical cost sums
+        continue-on-error: true
         env:
-          MACHINE_CONTINUATION_FORCED_ROLE_GROUP: '187'
-          MACHINE_CONTINUATION_FORCED_ROLE_BRANCHES: '32'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '${{ matrix.case.spec }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_SUMS: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch32-role-audit.log
-      - name: Upload branch 32 role audit log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch32-cost-sums-${{ matrix.case.id }}.log
+      - name: Upload branch 32 cost-sum audit log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: branch32-role-audit
-          path: branch32-role-audit.log
+          name: branch32-cost-sums-${{ matrix.case.id }}
+          path: branch32-cost-sums-${{ matrix.case.id }}.log
           if-no-files-found: error
