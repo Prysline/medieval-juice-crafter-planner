@@ -1,36 +1,43 @@
-name: Branch26 role0 single-sum exact
+name: Branch26 sum116 pair exact
 
 on:
   pull_request:
 
 jobs:
-  machine-forced-cost-role-187-branch26-single-sum:
+  machine-forced-cost-role-187-branch26-sum116-pair:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        case: [required, forbidden]
-        sum: [85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124]
-    name: machine-forced-cost-role-187-branch26-single-sum (${{ matrix.case }}-${{ matrix.sum }})
+        pair:
+          - { first: 456, second: 1184 }
+          - { first: 456, second: 1208 }
+          - { first: 672, second: 1184 }
+    name: machine-forced-cost-role-187-branch26-sum116-pair (${{ matrix.pair.first }}-${{ matrix.pair.second }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Solve branch 26 exact single-sum case
+      - name: Apply diagnosis-only exact pair selectors
+        run: python .github/diagnostics/apply-branch20-pair-choice-selectors.py
+      - name: Solve branch 26 sum116 exact pair survivor
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '26:0:${{ matrix.case }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.sum }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '26:0:required'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '116'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '${{ matrix.pair.first }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SECOND_IDENTITIES: '${{ matrix.pair.second }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch26-single-${{ matrix.case }}-${{ matrix.sum }}.log
-      - name: Upload branch 26 single-sum log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch26-sum116-pair-${{ matrix.pair.first }}-${{ matrix.pair.second }}.log
+      - name: Upload branch 26 sum116 pair log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: branch26-single-${{ matrix.case }}-${{ matrix.sum }}
-          path: branch26-single-${{ matrix.case }}-${{ matrix.sum }}.log
+          name: branch26-sum116-pair-${{ matrix.pair.first }}-${{ matrix.pair.second }}
+          path: branch26-sum116-pair-${{ matrix.pair.first }}-${{ matrix.pair.second }}.log
           if-no-files-found: error
