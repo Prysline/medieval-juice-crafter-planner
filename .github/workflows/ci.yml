@@ -29,207 +29,33 @@ jobs:
       - run: npm run build
       - run: npm run smoke:highs:pages-like
 
-  machine-forced-cost-role-187-branch21-r0:
+  machine-forced-cost-role-187-branch21-sum122-pair-customer:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-cost-role-187-branch21-r0 (${{ matrix.slackCase }}-${{ matrix.shard.id }})
+    name: machine-forced-cost-role-187-branch21-sum122-pair-customer
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        slackCase: [required, forbidden]
-        shard:
-          - id: '01'
-            sums: '19,25,26,28,29,30'
-          - id: '02'
-            sums: '31,32,33,34,35,36'
-          - id: '03'
-            sums: '37,38,39,40,41,42'
-          - id: '04'
-            sums: '43,44,45,46,47,48'
-          - id: '05'
-            sums: '49,50,51,52,53,54'
-          - id: '06'
-            sums: '55,56,57,58,59,60'
-          - id: '07'
-            sums: '61,62,63,64,65,66'
-          - id: '08'
-            sums: '67,68,69,70,71,72'
-          - id: '09'
-            sums: '73,74,75,76,77,78'
-          - id: '10'
-            sums: '79,80,81,82,83,84'
-          - id: '11'
-            sums: '85,86,87,88,89,90'
-          - id: '12'
-            sums: '91,92,93,94,95,96'
-          - id: '13'
-            sums: '97,98,99,100,101,102'
-          - id: '14'
-            sums: '103,104,105,106,107,108'
-          - id: '15'
-            sums: '109,110,111,112,113,114'
-          - id: '16'
-            sums: '115,116,117,118,119,120'
-          - id: '17'
-            sums: '121,122,123,124'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Solve identity 187 branch 21 roleMask0 cost-sum shard
+      - name: Apply diagnosis-only exact pair selectors
+        run: python .github/diagnostics/apply-branch20-pair-choice-selectors.py
+      - name: Solve identity 187 branch 21 sum122 pair by next sparse customer
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '21:0:${{ matrix.slackCase }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.shard.sums }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '21:0:required'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '122'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '1208'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SECOND_IDENTITIES: '1368'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch21-r0-${{ matrix.slackCase }}-${{ matrix.shard.id }}.log
-      - name: Upload identity 187 branch 21 roleMask0 log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch21-sum122-pair-customer.log
+      - name: Upload identity 187 branch 21 sum122 pair-customer log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: machine-forced-cost-role-187-branch21-r0-${{ matrix.slackCase }}-${{ matrix.shard.id }}
-          path: machine-forced-cost-role-187-branch21-r0-${{ matrix.slackCase }}-${{ matrix.shard.id }}.log
-          if-no-files-found: error
-
-  machine-forced-cost-role-187-branch21-r1:
-    if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-cost-role-187-branch21-r1 (${{ matrix.slackCase }}-${{ matrix.shard.id }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        slackCase: [required, forbidden]
-        shard:
-          - id: '01'
-            sums: '58,59,65,68,69,70'
-          - id: '02'
-            sums: '71,72,73,74,75,76'
-          - id: '03'
-            sums: '77,78,79,80,81,82'
-          - id: '04'
-            sums: '83,84,85,86,87,88'
-          - id: '05'
-            sums: '89,90,91,92,93,94'
-          - id: '06'
-            sums: '95,96,97,98,99,100'
-          - id: '07'
-            sums: '101,102,103,104,105,106'
-          - id: '08'
-            sums: '107,108,109,110,111'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: npm install
-      - name: Solve identity 187 branch 21 roleMask1 cost-sum shard
-        env:
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '21:1:${{ matrix.slackCase }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.shard.sums }}'
-        run: |
-          set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch21-r1-${{ matrix.slackCase }}-${{ matrix.shard.id }}.log
-      - name: Upload identity 187 branch 21 roleMask1 log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: machine-forced-cost-role-187-branch21-r1-${{ matrix.slackCase }}-${{ matrix.shard.id }}
-          path: machine-forced-cost-role-187-branch21-r1-${{ matrix.slackCase }}-${{ matrix.shard.id }}.log
-          if-no-files-found: error
-
-  machine-forced-cost-role-187-branch21-r2:
-    if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-cost-role-187-branch21-r2 (${{ matrix.slackCase }}-${{ matrix.shard.id }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        slackCase: [required, forbidden]
-        shard:
-          - id: '01'
-            sums: '67,68,74,77,78,79'
-          - id: '02'
-            sums: '80,81,82,83,84,85'
-          - id: '03'
-            sums: '86,87,88,89,90,91'
-          - id: '04'
-            sums: '92,93,94,95,96,97'
-          - id: '05'
-            sums: '98,99,100,101,102,103'
-          - id: '06'
-            sums: '104,105,106,107,108,109'
-          - id: '07'
-            sums: '110,111,112,113,114,115'
-          - id: '08'
-            sums: '116,117,118,119,120'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: npm install
-      - name: Solve identity 187 branch 21 roleMask2 cost-sum shard
-        env:
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '21:2:${{ matrix.slackCase }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.shard.sums }}'
-        run: |
-          set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch21-r2-${{ matrix.slackCase }}-${{ matrix.shard.id }}.log
-      - name: Upload identity 187 branch 21 roleMask2 log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: machine-forced-cost-role-187-branch21-r2-${{ matrix.slackCase }}-${{ matrix.shard.id }}
-          path: machine-forced-cost-role-187-branch21-r2-${{ matrix.slackCase }}-${{ matrix.shard.id }}.log
-          if-no-files-found: error
-
-  machine-forced-cost-role-187-branch21-r4:
-    if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-cost-role-187-branch21-r4 (forbidden-${{ matrix.shard.id }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        shard:
-          - id: '01'
-            sums: '52,53,59,62,63,64'
-          - id: '02'
-            sums: '65,66,67,68,69,70'
-          - id: '03'
-            sums: '71,72,73,74,75,76'
-          - id: '04'
-            sums: '77,78,79,80,81,82'
-          - id: '05'
-            sums: '83,84,85,86,87,88'
-          - id: '06'
-            sums: '89,90,91,92,93,94'
-          - id: '07'
-            sums: '95,96,97,98,99,100'
-          - id: '08'
-            sums: '101,102,103,104,105'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: npm install
-      - name: Solve identity 187 branch 21 roleMask4 forbidden cost-sum shard
-        env:
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '21:4:forbidden'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.shard.sums }}'
-        run: |
-          set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch21-r4-forbidden-${{ matrix.shard.id }}.log
-      - name: Upload identity 187 branch 21 roleMask4 log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: machine-forced-cost-role-187-branch21-r4-forbidden-${{ matrix.shard.id }}
-          path: machine-forced-cost-role-187-branch21-r4-forbidden-${{ matrix.shard.id }}.log
+          name: machine-forced-cost-role-187-branch21-sum122-pair-customer
+          path: machine-forced-cost-role-187-branch21-sum122-pair-customer.log
           if-no-files-found: error
