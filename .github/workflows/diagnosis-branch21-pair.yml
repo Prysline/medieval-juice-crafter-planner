@@ -1,38 +1,65 @@
-name: Identity187 residual single sums C
+name: Identity187 A residual first-cost enumeration
 
 on:
   pull_request:
 
 jobs:
-  identity187-single-sum-c:
+  identity187-a-first-cost-domain:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        case:
-          - '50:0:required'
-        sum: [19, 25, 26, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124]
-    name: identity187-single-sum-c (${{ matrix.case }} / ${{ matrix.sum }})
+        include:
+          - { case: '9:0:required', sum: 98 }
+          - { case: '9:0:required', sum: 102 }
+          - { case: '9:0:required', sum: 104 }
+          - { case: '9:0:required', sum: 106 }
+          - { case: '19:0:forbidden', sum: 97 }
+          - { case: '19:0:forbidden', sum: 100 }
+          - { case: '19:0:forbidden', sum: 101 }
+          - { case: '19:0:forbidden', sum: 102 }
+          - { case: '19:0:forbidden', sum: 104 }
+          - { case: '19:0:forbidden', sum: 105 }
+          - { case: '19:0:forbidden', sum: 106 }
+          - { case: '19:0:forbidden', sum: 107 }
+          - { case: '19:0:forbidden', sum: 108 }
+          - { case: '19:0:forbidden', sum: 109 }
+    name: first-cost-domain (${{ matrix.case }} / ${{ matrix.sum }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Solve one exact residual cost sum
+      - name: Apply diagnosis-only early identity enumeration
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/domain/optimizerMachineContinuationProfile.test.ts')
+          text = path.read_text()
+          needle = """      for (const extraOneCostSum of selectedCostSums) {\n        let requiredExtraOneCostCounts:\n"""
+          inserted = """      for (const extraOneCostSum of selectedCostSums) {\n        if (\n          machineContinuationEnv.MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_IDENTITIES ===\n          '1'\n        ) {\n          const remainingExtraOneCost =\n            extraOneCostSum - requiredExtraOneCost\n          const candidateGroupIndexes =\n            remainingExtraOneCount === 1\n              ? remainingExtraOneGroups.filter(\n                  (candidateGroupIndex) =>\n                    groups[candidateGroupIndex].ingredientCost ===\n                    remainingExtraOneCost,\n                )\n              : remainingExtraOneGroups.filter(\n                  (candidateGroupIndex) => {\n                    const candidateCost =\n                      groups[candidateGroupIndex].ingredientCost\n                    if (candidateCost * 2 > remainingExtraOneCost) {\n                      return false\n                    }\n                    const partnerCost =\n                      remainingExtraOneCost - candidateCost\n                    return remainingExtraOneGroups.some(\n                      (partnerGroupIndex) =>\n                        partnerGroupIndex !== candidateGroupIndex &&\n                        groups[partnerGroupIndex].ingredientCost ===\n                          partnerCost &&\n                        (candidateCost !== partnerCost ||\n                          partnerGroupIndex > candidateGroupIndex),\n                    )\n                  },\n                )\n          console.info(\n            'MACHINE_FORCED_COST_ROLE_IDENTITIES',\n            JSON.stringify({\n              groupIndex,\n              branchIndex: requested.branchIndex,\n              roleMask: requested.roleMask,\n              slackCase: requested.slackCase,\n              extraOneCostSum,\n              remainingExtraOneCount,\n              candidateGroupIndexes,\n              candidateCostCounts: [\n                ...new Set(\n                  candidateGroupIndexes.map(\n                    (candidateGroupIndex) =>\n                      groups[candidateGroupIndex].ingredientCost,\n                  ),\n                ),\n              ]\n                .sort((left, right) => left - right)\n                .map((ingredientCost) => ({\n                  ingredientCost,\n                  count: candidateGroupIndexes.filter(\n                    (candidateGroupIndex) =>\n                      groups[candidateGroupIndex].ingredientCost ===\n                      ingredientCost,\n                  ).length,\n                })),\n            }),\n          )\n          continue\n        }\n        let requiredExtraOneCostCounts:\n"""
+          if needle not in text:
+              raise SystemExit('early identity enumeration insertion point not found')
+          path.write_text(text.replace(needle, inserted, 1))
+          PY
+          git diff --check
+      - name: Enumerate fresh first-cost domain
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '${{ matrix.case }}'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.sum }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_IDENTITIES: '1'
         run: |
           set -o pipefail
           safe_case="$(printf '%s' '${{ matrix.case }}' | tr ':' '-')"
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee "identity187-${safe_case}-sum-${{ matrix.sum }}.log"
-      - name: Upload exact single-sum log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee "identity187-first-cost-${safe_case}-sum-${{ matrix.sum }}.log"
+          grep -q 'MACHINE_FORCED_COST_ROLE_IDENTITIES' "identity187-first-cost-${safe_case}-sum-${{ matrix.sum }}.log"
+      - name: Upload first-cost domain log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: identity187-c-${{ strategy.job-index }}
-          path: identity187-*-sum-*.log
+          name: identity187-a-first-cost-${{ strategy.job-index }}
+          path: identity187-first-cost-*.log
           if-no-files-found: error
