@@ -1,59 +1,36 @@
-name: Branch33 exact third-customer residuals
+name: Identity187 canonical branch enumeration
 
 on:
   pull_request:
 
 jobs:
-  machine-forced-cost-role-187-branch33-third-customer:
+  identity187-list-branches:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - sum: '120'
-            firstIdentity: '1210'
-            secondIdentity: '1184'
-            choice: '453'
-            nextChoice: '334'
-          - sum: '120'
-            firstIdentity: '1210'
-            secondIdentity: '1208'
-            choice: '452'
-            nextChoice: '334'
-    name: machine-forced-cost-role-187-branch33-third-customer (${{ matrix.sum }}, ${{ matrix.firstIdentity }}, ${{ matrix.secondIdentity }}, ${{ matrix.choice }}, ${{ matrix.nextChoice }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Apply diagnosis-only sparse-customer selectors
-        run: |
-          node scripts/diagnosis/patchMachineContinuationChoiceSelectors.mjs
-          node scripts/diagnosis/patchMachineContinuationNextChoiceSelector.mjs
-          node scripts/diagnosis/patchMachineContinuationThirdCustomerSplit.mjs
-          git diff --check
-          git diff -- src/domain/optimizerMachineContinuationProfile.test.ts
-      - name: Solve branch 33 exact third-customer shard
+      - name: Enumerate canonical identity187 branches
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '33:0:required'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.sum }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '${{ matrix.firstIdentity }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SECOND_IDENTITIES: '${{ matrix.secondIdentity }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER_CHOICES: '${{ matrix.choice }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER_NEXT: '1'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER_NEXT_CHOICES: '${{ matrix.nextChoice }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER_THIRD: '1'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_BRANCHES: '1'
         run: |
+          set +e
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch33-third-${{ matrix.sum }}-${{ matrix.firstIdentity }}-${{ matrix.secondIdentity }}-${{ matrix.choice }}-${{ matrix.nextChoice }}.log
-      - name: Upload branch 33 third-customer log
+          node scripts/diagnosis/patchMachineContinuationListBranches.mjs
+          git diff --check
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee identity187-branches.log
+          vitest_status=${PIPESTATUS[0]}
+          set -e
+          test "$vitest_status" -ne 0
+          grep -q 'MACHINE_FORCED_COST_ROLE_BRANCHES' identity187-branches.log
+      - name: Upload identity187 branch enumeration
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: branch33-third-${{ matrix.sum }}-${{ matrix.firstIdentity }}-${{ matrix.secondIdentity }}-${{ matrix.choice }}-${{ matrix.nextChoice }}
-          path: branch33-third-${{ matrix.sum }}-${{ matrix.firstIdentity }}-${{ matrix.secondIdentity }}-${{ matrix.choice }}-${{ matrix.nextChoice }}.log
+          name: identity187-branches
+          path: identity187-branches.log
           if-no-files-found: error
