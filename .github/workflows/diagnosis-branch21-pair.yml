@@ -1,33 +1,47 @@
-name: Branch33 exact sum119 pair residual
+name: Branch33 exact pair residuals
 
 on:
   pull_request:
 
 jobs:
-  machine-forced-cost-role-187-branch33-sum119-pair:
+  machine-forced-cost-role-187-branch33-pair-residual:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
-    name: machine-forced-cost-role-187-branch33-sum119-pair (1287)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - sum: '117'
+            firstIdentity: '43'
+          - sum: '117'
+            firstIdentity: '568'
+          - sum: '117'
+            firstIdentity: '1287'
+          - sum: '118'
+            firstIdentity: '260'
+          - sum: '120'
+            firstIdentity: '1210'
+    name: machine-forced-cost-role-187-branch33-pair-residual (${{ matrix.sum }}, ${{ matrix.firstIdentity }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Solve branch 33 sum119 exact pair residual
+      - name: Solve branch 33 exact pair residual
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '33:0:required'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '119'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '1287'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.sum }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '${{ matrix.firstIdentity }}'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch33-sum119-pair-1287.log
-      - name: Upload branch 33 sum119 pair log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch33-pair-${{ matrix.sum }}-${{ matrix.firstIdentity }}.log
+      - name: Upload branch 33 pair residual log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: branch33-sum119-pair-1287
-          path: branch33-sum119-pair-1287.log
+          name: branch33-pair-${{ matrix.sum }}-${{ matrix.firstIdentity }}
+          path: branch33-pair-${{ matrix.sum }}-${{ matrix.firstIdentity }}.log
           if-no-files-found: error
