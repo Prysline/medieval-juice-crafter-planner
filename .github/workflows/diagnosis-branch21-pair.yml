@@ -1,122 +1,82 @@
-name: Branch32 exact identity shards
+name: Branch32 exact sum109 identities
 
 on:
   pull_request:
 
 jobs:
-  machine-forced-cost-role-187-branch32-first-identity:
+  machine-forced-cost-role-187-branch32-sum109-identity:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - sum: '106'
-            firstCost: '49'
-            firstIdentity: '258'
-          - sum: '118'
-            firstCost: '57'
-            firstIdentity: '666'
-          - sum: '118'
-            firstCost: '57'
-            firstIdentity: '1269'
-          - sum: '120'
-            firstCost: '59'
-            firstIdentity: '260'
-          - sum: '120'
-            firstCost: '59'
-            firstIdentity: '1210'
-          - sum: '118'
-            firstCost: '59'
-            firstIdentity: '260'
-          - sum: '110'
-            firstCost: '51'
-            firstIdentity: '790'
-          - sum: '108'
-            firstCost: '54'
-            firstIdentity: '1090'
-          - sum: '113'
-            firstCost: '54'
-            firstIdentity: '1090'
-          - sum: '113'
-            firstCost: '55'
-            firstIdentity: '253'
-          - sum: '110'
-            firstCost: '54'
-            firstIdentity: '600'
-          - sum: '113'
-            firstCost: '56'
-            firstIdentity: '43'
-          - sum: '114'
-            firstCost: '56'
-            firstIdentity: '43'
-          - sum: '116'
-            firstCost: '57'
-            firstIdentity: '666'
-          - sum: '116'
-            firstCost: '57'
-            firstIdentity: '986'
-          - sum: '116'
-            firstCost: '57'
-            firstIdentity: '1269'
-          - sum: '117'
-            firstCost: '56'
-            firstIdentity: '43'
-    name: machine-forced-cost-role-187-branch32-first-identity (${{ matrix.sum }}, ${{ matrix.firstCost }}, ${{ matrix.firstIdentity }})
+        firstIdentity:
+          - '26'
+          - '44'
+          - '45'
+          - '46'
+          - '145'
+          - '146'
+          - '199'
+          - '200'
+          - '224'
+          - '276'
+          - '399'
+          - '403'
+          - '545'
+          - '546'
+          - '547'
+          - '549'
+          - '571'
+          - '573'
+          - '575'
+          - '600'
+          - '608'
+          - '656'
+          - '671'
+          - '695'
+          - '768'
+          - '769'
+          - '950'
+          - '951'
+          - '953'
+          - '1040'
+          - '1044'
+          - '1056'
+          - '1083'
+          - '1090'
+          - '1091'
+          - '1102'
+          - '1188'
+          - '1189'
+          - '1193'
+          - '1212'
+          - '1213'
+          - '1257'
+          - '1284'
+          - '1294'
+    name: machine-forced-cost-role-187-branch32-sum109-identity (${{ matrix.firstIdentity }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Solve branch 32 exact first-identity bucket
-        env:
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '32:0:required'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.sum }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_COSTS: '${{ matrix.firstCost }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '${{ matrix.firstIdentity }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
-        run: |
-          set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch32-first-identity-${{ matrix.sum }}-${{ matrix.firstCost }}-${{ matrix.firstIdentity }}.log
-      - name: Upload branch 32 first-identity log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: branch32-first-identity-${{ matrix.sum }}-${{ matrix.firstCost }}-${{ matrix.firstIdentity }}
-          path: branch32-first-identity-${{ matrix.sum }}-${{ matrix.firstCost }}-${{ matrix.firstIdentity }}.log
-          if-no-files-found: error
-
-  machine-forced-cost-role-187-branch32-list-109-54-identities:
-    if: github.head_ref == 'perf/exact-machine-operation-continuation'
-    runs-on: ubuntu-latest
-    name: machine-forced-cost-role-187-branch32-list-identities (109, 54)
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: npm install
-      - name: Enumerate branch 32 sum109 firstCost54 identities
+      - name: Solve branch 32 sum109 exact first-identity bucket
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '32:0:required'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '109'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_COSTS: '54'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_IDENTITIES: '1'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '${{ matrix.firstIdentity }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
         run: |
-          set +e
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch32-list-identities-109-54.log
-          vitest_status=${PIPESTATUS[0]}
-          set -e
-          test "$vitest_status" -ne 0
-          grep -q 'MACHINE_FORCED_COST_ROLE_IDENTITIES' branch32-list-identities-109-54.log
-      - name: Upload branch 32 identity enumeration log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch32-sum109-identity-${{ matrix.firstIdentity }}.log
+      - name: Upload branch 32 sum109 identity log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: branch32-list-identities-109-54
-          path: branch32-list-identities-109-54.log
+          name: branch32-sum109-identity-${{ matrix.firstIdentity }}
+          path: branch32-sum109-identity-${{ matrix.firstIdentity }}.log
           if-no-files-found: error
