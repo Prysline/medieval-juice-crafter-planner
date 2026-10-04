@@ -1,49 +1,42 @@
-name: Branch32 exact next sparse customer
+name: Branch32 exact third sparse customer
 
 on:
   pull_request:
 
 jobs:
-  machine-forced-cost-role-187-branch32-next-customer:
+  machine-forced-cost-role-187-branch32-third-customer:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - sum: '116'
-            firstCost: '57'
-            firstIdentity: '986'
-            secondIdentity: '260'
-            choice: '452'
           - sum: '120'
             firstCost: '59'
             firstIdentity: '1210'
             secondIdentity: '1184'
             choice: '453'
-          - sum: '120'
-            firstCost: '59'
-            firstIdentity: '1210'
-            secondIdentity: '1208'
-            choice: '452'
+            nextChoice: '334'
           - sum: '120'
             firstCost: '59'
             firstIdentity: '1210'
             secondIdentity: '1208'
             choice: '454'
-    name: machine-forced-cost-role-187-branch32-next-customer (${{ matrix.sum }}, ${{ matrix.firstIdentity }}, ${{ matrix.secondIdentity }}, ${{ matrix.choice }})
+            nextChoice: '334'
+    name: machine-forced-cost-role-187-branch32-third-customer (${{ matrix.secondIdentity }}, ${{ matrix.choice }}, ${{ matrix.nextChoice }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Apply diagnosis-only choice selectors
+      - name: Apply diagnosis-only sparse-customer selectors
         run: |
           node scripts/diagnosis/patchMachineContinuationChoiceSelectors.mjs
+          node scripts/diagnosis/patchMachineContinuationThirdCustomerSelectors.mjs
           git diff --check
           git diff -- src/domain/optimizerMachineContinuationProfile.test.ts
-      - name: Solve branch 32 next sparse-customer split
+      - name: Solve branch 32 third sparse-customer split
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '32:0:required'
@@ -54,13 +47,15 @@ jobs:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER_CHOICES: '${{ matrix.choice }}'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER_NEXT: '1'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER_NEXT_CHOICES: '${{ matrix.nextChoice }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER_THIRD: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch32-next-customer-${{ matrix.sum }}-${{ matrix.firstIdentity }}-${{ matrix.secondIdentity }}-${{ matrix.choice }}.log
-      - name: Upload branch 32 next-customer log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch32-third-customer-${{ matrix.secondIdentity }}-${{ matrix.choice }}-${{ matrix.nextChoice }}.log
+      - name: Upload branch 32 third-customer log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: branch32-next-customer-${{ matrix.sum }}-${{ matrix.firstIdentity }}-${{ matrix.secondIdentity }}-${{ matrix.choice }}
-          path: branch32-next-customer-${{ matrix.sum }}-${{ matrix.firstIdentity }}-${{ matrix.secondIdentity }}-${{ matrix.choice }}.log
+          name: branch32-third-customer-${{ matrix.secondIdentity }}-${{ matrix.choice }}-${{ matrix.nextChoice }}
+          path: branch32-third-customer-${{ matrix.secondIdentity }}-${{ matrix.choice }}-${{ matrix.nextChoice }}.log
           if-no-files-found: error
