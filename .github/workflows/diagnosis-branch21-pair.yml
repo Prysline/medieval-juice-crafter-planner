@@ -1,10 +1,10 @@
-name: Branch33 exact pair residuals
+name: Branch33 exact customer-choice residuals
 
 on:
   pull_request:
 
 jobs:
-  machine-forced-cost-role-187-branch33-pair-residual:
+  machine-forced-cost-role-187-branch33-customer-choice:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     strategy:
@@ -12,36 +12,54 @@ jobs:
       matrix:
         include:
           - sum: '117'
-            firstIdentity: '43'
-          - sum: '117'
-            firstIdentity: '568'
-          - sum: '117'
             firstIdentity: '1287'
-          - sum: '118'
-            firstIdentity: '260'
+            secondIdentity: '260'
+            choice: '454'
           - sum: '120'
             firstIdentity: '1210'
-    name: machine-forced-cost-role-187-branch33-pair-residual (${{ matrix.sum }}, ${{ matrix.firstIdentity }})
+            secondIdentity: '1184'
+            choice: '453'
+          - sum: '120'
+            firstIdentity: '1210'
+            secondIdentity: '1184'
+            choice: '454'
+          - sum: '120'
+            firstIdentity: '1210'
+            secondIdentity: '1208'
+            choice: '452'
+          - sum: '120'
+            firstIdentity: '1210'
+            secondIdentity: '1208'
+            choice: '454'
+    name: machine-forced-cost-role-187-branch33-customer-choice (${{ matrix.sum }}, ${{ matrix.firstIdentity }}, ${{ matrix.secondIdentity }}, ${{ matrix.choice }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Solve branch 33 exact pair residual
+      - name: Apply diagnosis-only choice selectors
+        run: |
+          node scripts/diagnosis/patchMachineContinuationChoiceSelectors.mjs
+          git diff --check
+          git diff -- src/domain/optimizerMachineContinuationProfile.test.ts
+      - name: Solve branch 33 exact customer choice
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '33:0:required'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.sum }}'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '${{ matrix.firstIdentity }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SECOND_IDENTITIES: '${{ matrix.secondIdentity }}'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER_CHOICES: '${{ matrix.choice }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER_NEXT: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch33-pair-${{ matrix.sum }}-${{ matrix.firstIdentity }}.log
-      - name: Upload branch 33 pair residual log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch33-customer-choice-${{ matrix.sum }}-${{ matrix.firstIdentity }}-${{ matrix.secondIdentity }}-${{ matrix.choice }}.log
+      - name: Upload branch 33 customer-choice log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: branch33-pair-${{ matrix.sum }}-${{ matrix.firstIdentity }}
-          path: branch33-pair-${{ matrix.sum }}-${{ matrix.firstIdentity }}.log
+          name: branch33-customer-choice-${{ matrix.sum }}-${{ matrix.firstIdentity }}-${{ matrix.secondIdentity }}-${{ matrix.choice }}
+          path: branch33-customer-choice-${{ matrix.sum }}-${{ matrix.firstIdentity }}-${{ matrix.secondIdentity }}-${{ matrix.choice }}.log
           if-no-files-found: error
