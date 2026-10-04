@@ -1,110 +1,275 @@
-name: Branch27 exact cost-sum shards
+name: Branch27 exact single-sum shards
 
 on:
   pull_request:
 
 jobs:
-  machine-forced-cost-role-187-branch27-cost-sums:
+  machine-forced-cost-role-187-branch27-single-sums:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - id: r0req-0
+          - id: r0req-85
             case: '27:0:required'
-            sums: '19,25,26,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44'
-          - id: r0req-1
+            sum: '85'
+          - id: r0req-86
             case: '27:0:required'
-            sums: '45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64'
-          - id: r0req-2
+            sum: '86'
+          - id: r0req-87
             case: '27:0:required'
-            sums: '65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84'
-          - id: r0req-3
+            sum: '87'
+          - id: r0req-88
             case: '27:0:required'
-            sums: '85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104'
-          - id: r0req-4
+            sum: '88'
+          - id: r0req-89
             case: '27:0:required'
-            sums: '105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124'
-          - id: r0forbid-0
+            sum: '89'
+          - id: r0req-90
+            case: '27:0:required'
+            sum: '90'
+          - id: r0req-91
+            case: '27:0:required'
+            sum: '91'
+          - id: r0req-92
+            case: '27:0:required'
+            sum: '92'
+          - id: r0req-93
+            case: '27:0:required'
+            sum: '93'
+          - id: r0req-94
+            case: '27:0:required'
+            sum: '94'
+          - id: r0req-95
+            case: '27:0:required'
+            sum: '95'
+          - id: r0req-96
+            case: '27:0:required'
+            sum: '96'
+          - id: r0req-97
+            case: '27:0:required'
+            sum: '97'
+          - id: r0req-98
+            case: '27:0:required'
+            sum: '98'
+          - id: r0req-99
+            case: '27:0:required'
+            sum: '99'
+          - id: r0req-100
+            case: '27:0:required'
+            sum: '100'
+          - id: r0req-101
+            case: '27:0:required'
+            sum: '101'
+          - id: r0req-102
+            case: '27:0:required'
+            sum: '102'
+          - id: r0req-103
+            case: '27:0:required'
+            sum: '103'
+          - id: r0req-104
+            case: '27:0:required'
+            sum: '104'
+          - id: r0req-105
+            case: '27:0:required'
+            sum: '105'
+          - id: r0req-106
+            case: '27:0:required'
+            sum: '106'
+          - id: r0req-107
+            case: '27:0:required'
+            sum: '107'
+          - id: r0req-108
+            case: '27:0:required'
+            sum: '108'
+          - id: r0req-109
+            case: '27:0:required'
+            sum: '109'
+          - id: r0req-110
+            case: '27:0:required'
+            sum: '110'
+          - id: r0req-111
+            case: '27:0:required'
+            sum: '111'
+          - id: r0req-112
+            case: '27:0:required'
+            sum: '112'
+          - id: r0req-113
+            case: '27:0:required'
+            sum: '113'
+          - id: r0req-114
+            case: '27:0:required'
+            sum: '114'
+          - id: r0req-115
+            case: '27:0:required'
+            sum: '115'
+          - id: r0req-116
+            case: '27:0:required'
+            sum: '116'
+          - id: r0req-117
+            case: '27:0:required'
+            sum: '117'
+          - id: r0req-118
+            case: '27:0:required'
+            sum: '118'
+          - id: r0req-119
+            case: '27:0:required'
+            sum: '119'
+          - id: r0req-120
+            case: '27:0:required'
+            sum: '120'
+          - id: r0req-121
+            case: '27:0:required'
+            sum: '121'
+          - id: r0req-122
+            case: '27:0:required'
+            sum: '122'
+          - id: r0req-123
+            case: '27:0:required'
+            sum: '123'
+          - id: r0req-124
+            case: '27:0:required'
+            sum: '124'
+          - id: r0forbid-85
             case: '27:0:forbidden'
-            sums: '19,25,26,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44'
-          - id: r0forbid-1
+            sum: '85'
+          - id: r0forbid-86
             case: '27:0:forbidden'
-            sums: '45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64'
-          - id: r0forbid-2
+            sum: '86'
+          - id: r0forbid-87
             case: '27:0:forbidden'
-            sums: '65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84'
-          - id: r0forbid-3
+            sum: '87'
+          - id: r0forbid-88
             case: '27:0:forbidden'
-            sums: '85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104'
-          - id: r0forbid-4
+            sum: '88'
+          - id: r0forbid-89
             case: '27:0:forbidden'
-            sums: '105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124'
-          - id: r1req-0
-            case: '27:1:required'
-            sums: '58,59,65,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84'
-          - id: r1req-1
-            case: '27:1:required'
-            sums: '85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104'
-          - id: r1req-2
-            case: '27:1:required'
-            sums: '105,106,107,108,109,110,111'
-          - id: r1forbid-0
-            case: '27:1:forbidden'
-            sums: '58,59,65,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84'
-          - id: r1forbid-1
-            case: '27:1:forbidden'
-            sums: '85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104'
-          - id: r1forbid-2
-            case: '27:1:forbidden'
-            sums: '105,106,107,108,109,110,111'
-          - id: r2req-0
-            case: '27:2:required'
-            sums: '67,68,74,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93'
-          - id: r2req-1
-            case: '27:2:required'
-            sums: '94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113'
-          - id: r2req-2
-            case: '27:2:required'
-            sums: '114,115,116,117,118,119,120'
-          - id: r2forbid-0
-            case: '27:2:forbidden'
-            sums: '67,68,74,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93'
-          - id: r2forbid-1
-            case: '27:2:forbidden'
-            sums: '94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113'
-          - id: r2forbid-2
-            case: '27:2:forbidden'
-            sums: '114,115,116,117,118,119,120'
-          - id: r4forbid-0
-            case: '27:4:forbidden'
-            sums: '52,53,59,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78'
-          - id: r4forbid-1
-            case: '27:4:forbidden'
-            sums: '79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98'
-          - id: r4forbid-2
-            case: '27:4:forbidden'
-            sums: '99,100,101,102,103,104,105'
-    name: machine-forced-cost-role-187-branch27-cost-sums (${{ matrix.id }})
+            sum: '89'
+          - id: r0forbid-90
+            case: '27:0:forbidden'
+            sum: '90'
+          - id: r0forbid-91
+            case: '27:0:forbidden'
+            sum: '91'
+          - id: r0forbid-92
+            case: '27:0:forbidden'
+            sum: '92'
+          - id: r0forbid-93
+            case: '27:0:forbidden'
+            sum: '93'
+          - id: r0forbid-94
+            case: '27:0:forbidden'
+            sum: '94'
+          - id: r0forbid-95
+            case: '27:0:forbidden'
+            sum: '95'
+          - id: r0forbid-96
+            case: '27:0:forbidden'
+            sum: '96'
+          - id: r0forbid-97
+            case: '27:0:forbidden'
+            sum: '97'
+          - id: r0forbid-98
+            case: '27:0:forbidden'
+            sum: '98'
+          - id: r0forbid-99
+            case: '27:0:forbidden'
+            sum: '99'
+          - id: r0forbid-100
+            case: '27:0:forbidden'
+            sum: '100'
+          - id: r0forbid-101
+            case: '27:0:forbidden'
+            sum: '101'
+          - id: r0forbid-102
+            case: '27:0:forbidden'
+            sum: '102'
+          - id: r0forbid-103
+            case: '27:0:forbidden'
+            sum: '103'
+          - id: r0forbid-104
+            case: '27:0:forbidden'
+            sum: '104'
+          - id: r0forbid-105
+            case: '27:0:forbidden'
+            sum: '105'
+          - id: r0forbid-106
+            case: '27:0:forbidden'
+            sum: '106'
+          - id: r0forbid-107
+            case: '27:0:forbidden'
+            sum: '107'
+          - id: r0forbid-108
+            case: '27:0:forbidden'
+            sum: '108'
+          - id: r0forbid-109
+            case: '27:0:forbidden'
+            sum: '109'
+          - id: r0forbid-110
+            case: '27:0:forbidden'
+            sum: '110'
+          - id: r0forbid-111
+            case: '27:0:forbidden'
+            sum: '111'
+          - id: r0forbid-112
+            case: '27:0:forbidden'
+            sum: '112'
+          - id: r0forbid-113
+            case: '27:0:forbidden'
+            sum: '113'
+          - id: r0forbid-114
+            case: '27:0:forbidden'
+            sum: '114'
+          - id: r0forbid-115
+            case: '27:0:forbidden'
+            sum: '115'
+          - id: r0forbid-116
+            case: '27:0:forbidden'
+            sum: '116'
+          - id: r0forbid-117
+            case: '27:0:forbidden'
+            sum: '117'
+          - id: r0forbid-118
+            case: '27:0:forbidden'
+            sum: '118'
+          - id: r0forbid-119
+            case: '27:0:forbidden'
+            sum: '119'
+          - id: r0forbid-120
+            case: '27:0:forbidden'
+            sum: '120'
+          - id: r0forbid-121
+            case: '27:0:forbidden'
+            sum: '121'
+          - id: r0forbid-122
+            case: '27:0:forbidden'
+            sum: '122'
+          - id: r0forbid-123
+            case: '27:0:forbidden'
+            sum: '123'
+          - id: r0forbid-124
+            case: '27:0:forbidden'
+            sum: '124'
+    name: machine-forced-cost-role-187-branch27-single-sum (${{ matrix.id }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Solve branch 27 exact cost-sum shard
+      - name: Solve branch 27 exact single-sum shard
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '${{ matrix.case }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.sums }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.sum }}'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch27-cost-sums-${{ matrix.id }}.log
-      - name: Upload branch 27 shard log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch27-single-sum-${{ matrix.id }}.log
+      - name: Upload branch 27 single-sum log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: branch27-cost-sums-${{ matrix.id }}
-          path: branch27-cost-sums-${{ matrix.id }}.log
+          name: branch27-single-sum-${{ matrix.id }}
+          path: branch27-single-sum-${{ matrix.id }}.log
           if-no-files-found: error
