@@ -1,46 +1,102 @@
-name: Identity187 fresh residual cost-sum proof
+name: Identity187 fresh residual single-case proof
 
 on:
   pull_request:
 
 jobs:
-  identity187-cost-sum:
+  identity187-single-case:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - shard: '3-14-role0'
-            cases: '3:0:required;3:0:forbidden;14:0:required;14:0:forbidden'
-          - shard: '22'
-            cases: '22:0:forbidden;22:1:required;22:1:forbidden;22:2:required;22:2:forbidden;22:4:forbidden'
-          - shard: '23'
-            cases: '23:0:forbidden;23:1:required;23:1:forbidden;23:2:required;23:2:forbidden;23:4:forbidden'
-          - shard: '24-25'
-            cases: '24:0:forbidden;24:1:required;24:1:forbidden;24:2:required;24:4:forbidden;25:0:forbidden;25:1:required;25:1:forbidden;25:2:required;25:4:forbidden'
-          - shard: '28-29'
-            cases: '28:0:forbidden;28:1:required;28:1:forbidden;28:2:required;28:4:forbidden;29:0:forbidden;29:1:required;29:1:forbidden;29:2:required;29:4:forbidden'
-          - shard: '30-31'
-            cases: '30:0:forbidden;30:1:required;30:2:required;30:4:forbidden;31:0:forbidden;31:1:required;31:2:required;31:4:forbidden'
-    name: identity187-cost-sum (${{ matrix.shard }})
+          - case_id: '3-0-required'
+            case: '3:0:required'
+          - case_id: '3-0-forbidden'
+            case: '3:0:forbidden'
+          - case_id: '14-0-required'
+            case: '14:0:required'
+          - case_id: '14-0-forbidden'
+            case: '14:0:forbidden'
+          - case_id: '22-0-forbidden'
+            case: '22:0:forbidden'
+          - case_id: '22-1-required'
+            case: '22:1:required'
+          - case_id: '22-1-forbidden'
+            case: '22:1:forbidden'
+          - case_id: '22-2-required'
+            case: '22:2:required'
+          - case_id: '22-2-forbidden'
+            case: '22:2:forbidden'
+          - case_id: '22-4-forbidden'
+            case: '22:4:forbidden'
+          - case_id: '23-0-forbidden'
+            case: '23:0:forbidden'
+          - case_id: '23-1-required'
+            case: '23:1:required'
+          - case_id: '23-1-forbidden'
+            case: '23:1:forbidden'
+          - case_id: '23-2-required'
+            case: '23:2:required'
+          - case_id: '23-2-forbidden'
+            case: '23:2:forbidden'
+          - case_id: '23-4-forbidden'
+            case: '23:4:forbidden'
+          - case_id: '28-0-forbidden'
+            case: '28:0:forbidden'
+          - case_id: '28-1-required'
+            case: '28:1:required'
+          - case_id: '28-1-forbidden'
+            case: '28:1:forbidden'
+          - case_id: '28-2-required'
+            case: '28:2:required'
+          - case_id: '28-4-forbidden'
+            case: '28:4:forbidden'
+          - case_id: '29-0-forbidden'
+            case: '29:0:forbidden'
+          - case_id: '29-1-required'
+            case: '29:1:required'
+          - case_id: '29-1-forbidden'
+            case: '29:1:forbidden'
+          - case_id: '29-2-required'
+            case: '29:2:required'
+          - case_id: '29-4-forbidden'
+            case: '29:4:forbidden'
+          - case_id: '30-0-forbidden'
+            case: '30:0:forbidden'
+          - case_id: '30-1-required'
+            case: '30:1:required'
+          - case_id: '30-2-required'
+            case: '30:2:required'
+          - case_id: '30-4-forbidden'
+            case: '30:4:forbidden'
+          - case_id: '31-0-forbidden'
+            case: '31:0:forbidden'
+          - case_id: '31-1-required'
+            case: '31:1:required'
+          - case_id: '31-2-required'
+            case: '31:2:required'
+          - case_id: '31-4-forbidden'
+            case: '31:4:forbidden'
+    name: identity187-single-case (${{ matrix.case_id }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Prove fresh identity187 residuals by exact cost sum
+      - name: Prove one fresh identity187 residual by exact cost sum
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '${{ matrix.cases }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '${{ matrix.case }}'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee identity187-cost-sum-${{ matrix.shard }}.log
-      - name: Upload identity187 cost-sum proof log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee identity187-single-case-${{ matrix.case_id }}.log
+      - name: Upload identity187 single-case proof log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: identity187-cost-sum-${{ matrix.shard }}
-          path: identity187-cost-sum-${{ matrix.shard }}.log
+          name: identity187-single-case-${{ matrix.case_id }}
+          path: identity187-single-case-${{ matrix.case_id }}.log
           if-no-files-found: error
