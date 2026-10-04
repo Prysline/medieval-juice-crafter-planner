@@ -1,70 +1,45 @@
-name: Identity187 B C residual first-cost enumeration
+name: Identity187 sum116 sparse pair refinement
 
 on:
   pull_request:
 
 jobs:
-  identity187-bc-first-cost-domain:
+  identity187-sum116-sparse-pair:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { case: '39:0:required', sum: 100 }
-          - { case: '39:0:required', sum: 103 }
-          - { case: '39:0:required', sum: 104 }
-          - { case: '39:0:required', sum: 105 }
-          - { case: '39:0:required', sum: 107 }
-          - { case: '39:0:required', sum: 109 }
-          - { case: '45:0:required', sum: 102 }
-          - { case: '45:0:required', sum: 103 }
-          - { case: '45:0:required', sum: 105 }
-          - { case: '45:0:required', sum: 106 }
-          - { case: '45:0:required', sum: 109 }
-          - { case: '45:0:required', sum: 110 }
-          - { case: '50:0:required', sum: 101 }
-          - { case: '50:0:required', sum: 102 }
-          - { case: '50:0:required', sum: 103 }
-          - { case: '50:0:required', sum: 105 }
-          - { case: '50:0:required', sum: 106 }
-          - { case: '50:0:required', sum: 107 }
-          - { case: '50:0:required', sum: 111 }
-    name: first-cost-domain (${{ matrix.case }} / ${{ matrix.sum }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Apply diagnosis-only early identity enumeration
+      - name: Apply diagnosis-only second-identity selector
         run: |
           python - <<'PY'
           from pathlib import Path
           path = Path('src/domain/optimizerMachineContinuationProfile.test.ts')
           text = path.read_text()
-          needle = """      for (const extraOneCostSum of selectedCostSums) {\n        let requiredExtraOneCostCounts:\n"""
-          inserted = """      for (const extraOneCostSum of selectedCostSums) {\n        if (\n          machineContinuationEnv.MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_IDENTITIES ===\n          '1'\n        ) {\n          const remainingExtraOneCost =\n            extraOneCostSum - requiredExtraOneCost\n          const candidateGroupIndexes =\n            remainingExtraOneCount === 1\n              ? remainingExtraOneGroups.filter(\n                  (candidateGroupIndex) =>\n                    groups[candidateGroupIndex].ingredientCost ===\n                    remainingExtraOneCost,\n                )\n              : remainingExtraOneGroups.filter(\n                  (candidateGroupIndex) => {\n                    const candidateCost =\n                      groups[candidateGroupIndex].ingredientCost\n                    if (candidateCost * 2 > remainingExtraOneCost) {\n                      return false\n                    }\n                    const partnerCost =\n                      remainingExtraOneCost - candidateCost\n                    return remainingExtraOneGroups.some(\n                      (partnerGroupIndex) =>\n                        partnerGroupIndex !== candidateGroupIndex &&\n                        groups[partnerGroupIndex].ingredientCost ===\n                          partnerCost &&\n                        (candidateCost !== partnerCost ||\n                          partnerGroupIndex > candidateGroupIndex),\n                    )\n                  },\n                )\n          console.info(\n            'MACHINE_FORCED_COST_ROLE_IDENTITIES',\n            JSON.stringify({\n              groupIndex,\n              branchIndex: requested.branchIndex,\n              roleMask: requested.roleMask,\n              slackCase: requested.slackCase,\n              extraOneCostSum,\n              remainingExtraOneCount,\n              candidateGroupIndexes,\n              candidateCostCounts: [\n                ...new Set(\n                  candidateGroupIndexes.map(\n                    (candidateGroupIndex) =>\n                      groups[candidateGroupIndex].ingredientCost,\n                  ),\n                ),\n              ]\n                .sort((left, right) => left - right)\n                .map((ingredientCost) => ({\n                  ingredientCost,\n                  count: candidateGroupIndexes.filter(\n                    (candidateGroupIndex) =>\n                      groups[candidateGroupIndex].ingredientCost ===\n                      ingredientCost,\n                  ).length,\n                })),\n            }),\n          )\n          continue\n        }\n        let requiredExtraOneCostCounts:\n"""
+          needle = """              const secondIdentityCandidates =\n                remainingExtraOneGroups.filter(\n"""
+          replacement = """              const secondIdentityCandidates =\n                remainingExtraOneGroups\n                  .filter(\n                    (candidateGroupIndex) =>\n                      candidateGroupIndex === 1184,\n                  )\n                  .filter(\n"""
           if needle not in text:
-              raise SystemExit('early identity enumeration insertion point not found')
-          path.write_text(text.replace(needle, inserted, 1))
+              raise SystemExit('second-identity selector insertion point not found')
+          path.write_text(text.replace(needle, replacement, 1))
           PY
           git diff --check
-      - name: Enumerate fresh first-cost domain
+      - name: Refine exact sparse-customer pair
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '${{ matrix.case }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.sum }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_IDENTITIES: '1'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '9:0:required'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '116'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '456'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
         run: |
           set -o pipefail
-          safe_case="$(printf '%s' '${{ matrix.case }}' | tr ':' '-')"
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee "identity187-bc-first-cost-${safe_case}-sum-${{ matrix.sum }}.log"
-          grep -q 'MACHINE_FORCED_COST_ROLE_IDENTITIES' "identity187-bc-first-cost-${safe_case}-sum-${{ matrix.sum }}.log"
-      - name: Upload first-cost domain log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee identity187-sum116-456-1184-sparse.log
+      - name: Upload sparse-pair log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: identity187-bc-first-cost-${{ strategy.job-index }}
-          path: identity187-bc-first-cost-*.log
+          name: identity187-sum116-456-1184-sparse
+          path: identity187-sum116-456-1184-sparse.log
           if-no-files-found: error
