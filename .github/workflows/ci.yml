@@ -29,14 +29,14 @@ jobs:
       - run: npm run build
       - run: npm run smoke:highs:pages-like
 
-  machine-forced-cost-role-187-branch21-sum120-pair-customer:
+  machine-forced-cost-role-187-branch21-sum120-next-customer:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-cost-role-187-branch21-sum120-pair-customer (second${{ matrix.secondIdentity }})
+    name: machine-forced-cost-role-187-branch21-sum120-next-customer (Hugo${{ matrix.hugoChoice }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        secondIdentity: ['1184', '1208']
+        hugoChoice: ['452', '453']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -45,21 +45,23 @@ jobs:
       - run: npm install
       - name: Apply diagnosis-only exact pair selectors
         run: python .github/diagnostics/apply-branch20-pair-choice-selectors.py
-      - name: Solve identity 187 branch 21 sum120 pair by next sparse customer
+      - name: Solve identity 187 branch 21 sum120 next sparse customer
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '21:0:required'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '120'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '1210'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SECOND_IDENTITIES: '${{ matrix.secondIdentity }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SECOND_IDENTITIES: '1184'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER_CHOICES: '${{ matrix.hugoChoice }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_NEXT_CUSTOMER: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch21-sum120-pair-customer-second${{ matrix.secondIdentity }}.log
-      - name: Upload identity 187 branch 21 sum120 pair-customer log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch21-sum120-next-customer-hugo${{ matrix.hugoChoice }}.log
+      - name: Upload identity 187 branch 21 sum120 next-customer log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: machine-forced-cost-role-187-branch21-sum120-pair-customer-second${{ matrix.secondIdentity }}
-          path: machine-forced-cost-role-187-branch21-sum120-pair-customer-second${{ matrix.secondIdentity }}.log
+          name: machine-forced-cost-role-187-branch21-sum120-next-customer-hugo${{ matrix.hugoChoice }}
+          path: machine-forced-cost-role-187-branch21-sum120-next-customer-hugo${{ matrix.hugoChoice }}.log
           if-no-files-found: error
