@@ -29,42 +29,39 @@ jobs:
       - run: npm run build
       - run: npm run smoke:highs:pages-like
 
-  machine-forced-cost-role-187-branch21-identity-audit:
+  machine-forced-cost-role-187-branch21-sum120-third-customer:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-cost-role-187-branch21-identity-audit (${{ matrix.id }})
+    name: machine-forced-cost-role-187-branch21-sum120-third-customer
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { id: forbidden94, slackCase: forbidden, sum: '94' }
-          - { id: forbidden96, slackCase: forbidden, sum: '96' }
-          - { id: required98, slackCase: required, sum: '98' }
-          - { id: required100, slackCase: required, sum: '100' }
-          - { id: required105, slackCase: required, sum: '105' }
-          - { id: required107, slackCase: required, sum: '107' }
-          - { id: required108, slackCase: required, sum: '108' }
-          - { id: required110, slackCase: required, sum: '110' }
-          - { id: required112, slackCase: required, sum: '112' }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Audit identity 187 branch 21 first-identity costs
+      - name: Apply diagnosis-only exact pair selectors
+        run: python .github/diagnostics/apply-branch20-pair-choice-selectors.py
+      - name: Apply diagnosis-only third sparse selector
+        run: python .github/diagnostics/apply-branch20-third-sparse-selector.py
+      - name: Solve identity 187 branch 21 sum120 third sparse customer
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '21:0:${{ matrix.slackCase }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.sum }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_IDENTITIES: '1'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '21:0:required'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '120'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '1210'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SECOND_IDENTITIES: '1184'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER_CHOICES: '452'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_NEXT_CUSTOMER: '1'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_NEXT_CUSTOMER_CHOICES: '334'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_THIRD_CUSTOMER: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch21-identity-audit-${{ matrix.id }}.log
-      - name: Upload identity 187 branch 21 identity-audit log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch21-sum120-third-customer.log
+      - name: Upload identity 187 branch 21 sum120 third-customer log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: machine-forced-cost-role-187-branch21-identity-audit-${{ matrix.id }}
-          path: machine-forced-cost-role-187-branch21-identity-audit-${{ matrix.id }}.log
+          name: machine-forced-cost-role-187-branch21-sum120-third-customer
+          path: machine-forced-cost-role-187-branch21-sum120-third-customer.log
           if-no-files-found: error
