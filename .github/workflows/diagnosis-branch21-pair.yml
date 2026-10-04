@@ -1,29 +1,43 @@
-name: Branch27 role audit
+name: Branch27 cost-sum audit
 
 on:
   pull_request:
 
 jobs:
-  machine-forced-role-187-branch27:
+  machine-forced-cost-role-187-branch27-list-sums:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        case:
+          - { id: role0-required, spec: '27:0:required' }
+          - { id: role0-forbidden, spec: '27:0:forbidden' }
+          - { id: role1-required, spec: '27:1:required' }
+          - { id: role1-forbidden, spec: '27:1:forbidden' }
+          - { id: role2-required, spec: '27:2:required' }
+          - { id: role2-forbidden, spec: '27:2:forbidden' }
+          - { id: role4-forbidden, spec: '27:4:forbidden' }
+    name: machine-forced-cost-role-187-branch27-list-sums (${{ matrix.case.id }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Audit branch 27 exact role and slack frontier
+      - name: List branch 27 canonical cost sums
+        continue-on-error: true
         env:
-          MACHINE_CONTINUATION_FORCED_ROLE_GROUP: '187'
-          MACHINE_CONTINUATION_FORCED_ROLE_BRANCHES: '27'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '${{ matrix.case.spec }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_SUMS: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch27-role-audit.log
-      - name: Upload branch 27 role audit log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch27-cost-sums-${{ matrix.case.id }}.log
+      - name: Upload branch 27 cost-sum audit log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: branch27-role-audit
-          path: branch27-role-audit.log
+          name: branch27-cost-sums-${{ matrix.case.id }}
+          path: branch27-cost-sums-${{ matrix.case.id }}.log
           if-no-files-found: error
