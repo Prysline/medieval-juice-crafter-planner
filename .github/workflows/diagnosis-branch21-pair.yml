@@ -1,39 +1,29 @@
-name: Branch27 final identity shards
+name: Branch32 role audit
 
 on:
   pull_request:
 
 jobs:
-  machine-forced-cost-role-187-branch27-final-identities:
+  machine-forced-role-187-branch32:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        firstIdentity: [26, 44, 45, 46, 145, 146, 199, 200, 224, 276, 399, 403, 545, 546, 547, 549, 571, 573, 575, 600, 608, 656, 671, 695, 768, 769, 950, 951, 953, 1040, 1044, 1056, 1083, 1090, 1091, 1102, 1188, 1189, 1193, 1212, 1213, 1257, 1284, 1294]
-    name: machine-forced-cost-role-187-branch27-final-identity (${{ matrix.firstIdentity }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Refine branch 27 final identity
+      - name: Audit branch 32 exact role and slack frontier
         env:
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '27:0:forbidden'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '109'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '${{ matrix.firstIdentity }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_COSTS: ''
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_IDENTITIES: '0'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
+          MACHINE_CONTINUATION_FORCED_ROLE_GROUP: '187'
+          MACHINE_CONTINUATION_FORCED_ROLE_BRANCHES: '32'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch27-final-identity-${{ matrix.firstIdentity }}.log
-      - name: Upload branch 27 final identity log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch32-role-audit.log
+      - name: Upload branch 32 role audit log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: branch27-final-identity-${{ matrix.firstIdentity }}
-          path: branch27-final-identity-${{ matrix.firstIdentity }}.log
+          name: branch32-role-audit
+          path: branch32-role-audit.log
           if-no-files-found: error
