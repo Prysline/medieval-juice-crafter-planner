@@ -1,53 +1,39 @@
-name: Branch27 final survivor refinement
+name: Branch27 final identity shards
 
 on:
   pull_request:
 
 jobs:
-  machine-forced-cost-role-187-branch27-final-survivors:
+  machine-forced-cost-role-187-branch27-final-identities:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - id: r0req-108-first1090-paircust
-            case: '27:0:required'
-            sum: '108'
-            firstIdentity: '1090'
-            firstCost: ''
-            listIdentities: '0'
-            pairCustomer: '1'
-          - id: r0forbid-109-cost54-list
-            case: '27:0:forbidden'
-            sum: '109'
-            firstIdentity: ''
-            firstCost: '54'
-            listIdentities: '1'
-            pairCustomer: '0'
-    name: machine-forced-cost-role-187-branch27-final-survivor (${{ matrix.id }})
+        firstIdentity: [26, 44, 45, 46, 145, 146, 199, 200, 224, 276, 399, 403, 545, 546, 547, 549, 571, 573, 575, 600, 608, 656, 671, 695, 768, 769, 950, 951, 953, 1040, 1044, 1056, 1083, 1090, 1091, 1102, 1188, 1189, 1193, 1212, 1213, 1257, 1284, 1294]
+    name: machine-forced-cost-role-187-branch27-final-identity (${{ matrix.firstIdentity }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Refine branch 27 final survivor
+      - name: Refine branch 27 final identity
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '${{ matrix.case }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.sum }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '27:0:forbidden'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '109'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '${{ matrix.firstIdentity }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_COSTS: '${{ matrix.firstCost }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_IDENTITIES: '${{ matrix.listIdentities }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '${{ matrix.pairCustomer }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_COSTS: ''
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_IDENTITIES: '0'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch27-final-survivor-${{ matrix.id }}.log
-      - name: Upload branch 27 final survivor log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch27-final-identity-${{ matrix.firstIdentity }}.log
+      - name: Upload branch 27 final identity log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: branch27-final-survivor-${{ matrix.id }}
-          path: branch27-final-survivor-${{ matrix.id }}.log
+          name: branch27-final-identity-${{ matrix.firstIdentity }}
+          path: branch27-final-identity-${{ matrix.firstIdentity }}.log
           if-no-files-found: error
