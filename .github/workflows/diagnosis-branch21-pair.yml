@@ -1,10 +1,10 @@
-name: Branch33 exact Patricia residuals
+name: Branch33 exact third-customer residuals
 
 on:
   pull_request:
 
 jobs:
-  machine-forced-cost-role-187-branch33-patricia-choice:
+  machine-forced-cost-role-187-branch33-third-customer:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     strategy:
@@ -21,20 +21,21 @@ jobs:
             secondIdentity: '1208'
             choice: '452'
             nextChoice: '334'
-    name: machine-forced-cost-role-187-branch33-patricia-choice (${{ matrix.sum }}, ${{ matrix.firstIdentity }}, ${{ matrix.secondIdentity }}, ${{ matrix.choice }}, ${{ matrix.nextChoice }})
+    name: machine-forced-cost-role-187-branch33-third-customer (${{ matrix.sum }}, ${{ matrix.firstIdentity }}, ${{ matrix.secondIdentity }}, ${{ matrix.choice }}, ${{ matrix.nextChoice }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Apply diagnosis-only customer-choice selectors
+      - name: Apply diagnosis-only sparse-customer selectors
         run: |
           node scripts/diagnosis/patchMachineContinuationChoiceSelectors.mjs
           node scripts/diagnosis/patchMachineContinuationNextChoiceSelector.mjs
+          node scripts/diagnosis/patchMachineContinuationThirdCustomerSplit.mjs
           git diff --check
           git diff -- src/domain/optimizerMachineContinuationProfile.test.ts
-      - name: Solve branch 33 exact Patricia choice
+      - name: Solve branch 33 exact third-customer shard
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '33:0:required'
@@ -45,13 +46,14 @@ jobs:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER_CHOICES: '${{ matrix.choice }}'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER_NEXT: '1'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER_NEXT_CHOICES: '${{ matrix.nextChoice }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER_THIRD: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch33-patricia-${{ matrix.sum }}-${{ matrix.firstIdentity }}-${{ matrix.secondIdentity }}-${{ matrix.choice }}-${{ matrix.nextChoice }}.log
-      - name: Upload branch 33 Patricia-choice log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch33-third-${{ matrix.sum }}-${{ matrix.firstIdentity }}-${{ matrix.secondIdentity }}-${{ matrix.choice }}-${{ matrix.nextChoice }}.log
+      - name: Upload branch 33 third-customer log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: branch33-patricia-${{ matrix.sum }}-${{ matrix.firstIdentity }}-${{ matrix.secondIdentity }}-${{ matrix.choice }}-${{ matrix.nextChoice }}
-          path: branch33-patricia-${{ matrix.sum }}-${{ matrix.firstIdentity }}-${{ matrix.secondIdentity }}-${{ matrix.choice }}-${{ matrix.nextChoice }}.log
+          name: branch33-third-${{ matrix.sum }}-${{ matrix.firstIdentity }}-${{ matrix.secondIdentity }}-${{ matrix.choice }}-${{ matrix.nextChoice }}
+          path: branch33-third-${{ matrix.sum }}-${{ matrix.firstIdentity }}-${{ matrix.secondIdentity }}-${{ matrix.choice }}-${{ matrix.nextChoice }}.log
           if-no-files-found: error
