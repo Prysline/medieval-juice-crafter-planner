@@ -1,10 +1,10 @@
-name: Branch21 pair diagnosis
+name: Branch26 role audit
 
 on:
   pull_request:
 
 jobs:
-  machine-forced-cost-role-187-branch21-required107-firstcost51-pair:
+  machine-forced-role-187-branch26:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     steps:
@@ -13,24 +13,17 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - name: Apply diagnosis-only exact pair selectors
-        run: python .github/diagnostics/apply-branch20-pair-choice-selectors.py
-      - name: Solve branch 21 required sum107 first-cost51 exact pair survivor
+      - name: Audit branch 26 exact role and slack frontier
         env:
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '21:0:required'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '107'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_COSTS: '51'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '820'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SECOND_IDENTITIES: '43'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
+          MACHINE_CONTINUATION_FORCED_ROLE_GROUP: '187'
+          MACHINE_CONTINUATION_FORCED_ROLE_BRANCHES: '26'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch21-required107-firstcost51-pair.log
-      - name: Upload branch 21 exact pair log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch26-role-audit.log
+      - name: Upload branch 26 role audit log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: branch21-required107-firstcost51-pair
-          path: branch21-required107-firstcost51-pair.log
+          name: branch26-role-audit
+          path: branch26-role-audit.log
           if-no-files-found: error
