@@ -29,33 +29,68 @@ jobs:
       - run: npm run build
       - run: npm run smoke:highs:pages-like
 
-  machine-forced-cost-role-187-branch21-sum122-pair-customer:
+  machine-forced-cost-role-187-branch21-r0-single-sum:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-cost-role-187-branch21-sum122-pair-customer
+    name: machine-forced-cost-role-187-branch21-r0-single-sum (${{ matrix.slackCase }}-${{ matrix.sum }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { slackCase: required, sum: '91' }
+          - { slackCase: required, sum: '92' }
+          - { slackCase: required, sum: '93' }
+          - { slackCase: required, sum: '94' }
+          - { slackCase: required, sum: '95' }
+          - { slackCase: required, sum: '96' }
+          - { slackCase: required, sum: '97' }
+          - { slackCase: required, sum: '98' }
+          - { slackCase: required, sum: '99' }
+          - { slackCase: required, sum: '100' }
+          - { slackCase: required, sum: '101' }
+          - { slackCase: required, sum: '102' }
+          - { slackCase: required, sum: '103' }
+          - { slackCase: required, sum: '104' }
+          - { slackCase: required, sum: '105' }
+          - { slackCase: required, sum: '106' }
+          - { slackCase: required, sum: '107' }
+          - { slackCase: required, sum: '108' }
+          - { slackCase: required, sum: '109' }
+          - { slackCase: required, sum: '110' }
+          - { slackCase: required, sum: '111' }
+          - { slackCase: required, sum: '112' }
+          - { slackCase: required, sum: '113' }
+          - { slackCase: required, sum: '114' }
+          - { slackCase: required, sum: '115' }
+          - { slackCase: required, sum: '116' }
+          - { slackCase: required, sum: '117' }
+          - { slackCase: required, sum: '118' }
+          - { slackCase: required, sum: '119' }
+          - { slackCase: required, sum: '120' }
+          - { slackCase: forbidden, sum: '91' }
+          - { slackCase: forbidden, sum: '92' }
+          - { slackCase: forbidden, sum: '93' }
+          - { slackCase: forbidden, sum: '94' }
+          - { slackCase: forbidden, sum: '95' }
+          - { slackCase: forbidden, sum: '96' }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Apply diagnosis-only exact pair selectors
-        run: python .github/diagnostics/apply-branch20-pair-choice-selectors.py
-      - name: Solve identity 187 branch 21 sum122 pair by next sparse customer
+      - name: Solve identity 187 branch 21 roleMask0 single cost sum
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '21:0:required'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '122'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '1208'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SECOND_IDENTITIES: '1368'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '21:0:${{ matrix.slackCase }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.sum }}'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch21-sum122-pair-customer.log
-      - name: Upload identity 187 branch 21 sum122 pair-customer log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch21-r0-${{ matrix.slackCase }}-sum${{ matrix.sum }}.log
+      - name: Upload identity 187 branch 21 roleMask0 single-sum log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: machine-forced-cost-role-187-branch21-sum122-pair-customer
-          path: machine-forced-cost-role-187-branch21-sum122-pair-customer.log
+          name: machine-forced-cost-role-187-branch21-r0-${{ matrix.slackCase }}-sum${{ matrix.sum }}
+          path: machine-forced-cost-role-187-branch21-r0-${{ matrix.slackCase }}-sum${{ matrix.sum }}.log
           if-no-files-found: error
