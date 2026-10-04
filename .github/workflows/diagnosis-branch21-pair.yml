@@ -1,22 +1,23 @@
-name: Branch26 sum115 pair exact
+name: Branch26 required pair exact
 
 on:
   pull_request:
 
 jobs:
-  machine-forced-cost-role-187-branch26-sum115-pair:
+  machine-forced-cost-role-187-branch26-required-pair:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         pair:
-          - { first: 26, second: 1184 }
-          - { first: 573, second: 1184 }
-          - { first: 666, second: 1287 }
-          - { first: 1257, second: 1184 }
-          - { first: 1305, second: 260 }
-    name: machine-forced-cost-role-187-branch26-sum115-pair (${{ matrix.pair.first }}-${{ matrix.pair.second }})
+          - { sum: 118, first: 260, second: 1038 }
+          - { sum: 118, first: 666, second: 1184 }
+          - { sum: 118, first: 666, second: 1208 }
+          - { sum: 118, first: 986, second: 1184 }
+          - { sum: 120, first: 1210, second: 1184 }
+          - { sum: 122, first: 1208, second: 1368 }
+    name: machine-forced-cost-role-187-branch26-required-pair (${{ matrix.pair.sum }}-${{ matrix.pair.first }}-${{ matrix.pair.second }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -25,21 +26,21 @@ jobs:
       - run: npm install
       - name: Apply diagnosis-only exact pair selectors
         run: python .github/diagnostics/apply-branch20-pair-choice-selectors.py
-      - name: Solve branch 26 sum115 exact pair survivor
+      - name: Solve branch 26 exact required pair survivor
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '26:0:required'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '115'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.pair.sum }}'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '${{ matrix.pair.first }}'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_SECOND_IDENTITIES: '${{ matrix.pair.second }}'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch26-sum115-pair-${{ matrix.pair.first }}-${{ matrix.pair.second }}.log
-      - name: Upload branch 26 sum115 pair log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch26-required-pair-${{ matrix.pair.sum }}-${{ matrix.pair.first }}-${{ matrix.pair.second }}.log
+      - name: Upload branch 26 required pair log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: branch26-sum115-pair-${{ matrix.pair.first }}-${{ matrix.pair.second }}
-          path: branch26-sum115-pair-${{ matrix.pair.first }}-${{ matrix.pair.second }}.log
+          name: branch26-required-pair-${{ matrix.pair.sum }}-${{ matrix.pair.first }}-${{ matrix.pair.second }}
+          path: branch26-required-pair-${{ matrix.pair.sum }}-${{ matrix.pair.first }}-${{ matrix.pair.second }}.log
           if-no-files-found: error
