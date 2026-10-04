@@ -1,110 +1,36 @@
-name: Branch26 exact cost-sum shards
+name: Branch26 role0 single-sum exact
 
 on:
   pull_request:
 
 jobs:
-  machine-forced-cost-role-187-branch26-cost-sums:
+  machine-forced-cost-role-187-branch26-single-sum:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - id: r0req-0
-            case: '26:0:required'
-            sums: '19,25,26,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44'
-          - id: r0req-1
-            case: '26:0:required'
-            sums: '45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64'
-          - id: r0req-2
-            case: '26:0:required'
-            sums: '65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84'
-          - id: r0req-3
-            case: '26:0:required'
-            sums: '85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104'
-          - id: r0req-4
-            case: '26:0:required'
-            sums: '105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124'
-          - id: r0forbid-0
-            case: '26:0:forbidden'
-            sums: '19,25,26,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44'
-          - id: r0forbid-1
-            case: '26:0:forbidden'
-            sums: '45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64'
-          - id: r0forbid-2
-            case: '26:0:forbidden'
-            sums: '65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84'
-          - id: r0forbid-3
-            case: '26:0:forbidden'
-            sums: '85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104'
-          - id: r0forbid-4
-            case: '26:0:forbidden'
-            sums: '105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124'
-          - id: r1req-0
-            case: '26:1:required'
-            sums: '58,59,65,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84'
-          - id: r1req-1
-            case: '26:1:required'
-            sums: '85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104'
-          - id: r1req-2
-            case: '26:1:required'
-            sums: '105,106,107,108,109,110,111'
-          - id: r1forbid-0
-            case: '26:1:forbidden'
-            sums: '58,59,65,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84'
-          - id: r1forbid-1
-            case: '26:1:forbidden'
-            sums: '85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104'
-          - id: r1forbid-2
-            case: '26:1:forbidden'
-            sums: '105,106,107,108,109,110,111'
-          - id: r2req-0
-            case: '26:2:required'
-            sums: '67,68,74,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93'
-          - id: r2req-1
-            case: '26:2:required'
-            sums: '94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113'
-          - id: r2req-2
-            case: '26:2:required'
-            sums: '114,115,116,117,118,119,120'
-          - id: r2forbid-0
-            case: '26:2:forbidden'
-            sums: '67,68,74,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93'
-          - id: r2forbid-1
-            case: '26:2:forbidden'
-            sums: '94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113'
-          - id: r2forbid-2
-            case: '26:2:forbidden'
-            sums: '114,115,116,117,118,119,120'
-          - id: r4forbid-0
-            case: '26:4:forbidden'
-            sums: '52,53,59,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78'
-          - id: r4forbid-1
-            case: '26:4:forbidden'
-            sums: '79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98'
-          - id: r4forbid-2
-            case: '26:4:forbidden'
-            sums: '99,100,101,102,103,104,105'
-    name: machine-forced-cost-role-187-branch26-cost-sums (${{ matrix.id }})
+        case: [required, forbidden]
+        sum: [85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124]
+    name: machine-forced-cost-role-187-branch26-single-sum (${{ matrix.case }}-${{ matrix.sum }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Solve branch 26 exact cost-sum shard
+      - name: Solve branch 26 exact single-sum case
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '${{ matrix.case }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.sums }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '26:0:${{ matrix.case }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.sum }}'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch26-cost-sums-${{ matrix.id }}.log
-      - name: Upload branch 26 shard log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch26-single-${{ matrix.case }}-${{ matrix.sum }}.log
+      - name: Upload branch 26 single-sum log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: branch26-cost-sums-${{ matrix.id }}
-          path: branch26-cost-sums-${{ matrix.id }}.log
+          name: branch26-single-${{ matrix.case }}-${{ matrix.sum }}
+          path: branch26-single-${{ matrix.case }}-${{ matrix.sum }}.log
           if-no-files-found: error
