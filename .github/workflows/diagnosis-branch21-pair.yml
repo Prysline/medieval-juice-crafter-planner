@@ -1,37 +1,75 @@
-name: Branch26 sum115 Hugo454 next exact
+name: Branch26 pure-timeout first-cost exact
 
 on:
   pull_request:
 
 jobs:
-  machine-forced-cost-role-187-branch26-sum115-hugo454-next:
+  machine-forced-cost-role-187-branch26-first-cost:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - { case: required, sum: 98 }
+          - { case: required, sum: 102 }
+          - { case: required, sum: 103 }
+          - { case: required, sum: 104 }
+          - { case: required, sum: 105 }
+          - { case: required, sum: 106 }
+          - { case: required, sum: 107 }
+          - { case: required, sum: 108 }
+          - { case: required, sum: 109 }
+          - { case: required, sum: 110 }
+          - { case: required, sum: 112 }
+          - { case: required, sum: 113 }
+          - { case: forbidden, sum: 96 }
+          - { case: forbidden, sum: 97 }
+          - { case: forbidden, sum: 100 }
+          - { case: forbidden, sum: 102 }
+          - { case: forbidden, sum: 103 }
+          - { case: forbidden, sum: 105 }
+          - { case: forbidden, sum: 106 }
+          - { case: forbidden, sum: 107 }
+          - { case: forbidden, sum: 108 }
+          - { case: forbidden, sum: 109 }
+          - { case: forbidden, sum: 110 }
+          - { case: forbidden, sum: 111 }
+          - { case: forbidden, sum: 112 }
+          - { case: forbidden, sum: 113 }
+    name: machine-forced-cost-role-187-branch26-first-cost (${{ matrix.target.case }}-${{ matrix.target.sum }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Apply diagnosis-only exact pair selectors
-        run: python .github/diagnostics/apply-branch20-pair-choice-selectors.py
-      - name: Solve branch 26 sum115 666+1287 Hugo454 next sparse customer
+      - name: Solve canonical first-cost buckets for branch 26 pure-timeout sum
+        shell: bash
         env:
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '26:0:required'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '115'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '666'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SECOND_IDENTITIES: '1287'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER_CHOICES: '454'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_NEXT_CUSTOMER: '1'
+          TARGET_CASE: '${{ matrix.target.case }}'
+          TARGET_SUM: '${{ matrix.target.sum }}'
         run: |
-          set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch26-sum115-666-1287-hugo454-next.log
-      - name: Upload branch 26 sum115 Hugo454 next log
+          set -uo pipefail
+          first=$((TARGET_SUM - 62))
+          last=$((TARGET_SUM / 2))
+          status=0
+          : > branch26-first-cost-${TARGET_CASE}-${TARGET_SUM}.log
+          for first_cost in $(seq "$first" "$last"); do
+            echo "=== firstCost=${first_cost} ===" | tee -a branch26-first-cost-${TARGET_CASE}-${TARGET_SUM}.log
+            if ! MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP='187' \
+              MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES="26:0:${TARGET_CASE}" \
+              MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS="${TARGET_SUM}" \
+              MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_COSTS="${first_cost}" \
+              npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee -a branch26-first-cost-${TARGET_CASE}-${TARGET_SUM}.log; then
+              status=1
+            fi
+          done
+          exit "$status"
+      - name: Upload branch 26 first-cost log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: branch26-sum115-666-1287-hugo454-next
-          path: branch26-sum115-666-1287-hugo454-next.log
+          name: branch26-first-cost-${{ matrix.target.case }}-${{ matrix.target.sum }}
+          path: branch26-first-cost-${{ matrix.target.case }}-${{ matrix.target.sum }}.log
           if-no-files-found: error
