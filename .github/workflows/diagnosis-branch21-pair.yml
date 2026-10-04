@@ -1,108 +1,33 @@
-name: Branch33 exact residual refinement
+name: Branch33 exact sum119 pair residual
 
 on:
   pull_request:
 
 jobs:
-  machine-forced-cost-role-187-branch33-single-sum:
+  machine-forced-cost-role-187-branch33-sum119-pair:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        sum:
-          - '85'
-          - '86'
-          - '87'
-          - '88'
-          - '89'
-          - '90'
-          - '91'
-          - '92'
-          - '93'
-          - '94'
-          - '95'
-          - '96'
-          - '97'
-          - '98'
-          - '99'
-          - '100'
-          - '101'
-          - '102'
-          - '103'
-          - '104'
-          - '105'
-          - '106'
-          - '107'
-          - '108'
-          - '109'
-          - '110'
-          - '111'
-          - '112'
-          - '113'
-          - '114'
-          - '115'
-          - '116'
-          - '117'
-          - '118'
-          - '119'
-          - '120'
-          - '121'
-          - '122'
-          - '123'
-          - '124'
-    name: machine-forced-cost-role-187-branch33-single-sum (${{ matrix.sum }})
+    name: machine-forced-cost-role-187-branch33-sum119-pair (1287)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Solve branch 33 exact single sum
+      - name: Solve branch 33 sum119 exact pair residual
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '33:0:required'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.sum }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '119'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '1287'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch33-single-sum-${{ matrix.sum }}.log
-      - name: Upload branch 33 single-sum log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch33-sum119-pair-1287.log
+      - name: Upload branch 33 sum119 pair log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: branch33-single-sum-${{ matrix.sum }}
-          path: branch33-single-sum-${{ matrix.sum }}.log
-          if-no-files-found: error
-
-  machine-forced-cost-role-187-branch33-identity-customer:
-    if: github.head_ref == 'perf/exact-machine-operation-continuation'
-    runs-on: ubuntu-latest
-    name: machine-forced-cost-role-187-branch33-identity-customer (114, 43)
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: npm install
-      - name: Apply diagnosis-only single-identity customer split
-        run: |
-          node scripts/diagnosis/patchMachineContinuationSingleIdentityCustomer.mjs
-          git diff --check
-          git diff -- src/domain/optimizerMachineContinuationProfile.test.ts
-      - name: Solve branch 33 identity 43 by sparse customer
-        env:
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '33:2:required'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '114'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '43'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_IDENTITY_CUSTOMER: '1'
-        run: |
-          set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch33-identity-customer-114-43.log
-      - name: Upload branch 33 identity-customer log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: branch33-identity-customer-114-43
-          path: branch33-identity-customer-114-43.log
+          name: branch33-sum119-pair-1287
+          path: branch33-sum119-pair-1287.log
           if-no-files-found: error
