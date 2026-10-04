@@ -1,26 +1,61 @@
-name: Branch26 residual identity exact
+name: Branch26 forbidden109 identity exact
 
 on:
   pull_request:
 
 jobs:
-  machine-forced-cost-role-187-branch26-known-pairs:
+  machine-forced-cost-role-187-branch26-forbidden109-identity:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        pair:
-          - { sum: 110, first: 399, second: 43 }
-          - { sum: 110, first: 600, second: 43 }
-          - { sum: 112, first: 1074, second: 1186 }
-          - { sum: 113, first: 659, second: 1184 }
-          - { sum: 113, first: 399, second: 260 }
-          - { sum: 113, first: 600, second: 260 }
-          - { sum: 113, first: 1257, second: 1038 }
-          - { sum: 113, first: 43, second: 666 }
-          - { sum: 113, first: 610, second: 666 }
-    name: machine-forced-cost-role-187-branch26-pair (sum${{ matrix.pair.sum }}-${{ matrix.pair.first }}-${{ matrix.pair.second }})
+        identity:
+          - 26
+          - 44
+          - 45
+          - 46
+          - 145
+          - 146
+          - 199
+          - 200
+          - 224
+          - 276
+          - 399
+          - 403
+          - 545
+          - 546
+          - 547
+          - 549
+          - 571
+          - 573
+          - 575
+          - 600
+          - 608
+          - 656
+          - 671
+          - 695
+          - 768
+          - 769
+          - 950
+          - 951
+          - 953
+          - 1040
+          - 1044
+          - 1056
+          - 1083
+          - 1090
+          - 1091
+          - 1102
+          - 1188
+          - 1189
+          - 1193
+          - 1212
+          - 1213
+          - 1257
+          - 1284
+          - 1294
+    name: machine-forced-cost-role-187-branch26-forbidden109-identity (${{ matrix.identity }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -29,57 +64,21 @@ jobs:
       - run: npm install
       - name: Apply diagnosis-only exact pair selectors
         run: python .github/diagnostics/apply-branch20-pair-choice-selectors.py
-      - name: Solve branch 26 exact pair survivor
+      - name: Solve branch 26 forbidden sum109 exact first identity
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '26:0:required'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.pair.sum }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '${{ matrix.pair.first }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SECOND_IDENTITIES: '${{ matrix.pair.second }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '26:0:forbidden'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '109'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_COSTS: '54'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '${{ matrix.identity }}'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch26-pair-${{ matrix.pair.sum }}-${{ matrix.pair.first }}-${{ matrix.pair.second }}.log
-      - name: Upload branch 26 pair log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch26-forbidden109-identity-${{ matrix.identity }}.log
+      - name: Upload branch 26 forbidden109 identity log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: branch26-pair-${{ matrix.pair.sum }}-${{ matrix.pair.first }}-${{ matrix.pair.second }}
-          path: branch26-pair-${{ matrix.pair.sum }}-${{ matrix.pair.first }}-${{ matrix.pair.second }}.log
-          if-no-files-found: error
-
-  machine-forced-cost-role-187-branch26-list-identities:
-    if: github.head_ref == 'perf/exact-machine-operation-continuation'
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        case:
-          - { id: required-105-cost51, slack: required, sum: 105, firstCost: 51 }
-          - { id: required-109-cost54, slack: required, sum: 109, firstCost: 54 }
-          - { id: forbidden-109-cost54, slack: forbidden, sum: 109, firstCost: 54 }
-    name: machine-forced-cost-role-187-branch26-list-identities (${{ matrix.case.id }})
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: npm install
-      - name: List canonical first identities for timeout first-cost bucket
-        continue-on-error: true
-        env:
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '26:0:${{ matrix.case.slack }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.case.sum }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_COSTS: '${{ matrix.case.firstCost }}'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_IDENTITIES: '1'
-        run: |
-          set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch26-list-identities-${{ matrix.case.id }}.log
-      - name: Upload branch 26 identity-list log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: branch26-list-identities-${{ matrix.case.id }}
-          path: branch26-list-identities-${{ matrix.case.id }}.log
+          name: branch26-forbidden109-identity-${{ matrix.identity }}
+          path: branch26-forbidden109-identity-${{ matrix.identity }}.log
           if-no-files-found: error
