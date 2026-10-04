@@ -29,33 +29,46 @@ jobs:
       - run: npm run build
       - run: npm run smoke:highs:pages-like
 
-  machine-forced-cost-role-187-branch20-required-sum109-first-cost:
+  machine-forced-cost-role-187-branch21-sum-audit:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-cost-role-187-branch20-required-sum109-first-cost (${{ matrix.firstCost }})
+    name: machine-forced-cost-role-187-branch21-sum-audit (${{ matrix.id }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        firstCost: ['47', '48', '49', '50', '51', '52', '53', '54']
+        include:
+          - id: r0-required
+            case: '21:0:required'
+          - id: r0-forbidden
+            case: '21:0:forbidden'
+          - id: r1-required
+            case: '21:1:required'
+          - id: r1-forbidden
+            case: '21:1:forbidden'
+          - id: r2-required
+            case: '21:2:required'
+          - id: r2-forbidden
+            case: '21:2:forbidden'
+          - id: r4-forbidden
+            case: '21:4:forbidden'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Solve identity 187 branch 20 required sum109 first-cost bucket
+      - name: Audit identity 187 branch 21 canonical cost sums
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '20:0:required'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '109'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_COSTS: '${{ matrix.firstCost }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '${{ matrix.case }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_SUMS: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch20-required-s109-first-cost-${{ matrix.firstCost }}.log
-      - name: Upload identity 187 branch 20 required sum109 first-cost log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch21-sum-audit-${{ matrix.id }}.log
+      - name: Upload identity 187 branch 21 sum audit log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: machine-forced-cost-role-187-branch20-required-s109-first-cost-${{ matrix.firstCost }}
-          path: machine-forced-cost-role-187-branch20-required-s109-first-cost-${{ matrix.firstCost }}.log
+          name: machine-forced-cost-role-187-branch21-sum-audit-${{ matrix.id }}
+          path: machine-forced-cost-role-187-branch21-sum-audit-${{ matrix.id }}.log
           if-no-files-found: error
