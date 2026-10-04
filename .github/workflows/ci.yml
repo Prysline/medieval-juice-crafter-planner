@@ -29,29 +29,33 @@ jobs:
       - run: npm run build
       - run: npm run smoke:highs:pages-like
 
-  machine-forced-cost-role-187-branch20-required-sum109-audit:
+  machine-forced-cost-role-187-branch20-required-sum109-first-cost:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/exact-machine-operation-continuation'
-    name: machine-forced-cost-role-187-branch20-required-sum109-audit
+    name: machine-forced-cost-role-187-branch20-required-sum109-first-cost (${{ matrix.firstCost }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        firstCost: ['47', '48', '49', '50', '51', '52', '53', '54']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Audit identity 187 branch 20 required sum109 first identities
+      - name: Solve identity 187 branch 20 required sum109 first-cost bucket
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '20:0:required'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '109'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_IDENTITIES: '1'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_COSTS: '${{ matrix.firstCost }}'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch20-required-s109-audit.log
-      - name: Upload identity 187 branch 20 required sum109 audit log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee machine-forced-cost-role-187-branch20-required-s109-first-cost-${{ matrix.firstCost }}.log
+      - name: Upload identity 187 branch 20 required sum109 first-cost log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: machine-forced-cost-role-187-branch20-required-s109-audit
-          path: machine-forced-cost-role-187-branch20-required-s109-audit.log
+          name: machine-forced-cost-role-187-branch20-required-s109-first-cost-${{ matrix.firstCost }}
+          path: machine-forced-cost-role-187-branch20-required-s109-first-cost-${{ matrix.firstCost }}.log
           if-no-files-found: error
