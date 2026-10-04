@@ -1,82 +1,85 @@
-name: Branch32 exact sum109 identities
+name: Branch32 exact customer choices
 
 on:
   pull_request:
 
 jobs:
-  machine-forced-cost-role-187-branch32-sum109-identity:
+  machine-forced-cost-role-187-branch32-customer-choice:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        firstIdentity:
-          - '26'
-          - '44'
-          - '45'
-          - '46'
-          - '145'
-          - '146'
-          - '199'
-          - '200'
-          - '224'
-          - '276'
-          - '399'
-          - '403'
-          - '545'
-          - '546'
-          - '547'
-          - '549'
-          - '571'
-          - '573'
-          - '575'
-          - '600'
-          - '608'
-          - '656'
-          - '671'
-          - '695'
-          - '768'
-          - '769'
-          - '950'
-          - '951'
-          - '953'
-          - '1040'
-          - '1044'
-          - '1056'
-          - '1083'
-          - '1090'
-          - '1091'
-          - '1102'
-          - '1188'
-          - '1189'
-          - '1193'
-          - '1212'
-          - '1213'
-          - '1257'
-          - '1284'
-          - '1294'
-    name: machine-forced-cost-role-187-branch32-sum109-identity (${{ matrix.firstIdentity }})
+        include:
+          - sum: '116'
+            firstCost: '57'
+            firstIdentity: '986'
+            secondIdentity: '260'
+            choice: '452'
+          - sum: '116'
+            firstCost: '57'
+            firstIdentity: '1269'
+            secondIdentity: '260'
+            choice: '452'
+          - sum: '116'
+            firstCost: '57'
+            firstIdentity: '1269'
+            secondIdentity: '260'
+            choice: '453'
+          - sum: '120'
+            firstCost: '59'
+            firstIdentity: '1210'
+            secondIdentity: '1184'
+            choice: '452'
+          - sum: '120'
+            firstCost: '59'
+            firstIdentity: '1210'
+            secondIdentity: '1184'
+            choice: '453'
+          - sum: '120'
+            firstCost: '59'
+            firstIdentity: '1210'
+            secondIdentity: '1184'
+            choice: '454'
+          - sum: '120'
+            firstCost: '59'
+            firstIdentity: '1210'
+            secondIdentity: '1208'
+            choice: '452'
+          - sum: '120'
+            firstCost: '59'
+            firstIdentity: '1210'
+            secondIdentity: '1208'
+            choice: '454'
+    name: machine-forced-cost-role-187-branch32-customer-choice (${{ matrix.sum }}, ${{ matrix.firstIdentity }}, ${{ matrix.secondIdentity }}, ${{ matrix.choice }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Solve branch 32 sum109 exact first-identity bucket
+      - name: Apply diagnosis-only choice selectors
+        run: |
+          node scripts/diagnosis/patchMachineContinuationChoiceSelectors.mjs
+          git diff --check
+          git diff -- src/domain/optimizerMachineContinuationProfile.test.ts
+      - name: Solve branch 32 exact customer choice
         env:
           MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '32:0:required'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '109'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_COSTS: '54'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.sum }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_COSTS: '${{ matrix.firstCost }}'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_FIRST_IDENTITIES: '${{ matrix.firstIdentity }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_SECOND_IDENTITIES: '${{ matrix.secondIdentity }}'
           MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER: '1'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_PAIR_CUSTOMER_CHOICES: '${{ matrix.choice }}'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch32-sum109-identity-${{ matrix.firstIdentity }}.log
-      - name: Upload branch 32 sum109 identity log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch32-customer-choice-${{ matrix.sum }}-${{ matrix.firstIdentity }}-${{ matrix.secondIdentity }}-${{ matrix.choice }}.log
+      - name: Upload branch 32 customer-choice log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: branch32-sum109-identity-${{ matrix.firstIdentity }}
-          path: branch32-sum109-identity-${{ matrix.firstIdentity }}.log
+          name: branch32-customer-choice-${{ matrix.sum }}-${{ matrix.firstIdentity }}-${{ matrix.secondIdentity }}-${{ matrix.choice }}
+          path: branch32-customer-choice-${{ matrix.sum }}-${{ matrix.firstIdentity }}-${{ matrix.secondIdentity }}-${{ matrix.choice }}.log
           if-no-files-found: error
