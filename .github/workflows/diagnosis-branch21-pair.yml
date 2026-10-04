@@ -1,29 +1,52 @@
-name: Branch26 role audit
+name: Branch26 cost-sum audit
 
 on:
   pull_request:
 
 jobs:
-  machine-forced-role-187-branch26:
+  machine-forced-cost-role-187-branch26-list-sums:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: role0-required
+            case: '26:0:required'
+          - id: role0-forbidden
+            case: '26:0:forbidden'
+          - id: role1-required
+            case: '26:1:required'
+          - id: role1-forbidden
+            case: '26:1:forbidden'
+          - id: role2-required
+            case: '26:2:required'
+          - id: role2-forbidden
+            case: '26:2:forbidden'
+          - id: role4-forbidden
+            case: '26:4:forbidden'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Audit branch 26 exact role and slack frontier
+      - name: List branch 26 canonical cost sums
         env:
-          MACHINE_CONTINUATION_FORCED_ROLE_GROUP: '187'
-          MACHINE_CONTINUATION_FORCED_ROLE_BRANCHES: '26'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '${{ matrix.case }}'
+          MACHINE_CONTINUATION_FORCED_COST_ROLE_LIST_SUMS: '1'
         run: |
-          set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch26-role-audit.log
-      - name: Upload branch 26 role audit log
+          set +e
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee branch26-cost-sums-${{ matrix.id }}.log
+          test_status=${PIPESTATUS[0]}
+          set -e
+          test "$test_status" -ne 0
+          grep -q 'MACHINE_FORCED_COST_ROLE_SUMS' branch26-cost-sums-${{ matrix.id }}.log
+      - name: Upload branch 26 cost-sum audit log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: branch26-role-audit
-          path: branch26-role-audit.log
+          name: branch26-cost-sums-${{ matrix.id }}
+          path: branch26-cost-sums-${{ matrix.id }}.log
           if-no-files-found: error
