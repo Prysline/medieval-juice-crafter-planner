@@ -41,56 +41,58 @@ jobs:
           test = test.replace(fixed_marker, "    const fixedGroupIndex = 336", 1)
 
           residual_cells = json.loads(os.environ['RESIDUAL_CELLS'])
-          insert = '''
-    const projectedResidualCells = __RESIDUAL_CELLS__
-    for (const [extraOneCostSum, companionCost] of projectedResidualCells) {
-      const pairGroupIndexes: Array<[number, number]> = []
-      for (
-        let leftIndex = 0;
-        leftIndex < extraOneCandidates.length;
-        leftIndex += 1
-      ) {
-        const left = extraOneCandidates[leftIndex]
-        for (
-          let rightIndex = leftIndex + 1;
-          rightIndex < extraOneCandidates.length;
-          rightIndex += 1
-        ) {
-          const right = extraOneCandidates[rightIndex]
-          if (
-            left.ingredientCost + right.ingredientCost !==
-            extraOneCostSum
-          ) {
-            continue
-          }
-          if (
-            left.ingredientCost !== companionCost &&
-            right.ingredientCost !== companionCost
-          ) {
-            continue
-          }
-          const union = new Set([
-            ...left.residualCustomerIds,
-            ...right.residualCustomerIds,
-          ])
-          if (union.size < 8) continue
-          pairGroupIndexes.push([left.groupIndex, right.groupIndex])
-        }
-      }
-      console.info(
-        '[machine-extra1-pair-cell]',
-        JSON.stringify({
-          fixedGroupIndex,
-          extraOneCostSum,
-          companionCost,
-          partnerCost: extraOneCostSum - companionCost,
-          pairCount: pairGroupIndexes.length,
-          pairGroupIndexes,
-        }),
-      )
-    }
-'''.replace('__RESIDUAL_CELLS__', json.dumps(residual_cells, separators=(',', ':')))
-
+          cells_literal = json.dumps(residual_cells, separators=(',', ':'))
+          insert_lines = [
+              '',
+              f'    const projectedResidualCells = {cells_literal} as const',
+              '    for (const [extraOneCostSum, companionCost] of projectedResidualCells) {',
+              '      const pairGroupIndexes: Array<[number, number]> = []',
+              '      for (',
+              '        let leftIndex = 0;',
+              '        leftIndex < extraOneCandidates.length;',
+              '        leftIndex += 1',
+              '      ) {',
+              '        const left = extraOneCandidates[leftIndex]',
+              '        for (',
+              '          let rightIndex = leftIndex + 1;',
+              '          rightIndex < extraOneCandidates.length;',
+              '          rightIndex += 1',
+              '        ) {',
+              '          const right = extraOneCandidates[rightIndex]',
+              '          if (',
+              '            left.ingredientCost + right.ingredientCost !==',
+              '            extraOneCostSum',
+              '          ) {',
+              '            continue',
+              '          }',
+              '          if (',
+              '            left.ingredientCost !== companionCost &&',
+              '            right.ingredientCost !== companionCost',
+              '          ) {',
+              '            continue',
+              '          }',
+              '          const union = new Set([',
+              '            ...left.residualCustomerIds,',
+              '            ...right.residualCustomerIds,',
+              '          ])',
+              '          if (union.size < 8) continue',
+              '          pairGroupIndexes.push([left.groupIndex, right.groupIndex])',
+              '        }',
+              '      }',
+              '      console.info(',
+              "        '[machine-extra1-pair-cell]',",
+              '        JSON.stringify({',
+              '          fixedGroupIndex,',
+              '          extraOneCostSum,',
+              '          companionCost,',
+              '          partnerCost: extraOneCostSum - companionCost,',
+              '          pairCount: pairGroupIndexes.length,',
+              '          pairGroupIndexes,',
+              '        }),',
+              '      )',
+              '    }',
+          ]
+          insert = '\n'.join(insert_lines)
           test = test + insert
           text = text[:start] + test + text[end:]
           path.write_text(text)
