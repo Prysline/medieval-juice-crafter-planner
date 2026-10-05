@@ -1,4 +1,4 @@
-name: Identity 336 exact pair-identity slice 3
+name: Identity 336 exact pair-identity slice 4
 
 on:
   pull_request:
@@ -20,7 +20,6 @@ jobs:
 
           path = Path('src/domain/optimizerMachineContinuationProfile.test.ts')
           text = path.read_text()
-
           test_start_marker = "hallSignatureProfileIt(\n  'profiles Hall-closure membership signatures for unresolved 3+1+1 support',"
           test_end_marker = "\n  },\n  120000,\n)\n\n\nfunction build311HallSignatureSupportMaster"
           start = text.find(test_start_marker)
@@ -29,7 +28,6 @@ jobs:
           end = text.find(test_end_marker, start)
           if end < 0:
               raise SystemExit('Hall-signature profile test end not found')
-
           test = text[start:end]
           exact_lines = [
               '',
@@ -38,9 +36,10 @@ jobs:
               '    const fixedExactCustomers = [...fixedExactCustomerSet]',
               '    const thresholdCounts = [3, 1, 1, 0] as const',
               '    const exactCells = [',
-              '      { extraOneCostSum: 97, companionCost: 62 },',
-              '      { extraOneCostSum: 100, companionCost: 62 },',
-              '      { extraOneCostSum: 102, companionCost: 62 },',
+              '      { extraOneCostSum: 99, companionCost: 62 },',
+              '      { extraOneCostSum: 101, companionCost: 62 },',
+              '      { extraOneCostSum: 103, companionCost: 62 },',
+              '      { extraOneCostSum: 118, companionCost: 57 },',
               '    ]',
               '    const exactExtraOneCandidates = groups.flatMap((group, groupIndex) => {',
               '      if (groupIndex === fixedExactGroupIndex) return []',
@@ -159,7 +158,7 @@ jobs:
           npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'profiles Hall-closure membership signatures for unresolved 3\+1\+1 support' 2>&1 | tee identity-336-exact-pair-identity-slice.log
           grep -F '[machine-extra1-pair-identity-result]' identity-336-exact-pair-identity-slice.log | tee identity-336-exact-pair-results.log
           grep -F '[machine-extra1-pair-identity-cell]' identity-336-exact-pair-identity-slice.log | tee identity-336-exact-pair-cells.log
-          test "$(wc -l < identity-336-exact-pair-cells.log)" -eq 3
+          test "$(wc -l < identity-336-exact-pair-cells.log)" -eq 4
       - uses: actions/upload-artifact@v4
         if: always()
         with:
