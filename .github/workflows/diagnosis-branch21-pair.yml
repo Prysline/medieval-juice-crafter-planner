@@ -1,127 +1,130 @@
-name: Fresh 3+1+1 companion-sum role projection
+name: Identity 336 Hall-signature sum-companion refinement
 
 on:
   pull_request:
 
 jobs:
-  fresh-311-companion-sum-projection:
+  identity-336-sum-companion:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sum: ['84','86','87','88','89','90','91','92','93','94','95','96','97','98','99','100','101','102','103','104','105','106','107','108','109','110','111','112','113','114','115','116','117','118','119','120','121','122','123']
+        companion: ['56','57','59','62']
+        exclude:
+          - { sum: '119', companion: '56' }
+          - { sum: '120', companion: '56' }
+          - { sum: '120', companion: '57' }
+          - { sum: '121', companion: '56' }
+          - { sum: '121', companion: '57' }
+          - { sum: '122', companion: '56' }
+          - { sum: '122', companion: '57' }
+          - { sum: '122', companion: '59' }
+          - { sum: '123', companion: '56' }
+          - { sum: '123', companion: '57' }
+          - { sum: '123', companion: '59' }
+    name: identity-336 (${{ matrix.sum }}, c${{ matrix.companion }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Append current-canonical static role projection diagnostic
-        run: |
-          cat >> src/domain/optimizerMachineContinuationProfile.test.ts <<'EOF'
-
-          partialSupportProfileIt(
-            'projects fresh 311 Hall-sum residuals onto companion-extra roles',
-            async () => {
-              const domain = canonicalDomain()
-              const groups = pairGroups(domain)
-              const maxExtraByGroupIndex = groups.map((group) => {
-                const upperBound = Math.min(
-                  PROCESSING_STACK_CAPACITY,
-                  Math.max(
-                    1,
-                    Math.ceil(group.eligibleCustomerIds.length / 2),
-                  ),
-                )
-                return upperBound - 1
-              })
-              const residualSumsByGroup: Record<number, number[]> = {
-                127: Array.from({ length: 37 }, (_, index) => 86 + index),
-                334: Array.from({ length: 38 }, (_, index) => 86 + index),
-                336: [84, ...Array.from({ length: 38 }, (_, index) => 86 + index)],
-              }
-              const unresolvedCompanionCostsByGroup: Record<number, number[]> = {
-                127: [9,16,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61],
-                334: [9,11,16,18,19,20,22,37,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62],
-                336: [9,11,16,18,19,56,57,59,62],
-              }
-
-              const summaries = Object.entries(residualSumsByGroup).map(
-                ([rawGroupIndex, residualSums]) => {
-                  const groupIndex = Number(rawGroupIndex)
-                  const unresolvedCosts = new Set(
-                    unresolvedCompanionCostsByGroup[groupIndex],
-                  )
-                  const candidateIndexes = groups.flatMap((_group, candidateIndex) =>
-                    candidateIndex !== groupIndex &&
-                    maxExtraByGroupIndex[candidateIndex] >= 1
-                      ? [candidateIndex]
-                      : [],
-                  )
-                  const projected = residualSums.map((extraOneCostSum) => {
-                    const pairKeys = new Set<string>()
-                    for (let leftPosition = 0; leftPosition < candidateIndexes.length; leftPosition += 1) {
-                      const leftIndex = candidateIndexes[leftPosition]
-                      const leftCost = groups[leftIndex].ingredientCost
-                      for (let rightPosition = leftPosition + 1; rightPosition < candidateIndexes.length; rightPosition += 1) {
-                        const rightIndex = candidateIndexes[rightPosition]
-                        const rightCost = groups[rightIndex].ingredientCost
-                        if (leftCost + rightCost !== extraOneCostSum) continue
-                        if (!unresolvedCosts.has(leftCost) && !unresolvedCosts.has(rightCost)) continue
-                        const low = Math.min(leftCost, rightCost)
-                        const high = Math.max(leftCost, rightCost)
-                        pairKeys.add(`${low}+${high}`)
-                      }
-                    }
-                    const pairCosts = [...pairKeys]
-                      .map((key) => key.split('+').map(Number) as [number, number])
-                      .sort((left, right) => left[0] - right[0] || left[1] - right[1])
-                    const companionCosts = [
-                      ...new Set(
-                        pairCosts.flatMap(([leftCost, rightCost]) => [leftCost, rightCost])
-                          .filter((cost) => unresolvedCosts.has(cost)),
-                      ),
-                    ].sort((left, right) => left - right)
-                    return {
-                      extraOneCostSum,
-                      pairCosts,
-                      companionCosts,
-                    }
-                  })
-                  return {
-                    groupIndex,
-                    groupCost: groups[groupIndex].ingredientCost,
-                    residualSumCount: residualSums.length,
-                    projectedPairTypeCount: projected.reduce(
-                      (total, entry) => total + entry.pairCosts.length,
-                      0,
-                    ),
-                    projectedCompanionCellCount: projected.reduce(
-                      (total, entry) => total + entry.companionCosts.length,
-                      0,
-                    ),
-                    projected,
-                  }
-                },
-              )
-
-              console.info(
-                '[machine-companion-sum-projection-summary]',
-                JSON.stringify(summaries),
-              )
-              expect(summaries).toHaveLength(3)
-            },
-            300000,
-          )
-          EOF
-      - name: Run static current-canonical companion-sum role projection
+      - name: Patch Hall-signature diagnostic with exact sum and companion cost
         env:
-          MACHINE_CONTINUATION_PROFILE: '1'
-          MACHINE_CONTINUATION_PARTIAL_GROUPS: 'projection'
+          TARGET_SUM: '${{ matrix.sum }}'
+          TARGET_COMPANION: '${{ matrix.companion }}'
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          path = Path('src/domain/optimizerMachineContinuationProfile.test.ts')
+          text = path.read_text()
+
+          signature = "function build311HallSignatureSupportMaster(\n  groups: readonly PairGroup[],\n  fixedExtra3GroupIndex: number,\n  hallCuts: readonly (readonly number[])[],\n) {"
+          replacement = "function build311HallSignatureSupportMaster(\n  groups: readonly PairGroup[],\n  fixedExtra3GroupIndex: number,\n  hallCuts: readonly (readonly number[])[],\n  requiredExtraOneCostSum?: number,\n  requiredCompanionCost?: number,\n) {"
+          if text.count(signature) != 1:
+              raise SystemExit(f'expected one Hall-signature builder signature, found {text.count(signature)}')
+          text = text.replace(signature, replacement, 1)
+
+          cost_terms = "  const costTerms = []\n  const hallTerms: Array<Array<ReturnType<typeof sum>>> ="
+          cost_replacement = "  const costTerms = []\n  const extraCostTerms = []\n  const companionExtraTerms = []\n  const hallTerms: Array<Array<ReturnType<typeof sum>>> ="
+          if text.count(cost_terms) != 1:
+              raise SystemExit(f'expected one Hall-signature cost term marker, found {text.count(cost_terms)}')
+          text = text.replace(cost_terms, cost_replacement, 1)
+
+          extra_push = "    extraTerms.push(extra)\n    slackTerms.push(slack)"
+          extra_replacement = "    extraTerms.push(extra)\n    extraCostTerms.push(extra.times(groupClass.ingredientCost))\n    if (groupClass.ingredientCost === requiredCompanionCost) {\n      companionExtraTerms.push(extra)\n    }\n    slackTerms.push(slack)"
+          if text.count(extra_push) != 1:
+              raise SystemExit(f'expected one Hall-signature extra term marker, found {text.count(extra_push)}')
+          text = text.replace(extra_push, extra_replacement, 1)
+
+          constraint_marker = "  model.addConstraint(sum(...extraTerms).eq(2), 'hsa_extra_one')\n  model.addConstraint(sum(...slackTerms).eq(1), 'hsa_slack')"
+          constraint_replacement = "  model.addConstraint(sum(...extraTerms).eq(2), 'hsa_extra_one')\n  if (typeof requiredExtraOneCostSum === 'number') {\n    model.addConstraint(\n      sum(...extraCostTerms).eq(requiredExtraOneCostSum),\n      'hsa_extra_one_cost_sum',\n    )\n  }\n  if (typeof requiredCompanionCost === 'number') {\n    model.addConstraint(\n      sum(...companionExtraTerms).geq(1),\n      'hsa_required_companion_cost',\n    )\n  }\n  model.addConstraint(sum(...slackTerms).eq(1), 'hsa_slack')"
+          if text.count(constraint_marker) != 1:
+              raise SystemExit(f'expected one Hall-signature exact-role constraint marker, found {text.count(constraint_marker)}')
+          text = text.replace(constraint_marker, constraint_replacement, 1)
+
+          test_marker = "hallSignatureProfileIt(\n  'iterates exact Hall-signature support classes for one unresolved identity',\n  async () => {\n    const domain = canonicalDomain()\n    const groups = pairGroups(domain)\n    const groupIndex = 1279"
+          test_replacement = test_marker[:-4] + "336\n    const extraOneCostSum = " + os.environ['TARGET_SUM'] + "\n    const companionCost = " + os.environ['TARGET_COMPANION']
+          if text.count(test_marker) != 1:
+              raise SystemExit(f'expected one iterative Hall-signature test marker, found {text.count(test_marker)}')
+          text = text.replace(test_marker, test_replacement, 1)
+
+          test_start = text.index("hallSignatureProfileIt(\n  'iterates exact Hall-signature support classes for one unresolved identity'")
+          test_tail = text[test_start:]
+          call_marker = "      const built = build311HallSignatureSupportMaster(\n        groups,\n        groupIndex,\n        hallCuts,\n      )"
+          call_replacement = "      const built = build311HallSignatureSupportMaster(\n        groups,\n        groupIndex,\n        hallCuts,\n        extraOneCostSum,\n        companionCost,\n      )"
+          if test_tail.count(call_marker) != 1:
+              raise SystemExit(f'expected one iterative Hall-signature builder call, found {test_tail.count(call_marker)}')
+          test_tail = test_tail.replace(call_marker, call_replacement, 1)
+          summary_marker = "      JSON.stringify({ groupIndex, rounds }),"
+          summary_replacement = "      JSON.stringify({ groupIndex, extraOneCostSum, companionCost, rounds }),"
+          if test_tail.count(summary_marker) != 1:
+              raise SystemExit(f'expected one iterative Hall-signature summary marker, found {test_tail.count(summary_marker)}')
+          test_tail = test_tail.replace(summary_marker, summary_replacement, 1)
+          text = text[:test_start] + test_tail
+
+          path.write_text(text)
+          PY
+      - name: Run exact Hall-signature sum-companion cell
+        env:
+          MACHINE_CONTINUATION_HALL_SIGNATURE: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'projects fresh 311 Hall-sum residuals onto companion-extra roles' 2>&1 | tee fresh-311-companion-sum-projection.log
-          grep -F '[machine-companion-sum-projection-summary]' fresh-311-companion-sum-projection.log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'iterates exact Hall-signature support classes for one unresolved identity' 2>&1 | tee identity-336-${{ matrix.sum }}-${{ matrix.companion }}.log
+          grep -F '[machine-hall-signature-master-summary]' identity-336-${{ matrix.sum }}-${{ matrix.companion }}.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: fresh-311-companion-sum-projection
-          path: fresh-311-companion-sum-projection.log
+          name: identity-336-${{ matrix.sum }}-${{ matrix.companion }}
+          path: identity-336-${{ matrix.sum }}-${{ matrix.companion }}.log
+          if-no-files-found: error
+
+  aggregate-identity-336:
+    if: always() && github.head_ref == 'perf/exact-machine-operation-continuation'
+    needs: identity-336-sum-companion
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: identity-336-*
+          path: cell-logs
+          merge-multiple: true
+      - name: Aggregate identity 336 cell summaries
+        run: |
+          find cell-logs -type f -name '*.log' | sort > cell-files.txt
+          wc -l cell-files.txt | tee cell-count.txt
+          grep -hF '[machine-hall-signature-master-summary]' cell-logs/*.log | sort > identity-336-summary.log || true
+          wc -l identity-336-summary.log | tee summary-count.txt
+          cat identity-336-summary.log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: identity-336-aggregate
+          path: |
+            cell-count.txt
+            summary-count.txt
+            identity-336-summary.log
           if-no-files-found: error
