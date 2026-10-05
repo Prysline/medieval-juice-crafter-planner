@@ -1,10 +1,10 @@
-name: Fresh 3+1+1 identity additions slack refinement
+name: Fresh 3+1+1 combined support-master probe
 
 on:
   pull_request:
 
 jobs:
-  fresh-311-slack:
+  fresh-311-support-master:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     strategy:
@@ -14,24 +14,23 @@ jobs:
           - '127'
           - '334'
           - '336'
-    name: fresh-311-slack (${{ matrix.group }})
+    name: fresh-311-support-master (${{ matrix.group }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Split fresh current-canonical 3+1+1 identity by fixed slack identity and exact support
+      - name: Probe combined current-canonical 3+1+1 support master with Hall cuts and exact support validation
         env:
-          MACHINE_CONTINUATION_PROFILE: '1'
-          MACHINE_CONTINUATION_SLACK_SPLIT_GROUPS: '${{ matrix.group }}'
+          MACHINE_CONTINUATION_SINGLE_MASTER_GROUPS: '${{ matrix.group }}'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'decomposes unresolved 3\+1\+1 identities by fixed slack identity and support' 2>&1 | tee fresh-311-slack-${{ matrix.group }}.log
-      - name: Upload fresh 3+1+1 slack refinement log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'probes one exact 3\+1\+1 support master without extra-one cost-sum splitting' 2>&1 | tee fresh-311-support-master-${{ matrix.group }}.log
+      - name: Upload fresh 3+1+1 combined support-master log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: fresh-311-slack-${{ matrix.group }}
-          path: fresh-311-slack-${{ matrix.group }}.log
+          name: fresh-311-support-master-${{ matrix.group }}
+          path: fresh-311-support-master-${{ matrix.group }}.log
           if-no-files-found: error
