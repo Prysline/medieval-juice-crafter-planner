@@ -1,10 +1,10 @@
-name: Identity 336 extra-one pair projection
+name: Identity 336 smallest exact pair slice
 
 on:
   pull_request:
 
 jobs:
-  identity-336-extra1-pair-projection:
+  identity-336-smallest-exact-pair-slice:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     steps:
@@ -13,13 +13,9 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - name: Patch current-canonical exact extra-one pair projection
-        env:
-          RESIDUAL_CELLS: '[[87,56],[88,57],[89,57],[90,56],[91,56],[92,56],[93,56],[93,57],[93,59],[94,56],[94,57],[94,59],[95,56],[95,57],[95,59],[95,62],[96,56],[96,57],[96,59],[96,62],[97,56],[97,57],[97,59],[97,62],[98,56],[98,57],[98,59],[98,62],[99,56],[99,57],[99,59],[99,62],[100,56],[100,57],[100,59],[100,62],[101,56],[101,57],[101,59],[101,62],[102,56],[102,57],[102,59],[102,62],[103,56],[103,57],[103,59],[103,62],[104,56],[104,57],[104,59],[104,62],[105,56],[105,57],[105,59],[105,62],[106,56],[106,57],[106,59],[106,62],[107,56],[107,57],[107,59],[107,62],[108,56],[108,57],[108,59],[108,62],[109,56],[109,57],[109,59],[109,62],[110,56],[110,57],[110,59],[110,62],[111,56],[111,57],[111,59],[111,62],[112,56],[112,57],[112,59],[112,62],[113,56],[113,57],[113,59],[113,62],[114,56],[114,57],[114,59],[114,62],[115,56],[115,57],[115,59],[115,62],[116,56],[116,57],[116,59],[116,62],[117,56],[117,57],[117,59],[117,62],[118,56],[118,57],[118,59],[118,62],[119,57],[119,59],[119,62],[120,59],[120,62],[121,59],[121,62],[122,62],[123,62]]'
+      - name: Patch smallest residual cells into exact customer-flow diagnostic
         run: |
           python - <<'PY'
-          import json
-          import os
           from pathlib import Path
 
           path = Path('src/domain/optimizerMachineContinuationProfile.test.ts')
@@ -35,81 +31,120 @@ jobs:
               raise SystemExit('Hall-signature profile test end not found')
 
           test = text[start:end]
-          fixed_marker = "    const fixedGroupIndex = 1279"
-          if test.count(fixed_marker) != 1:
-              raise SystemExit(f'expected one fixedGroupIndex marker, found {test.count(fixed_marker)}')
-          test = test.replace(fixed_marker, "    const fixedGroupIndex = 336", 1)
-
-          residual_cells = json.loads(os.environ['RESIDUAL_CELLS'])
-          cells_literal = json.dumps(residual_cells, separators=(',', ':'))
-          insert_lines = [
+          exact_lines = [
               '',
-              f'    const projectedResidualCells = {cells_literal} as const',
-              '    for (const [extraOneCostSum, companionCost] of projectedResidualCells) {',
-              '      const pairGroupIndexes: Array<[number, number]> = []',
-              '      for (',
-              '        let leftIndex = 0;',
-              '        leftIndex < extraOneCandidates.length;',
-              '        leftIndex += 1',
-              '      ) {',
-              '        const left = extraOneCandidates[leftIndex]',
-              '        for (',
-              '          let rightIndex = leftIndex + 1;',
-              '          rightIndex < extraOneCandidates.length;',
-              '          rightIndex += 1',
-              '        ) {',
-              '          const right = extraOneCandidates[rightIndex]',
-              '          if (',
-              '            left.ingredientCost + right.ingredientCost !==',
-              '            extraOneCostSum',
-              '          ) {',
-              '            continue',
-              '          }',
-              '          if (',
-              '            left.ingredientCost !== companionCost &&',
-              '            right.ingredientCost !== companionCost',
-              '          ) {',
-              '            continue',
-              '          }',
-              '          const union = new Set([',
-              '            ...left.residualCustomerIds,',
-              '            ...right.residualCustomerIds,',
-              '          ])',
-              '          if (union.size < 8) continue',
-              '          pairGroupIndexes.push([left.groupIndex, right.groupIndex])',
+              '    const fixedExactGroupIndex = 336',
+              '    const fixedExactCustomers = groups[fixedExactGroupIndex].eligibleCustomerIds',
+              '    const thresholdCounts = [3, 1, 1, 0] as const',
+              '    const exactCases = [',
+              "      { extraOneCostSum: 116, companionCost: 56, partnerCost: 60, pair: null },",
+              "      { extraOneCostSum: 117, companionCost: 57, partnerCost: 60, pair: null },",
+              "      { extraOneCostSum: 119, companionCost: 59, partnerCost: 60, pair: null },",
+              "      { extraOneCostSum: 122, companionCost: 62, partnerCost: 60, pair: null },",
+              "      { extraOneCostSum: 123, companionCost: 62, partnerCost: 61, pair: [972, 1184] as const },",
+              '    ]',
+              '    for (const exactCase of exactCases) {',
+              '      const supportCuts: number[][] = []',
+              "      let status = 'round-limit'",
+              '      let masterSolveMs = 0',
+              '      let exactSolveMs = 0',
+              '      let exactInfeasibleSupports = 0',
+              '      let supportSize: number | null = null',
+              '      for (let round = 0; round < 16; round += 1) {',
+              '        const requiredExtraOneCostCounts =',
+              '          exactCase.companionCost === exactCase.partnerCost',
+              '            ? [{ ingredientCost: exactCase.companionCost, count: 2 }]',
+              '            : [',
+              '                { ingredientCost: exactCase.companionCost, count: 1 },',
+              '                { ingredientCost: exactCase.partnerCost, count: 1 },',
+              '              ]',
+              '        const built = build311ExtraCostSumSupportMaster(',
+              '          domain,',
+              '          fixedExactGroupIndex,',
+              '          exactCase.extraOneCostSum,',
+              '          {',
+              '            supportCuts,',
+              '            includeCustomerFlow: true,',
+              '            forcedCustomerIds: fixedExactCustomers,',
+              '            requiredExtraOneCostCounts,',
+              '            requiredExtraOneGroupIndexes: exactCase.pair ?? [],',
+              '          },',
+              '        )',
+              '        const solved = await solveBounded(built.model, 0.5)',
+              '        masterSolveMs += solved.solveMs',
+              "        if (solved.status === 'infeasible') {",
+              "          status = 'infeasible'",
+              '          break',
               '        }',
+              "        if (solved.status !== 'optimal' || !solved.namedSolution) {",
+              '          status = solved.status',
+              '          break',
+              '        }',
+              '        const support = groups.flatMap((_group, groupIndex) => {',
+              "          const raw = solved.namedSolution!.get(`s31su_${groupIndex}`)",
+              "          return typeof raw === 'number' && Number.isFinite(raw) && raw > 0.5",
+              '            ? [groupIndex]',
+              '            : []',
+              '        })',
+              '        supportSize = support.length',
+              '        if (support.length !== 30) {',
+              "          throw new Error(`Expected 30 support groups, got ${support.length}`)",
+              '        }',
+              '        const exact = buildFinalizing30MaskPartitionStage(',
+              '          domain,',
+              "          new Set<ProductionStepKind>(['juicing', 'seasoning', 'blending']),",
+              '          thresholdCounts,',
+              '          { max: 76 },',
+              '          0,',
+              '          new Set(support),',
+              '        )',
+              '        const exactSolved = await solveBounded(exact.model, 3)',
+              '        exactSolveMs += exactSolved.solveMs',
+              "        if (exactSolved.status === 'infeasible') {",
+              '          exactInfeasibleSupports += 1',
+              '          supportCuts.push(support)',
+              "          status = 'exact-infeasible-support'",
+              '          continue',
+              '        }',
+              "        if (exactSolved.status === 'optimal') {",
+              "          status = 'global-witness'",
+              '          break',
+              '        }',
+              "        status = `exact-${exactSolved.status}`",
+              '        break',
               '      }',
               '      console.info(',
-              "        '[machine-extra1-pair-cell]',",
+              "        '[machine-extra1-pair-exact-cell]',",
               '        JSON.stringify({',
-              '          fixedGroupIndex,',
-              '          extraOneCostSum,',
-              '          companionCost,',
-              '          partnerCost: extraOneCostSum - companionCost,',
-              '          pairCount: pairGroupIndexes.length,',
-              '          pairGroupIndexes,',
+              '          fixedGroupIndex: fixedExactGroupIndex,',
+              '          ...exactCase,',
+              '          status,',
+              '          supportCuts: supportCuts.length,',
+              '          exactInfeasibleSupports,',
+              '          supportSize,',
+              '          masterSolveMs: Math.round(masterSolveMs),',
+              '          exactSolveMs: Math.round(exactSolveMs),',
               '        }),',
               '      )',
               '    }',
           ]
-          insert = '\n'.join(insert_lines)
-          test = test + insert
+          test = test + '\n'.join(exact_lines)
           text = text[:start] + test + text[end:]
           path.write_text(text)
           PY
-      - name: Project exact extra-one identity pairs for genuine residual cells
+      - name: Run smallest exact customer-flow pair slice
         env:
           MACHINE_CONTINUATION_HALL_SIGNATURE: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'profiles Hall-closure membership signatures for unresolved 3\+1\+1 support' 2>&1 | tee identity-336-extra1-pair-projection.log
-          grep -F '[machine-extra1-pair-cell]' identity-336-extra1-pair-projection.log | tee identity-336-extra1-pair-cells.log
-          test "$(wc -l < identity-336-extra1-pair-cells.log)" -eq 117
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'profiles Hall-closure membership signatures for unresolved 3\+1\+1 support' 2>&1 | tee identity-336-smallest-exact-pair-slice.log
+          grep -F '[machine-extra1-pair-exact-cell]' identity-336-smallest-exact-pair-slice.log | tee identity-336-smallest-exact-pair-cells.log
+          test "$(wc -l < identity-336-smallest-exact-pair-cells.log)" -eq 5
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: identity-336-extra1-pair-projection
+          name: identity-336-smallest-exact-pair-slice
           path: |
-            identity-336-extra1-pair-projection.log
-            identity-336-extra1-pair-cells.log
+            identity-336-smallest-exact-pair-slice.log
+            identity-336-smallest-exact-pair-cells.log
           if-no-files-found: error
