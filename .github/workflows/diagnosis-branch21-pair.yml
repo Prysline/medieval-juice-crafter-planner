@@ -1,10 +1,10 @@
-name: Fresh 3+1+1 identity additions exact-sum refinement
+name: Fresh 3+1+1 identity additions slack refinement
 
 on:
   pull_request:
 
 jobs:
-  fresh-311-extra-sum:
+  fresh-311-slack:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     strategy:
@@ -14,24 +14,24 @@ jobs:
           - '127'
           - '334'
           - '336'
-    name: fresh-311-extra-sum (${{ matrix.group }})
+    name: fresh-311-slack (${{ matrix.group }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Split fresh current-canonical 3+1+1 identity by exact extra-one cost sum and support
+      - name: Split fresh current-canonical 3+1+1 identity by fixed slack identity and exact support
         env:
           MACHINE_CONTINUATION_PROFILE: '1'
-          MACHINE_CONTINUATION_EXTRA_SUM_GROUPS: '${{ matrix.group }}'
+          MACHINE_CONTINUATION_SLACK_SPLIT_GROUPS: '${{ matrix.group }}'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'decomposes unresolved 3\+1\+1 identities by extra-one cost sum and support' 2>&1 | tee fresh-311-extra-sum-${{ matrix.group }}.log
-      - name: Upload fresh 3+1+1 exact-sum refinement log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'decomposes unresolved 3\+1\+1 identities by fixed slack identity and support' 2>&1 | tee fresh-311-slack-${{ matrix.group }}.log
+      - name: Upload fresh 3+1+1 slack refinement log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: fresh-311-extra-sum-${{ matrix.group }}
-          path: fresh-311-extra-sum-${{ matrix.group }}.log
+          name: fresh-311-slack-${{ matrix.group }}
+          path: fresh-311-slack-${{ matrix.group }}.log
           if-no-files-found: error
