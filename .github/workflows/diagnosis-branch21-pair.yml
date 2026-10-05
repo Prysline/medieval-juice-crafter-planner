@@ -1,130 +1,113 @@
-name: Identity 336 Hall-signature sum-companion refinement
+name: Identity 336 extra-one pair projection
 
 on:
   pull_request:
 
 jobs:
-  identity-336-sum-companion:
+  identity-336-extra1-pair-projection:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        sum: ['84','86','87','88','89','90','91','92','93','94','95','96','97','98','99','100','101','102','103','104','105','106','107','108','109','110','111','112','113','114','115','116','117','118','119','120','121','122','123']
-        companion: ['56','57','59','62']
-        exclude:
-          - { sum: '119', companion: '56' }
-          - { sum: '120', companion: '56' }
-          - { sum: '120', companion: '57' }
-          - { sum: '121', companion: '56' }
-          - { sum: '121', companion: '57' }
-          - { sum: '122', companion: '56' }
-          - { sum: '122', companion: '57' }
-          - { sum: '122', companion: '59' }
-          - { sum: '123', companion: '56' }
-          - { sum: '123', companion: '57' }
-          - { sum: '123', companion: '59' }
-    name: identity-336 (${{ matrix.sum }}, c${{ matrix.companion }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Patch Hall-signature diagnostic with exact sum and companion cost
+      - name: Patch current-canonical exact extra-one pair projection
         env:
-          TARGET_SUM: '${{ matrix.sum }}'
-          TARGET_COMPANION: '${{ matrix.companion }}'
+          RESIDUAL_CELLS: '[[87,56],[88,57],[89,57],[90,56],[91,56],[92,56],[93,56],[93,57],[93,59],[94,56],[94,57],[94,59],[95,56],[95,57],[95,59],[95,62],[96,56],[96,57],[96,59],[96,62],[97,56],[97,57],[97,59],[97,62],[98,56],[98,57],[98,59],[98,62],[99,56],[99,57],[99,59],[99,62],[100,56],[100,57],[100,59],[100,62],[101,56],[101,57],[101,59],[101,62],[102,56],[102,57],[102,59],[102,62],[103,56],[103,57],[103,59],[103,62],[104,56],[104,57],[104,59],[104,62],[105,56],[105,57],[105,59],[105,62],[106,56],[106,57],[106,59],[106,62],[107,56],[107,57],[107,59],[107,62],[108,56],[108,57],[108,59],[108,62],[109,56],[109,57],[109,59],[109,62],[110,56],[110,57],[110,59],[110,62],[111,56],[111,57],[111,59],[111,62],[112,56],[112,57],[112,59],[112,62],[113,56],[113,57],[113,59],[113,62],[114,56],[114,57],[114,59],[114,62],[115,56],[115,57],[115,59],[115,62],[116,56],[116,57],[116,59],[116,62],[117,56],[117,57],[117,59],[117,62],[118,56],[118,57],[118,59],[118,62],[119,57],[119,59],[119,62],[120,59],[120,62],[121,59],[121,62],[122,62],[123,62]]'
         run: |
           python - <<'PY'
+          import json
           import os
           from pathlib import Path
 
           path = Path('src/domain/optimizerMachineContinuationProfile.test.ts')
           text = path.read_text()
 
-          signature = "function build311HallSignatureSupportMaster(\n  groups: readonly PairGroup[],\n  fixedExtra3GroupIndex: number,\n  hallCuts: readonly (readonly number[])[],\n) {"
-          replacement = "function build311HallSignatureSupportMaster(\n  groups: readonly PairGroup[],\n  fixedExtra3GroupIndex: number,\n  hallCuts: readonly (readonly number[])[],\n  requiredExtraOneCostSum?: number,\n  requiredCompanionCost?: number,\n) {"
-          if text.count(signature) != 1:
-              raise SystemExit(f'expected one Hall-signature builder signature, found {text.count(signature)}')
-          text = text.replace(signature, replacement, 1)
+          test_start_marker = "hallSignatureProfileIt(\n  'profiles Hall-closure membership signatures for unresolved 3+1+1 support',"
+          test_end_marker = "\n  },\n  120000,\n)\n\n\nfunction build311HallSignatureSupportMaster"
+          start = text.find(test_start_marker)
+          if start < 0:
+              raise SystemExit('Hall-signature profile test start not found')
+          end = text.find(test_end_marker, start)
+          if end < 0:
+              raise SystemExit('Hall-signature profile test end not found')
 
-          cost_terms = "  const costTerms = []\n  const hallTerms: Array<Array<ReturnType<typeof sum>>> ="
-          cost_replacement = "  const costTerms = []\n  const extraCostTerms = []\n  const companionExtraTerms = []\n  const hallTerms: Array<Array<ReturnType<typeof sum>>> ="
-          if text.count(cost_terms) != 1:
-              raise SystemExit(f'expected one Hall-signature cost term marker, found {text.count(cost_terms)}')
-          text = text.replace(cost_terms, cost_replacement, 1)
+          test = text[start:end]
+          fixed_marker = "    const fixedGroupIndex = 1279"
+          if test.count(fixed_marker) != 1:
+              raise SystemExit(f'expected one fixedGroupIndex marker, found {test.count(fixed_marker)}')
+          test = test.replace(fixed_marker, "    const fixedGroupIndex = 336", 1)
 
-          extra_push = "    extraTerms.push(extra)\n    slackTerms.push(slack)"
-          extra_replacement = "    extraTerms.push(extra)\n    extraCostTerms.push(extra.times(groupClass.ingredientCost))\n    if (groupClass.ingredientCost === requiredCompanionCost) {\n      companionExtraTerms.push(extra)\n    }\n    slackTerms.push(slack)"
-          if text.count(extra_push) != 1:
-              raise SystemExit(f'expected one Hall-signature extra term marker, found {text.count(extra_push)}')
-          text = text.replace(extra_push, extra_replacement, 1)
+          residual_cells = json.loads(os.environ['RESIDUAL_CELLS'])
+          insert = '''
+    const projectedResidualCells = __RESIDUAL_CELLS__
+    for (const [extraOneCostSum, companionCost] of projectedResidualCells) {
+      const pairGroupIndexes: Array<[number, number]> = []
+      for (
+        let leftIndex = 0;
+        leftIndex < extraOneCandidates.length;
+        leftIndex += 1
+      ) {
+        const left = extraOneCandidates[leftIndex]
+        for (
+          let rightIndex = leftIndex + 1;
+          rightIndex < extraOneCandidates.length;
+          rightIndex += 1
+        ) {
+          const right = extraOneCandidates[rightIndex]
+          if (
+            left.ingredientCost + right.ingredientCost !==
+            extraOneCostSum
+          ) {
+            continue
+          }
+          if (
+            left.ingredientCost !== companionCost &&
+            right.ingredientCost !== companionCost
+          ) {
+            continue
+          }
+          const union = new Set([
+            ...left.residualCustomerIds,
+            ...right.residualCustomerIds,
+          ])
+          if (union.size < 8) continue
+          pairGroupIndexes.push([left.groupIndex, right.groupIndex])
+        }
+      }
+      console.info(
+        '[machine-extra1-pair-cell]',
+        JSON.stringify({
+          fixedGroupIndex,
+          extraOneCostSum,
+          companionCost,
+          partnerCost: extraOneCostSum - companionCost,
+          pairCount: pairGroupIndexes.length,
+          pairGroupIndexes,
+        }),
+      )
+    }
+'''.replace('__RESIDUAL_CELLS__', json.dumps(residual_cells, separators=(',', ':')))
 
-          constraint_marker = "  model.addConstraint(sum(...extraTerms).eq(2), 'hsa_extra_one')\n  model.addConstraint(sum(...slackTerms).eq(1), 'hsa_slack')"
-          constraint_replacement = "  model.addConstraint(sum(...extraTerms).eq(2), 'hsa_extra_one')\n  if (typeof requiredExtraOneCostSum === 'number') {\n    model.addConstraint(\n      sum(...extraCostTerms).eq(requiredExtraOneCostSum),\n      'hsa_extra_one_cost_sum',\n    )\n  }\n  if (typeof requiredCompanionCost === 'number') {\n    model.addConstraint(\n      sum(...companionExtraTerms).geq(1),\n      'hsa_required_companion_cost',\n    )\n  }\n  model.addConstraint(sum(...slackTerms).eq(1), 'hsa_slack')"
-          if text.count(constraint_marker) != 1:
-              raise SystemExit(f'expected one Hall-signature exact-role constraint marker, found {text.count(constraint_marker)}')
-          text = text.replace(constraint_marker, constraint_replacement, 1)
-
-          test_marker = "hallSignatureProfileIt(\n  'iterates exact Hall-signature support classes for one unresolved identity',\n  async () => {\n    const domain = canonicalDomain()\n    const groups = pairGroups(domain)\n    const groupIndex = 1279"
-          test_replacement = test_marker[:-4] + "336\n    const extraOneCostSum = " + os.environ['TARGET_SUM'] + "\n    const companionCost = " + os.environ['TARGET_COMPANION']
-          if text.count(test_marker) != 1:
-              raise SystemExit(f'expected one iterative Hall-signature test marker, found {text.count(test_marker)}')
-          text = text.replace(test_marker, test_replacement, 1)
-
-          test_start = text.index("hallSignatureProfileIt(\n  'iterates exact Hall-signature support classes for one unresolved identity'")
-          test_tail = text[test_start:]
-          call_marker = "      const built = build311HallSignatureSupportMaster(\n        groups,\n        groupIndex,\n        hallCuts,\n      )"
-          call_replacement = "      const built = build311HallSignatureSupportMaster(\n        groups,\n        groupIndex,\n        hallCuts,\n        extraOneCostSum,\n        companionCost,\n      )"
-          if test_tail.count(call_marker) != 1:
-              raise SystemExit(f'expected one iterative Hall-signature builder call, found {test_tail.count(call_marker)}')
-          test_tail = test_tail.replace(call_marker, call_replacement, 1)
-          summary_marker = "      JSON.stringify({ groupIndex, rounds }),"
-          summary_replacement = "      JSON.stringify({ groupIndex, extraOneCostSum, companionCost, rounds }),"
-          if test_tail.count(summary_marker) != 1:
-              raise SystemExit(f'expected one iterative Hall-signature summary marker, found {test_tail.count(summary_marker)}')
-          test_tail = test_tail.replace(summary_marker, summary_replacement, 1)
-          text = text[:test_start] + test_tail
-
+          test = test + insert
+          text = text[:start] + test + text[end:]
           path.write_text(text)
           PY
-      - name: Run exact Hall-signature sum-companion cell
+      - name: Project exact extra-one identity pairs for genuine residual cells
         env:
           MACHINE_CONTINUATION_HALL_SIGNATURE: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'iterates exact Hall-signature support classes for one unresolved identity' 2>&1 | tee identity-336-${{ matrix.sum }}-${{ matrix.companion }}.log
-          grep -F '[machine-hall-signature-master-summary]' identity-336-${{ matrix.sum }}-${{ matrix.companion }}.log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'profiles Hall-closure membership signatures for unresolved 3\+1\+1 support' 2>&1 | tee identity-336-extra1-pair-projection.log
+          grep -F '[machine-extra1-pair-cell]' identity-336-extra1-pair-projection.log | tee identity-336-extra1-pair-cells.log
+          test "$(wc -l < identity-336-extra1-pair-cells.log)" -eq 117
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: identity-336-${{ matrix.sum }}-${{ matrix.companion }}
-          path: identity-336-${{ matrix.sum }}-${{ matrix.companion }}.log
-          if-no-files-found: error
-
-  aggregate-identity-336:
-    if: always() && github.head_ref == 'perf/exact-machine-operation-continuation'
-    needs: identity-336-sum-companion
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: identity-336-*
-          path: cell-logs
-          merge-multiple: true
-      - name: Aggregate identity 336 cell summaries
-        run: |
-          find cell-logs -type f -name '*.log' | sort > cell-files.txt
-          wc -l cell-files.txt | tee cell-count.txt
-          grep -hF '[machine-hall-signature-master-summary]' cell-logs/*.log | sort > identity-336-summary.log || true
-          wc -l identity-336-summary.log | tee summary-count.txt
-          cat identity-336-summary.log
-      - uses: actions/upload-artifact@v4
-        with:
-          name: identity-336-aggregate
+          name: identity-336-extra1-pair-projection
           path: |
-            cell-count.txt
-            summary-count.txt
-            identity-336-summary.log
+            identity-336-extra1-pair-projection.log
+            identity-336-extra1-pair-cells.log
           if-no-files-found: error
