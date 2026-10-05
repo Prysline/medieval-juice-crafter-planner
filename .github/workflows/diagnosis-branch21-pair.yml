@@ -1,4 +1,4 @@
-name: Identity 336 exact pair-identity slice 2
+name: Identity 336 exact pair-identity slice 3
 
 on:
   pull_request:
@@ -38,10 +38,9 @@ jobs:
               '    const fixedExactCustomers = [...fixedExactCustomerSet]',
               '    const thresholdCounts = [3, 1, 1, 0] as const',
               '    const exactCells = [',
-              '      { extraOneCostSum: 98, companionCost: 62 },',
-              '      { extraOneCostSum: 119, companionCost: 57 },',
-              '      { extraOneCostSum: 119, companionCost: 62 },',
-              '      { extraOneCostSum: 120, companionCost: 62 },',
+              '      { extraOneCostSum: 97, companionCost: 62 },',
+              '      { extraOneCostSum: 100, companionCost: 62 },',
+              '      { extraOneCostSum: 102, companionCost: 62 },',
               '    ]',
               '    const exactExtraOneCandidates = groups.flatMap((group, groupIndex) => {',
               '      if (groupIndex === fixedExactGroupIndex) return []',
@@ -160,7 +159,7 @@ jobs:
           npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'profiles Hall-closure membership signatures for unresolved 3\+1\+1 support' 2>&1 | tee identity-336-exact-pair-identity-slice.log
           grep -F '[machine-extra1-pair-identity-result]' identity-336-exact-pair-identity-slice.log | tee identity-336-exact-pair-results.log
           grep -F '[machine-extra1-pair-identity-cell]' identity-336-exact-pair-identity-slice.log | tee identity-336-exact-pair-cells.log
-          test "$(wc -l < identity-336-exact-pair-cells.log)" -eq 4
+          test "$(wc -l < identity-336-exact-pair-cells.log)" -eq 3
       - uses: actions/upload-artifact@v4
         if: always()
         with:
