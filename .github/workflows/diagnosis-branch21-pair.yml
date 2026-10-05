@@ -113,7 +113,8 @@ jobs:
           EOF
       - name: Run static current-canonical companion-sum role projection
         env:
-          MACHINE_CONTINUATION_PARTIAL_SUPPORT: '1'
+          MACHINE_CONTINUATION_PROFILE: '1'
+          MACHINE_CONTINUATION_PARTIAL_GROUPS: 'projection'
         run: |
           set -o pipefail
           npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'projects fresh 311 Hall-sum residuals onto companion-extra roles' 2>&1 | tee fresh-311-companion-sum-projection.log
