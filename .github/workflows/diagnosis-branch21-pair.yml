@@ -1,4 +1,4 @@
-name: Identity 336 exact pair-identity slice 16
+name: Identity 336 exact pair-identity slice 17
 
 on:
   pull_request:
@@ -36,8 +36,8 @@ jobs:
               '    const fixedExactCustomers = [...fixedExactCustomerSet]',
               '    const thresholdCounts = [3, 1, 1, 0] as const',
               '    const exactCells = [',
-              '      { extraOneCostSum: 95, companionCost: 59 },',
-              '      { extraOneCostSum: 97, companionCost: 57 },',
+              '      { extraOneCostSum: 94, companionCost: 59 },',
+              '      { extraOneCostSum: 116, companionCost: 57 },',
               '    ]',
               '    const exactExtraOneCandidates = groups.flatMap((group, groupIndex) => {',
               '      if (groupIndex === fixedExactGroupIndex) return []',
