@@ -1,38 +1,37 @@
-name: Fresh global forced-identity recomputation
+name: Fresh 3+1+1 identity additions exact refinement
 
 on:
   pull_request:
 
 jobs:
-  global-forced-identity:
+  fresh-311-identity:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        pattern:
-          - '3+1+1'
-          - '2+2+1'
-          - '2+1+1+1'
-          - '1+1+1+1+1'
-    name: global-forced-identity (${{ matrix.pattern }})
+        group:
+          - '127'
+          - '334'
+          - '336'
+    name: fresh-311-identity (${{ matrix.group }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Recompute current canonical global extra / forced-identity frontier
+      - name: Refine fresh current-canonical 3+1+1 identity by companion cost and exact support
         env:
           MACHINE_CONTINUATION_PROFILE: '1'
-          MACHINE_CONTINUATION_JOINT_PATTERN: '${{ matrix.pattern }}'
+          MACHINE_CONTINUATION_PARTIAL_GROUPS: '${{ matrix.group }}'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t "decomposes finalizing-30 extra-bearing identities exactly" 2>&1 | tee global-forced-identity-${{ matrix.pattern }}.log
-      - name: Upload global forced-identity recomputation log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t "decomposes unresolved 3+1+1 identities by companion-extra cost and support" 2>&1 | tee fresh-311-identity-${{ matrix.group }}.log
+      - name: Upload fresh 3+1+1 identity refinement log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: global-forced-identity-${{ matrix.pattern }}
-          path: global-forced-identity-${{ matrix.pattern }}.log
+          name: fresh-311-identity-${{ matrix.group }}
+          path: fresh-311-identity-${{ matrix.group }}.log
           if-no-files-found: error
