@@ -1,35 +1,46 @@
-name: Identity187 case31 single-sum proof
+name: Identity187 fresh global role audit
 
 on:
   pull_request:
 
 jobs:
-  identity187-case31-single-sum:
+  identity187-role-audit:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        sum: [19,25,26,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124]
-    name: identity187-case31-sum-${{ matrix.sum }}
+        include:
+          - shard: '0-9'
+            branches: '0,1,2,3,4,5,6,7,8,9'
+          - shard: '10-19'
+            branches: '10,11,12,13,14,15,16,17,18,19'
+          - shard: '22-31-open'
+            branches: '22,23,24,25,28,29,30,31'
+          - shard: '34-43-open'
+            branches: '34,35,36,37,39,40,41,42,43'
+          - shard: '44-48'
+            branches: '44,45,46,47,48'
+          - shard: '49-53'
+            branches: '49,50,51,52,53'
+    name: identity187-role-audit (${{ matrix.shard }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Prove one fresh canonical cost sum
+      - name: Audit remaining identity187 branches by role and slack
         env:
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_GROUP: '187'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_CASES: '31:0:forbidden'
-          MACHINE_CONTINUATION_FORCED_COST_ROLE_SUMS: '${{ matrix.sum }}'
+          MACHINE_CONTINUATION_FORCED_ROLE_GROUP: '187'
+          MACHINE_CONTINUATION_FORCED_ROLE_BRANCHES: '${{ matrix.branches }}'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee identity187-case31-sum-${{ matrix.sum }}.log
-      - name: Upload single-sum proof log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 2>&1 | tee identity187-role-${{ matrix.shard }}.log
+      - name: Upload identity187 role audit log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: identity187-case31-sum-${{ matrix.sum }}
-          path: identity187-case31-sum-${{ matrix.sum }}.log
+          name: identity187-role-${{ matrix.shard }}
+          path: identity187-role-${{ matrix.shard }}.log
           if-no-files-found: error
