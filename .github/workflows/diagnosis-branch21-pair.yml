@@ -1,10 +1,10 @@
-name: Fresh 3+1+1 combined support-master probe
+name: Fresh 3+1+1 Hall-signature support-class refinement
 
 on:
   pull_request:
 
 jobs:
-  fresh-311-support-master:
+  fresh-311-hall-signature:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     strategy:
@@ -14,23 +14,40 @@ jobs:
           - '127'
           - '334'
           - '336'
-    name: fresh-311-support-master (${{ matrix.group }})
+    name: fresh-311-hall-signature (${{ matrix.group }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Probe combined current-canonical 3+1+1 support master with Hall cuts and exact support validation
+      - name: Patch the existing iterative Hall-signature diagnostic to the selected current-canonical identity
         env:
-          MACHINE_CONTINUATION_SINGLE_MASTER_GROUPS: '${{ matrix.group }}'
+          TARGET_GROUP: '${{ matrix.group }}'
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          path = Path('src/domain/optimizerMachineContinuationProfile.test.ts')
+          text = path.read_text()
+          marker = "hallSignatureProfileIt(\n  'iterates exact Hall-signature support classes for one unresolved identity',\n  async () => {\n    const domain = canonicalDomain()\n    const groups = pairGroups(domain)\n    const groupIndex = 1279"
+          replacement = marker[:-4] + os.environ['TARGET_GROUP']
+          if text.count(marker) != 1:
+              raise SystemExit(f'expected exactly one iterative Hall-signature marker, found {text.count(marker)}')
+          path.write_text(text.replace(marker, replacement, 1))
+          PY
+      - name: Run iterative Hall-signature support-class refinement with fixed-support exact validation
+        env:
+          MACHINE_CONTINUATION_HALL_SIGNATURE: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'probes one exact 3\+1\+1 support master without extra-one cost-sum splitting' 2>&1 | tee fresh-311-support-master-${{ matrix.group }}.log
-      - name: Upload fresh 3+1+1 combined support-master log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'iterates exact Hall-signature support classes for one unresolved identity' 2>&1 | tee fresh-311-hall-signature-${{ matrix.group }}.log
+          grep -F '[machine-hall-signature-master-summary]' fresh-311-hall-signature-${{ matrix.group }}.log
+      - name: Upload fresh 3+1+1 Hall-signature refinement log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: fresh-311-support-master-${{ matrix.group }}
-          path: fresh-311-support-master-${{ matrix.group }}.log
+          name: fresh-311-hall-signature-${{ matrix.group }}
+          path: fresh-311-hall-signature-${{ matrix.group }}.log
           if-no-files-found: error
