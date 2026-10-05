@@ -18,7 +18,7 @@ jobs:
           cat >> src/domain/optimizerMachineContinuationProfile.test.ts <<'EOF'
 
           partialSupportProfileIt(
-            'projects fresh 3+1+1 Hall-sum residuals onto companion-extra roles',
+            'projects fresh 311 Hall-sum residuals onto companion-extra roles',
             async () => {
               const domain = canonicalDomain()
               const groups = pairGroups(domain)
@@ -116,7 +116,7 @@ jobs:
           MACHINE_CONTINUATION_PARTIAL_SUPPORT: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'projects fresh 3\+1\+1 Hall-sum residuals onto companion-extra roles' 2>&1 | tee fresh-311-companion-sum-projection.log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'projects fresh 311 Hall-sum residuals onto companion-extra roles' 2>&1 | tee fresh-311-companion-sum-projection.log
           grep -F '[machine-companion-sum-projection-summary]' fresh-311-companion-sum-projection.log
       - uses: actions/upload-artifact@v4
         if: always()
