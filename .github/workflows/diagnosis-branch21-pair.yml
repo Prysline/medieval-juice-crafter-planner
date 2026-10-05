@@ -1,10 +1,10 @@
-name: Identity 336 current exact pair counts
+name: Identity 336 exact pair-identity slice 6
 
 on:
   pull_request:
 
 jobs:
-  identity-336-current-exact-pair-counts:
+  identity-336-exact-pair-identity-slice:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     steps:
@@ -13,7 +13,7 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - name: Patch current exact pair-count routing diagnostic
+      - name: Patch complete exact pair-identity partition for next cells
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -29,24 +29,15 @@ jobs:
           if end < 0:
               raise SystemExit('Hall-signature profile test end not found')
           test = text[start:end]
-          cells = [
-              (87,56),(88,57),(89,57),(90,56),(91,56),(92,56),(93,56),(93,57),(93,59),(94,56),(94,57),(94,59),
-              (95,56),(95,57),(95,59),(96,56),(96,57),(96,59),(97,56),(97,57),(97,59),(98,56),(98,57),(98,59),
-              (99,56),(99,57),(99,59),(100,56),(100,57),(100,59),(101,56),(101,57),(101,59),(102,56),(102,57),(102,59),
-              (103,56),(103,57),(103,59),(104,56),(104,57),(104,59),(104,62),(105,56),(105,57),(105,59),(105,62),
-              (106,56),(106,57),(106,59),(106,62),(107,56),(107,57),(107,59),(107,62),(108,56),(108,57),(108,59),(108,62),
-              (109,56),(109,57),(109,59),(109,62),(110,56),(110,57),(110,59),(110,62),(111,56),(111,57),(111,59),(111,62),
-              (112,56),(112,57),(112,59),(112,62),(113,56),(113,57),(113,59),(113,62),(114,56),(114,59),(114,62),
-              (115,56),(115,57),(115,59),(115,62),(116,57),(116,59),(116,62),(117,56),(117,59),(117,62),(118,56),(118,59),(118,62),
-          ]
           exact_lines = [
               '',
               '    const fixedExactGroupIndex = 336',
               '    const fixedExactCustomerSet = new Set(groups[fixedExactGroupIndex].eligibleCustomerIds)',
+              '    const fixedExactCustomers = [...fixedExactCustomerSet]',
+              '    const thresholdCounts = [3, 1, 1, 0] as const',
               '    const exactCells = [',
-          ]
-          exact_lines += [f"      {{ extraOneCostSum: {s}, companionCost: {c} }}," for s, c in cells]
-          exact_lines += [
+              '      { extraOneCostSum: 105, companionCost: 62 },',
+              '      { extraOneCostSum: 88, companionCost: 57 },',
               '    ]',
               '    const exactExtraOneCandidates = groups.flatMap((group, groupIndex) => {',
               '      if (groupIndex === fixedExactGroupIndex) return []',
@@ -68,9 +59,88 @@ jobs:
               '          pairCandidates.push([left.groupIndex, right.groupIndex])',
               '        }',
               '      }',
+              '      const pairResults = []',
+              '      for (const pair of pairCandidates) {',
+              '        const supportCuts: number[][] = []',
+              "        let status = 'round-limit'",
+              '        let masterSolveMs = 0',
+              '        let exactSolveMs = 0',
+              '        let exactInfeasibleSupports = 0',
+              '        for (let round = 0; round < 16; round += 1) {',
+              '          const built = build311ExtraCostSumSupportMaster(',
+              '            domain,',
+              '            fixedExactGroupIndex,',
+              '            cell.extraOneCostSum,',
+              '            {',
+              '              supportCuts,',
+              '              includeCustomerFlow: true,',
+              '              forcedCustomerIds: fixedExactCustomers,',
+              '              requiredExtraOneGroupIndexes: pair,',
+              '            },',
+              '          )',
+              '          const solved = await solveBounded(built.model, 0.5)',
+              '          masterSolveMs += solved.solveMs',
+              "          if (solved.status === 'infeasible') {",
+              "            status = 'infeasible'",
+              '            break',
+              '          }',
+              "          if (solved.status !== 'optimal' || !solved.namedSolution) {",
+              '            status = solved.status',
+              '            break',
+              '          }',
+              '          const support = groups.flatMap((_group, groupIndex) => {',
+              "            const raw = solved.namedSolution!.get(`s31su_${groupIndex}`)",
+              "            return typeof raw === 'number' && Number.isFinite(raw) && raw > 0.5 ? [groupIndex] : []",
+              '          })',
+              '          if (support.length !== 30) {',
+              "            throw new Error(`Expected 30 support groups, got ${support.length}`)",
+              '          }',
+              '          const exact = buildFinalizing30MaskPartitionStage(',
+              '            domain,',
+              "            new Set<ProductionStepKind>(['juicing', 'seasoning', 'blending']),",
+              '            thresholdCounts,',
+              '            { max: 76 },',
+              '            0,',
+              '            new Set(support),',
+              '          )',
+              '          const exactSolved = await solveBounded(exact.model, 3)',
+              '          exactSolveMs += exactSolved.solveMs',
+              "          if (exactSolved.status === 'infeasible') {",
+              '            exactInfeasibleSupports += 1',
+              '            supportCuts.push(support)',
+              "            status = 'exact-infeasible-support'",
+              '            continue',
+              '          }',
+              "          if (exactSolved.status === 'optimal') {",
+              "            status = 'global-witness'",
+              '            break',
+              '          }',
+              "          status = `exact-${exactSolved.status}`",
+              '          break',
+              '        }',
+              '        const pairResult = {',
+              '          pair,',
+              '          status,',
+              '          supportCuts: supportCuts.length,',
+              '          exactInfeasibleSupports,',
+              '          masterSolveMs: Math.round(masterSolveMs),',
+              '          exactSolveMs: Math.round(exactSolveMs),',
+              '        }',
+              '        pairResults.push(pairResult)',
+              '        console.info(',
+              "          '[machine-extra1-pair-identity-result]',",
+              '          JSON.stringify({ fixedGroupIndex: fixedExactGroupIndex, ...cell, ...pairResult }),',
+              '        )',
+              '      }',
               '      console.info(',
-              "        '[machine-extra1-current-pair-count]',",
-              '        JSON.stringify({ fixedGroupIndex: fixedExactGroupIndex, ...cell, pairCount: pairCandidates.length }),',
+              "        '[machine-extra1-pair-identity-cell]',",
+              '        JSON.stringify({',
+              '          fixedGroupIndex: fixedExactGroupIndex,',
+              '          ...cell,',
+              '          pairCount: pairCandidates.length,',
+              "          status: pairResults.length > 0 && pairResults.every((entry) => entry.status === 'infeasible') ? 'infeasible' : 'unresolved',",
+              "          unresolvedPairs: pairResults.filter((entry) => entry.status !== 'infeasible').map((entry) => ({ pair: entry.pair, status: entry.status })),",
+              '        }),',
               '      )',
               '    }',
           ]
@@ -78,19 +148,21 @@ jobs:
           text = text[:start] + test + text[end:]
           path.write_text(text)
           PY
-      - name: Run current exact pair-count routing diagnostic
+      - name: Run complete exact pair-identity partition
         env:
           MACHINE_CONTINUATION_HALL_SIGNATURE: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'profiles Hall-closure membership signatures for unresolved 3\+1\+1 support' 2>&1 | tee identity-336-current-pair-counts.log
-          grep -F '[machine-extra1-current-pair-count]' identity-336-current-pair-counts.log | tee identity-336-current-pair-counts-only.log
-          test "$(wc -l < identity-336-current-pair-counts-only.log)" -eq 95
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'profiles Hall-closure membership signatures for unresolved 3\+1\+1 support' 2>&1 | tee identity-336-exact-pair-identity-slice.log
+          grep -F '[machine-extra1-pair-identity-result]' identity-336-exact-pair-identity-slice.log | tee identity-336-exact-pair-results.log
+          grep -F '[machine-extra1-pair-identity-cell]' identity-336-exact-pair-identity-slice.log | tee identity-336-exact-pair-cells.log
+          test "$(wc -l < identity-336-exact-pair-cells.log)" -eq 2
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: identity-336-current-exact-pair-counts
+          name: identity-336-exact-pair-identity-slice
           path: |
-            identity-336-current-pair-counts.log
-            identity-336-current-pair-counts-only.log
+            identity-336-exact-pair-identity-slice.log
+            identity-336-exact-pair-results.log
+            identity-336-exact-pair-cells.log
           if-no-files-found: error
