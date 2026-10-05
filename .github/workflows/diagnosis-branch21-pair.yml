@@ -1,4 +1,4 @@
-name: Identity 336 exact pair-identity slice 54
+name: Identity 336 exact pair-identity slice 55
 on:
   pull_request:
 jobs:
@@ -9,20 +9,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - sum: 112
-            companion: 59
-          - sum: 106
-            companion: 59
-          - sum: 99
+          - sum: 98
             companion: 56
-          - sum: 108
-            companion: 59
-          - sum: 110
-            companion: 59
-          - sum: 107
-            companion: 59
+          - sum: 101
+            companion: 56
           - sum: 111
-            companion: 59
+            companion: 56
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
