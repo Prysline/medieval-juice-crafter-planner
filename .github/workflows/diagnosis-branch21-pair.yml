@@ -1,29 +1,40 @@
-name: Fresh 3+1+1 Hall-signature support-class refinement
+name: Fresh 3+1+1 Hall-signature extra-sum refinement
 
 on:
   pull_request:
 
 jobs:
-  fresh-311-hall-signature:
+  fresh-311-hall-sum:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        group:
-          - '127'
-          - '334'
-          - '336'
-    name: fresh-311-hall-signature (${{ matrix.group }})
+        group: ['127', '334', '336']
+        sum: ['63', '64', '65', '66', '67', '68', '69', '70', '71', '72', '73', '74', '75', '76', '77', '78', '79', '80', '81', '82', '83', '84', '85', '86', '87', '88', '89', '90', '91', '92', '93', '94', '95', '96', '97', '98', '99', '100', '101', '102', '103', '104', '105', '106', '107', '108', '109', '110', '111', '112', '113', '114', '115', '116', '117', '118', '119', '120', '121', '122', '123', '124']
+        exclude:
+          - { group: '127', sum: '69' }
+          - { group: '127', sum: '70' }
+          - { group: '127', sum: '71' }
+          - { group: '334', sum: '63' }
+          - { group: '334', sum: '64' }
+          - { group: '334', sum: '65' }
+          - { group: '334', sum: '66' }
+          - { group: '336', sum: '63' }
+          - { group: '336', sum: '64' }
+          - { group: '336', sum: '65' }
+          - { group: '336', sum: '66' }
+    name: fresh-311-hall-sum (${{ matrix.group }}, ${{ matrix.sum }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Patch the existing iterative Hall-signature diagnostic to the selected current-canonical identity
+      - name: Patch Hall-signature diagnostic with the exact unresolved identity and extra-one sum
         env:
           TARGET_GROUP: '${{ matrix.group }}'
+          TARGET_SUM: '${{ matrix.sum }}'
         run: |
           python - <<'PY'
           import os
@@ -31,23 +42,90 @@ jobs:
 
           path = Path('src/domain/optimizerMachineContinuationProfile.test.ts')
           text = path.read_text()
-          marker = "hallSignatureProfileIt(\n  'iterates exact Hall-signature support classes for one unresolved identity',\n  async () => {\n    const domain = canonicalDomain()\n    const groups = pairGroups(domain)\n    const groupIndex = 1279"
-          replacement = marker[:-4] + os.environ['TARGET_GROUP']
-          if text.count(marker) != 1:
-              raise SystemExit(f'expected exactly one iterative Hall-signature marker, found {text.count(marker)}')
-          path.write_text(text.replace(marker, replacement, 1))
+
+          signature = "function build311HallSignatureSupportMaster(\n  groups: readonly PairGroup[],\n  fixedExtra3GroupIndex: number,\n  hallCuts: readonly (readonly number[])[],\n) {"
+          replacement = "function build311HallSignatureSupportMaster(\n  groups: readonly PairGroup[],\n  fixedExtra3GroupIndex: number,\n  hallCuts: readonly (readonly number[])[],\n  requiredExtraOneCostSum?: number,\n) {"
+          if text.count(signature) != 1:
+              raise SystemExit(f'expected one Hall-signature builder signature, found {text.count(signature)}')
+          text = text.replace(signature, replacement, 1)
+
+          cost_terms = "  const costTerms = []\n  const hallTerms: Array<Array<ReturnType<typeof sum>>> ="
+          cost_replacement = "  const costTerms = []\n  const extraCostTerms = []\n  const hallTerms: Array<Array<ReturnType<typeof sum>>> ="
+          if text.count(cost_terms) != 1:
+              raise SystemExit(f'expected one Hall-signature cost term marker, found {text.count(cost_terms)}')
+          text = text.replace(cost_terms, cost_replacement, 1)
+
+          extra_push = "    extraTerms.push(extra)\n    slackTerms.push(slack)"
+          extra_replacement = "    extraTerms.push(extra)\n    extraCostTerms.push(extra.times(groupClass.ingredientCost))\n    slackTerms.push(slack)"
+          if text.count(extra_push) != 1:
+              raise SystemExit(f'expected one Hall-signature extra term marker, found {text.count(extra_push)}')
+          text = text.replace(extra_push, extra_replacement, 1)
+
+          constraint_marker = "  model.addConstraint(sum(...extraTerms).eq(2), 'hsa_extra_one')\n  model.addConstraint(sum(...slackTerms).eq(1), 'hsa_slack')"
+          constraint_replacement = "  model.addConstraint(sum(...extraTerms).eq(2), 'hsa_extra_one')\n  if (typeof requiredExtraOneCostSum === 'number') {\n    model.addConstraint(\n      sum(...extraCostTerms).eq(requiredExtraOneCostSum),\n      'hsa_extra_one_cost_sum',\n    )\n  }\n  model.addConstraint(sum(...slackTerms).eq(1), 'hsa_slack')"
+          if text.count(constraint_marker) != 1:
+              raise SystemExit(f'expected one Hall-signature exact-sum constraint marker, found {text.count(constraint_marker)}')
+          text = text.replace(constraint_marker, constraint_replacement, 1)
+
+          test_marker = "hallSignatureProfileIt(\n  'iterates exact Hall-signature support classes for one unresolved identity',\n  async () => {\n    const domain = canonicalDomain()\n    const groups = pairGroups(domain)\n    const groupIndex = 1279"
+          test_replacement = test_marker[:-4] + os.environ['TARGET_GROUP'] + "\n    const extraOneCostSum = " + os.environ['TARGET_SUM']
+          if text.count(test_marker) != 1:
+              raise SystemExit(f'expected one iterative Hall-signature test marker, found {text.count(test_marker)}')
+          text = text.replace(test_marker, test_replacement, 1)
+
+          test_start = text.index("hallSignatureProfileIt(\n  'iterates exact Hall-signature support classes for one unresolved identity'")
+          test_tail = text[test_start:]
+          call_marker = "      const built = build311HallSignatureSupportMaster(\n        groups,\n        groupIndex,\n        hallCuts,\n      )"
+          call_replacement = "      const built = build311HallSignatureSupportMaster(\n        groups,\n        groupIndex,\n        hallCuts,\n        extraOneCostSum,\n      )"
+          if test_tail.count(call_marker) != 1:
+              raise SystemExit(f'expected one iterative Hall-signature builder call, found {test_tail.count(call_marker)}')
+          test_tail = test_tail.replace(call_marker, call_replacement, 1)
+          summary_marker = "      JSON.stringify({ groupIndex, rounds }),"
+          summary_replacement = "      JSON.stringify({ groupIndex, extraOneCostSum, rounds }),"
+          if test_tail.count(summary_marker) != 1:
+              raise SystemExit(f'expected one iterative Hall-signature summary marker, found {test_tail.count(summary_marker)}')
+          test_tail = test_tail.replace(summary_marker, summary_replacement, 1)
+          text = text[:test_start] + test_tail
+
+          path.write_text(text)
           PY
-      - name: Run iterative Hall-signature support-class refinement with fixed-support exact validation
+      - name: Run Hall-signature refinement for one exact extra-one sum
         env:
           MACHINE_CONTINUATION_HALL_SIGNATURE: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'iterates exact Hall-signature support classes for one unresolved identity' 2>&1 | tee fresh-311-hall-signature-${{ matrix.group }}.log
-          grep -F '[machine-hall-signature-master-summary]' fresh-311-hall-signature-${{ matrix.group }}.log
-      - name: Upload fresh 3+1+1 Hall-signature refinement log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'iterates exact Hall-signature support classes for one unresolved identity' 2>&1 | tee fresh-311-hall-sum-${{ matrix.group }}-${{ matrix.sum }}.log
+          grep -F '[machine-hall-signature-master-summary]' fresh-311-hall-sum-${{ matrix.group }}-${{ matrix.sum }}.log
+      - name: Upload exact Hall-signature shard log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: fresh-311-hall-signature-${{ matrix.group }}
-          path: fresh-311-hall-signature-${{ matrix.group }}.log
+          name: fresh-311-hall-sum-${{ matrix.group }}-${{ matrix.sum }}
+          path: fresh-311-hall-sum-${{ matrix.group }}-${{ matrix.sum }}.log
+          if-no-files-found: error
+
+  aggregate-fresh-311-hall-sum:
+    if: always() && github.head_ref == 'perf/exact-machine-operation-continuation'
+    needs: fresh-311-hall-sum
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: fresh-311-hall-sum-*
+          path: shard-logs
+          merge-multiple: true
+      - name: Aggregate exact Hall-signature shard summaries
+        run: |
+          find shard-logs -type f -name '*.log' | sort > shard-files.txt
+          wc -l shard-files.txt | tee shard-count.txt
+          grep -hF '[machine-hall-signature-master-summary]' shard-logs/*.log | sort > fresh-311-hall-sum-summary.log || true
+          wc -l fresh-311-hall-sum-summary.log | tee summary-count.txt
+          cat fresh-311-hall-sum-summary.log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fresh-311-hall-sum-aggregate
+          path: |
+            shard-count.txt
+            summary-count.txt
+            fresh-311-hall-sum-summary.log
           if-no-files-found: error
