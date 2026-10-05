@@ -27,7 +27,7 @@ jobs:
           MACHINE_CONTINUATION_PARTIAL_GROUPS: '${{ matrix.group }}'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t "decomposes unresolved 3+1+1 identities by companion-extra cost and support" 2>&1 | tee fresh-311-identity-${{ matrix.group }}.log
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'decomposes unresolved 3\+1\+1 identities by companion-extra cost and support' 2>&1 | tee fresh-311-identity-${{ matrix.group }}.log
       - name: Upload fresh 3+1+1 identity refinement log
         if: always()
         uses: actions/upload-artifact@v4
