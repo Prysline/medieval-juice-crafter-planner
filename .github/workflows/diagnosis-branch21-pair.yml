@@ -1,32 +1,20 @@
-name: Identity 334 small exact pair cells
+name: Identity 334 twelve-pair exact cells
 on:
   pull_request:
 jobs:
-  identity-334-small-exact-pair-cell:
+  identity-334-twelve-pair-exact-cell:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
+          - sum: 90
+            companion: 60
+            expected_full: 12
           - sum: 91
-            companion: 60
-            expected_full: 8
-          - sum: 92
             companion: 61
-            expected_full: 8
-          - sum: 93
-            companion: 60
-            expected_full: 10
-          - sum: 94
-            companion: 61
-            expected_full: 10
-          - sum: 96
-            companion: 60
-            expected_full: 10
-          - sum: 97
-            companion: 61
-            expected_full: 10
+            expected_full: 12
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -42,7 +30,6 @@ jobs:
           python - <<'PY'
           import os
           from pathlib import Path
-
           path = Path('src/domain/optimizerMachineContinuationProfile.test.ts')
           text = path.read_text()
           start_marker = "hallSignatureProfileIt(\n  'profiles Hall-closure membership signatures for unresolved 3+1+1 support',"
@@ -51,7 +38,6 @@ jobs:
           end = text.find(end_marker, start)
           if start < 0 or end < 0:
               raise SystemExit('markers not found')
-
           target_sum = int(os.environ['TARGET_SUM'])
           target_companion = int(os.environ['TARGET_COMPANION'])
           expected_full = int(os.environ['EXPECTED_FULL'])
