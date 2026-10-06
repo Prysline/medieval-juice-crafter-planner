@@ -1,26 +1,30 @@
-name: Identity 334 seventy-eight-pair exact cells
+name: Identity 334 eighty-pair exact cells
 on:
   pull_request:
 jobs:
-  identity-334-seventy-eight-pair-exact-cell:
+  identity-334-eighty-pair-exact-cell:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - sum: 88
-            companion: 58
-          - sum: 110
-            companion: 50
-          - sum: 110
+          - sum: 106
+            companion: 46
+          - sum: 106
             companion: 60
-          - sum: 111
-            companion: 50
-          - sum: 111
+          - sum: 107
+            companion: 46
+          - sum: 107
             companion: 61
-          - sum: 116
-            companion: 58
+          - sum: 108
+            companion: 48
+          - sum: 108
+            companion: 60
+          - sum: 109
+            companion: 48
+          - sum: 109
+            companion: 61
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -31,7 +35,7 @@ jobs:
         env:
           TARGET_SUM: ${{ matrix.sum }}
           TARGET_COMPANION: ${{ matrix.companion }}
-          EXPECTED_FULL: 78
+          EXPECTED_FULL: 80
         run: |
           python - <<'PY'
           import os
@@ -116,7 +120,7 @@ jobs:
           npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'profiles Hall-closure membership signatures for unresolved 3\+1\+1 support' 2>&1 | tee identity-334-exact-pair-identity-cell.log
           grep -F '[machine-extra1-pair-identity-result]' identity-334-exact-pair-identity-cell.log | tee identity-334-exact-pair-results.log
           grep -F '[machine-extra1-pair-identity-cell]' identity-334-exact-pair-identity-cell.log | tee identity-334-exact-pair-cells.log
-          test "$(wc -l < identity-334-exact-pair-results.log)" -eq 78
+          test "$(wc -l < identity-334-exact-pair-results.log)" -eq 80
           test "$(wc -l < identity-334-exact-pair-cells.log)" -eq 1
       - uses: actions/upload-artifact@v4
         if: always()
