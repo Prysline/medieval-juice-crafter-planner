@@ -1,55 +1,19 @@
-name: Identity 336 exact pair-identity chunk
+name: Identity 334 exact pair-identity cell
 on:
   pull_request:
 jobs:
-  identity-336-exact-pair-identity-chunk:
+  identity-334-exact-pair-identity-cell:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - sum: 108
-            companion: 56
-            start: 0
-            end: 220
-            expected_selected: 220
-          - sum: 108
-            companion: 56
-            start: 220
-            end: 440
-            expected_selected: 220
-          - sum: 108
-            companion: 56
-            start: 440
-            end: 660
-            expected_selected: 220
-          - sum: 108
-            companion: 56
-            start: 660
-            end: 880
-            expected_selected: 220
-          - sum: 108
-            companion: 56
-            start: 880
-            end: 903
-            expected_selected: 23
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Patch deterministic exact pair-identity chunk
-        env:
-          TARGET_SUM: ${{ matrix.sum }}
-          TARGET_COMPANION: ${{ matrix.companion }}
-          TARGET_START: ${{ matrix.start }}
-          TARGET_END: ${{ matrix.end }}
-          EXPECTED_SELECTED: ${{ matrix.expected_selected }}
+      - name: Patch deterministic exact pair-identity cell
         run: |
           python - <<'PY'
-          import os
           from pathlib import Path
 
           path = Path('src/domain/optimizerMachineContinuationProfile.test.ts')
@@ -61,50 +25,31 @@ jobs:
           if start < 0 or end < 0:
               raise SystemExit('markers not found')
 
-          target_sum = int(os.environ['TARGET_SUM'])
-          target_companion = int(os.environ['TARGET_COMPANION'])
-          chunk_start = int(os.environ['TARGET_START'])
-          chunk_end = int(os.environ['TARGET_END'])
-          expected_selected = int(os.environ['EXPECTED_SELECTED'])
-          expected_full = 903
-          if chunk_start < 0 or chunk_end <= chunk_start or chunk_end > expected_full:
-              raise SystemExit(f'invalid chunk range: {chunk_start}..{chunk_end}')
-          if chunk_end - chunk_start != expected_selected:
-              raise SystemExit(
-                  f'chunk width mismatch: range={chunk_start}..{chunk_end} expected={expected_selected}'
-              )
-
           test = text[start:end]
           lines = [
               '',
-              '    const fixedExactGroupIndex = 336',
+              '    const fixedExactGroupIndex = 334',
               '    const fixedExactCustomerSet = new Set(groups[fixedExactGroupIndex].eligibleCustomerIds)',
               '    const fixedExactCustomers = [...fixedExactCustomerSet]',
               '    const thresholdCounts = [3, 1, 1, 0] as const',
-              f'    const exactCells = [{{ extraOneCostSum: {target_sum}, companionCost: {target_companion} }}]',
+              '    const exactCells = [{ extraOneCostSum: 120, companionCost: 60 }]',
               '    const exactExtraOneCandidates = groups.flatMap((group, groupIndex) => {',
               '      if (groupIndex === fixedExactGroupIndex) return []',
               '      const residualEligibleCustomerIds = group.eligibleCustomerIds.filter((customerId) => !fixedExactCustomerSet.has(customerId))',
               '      return residualEligibleCustomerIds.length >= 4 ? [{ groupIndex, ingredientCost: group.ingredientCost }] : []',
               '    })',
               '    for (const cell of exactCells) {',
-              '      const allPairCandidates: Array<[number, number]> = []',
+              '      const pairCandidates: Array<[number, number]> = []',
               '      for (let leftIndex = 0; leftIndex < exactExtraOneCandidates.length; leftIndex += 1) {',
               '        const left = exactExtraOneCandidates[leftIndex]',
               '        for (let rightIndex = leftIndex + 1; rightIndex < exactExtraOneCandidates.length; rightIndex += 1) {',
               '          const right = exactExtraOneCandidates[rightIndex]',
               '          if (left.ingredientCost + right.ingredientCost !== cell.extraOneCostSum) continue',
               '          if (left.ingredientCost !== cell.companionCost && right.ingredientCost !== cell.companionCost) continue',
-              '          allPairCandidates.push([left.groupIndex, right.groupIndex])',
+              '          pairCandidates.push([left.groupIndex, right.groupIndex])',
               '        }',
               '      }',
-              '      const fullPairCount = allPairCandidates.length',
-              f"      if (fullPairCount !== {expected_full}) throw new Error('Expected {expected_full} full pairs, got ' + fullPairCount)",
-              f'      const chunkStart = {chunk_start}',
-              f'      const chunkEnd = {chunk_end}',
-              "      if (chunkStart < 0 || chunkEnd <= chunkStart || chunkEnd > fullPairCount) throw new Error('Invalid chunk range ' + chunkStart + '..' + chunkEnd + ' for ' + fullPairCount)",
-              '      const pairCandidates = allPairCandidates.slice(chunkStart, chunkEnd)',
-              f"      if (pairCandidates.length !== {expected_selected}) throw new Error('Expected {expected_selected} selected pairs, got ' + pairCandidates.length)",
+              "      if (pairCandidates.length !== 1) throw new Error('Expected 1 pair, got ' + pairCandidates.length)",
               '      const pairResults = []',
               '      for (const pair of pairCandidates) {',
               '        const supportCuts: number[][] = []',
@@ -133,29 +78,30 @@ jobs:
               '        }',
               '        const pairResult = { pair, status, supportCuts: supportCuts.length, exactInfeasibleSupports, masterSolveMs: Math.round(masterSolveMs), exactSolveMs: Math.round(exactSolveMs) }',
               '        pairResults.push(pairResult)',
-              "        console.info('[machine-extra1-pair-identity-result]', JSON.stringify({ fixedGroupIndex: fixedExactGroupIndex, ...cell, chunkStart, chunkEnd, ordinal: chunkStart + pairResults.length - 1, ...pairResult }))",
+              "        console.info('[machine-extra1-pair-identity-result]', JSON.stringify({ fixedGroupIndex: fixedExactGroupIndex, ...cell, ordinal: pairResults.length - 1, ...pairResult }))",
               '      }',
-              "      console.info('[machine-extra1-pair-identity-cell]', JSON.stringify({ fixedGroupIndex: fixedExactGroupIndex, ...cell, fullPairCount, chunkStart, chunkEnd, pairCount: pairCandidates.length, status: pairResults.length > 0 && pairResults.every((entry) => entry.status === 'infeasible') ? 'infeasible' : 'unresolved', unresolvedPairs: pairResults.filter((entry) => entry.status !== 'infeasible').map((entry, index) => ({ ordinal: chunkStart + index, pair: entry.pair, status: entry.status })) }))",
+              "      console.info('[machine-extra1-pair-identity-cell]', JSON.stringify({ fixedGroupIndex: fixedExactGroupIndex, ...cell, fullPairCount: pairCandidates.length, pairCount: pairCandidates.length, status: pairResults.length > 0 && pairResults.every((entry) => entry.status === 'infeasible') ? 'infeasible' : 'unresolved', unresolvedPairs: pairResults.filter((entry) => entry.status !== 'infeasible').map((entry, index) => ({ ordinal: index, pair: entry.pair, status: entry.status })) }))",
               '    }',
           ]
           test += '\n'.join(lines)
           path.write_text(text[:start] + test + text[end:])
           PY
-      - name: Run deterministic exact pair-identity chunk
+      - name: Run deterministic exact pair-identity cell
         env:
           MACHINE_CONTINUATION_HALL_SIGNATURE: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'profiles Hall-closure membership signatures for unresolved 3\+1\+1 support' 2>&1 | tee identity-336-exact-pair-identity-chunk.log
-          grep -F '[machine-extra1-pair-identity-result]' identity-336-exact-pair-identity-chunk.log | tee identity-336-exact-pair-results.log
-          grep -F '[machine-extra1-pair-identity-cell]' identity-336-exact-pair-identity-chunk.log | tee identity-336-exact-pair-cells.log
-          test "$(wc -l < identity-336-exact-pair-cells.log)" -eq 1
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'profiles Hall-closure membership signatures for unresolved 3\+1\+1 support' 2>&1 | tee identity-334-exact-pair-identity-cell.log
+          grep -F '[machine-extra1-pair-identity-result]' identity-334-exact-pair-identity-cell.log | tee identity-334-exact-pair-results.log
+          grep -F '[machine-extra1-pair-identity-cell]' identity-334-exact-pair-identity-cell.log | tee identity-334-exact-pair-cells.log
+          test "$(wc -l < identity-334-exact-pair-results.log)" -eq 1
+          test "$(wc -l < identity-334-exact-pair-cells.log)" -eq 1
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: identity-336-exact-pair-${{ matrix.sum }}-${{ matrix.companion }}-${{ matrix.start }}-${{ matrix.end }}
+          name: identity-334-exact-pair-120-60
           path: |
-            identity-336-exact-pair-identity-chunk.log
-            identity-336-exact-pair-results.log
-            identity-336-exact-pair-cells.log
+            identity-334-exact-pair-identity-cell.log
+            identity-334-exact-pair-results.log
+            identity-334-exact-pair-cells.log
           if-no-files-found: error
