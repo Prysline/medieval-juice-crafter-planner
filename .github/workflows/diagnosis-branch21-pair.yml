@@ -1,10 +1,26 @@
-name: Identity 334 exact pair-identity cell
+name: Identity 334 tiny exact pair cells
 on:
   pull_request:
 jobs:
-  identity-334-exact-pair-identity-cell:
+  identity-334-tiny-exact-pair-cell:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - sum: 122
+            companion: 61
+            expected_full: 1
+          - sum: 86
+            companion: 60
+            expected_full: 2
+          - sum: 86
+            companion: 61
+            expected_full: 2
+          - sum: 87
+            companion: 61
+            expected_full: 2
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -12,8 +28,13 @@ jobs:
           node-version: 22
       - run: npm install
       - name: Patch deterministic exact pair-identity cell
+        env:
+          TARGET_SUM: ${{ matrix.sum }}
+          TARGET_COMPANION: ${{ matrix.companion }}
+          EXPECTED_FULL: ${{ matrix.expected_full }}
         run: |
           python - <<'PY'
+          import os
           from pathlib import Path
 
           path = Path('src/domain/optimizerMachineContinuationProfile.test.ts')
@@ -25,6 +46,9 @@ jobs:
           if start < 0 or end < 0:
               raise SystemExit('markers not found')
 
+          target_sum = int(os.environ['TARGET_SUM'])
+          target_companion = int(os.environ['TARGET_COMPANION'])
+          expected_full = int(os.environ['EXPECTED_FULL'])
           test = text[start:end]
           lines = [
               '',
@@ -32,7 +56,7 @@ jobs:
               '    const fixedExactCustomerSet = new Set(groups[fixedExactGroupIndex].eligibleCustomerIds)',
               '    const fixedExactCustomers = [...fixedExactCustomerSet]',
               '    const thresholdCounts = [3, 1, 1, 0] as const',
-              '    const exactCells = [{ extraOneCostSum: 120, companionCost: 60 }]',
+              f'    const exactCells = [{{ extraOneCostSum: {target_sum}, companionCost: {target_companion} }}]',
               '    const exactExtraOneCandidates = groups.flatMap((group, groupIndex) => {',
               '      if (groupIndex === fixedExactGroupIndex) return []',
               '      const residualEligibleCustomerIds = group.eligibleCustomerIds.filter((customerId) => !fixedExactCustomerSet.has(customerId))',
@@ -49,7 +73,7 @@ jobs:
               '          pairCandidates.push([left.groupIndex, right.groupIndex])',
               '        }',
               '      }',
-              "      if (pairCandidates.length !== 1) throw new Error('Expected 1 pair, got ' + pairCandidates.length)",
+              f"      if (pairCandidates.length !== {expected_full}) throw new Error('Expected {expected_full} pairs, got ' + pairCandidates.length)",
               '      const pairResults = []',
               '      for (const pair of pairCandidates) {',
               '        const supportCuts: number[][] = []',
@@ -94,12 +118,12 @@ jobs:
           npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'profiles Hall-closure membership signatures for unresolved 3\+1\+1 support' 2>&1 | tee identity-334-exact-pair-identity-cell.log
           grep -F '[machine-extra1-pair-identity-result]' identity-334-exact-pair-identity-cell.log | tee identity-334-exact-pair-results.log
           grep -F '[machine-extra1-pair-identity-cell]' identity-334-exact-pair-identity-cell.log | tee identity-334-exact-pair-cells.log
-          test "$(wc -l < identity-334-exact-pair-results.log)" -eq 1
+          test "$(wc -l < identity-334-exact-pair-results.log)" -eq "${{ matrix.expected_full }}"
           test "$(wc -l < identity-334-exact-pair-cells.log)" -eq 1
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: identity-334-exact-pair-120-60
+          name: identity-334-exact-pair-${{ matrix.sum }}-${{ matrix.companion }}
           path: |
             identity-334-exact-pair-identity-cell.log
             identity-334-exact-pair-results.log
