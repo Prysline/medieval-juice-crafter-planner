@@ -1,10 +1,10 @@
-name: Identity 336 current exact pair counts
+name: Identity 334 current exact pair counts
 
 on:
   pull_request:
 
 jobs:
-  identity-336-current-exact-pair-counts:
+  identity-334-current-exact-pair-counts:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     steps:
@@ -15,82 +15,97 @@ jobs:
       - run: npm install
       - name: Patch current exact pair-count routing diagnostic
         run: |
-          python - <<'PY'
-          from pathlib import Path
+          cat >> src/domain/optimizerMachineContinuationProfile.test.ts <<'EOF'
 
-          path = Path('src/domain/optimizerMachineContinuationProfile.test.ts')
-          text = path.read_text()
-          test_start_marker = "hallSignatureProfileIt(\n  'profiles Hall-closure membership signatures for unresolved 3+1+1 support',"
-          test_end_marker = "\n  },\n  120000,\n)\n\n\nfunction build311HallSignatureSupportMaster"
-          start = text.find(test_start_marker)
-          if start < 0:
-              raise SystemExit('Hall-signature profile test start not found')
-          end = text.find(test_end_marker, start)
-          if end < 0:
-              raise SystemExit('Hall-signature profile test end not found')
-          test = text[start:end]
-          cells = [
-              (87,56),(88,57),(89,57),(90,56),(91,56),(92,56),(93,56),(93,57),(93,59),(94,56),(94,57),(94,59),
-              (95,56),(95,57),(95,59),(96,56),(96,57),(96,59),(97,56),(97,57),(97,59),(98,56),(98,57),(98,59),
-              (99,56),(99,57),(99,59),(100,56),(100,57),(100,59),(101,56),(101,57),(101,59),(102,56),(102,57),(102,59),
-              (103,56),(103,57),(103,59),(104,56),(104,57),(104,59),(104,62),(105,56),(105,57),(105,59),(105,62),
-              (106,56),(106,57),(106,59),(106,62),(107,56),(107,57),(107,59),(107,62),(108,56),(108,57),(108,59),(108,62),
-              (109,56),(109,57),(109,59),(109,62),(110,56),(110,57),(110,59),(110,62),(111,56),(111,57),(111,59),(111,62),
-              (112,56),(112,57),(112,59),(112,62),(113,56),(113,57),(113,59),(113,62),(114,56),(114,59),(114,62),
-              (115,56),(115,57),(115,59),(115,62),(116,57),(116,59),(116,62),(117,56),(117,59),(117,62),(118,56),(118,59),(118,62),
-          ]
-          exact_lines = [
-              '',
-              '    const fixedExactGroupIndex = 336',
-              '    const fixedExactCustomerSet = new Set(groups[fixedExactGroupIndex].eligibleCustomerIds)',
-              '    const exactCells = [',
-          ]
-          exact_lines += [f"      {{ extraOneCostSum: {s}, companionCost: {c} }}," for s, c in cells]
-          exact_lines += [
-              '    ]',
-              '    const exactExtraOneCandidates = groups.flatMap((group, groupIndex) => {',
-              '      if (groupIndex === fixedExactGroupIndex) return []',
-              '      const residualEligibleCustomerIds = group.eligibleCustomerIds.filter(',
-              '        (customerId) => !fixedExactCustomerSet.has(customerId),',
-              '      )',
-              '      return residualEligibleCustomerIds.length >= 4',
-              '        ? [{ groupIndex, ingredientCost: group.ingredientCost }]',
-              '        : []',
-              '    })',
-              '    for (const cell of exactCells) {',
-              '      const pairCandidates: Array<[number, number]> = []',
-              '      for (let leftIndex = 0; leftIndex < exactExtraOneCandidates.length; leftIndex += 1) {',
-              '        const left = exactExtraOneCandidates[leftIndex]',
-              '        for (let rightIndex = leftIndex + 1; rightIndex < exactExtraOneCandidates.length; rightIndex += 1) {',
-              '          const right = exactExtraOneCandidates[rightIndex]',
-              '          if (left.ingredientCost + right.ingredientCost !== cell.extraOneCostSum) continue',
-              '          if (left.ingredientCost !== cell.companionCost && right.ingredientCost !== cell.companionCost) continue',
-              '          pairCandidates.push([left.groupIndex, right.groupIndex])',
-              '        }',
-              '      }',
-              '      console.info(',
-              "        '[machine-extra1-current-pair-count]',",
-              '        JSON.stringify({ fixedGroupIndex: fixedExactGroupIndex, ...cell, pairCount: pairCandidates.length }),',
-              '      )',
-              '    }',
-          ]
-          test = test + '\n'.join(exact_lines)
-          text = text[:start] + test + text[end:]
-          path.write_text(text)
-          PY
+          partialSupportProfileIt(
+            'lists current identity 334 exact pair counts',
+            async () => {
+              const domain = canonicalDomain()
+              const groups = pairGroups(domain)
+              const fixedGroupIndex = 334
+              const fixedCustomerSet = new Set(
+                groups[fixedGroupIndex].eligibleCustomerIds,
+              )
+              const residualSums = Array.from(
+                { length: 38 },
+                (_, index) => 86 + index,
+              )
+              const unresolvedCompanionCosts = new Set([
+                9, 11, 16, 18, 19, 20, 22, 37, 42, 43, 44, 45, 46,
+                47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59,
+                60, 61, 62,
+              ])
+              const pairCandidates = groups.flatMap((group, groupIndex) => {
+                if (groupIndex === fixedGroupIndex) return []
+                const residualEligibleCustomerIds = group.eligibleCustomerIds.filter(
+                  (customerId) => !fixedCustomerSet.has(customerId),
+                )
+                return residualEligibleCustomerIds.length >= 4
+                  ? [{ groupIndex, ingredientCost: group.ingredientCost }]
+                  : []
+              })
+              let cellCount = 0
+              for (const extraOneCostSum of residualSums) {
+                const companionCosts = new Set<number>()
+                for (let leftIndex = 0; leftIndex < pairCandidates.length; leftIndex += 1) {
+                  const left = pairCandidates[leftIndex]
+                  for (let rightIndex = leftIndex + 1; rightIndex < pairCandidates.length; rightIndex += 1) {
+                    const right = pairCandidates[rightIndex]
+                    if (left.ingredientCost + right.ingredientCost !== extraOneCostSum) continue
+                    if (unresolvedCompanionCosts.has(left.ingredientCost)) {
+                      companionCosts.add(left.ingredientCost)
+                    }
+                    if (unresolvedCompanionCosts.has(right.ingredientCost)) {
+                      companionCosts.add(right.ingredientCost)
+                    }
+                  }
+                }
+                for (const companionCost of [...companionCosts].sort((a, b) => a - b)) {
+                  const exactPairs: Array<[number, number]> = []
+                  for (let leftIndex = 0; leftIndex < pairCandidates.length; leftIndex += 1) {
+                    const left = pairCandidates[leftIndex]
+                    for (let rightIndex = leftIndex + 1; rightIndex < pairCandidates.length; rightIndex += 1) {
+                      const right = pairCandidates[rightIndex]
+                      if (left.ingredientCost + right.ingredientCost !== extraOneCostSum) continue
+                      if (left.ingredientCost !== companionCost && right.ingredientCost !== companionCost) continue
+                      exactPairs.push([left.groupIndex, right.groupIndex])
+                    }
+                  }
+                  cellCount += 1
+                  console.info(
+                    '[machine-extra1-current-pair-count]',
+                    JSON.stringify({
+                      fixedGroupIndex,
+                      extraOneCostSum,
+                      companionCost,
+                      pairCount: exactPairs.length,
+                    }),
+                  )
+                }
+              }
+              console.info(
+                '[machine-extra1-current-pair-count-summary]',
+                JSON.stringify({ fixedGroupIndex, cellCount }),
+              )
+              expect(cellCount).toBeGreaterThan(0)
+            },
+            120000,
+          )
+          EOF
       - name: Run current exact pair-count routing diagnostic
         env:
-          MACHINE_CONTINUATION_HALL_SIGNATURE: '1'
+          MACHINE_CONTINUATION_PROFILE: '1'
+          MACHINE_CONTINUATION_PARTIAL_GROUPS: 'pair-count'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'profiles Hall-closure membership signatures for unresolved 3\+1\+1 support' 2>&1 | tee identity-336-current-pair-counts.log
-          grep -F '[machine-extra1-current-pair-count]' identity-336-current-pair-counts.log | tee identity-336-current-pair-counts-only.log
-          test "$(wc -l < identity-336-current-pair-counts-only.log)" -eq 95
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'lists current identity 334 exact pair counts' 2>&1 | tee identity-334-current-pair-counts.log
+          grep -F '[machine-extra1-current-pair-count]' identity-334-current-pair-counts.log | tee identity-334-current-pair-counts-only.log
+          grep -F '[machine-extra1-current-pair-count-summary]' identity-334-current-pair-counts.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: identity-336-current-exact-pair-counts
+          name: identity-334-current-exact-pair-counts
           path: |
-            identity-336-current-pair-counts.log
-            identity-336-current-pair-counts-only.log
+            identity-334-current-pair-counts.log
+            identity-334-current-pair-counts-only.log
           if-no-files-found: error
