@@ -1,35 +1,26 @@
-name: Identity 334 fourteen-pair exact cells
+name: Identity 334 sixteen-pair exact cells
 on:
   pull_request:
 jobs:
-  identity-334-fourteen-pair-exact-cell:
+  identity-334-sixteen-pair-exact-cell:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - sum: 87
-            companion: 59
-            expected_full: 14
-          - sum: 94
+          - sum: 92
             companion: 60
-            expected_full: 14
+            expected_full: 16
+          - sum: 93
+            companion: 61
+            expected_full: 16
           - sum: 95
-            companion: 61
-            expected_full: 14
-          - sum: 119
-            companion: 59
-            expected_full: 14
-          - sum: 119
             companion: 60
-            expected_full: 14
-          - sum: 120
-            companion: 59
-            expected_full: 14
-          - sum: 120
+            expected_full: 16
+          - sum: 96
             companion: 61
-            expected_full: 14
+            expected_full: 16
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
