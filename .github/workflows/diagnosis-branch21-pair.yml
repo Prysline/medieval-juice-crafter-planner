@@ -9,26 +9,26 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - sum: 107
+          - sum: 104
             companion: 56
             start: 0
             end: 220
             expected_selected: 220
-          - sum: 107
+          - sum: 104
             companion: 56
             start: 220
             end: 440
             expected_selected: 220
-          - sum: 107
+          - sum: 104
             companion: 56
             start: 440
             end: 660
             expected_selected: 220
-          - sum: 107
+          - sum: 104
             companion: 56
             start: 660
-            end: 819
-            expected_selected: 159
+            end: 840
+            expected_selected: 180
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -61,7 +61,7 @@ jobs:
           chunk_start = int(os.environ['TARGET_START'])
           chunk_end = int(os.environ['TARGET_END'])
           expected_selected = int(os.environ['EXPECTED_SELECTED'])
-          expected_full = 819
+          expected_full = 840
           if chunk_start < 0 or chunk_end <= chunk_start or chunk_end > expected_full:
               raise SystemExit(f'invalid chunk range: {chunk_start}..{chunk_end}')
           if chunk_end - chunk_start != expected_selected:
