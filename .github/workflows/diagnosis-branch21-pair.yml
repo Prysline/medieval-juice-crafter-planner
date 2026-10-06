@@ -9,22 +9,22 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - sum: 105
+          - sum: 107
             companion: 56
             start: 0
             end: 220
             expected_selected: 220
-          - sum: 105
+          - sum: 107
             companion: 56
             start: 220
             end: 440
             expected_selected: 220
-          - sum: 105
+          - sum: 107
             companion: 56
             start: 440
             end: 660
             expected_selected: 220
-          - sum: 105
+          - sum: 107
             companion: 56
             start: 660
             end: 819
