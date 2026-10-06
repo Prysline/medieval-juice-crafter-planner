@@ -1,26 +1,26 @@
-name: Identity 334 tiny exact pair cells
+name: Identity 334 four-pair exact cells
 on:
   pull_request:
 jobs:
-  identity-334-tiny-exact-pair-cell:
+  identity-334-four-pair-exact-cell:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - sum: 122
-            companion: 61
-            expected_full: 1
-          - sum: 86
+          - sum: 88
             companion: 60
-            expected_full: 2
-          - sum: 86
+            expected_full: 4
+          - sum: 89
             companion: 61
-            expected_full: 2
-          - sum: 87
+            expected_full: 4
+          - sum: 121
+            companion: 60
+            expected_full: 4
+          - sum: 121
             companion: 61
-            expected_full: 2
+            expected_full: 4
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
