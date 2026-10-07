@@ -1,25 +1,25 @@
-name: Identity 334 residual pair savius exact split
+name: Identity 334 residual savius branch routing
 on:
   pull_request:
 jobs:
-  identity-334-residual-pair-savius-exact:
+  identity-334-residual-savius-branch-routing:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - choice: 690
-          - choice: 692
+          - savius-choice: 690
+          - savius-choice: 692
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Patch exhaustive savius residual split
+      - name: Patch current-canonical residual branch routing
         env:
-          SAVIUS_CHOICE: ${{ matrix.choice }}
+          SAVIUS_CHOICE: ${{ matrix.savius-choice }}
         run: |
           python - <<'PY'
           import os
@@ -32,67 +32,53 @@ jobs:
           end = text.find(end_marker, start)
           if start < 0 or end < 0:
               raise SystemExit('markers not found')
-          choice = int(os.environ['SAVIUS_CHOICE'])
-          if choice not in (690, 692):
-              raise SystemExit(f'unexpected savius choice {choice}')
+          savius_choice = int(os.environ['SAVIUS_CHOICE'])
+          if savius_choice not in (690, 692):
+              raise SystemExit(f'unexpected savius choice {savius_choice}')
           test = text[start:end]
           lines = [
               '',
               '    const fixedExactGroupIndex = 334',
               '    const fixedExactCustomerSet = new Set(groups[fixedExactGroupIndex].eligibleCustomerIds)',
-              '    const fixedExactCustomers = [...fixedExactCustomerSet]',
+              "    const residualCustomerIds = domain.serviceableCustomerIds.filter((customerId) => !fixedExactCustomerSet.has(customerId) && customerId !== 'savius')",
               '    const requiredPair = [1052, 1070] as const',
-              f'    const saviusChoice = {choice}',
+              f'    const saviusChoice = {savius_choice}',
               "    expect(groups[saviusChoice].eligibleCustomerIds).toContain('savius')",
-              '    const thresholdCounts = [3, 1, 1, 0] as const',
-              '    const supportCuts: number[][] = []',
-              "    let status = 'round-limit'",
-              '    let masterSolveMs = 0',
-              '    let exactSolveMs = 0',
-              '    let exactInfeasibleSupports = 0',
-              '    for (let round = 0; round < 16; round += 1) {',
-              '      const built = build311ExtraCostSumSupportMaster(domain, fixedExactGroupIndex, 89, {',
-              '        supportCuts,',
-              '        includeCustomerFlow: true,',
-              '        forcedCustomerIds: fixedExactCustomers,',
-              '        requiredUsedGroupIndexes: [saviusChoice],',
-              '        requiredExtraOneGroupIndexes: [...requiredPair],',
-              '      })',
-              '      const solved = await solveBounded(built.model, 0.5)',
-              '      masterSolveMs += solved.solveMs',
-              "      if (solved.status === 'infeasible') { status = 'infeasible'; break }",
-              "      if (solved.status !== 'optimal' || !solved.namedSolution) { status = solved.status; break }",
-              '      const support = groups.flatMap((_group, groupIndex) => {',
-              "        const raw = solved.namedSolution!.get(`s31su_${groupIndex}`)",
-              "        return typeof raw === 'number' && Number.isFinite(raw) && raw > 0.5 ? [groupIndex] : []",
-              '      })',
-              "      if (support.length !== 30) throw new Error(`Expected 30 support groups, got ${support.length}`)",
-              "      const exact = buildFinalizing30MaskPartitionStage(domain, new Set<ProductionStepKind>(['juicing', 'seasoning', 'blending']), thresholdCounts, { max: 76 }, 0, new Set(support))",
-              '      const exactSolved = await solveBounded(exact.model, 3)',
-              '      exactSolveMs += exactSolved.solveMs',
-              "      if (exactSolved.status === 'infeasible') { exactInfeasibleSupports += 1; supportCuts.push(support); status = 'exact-infeasible-support'; continue }",
-              "      if (exactSolved.status === 'optimal') { status = 'global-witness'; break }",
-              "      status = `exact-${exactSolved.status}`",
-              '      break',
+              '    const alreadyRequiredUsedGroupIndexes = new Set<number>([fixedExactGroupIndex, ...requiredPair, saviusChoice])',
+              '    const candidatesForCustomer = (customerId: string) => groups.flatMap((group, candidateGroupIndex) => {',
+              '      if (candidateGroupIndex === fixedExactGroupIndex) return []',
+              '      const residualEligible = group.eligibleCustomerIds.filter((eligibleCustomerId) => !fixedExactCustomerSet.has(eligibleCustomerId))',
+              '      if (!residualEligible.includes(customerId)) return []',
+              '      const normal = residualEligible.length >= 2',
+              '      const slack = group.ingredientCost === SLACK_RECIPE_COST && residualEligible.length >= 1',
+              '      return normal || slack ? [{ groupIndex: candidateGroupIndex, slackOnly: !normal && slack }] : []',
+              '    })',
+              '    const sparseCustomers = residualCustomerIds',
+              '      .map((customerId) => ({ customerId, candidates: candidatesForCustomer(customerId) }))',
+              '      .filter((entry) => entry.candidates.length > 0 && entry.candidates.every((candidate) => !alreadyRequiredUsedGroupIndexes.has(candidate.groupIndex)))',
+              '      .sort((left, right) => left.candidates.length - right.candidates.length || left.customerId.localeCompare(right.customerId))',
+              '    const sparse = sparseCustomers[0]',
+              '    expect(sparse).toBeDefined()',
+              '    if (sparse) {',
+              "      console.info('[machine-extra1-pair-residual-branch-routing]', JSON.stringify({ fixedGroupIndex: fixedExactGroupIndex, extraOneCostSum: 89, companionCost: 53, pair: requiredPair, saviusChoice, sparseCustomer: sparse.customerId, candidateCount: sparse.candidates.length, candidates: sparse.candidates }))",
               '    }',
-              "    console.info('[machine-extra1-pair-residual-choice-result]', JSON.stringify({ fixedGroupIndex: fixedExactGroupIndex, extraOneCostSum: 89, companionCost: 53, pair: requiredPair, sparseCustomer: 'savius', choiceGroupIndex: saviusChoice, status, supportCuts: supportCuts.length, exactInfeasibleSupports, masterSolveMs: Math.round(masterSolveMs), exactSolveMs: Math.round(exactSolveMs) }))",
           ]
           test += '\n'.join(lines)
           path.write_text(text[:start] + test + text[end:])
           PY
-      - name: Run exhaustive savius residual split
+      - name: Run current-canonical residual branch routing
         env:
           MACHINE_CONTINUATION_HALL_SIGNATURE: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'profiles Hall-closure membership signatures for unresolved 3\+1\+1 support' 2>&1 | tee identity-334-residual-pair-savius.log
-          grep -F '[machine-extra1-pair-residual-choice-result]' identity-334-residual-pair-savius.log | tee identity-334-residual-pair-savius-result.log
-          test "$(wc -l < identity-334-residual-pair-savius-result.log)" -eq 1
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'profiles Hall-closure membership signatures for unresolved 3\+1\+1 support' 2>&1 | tee identity-334-residual-branch-routing.log
+          grep -F '[machine-extra1-pair-residual-branch-routing]' identity-334-residual-branch-routing.log | tee identity-334-residual-branch-routing-only.log
+          test "$(wc -l < identity-334-residual-branch-routing-only.log)" -eq 1
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: identity-334-residual-pair-savius-${{ matrix.choice }}
+          name: identity-334-residual-branch-routing-${{ matrix.savius-choice }}
           path: |
-            identity-334-residual-pair-savius.log
-            identity-334-residual-pair-savius-result.log
+            identity-334-residual-branch-routing.log
+            identity-334-residual-branch-routing-only.log
           if-no-files-found: error
