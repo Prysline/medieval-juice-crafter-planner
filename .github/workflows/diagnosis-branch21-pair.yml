@@ -1,126 +1,208 @@
-name: Identity 334 tiffany residual exact audit
+name: Identity 334 tiffany residual branch routing
 on:
   pull_request:
 jobs:
-  audit-identity-334-tiffany-residual-exact:
+  prepare-tiffany-residual-matrix:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
-      - name: Download all 126 source artifacts
+      - name: Build 90-branch residual matrix from exact audit
+        id: matrix
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          mkdir -p artifacts
-          gh api --paginate /repos/Prysline/medieval-juice-crafter-planner/actions/runs/37600058394/artifacts \
-            --jq '.artifacts[] | select(.name | test("^identity-334-[0-9]+-[0-9]+-[0-9]+-tiffany-[0-9]+$")) | [.id, .name] | @tsv' \
-            > artifact-list.tsv
-          test "$(wc -l < artifact-list.tsv)" -eq 126
-          while IFS=$'\t' read -r artifact_id artifact_name; do
-            mkdir -p "artifacts/$artifact_name"
-            curl -fsSL \
-              -H "Authorization: Bearer $GH_TOKEN" \
-              -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/$artifact_id/zip" \
-              -o artifact.zip
-            unzip -q artifact.zip -d "artifacts/$artifact_name"
-          done < artifact-list.tsv
-      - name: Audit 126 Tiffany exact artifacts
+          curl -fsSL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11472388530/zip" \
+            -o exact-audit.zip
+          unzip -q exact-audit.zip -d exact-audit
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+          audit = json.loads(Path('exact-audit/identity-334-tiffany-audit.json').read_text())
+          assert audit['complete'] is True
+          assert audit['statuses'] == {'infeasible': 36, 'timelimit': 90}
+          residuals = audit['branchesByStatus']['timelimit']
+          assert len(residuals) == 90
+          include = [
+              {'residual_branch': f'{o}-{oliver}-{hugo}', 'tiffany_choice': tiffany}
+              for o, oliver, hugo, tiffany in residuals
+          ]
+          print('matrix=' + json.dumps({'include': include}, separators=(',', ':')))
+          PY
+
+  identity-334-tiffany-residual-branch-routing:
+    if: github.head_ref == 'perf/exact-machine-operation-continuation'
+    needs: prepare-tiffany-residual-matrix
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare-tiffany-residual-matrix.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Patch current-canonical Tiffany residual routing
+        env:
+          RESIDUAL_BRANCH: ${{ matrix.residual_branch }}
+          TIFFANY_CHOICE: ${{ matrix.tiffany_choice }}
         run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          path = Path('src/domain/optimizerMachineContinuationProfile.test.ts')
+          text = path.read_text()
+          start_marker = "hallSignatureProfileIt(\n  'profiles Hall-closure membership signatures for unresolved 3+1+1 support',"
+          end_marker = "\n  },\n  120000,\n)\n\n\nfunction build311HallSignatureSupportMaster"
+          start = text.find(start_marker)
+          end = text.find(end_marker, start)
+          if start < 0 or end < 0:
+              raise SystemExit('markers not found')
+          octavius_choice, oliver_choice, hugo_choice = map(int, os.environ['RESIDUAL_BRANCH'].split('-'))
+          tiffany_choice = int(os.environ['TIFFANY_CHOICE'])
+          test = text[start:end]
+          lines = [
+              '',
+              '    const fixedExactGroupIndex = 334',
+              '    const fixedExactCustomerSet = new Set(groups[fixedExactGroupIndex].eligibleCustomerIds)',
+              "    const residualCustomerIds = domain.serviceableCustomerIds.filter((customerId) => !fixedExactCustomerSet.has(customerId) && customerId !== 'savius' && customerId !== 'ambrosia' && customerId !== 'octavius' && customerId !== 'oliver' && customerId !== 'hugo' && customerId !== 'tiffany')",
+              '    const requiredPair = [1052, 1070] as const',
+              '    const saviusChoice = 692',
+              '    const ambrosiaChoice = 1243',
+              f'    const octaviusChoice = {octavius_choice}',
+              f'    const oliverChoice = {oliver_choice}',
+              f'    const hugoChoice = {hugo_choice}',
+              f'    const tiffanyChoice = {tiffany_choice}',
+              "    expect(groups[saviusChoice].eligibleCustomerIds).toContain('savius')",
+              "    expect(groups[ambrosiaChoice].eligibleCustomerIds).toContain('ambrosia')",
+              "    expect(groups[octaviusChoice].eligibleCustomerIds).toContain('octavius')",
+              "    expect(groups[oliverChoice].eligibleCustomerIds).toContain('oliver')",
+              "    expect(groups[hugoChoice].eligibleCustomerIds).toContain('hugo')",
+              "    expect(groups[tiffanyChoice].eligibleCustomerIds).toContain('tiffany')",
+              '    const alreadyRequiredUsedGroupIndexes = new Set<number>([fixedExactGroupIndex, ...requiredPair, saviusChoice, ambrosiaChoice, octaviusChoice, oliverChoice, hugoChoice, tiffanyChoice])',
+              '    const candidatesForCustomer = (customerId: string) => groups.flatMap((group, candidateGroupIndex) => {',
+              '      if (candidateGroupIndex === fixedExactGroupIndex) return []',
+              '      const residualEligible = group.eligibleCustomerIds.filter((eligibleCustomerId) => !fixedExactCustomerSet.has(eligibleCustomerId))',
+              '      if (!residualEligible.includes(customerId)) return []',
+              '      const normal = residualEligible.length >= 2',
+              '      const slack = group.ingredientCost === SLACK_RECIPE_COST && residualEligible.length >= 1',
+              '      return normal || slack ? [{ groupIndex: candidateGroupIndex, slackOnly: !normal && slack }] : []',
+              '    })',
+              '    const sparseCustomers = residualCustomerIds',
+              '      .map((customerId) => ({ customerId, candidates: candidatesForCustomer(customerId) }))',
+              '      .filter((entry) => entry.candidates.length > 0 && entry.candidates.every((candidate) => !alreadyRequiredUsedGroupIndexes.has(candidate.groupIndex)))',
+              '      .sort((left, right) => left.candidates.length - right.candidates.length || left.customerId.localeCompare(right.customerId))',
+              '    const sparse = sparseCustomers[0]',
+              '    expect(sparse).toBeDefined()',
+              '    if (sparse) {',
+              "      console.info('[machine-extra1-pair-tiffany-residual-routing]', JSON.stringify({ fixedGroupIndex: fixedExactGroupIndex, extraOneCostSum: 89, companionCost: 53, pair: requiredPair, saviusChoice, ambrosiaChoice, octaviusChoice, oliverChoice, hugoChoice, tiffanyChoice, sparseCustomer: sparse.customerId, candidateCount: sparse.candidates.length, candidates: sparse.candidates }))",
+              '    }',
+          ]
+          test += '\n'.join(lines)
+          path.write_text(text[:start] + test + text[end:])
+          PY
+      - name: Run current-canonical Tiffany residual routing
+        env:
+          MACHINE_CONTINUATION_HALL_SIGNATURE: '1'
+        run: |
+          set -o pipefail
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'profiles Hall-closure membership signatures for unresolved 3\+1\+1 support' 2>&1 | tee identity-334-tiffany-residual-routing.log
+          grep -F '[machine-extra1-pair-tiffany-residual-routing]' identity-334-tiffany-residual-routing.log > identity-334-tiffany-residual-routing-only.log
+          test "$(wc -l < identity-334-tiffany-residual-routing-only.log)" -eq 1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: identity-334-${{ matrix.residual_branch }}-tiffany-${{ matrix.tiffany_choice }}-routing
+          path: |
+            identity-334-tiffany-residual-routing.log
+            identity-334-tiffany-residual-routing-only.log
+          if-no-files-found: error
+
+  audit-tiffany-residual-routing:
+    if: always()
+    needs: identity-334-tiffany-residual-branch-routing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: identity-334-*-tiffany-*-routing
+          path: routing-artifacts
+      - name: Audit all 90 routing artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -fsSL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11472388530/zip" \
+            -o exact-audit.zip
+          unzip -q exact-audit.zip -d exact-audit
           python - <<'PY'
           import json
           import re
+          from collections import Counter
           from pathlib import Path
 
           ansi = re.compile(r'\x1b\[[0-9;]*m')
-          residuals = [
-              (8,969,385), (8,969,453), (8,969,455),
-              (8,1367,385), (8,1367,453), (8,1367,455),
-              (30,969,452), (30,969,453), (30,969,454), (30,969,455),
-              (30,995,452), (30,995,453), (30,995,454), (30,995,455),
-              (30,1367,385), (30,1367,452), (30,1367,453), (30,1367,455),
-          ]
-          tiffany_choices = [839, 977, 1101, 1135, 1204, 1210, 1213]
-          expected = {(o, l, h, t) for o, l, h in residuals for t in tiffany_choices}
-          seen = {}
+          exact_audit = json.loads(Path('exact-audit/identity-334-tiffany-audit.json').read_text())
+          expected = {tuple(branch) for branch in exact_audit['branchesByStatus']['timelimit']}
+          routes = {}
           malformed = []
-          outer_failures = []
-          result_missing = []
-          statuses = {}
-          branches_by_status = {}
-          support_cut_branches = []
-          exact_attempt_branches = []
-          witnesses = []
-
-          for meta_path in Path('artifacts').rglob('identity-334-hugo-tiffany-branch-audit.json'):
-              try:
-                  meta = json.loads(meta_path.read_text())
-                  o, l, h = map(int, meta['branch'].split('-'))
-                  t = int(meta['tiffanyChoice'])
-                  key = (o, l, h, t)
-                  seen.setdefault(key, []).append(str(meta_path))
-                  if meta.get('vitestExit') != 0:
-                      outer_failures.append({'key': key, 'vitestExit': meta.get('vitestExit')})
-                  if meta.get('resultCount') != 1:
-                      result_missing.append({'key': key, 'resultCount': meta.get('resultCount')})
-                  result_path = meta_path.with_name('identity-334-hugo-tiffany-result.log')
-                  lines = [line for line in result_path.read_text().splitlines() if line.strip()] if result_path.exists() else []
-                  if len(lines) != 1:
-                      continue
-                  marker = '[machine-extra1-pair-hugo-tiffany-result] '
-                  clean = ansi.sub('', lines[0])
-                  marker_index = clean.find(marker)
-                  if marker_index < 0:
-                      malformed.append({'key': key, 'reason': 'missing-result-marker'})
-                      continue
-                  result = json.loads(clean[marker_index + len(marker):])
-                  emitted_key = (result['octaviusChoice'], result['oliverChoice'], result['hugoChoice'], result['tiffanyChoice'])
-                  if emitted_key != key:
-                      malformed.append({'key': key, 'reason': 'branch-identity-mismatch', 'emitted': emitted_key})
-                      continue
-                  status = result['status']
-                  statuses[status] = statuses.get(status, 0) + 1
-                  branches_by_status.setdefault(status, []).append(key)
-                  if result.get('supportCuts', 0) > 0 or result.get('exactInfeasibleSupports', 0) > 0:
-                      support_cut_branches.append({'key': key, 'supportCuts': result.get('supportCuts'), 'exactInfeasibleSupports': result.get('exactInfeasibleSupports')})
-                  if result.get('exactSolveMs', 0) > 0:
-                      exact_attempt_branches.append({'key': key, 'exactSolveMs': result.get('exactSolveMs'), 'status': status})
-                  if status == 'global-witness':
-                      witnesses.append(key)
-              except Exception as error:
-                  malformed.append({'path': str(meta_path), 'reason': repr(error)})
-
-          for status in branches_by_status:
-              branches_by_status[status] = sorted(branches_by_status[status])
-          seen_keys = set(seen)
-          missing = sorted(expected - seen_keys)
-          unexpected = sorted(seen_keys - expected)
-          duplicates = {str(key): paths for key, paths in seen.items() if len(paths) != 1}
+          for result_path in Path('routing-artifacts').rglob('identity-334-tiffany-residual-routing-only.log'):
+              lines = [line for line in result_path.read_text().splitlines() if line.strip()]
+              if len(lines) != 1:
+                  malformed.append({'path': str(result_path), 'reason': f'result-count-{len(lines)}'})
+                  continue
+              clean = ansi.sub('', lines[0])
+              marker = '[machine-extra1-pair-tiffany-residual-routing] '
+              marker_index = clean.find(marker)
+              if marker_index < 0:
+                  malformed.append({'path': str(result_path), 'reason': 'missing-marker'})
+                  continue
+              data = json.loads(clean[marker_index + len(marker):])
+              key = (data['octaviusChoice'], data['oliverChoice'], data['hugoChoice'], data['tiffanyChoice'])
+              if key in routes:
+                  malformed.append({'key': key, 'reason': 'duplicate'})
+                  continue
+              routes[key] = data
+          observed = set(routes)
+          customer_counts = Counter(data['sparseCustomer'] for data in routes.values())
+          signature_counts = Counter(
+              (data['sparseCustomer'], tuple((candidate['groupIndex'], candidate['slackOnly']) for candidate in data['candidates']))
+              for data in routes.values()
+          )
           summary = {
-              'sourceRunId': 37600058394,
-              'sourceHead': 'a7945efd6878bc3237f4d82335f0359ea69a8528',
               'expectedBranches': len(expected),
-              'observedBranches': len(seen_keys),
-              'missingBranches': missing,
-              'unexpectedBranches': unexpected,
-              'duplicateBranches': duplicates,
+              'observedBranches': len(observed),
+              'missingBranches': sorted(expected - observed),
+              'unexpectedBranches': sorted(observed - expected),
               'malformed': malformed,
-              'outerFailures': outer_failures,
-              'resultMissing': result_missing,
-              'statuses': statuses,
-              'branchesByStatus': branches_by_status,
-              'supportCutBranches': support_cut_branches,
-              'fixedSupportExactAttemptBranches': exact_attempt_branches,
-              'witnesses': witnesses,
-              'globalWitnessCount': len(witnesses),
-              'complete': not missing and not unexpected and not duplicates and not malformed and not outer_failures and not result_missing,
+              'sparseCustomerCounts': dict(sorted(customer_counts.items())),
+              'routingSignatures': [
+                  {
+                      'sparseCustomer': customer,
+                      'candidates': [{'groupIndex': group_index, 'slackOnly': slack_only} for group_index, slack_only in candidates],
+                      'branchCount': count,
+                  }
+                  for (customer, candidates), count in sorted(signature_counts.items(), key=lambda item: (item[0][0], item[0][1]))
+              ],
+              'routes': [routes[key] for key in sorted(routes)],
+              'complete': observed == expected and not malformed,
           }
-          Path('identity-334-tiffany-audit.json').write_text(json.dumps(summary, indent=2, sort_keys=True) + '\n')
-          print(json.dumps(summary, indent=2, sort_keys=True))
+          Path('identity-334-tiffany-routing-audit.json').write_text(json.dumps(summary, indent=2, sort_keys=True) + '\n')
+          print(json.dumps({k: v for k, v in summary.items() if k != 'routes'}, indent=2, sort_keys=True))
           PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: identity-334-tiffany-exact-audit
-          path: identity-334-tiffany-audit.json
+          name: identity-334-tiffany-routing-audit
+          path: identity-334-tiffany-routing-audit.json
           if-no-files-found: error
