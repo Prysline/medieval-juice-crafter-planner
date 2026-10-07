@@ -47,6 +47,7 @@ jobs:
           outer_failures = []
           result_missing = []
           statuses = {}
+          branches_by_status = {}
           support_cut_branches = []
           exact_attempt_branches = []
           witnesses = []
@@ -79,6 +80,7 @@ jobs:
                       continue
                   status = result['status']
                   statuses[status] = statuses.get(status, 0) + 1
+                  branches_by_status.setdefault(status, []).append(key)
                   if result.get('supportCuts', 0) > 0 or result.get('exactInfeasibleSupports', 0) > 0:
                       support_cut_branches.append({'key': key, 'supportCuts': result.get('supportCuts'), 'exactInfeasibleSupports': result.get('exactInfeasibleSupports')})
                   if result.get('exactSolveMs', 0) > 0:
@@ -88,6 +90,8 @@ jobs:
               except Exception as error:
                   malformed.append({'path': str(meta_path), 'reason': repr(error)})
 
+          for status in branches_by_status:
+              branches_by_status[status] = sorted(branches_by_status[status])
           seen_keys = set(seen)
           missing = sorted(expected - seen_keys)
           unexpected = sorted(seen_keys - expected)
@@ -104,6 +108,7 @@ jobs:
               'outerFailures': outer_failures,
               'resultMissing': result_missing,
               'statuses': statuses,
+              'branchesByStatus': branches_by_status,
               'supportCutBranches': support_cut_branches,
               'fixedSupportExactAttemptBranches': exact_attempt_branches,
               'witnesses': witnesses,
