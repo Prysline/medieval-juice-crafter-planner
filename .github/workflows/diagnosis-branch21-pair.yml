@@ -1,14 +1,14 @@
-name: Identity 334 heloise residual exact split
+name: Identity 334 heloise residual branch routing
 on:
   pull_request:
 jobs:
-  prepare-heloise-residual-shards:
+  prepare-heloise-residual-routing-shards:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
-      - name: Build 174 residual shards from canonical Dominic audit
+      - name: Build 2786 residual routing branches
         id: matrix
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -17,78 +17,56 @@ jobs:
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11474735976/zip" \
-            -o dominic-audit.zip
-          unzip -q dominic-audit.zip -d dominic-audit
-          curl -fsSL \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11475550320/zip" \
-            -o heloise-routing.zip
-          unzip -q heloise-routing.zip -d heloise-routing
+            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11491020023/zip" \
+            -o heloise-audit.zip
+          unzip -q heloise-audit.zip -d heloise-audit
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import json
           from pathlib import Path
-          exact = json.loads(Path('dominic-audit/identity-334-dominic-exact-audit.json').read_text())
-          routing = json.loads(Path('heloise-routing/identity-334-dominic-routing-audit.json').read_text())
-          assert exact['complete'] is True
-          assert exact['expectedBranches'] == 720
-          assert exact['observedBranches'] == 720
-          assert exact['missingBranches'] == []
-          assert exact['unexpectedBranches'] == []
-          assert exact['malformed'] == []
-          assert exact['outerFailures'] == 0
-          assert exact['statuses'] == {'infeasible': 199, 'timelimit': 521}
-          assert exact['supportCuts'] == 0
-          assert exact['exactInfeasibleSupports'] == 0
-          assert exact['fixedSupportExactAttempts'] == 0
-          assert exact['exactSolveMs'] == 0
-          assert exact['witnessCount'] == 0
-          residuals = exact['branchesByStatus']['timelimit']
-          assert len(residuals) == 521
-          assert routing['complete'] is True
-          assert routing['expectedBranches'] == 521
-          assert routing['observedBranches'] == 521
-          assert routing['missingBranches'] == []
-          assert routing['unexpectedBranches'] == []
-          assert routing['malformed'] == []
-          assert routing['outerFailures'] == 0
-          assert routing['sparseCustomerCounts'] == {'heloise': 521}
-          signatures = routing['routingSignatures']
-          assert len(signatures) == 1
-          signature = signatures[0]
-          assert signature['sparseCustomer'] == 'heloise'
-          assert signature['branchCount'] == 521
-          heloise_choices = [entry['groupIndex'] for entry in signature['candidates']]
-          assert heloise_choices == [13, 15, 43, 44, 45, 46, 47, 1143]
-          assert all(entry['slackOnly'] is False for entry in signature['candidates'])
+
+          audit = json.loads(Path('heloise-audit/identity-334-heloise-exact-audit.json').read_text())
+          assert audit['complete'] is True
+          assert audit['expectedBranches'] == 4168
+          assert audit['observedBranches'] == 4168
+          assert audit['outerFailures'] == 0
+          assert audit['outerTimeouts'] == 0
+          assert audit['statuses'] == {'infeasible': 1382, 'timelimit': 2786}
+          assert audit['supportCuts'] == 0
+          assert audit['exactInfeasibleSupports'] == 0
+          assert audit['fixedSupportExactAttempts'] == 0
+          assert audit['witnessCount'] == 0
+          assert audit['globalWitnessCount'] == 0
+          residuals = audit['branchesByStatus']['timelimit']
+          assert len(residuals) == 2786
           shards = []
-          for shard_index, start in enumerate(range(0, len(residuals), 3), start=1):
-              parents = residuals[start:start + 3]
-              shards.append({'shard': shard_index, 'parents_json': json.dumps(parents, separators=(',', ':'))})
-          assert len(shards) == 174
-          assert sum(len(json.loads(shard['parents_json'])) for shard in shards) == 521
-          assert sum(len(json.loads(shard['parents_json'])) * len(heloise_choices) for shard in shards) == 4168
+          for shard_index, start in enumerate(range(0, len(residuals), 12), start=1):
+              chunk = residuals[start:start + 12]
+              shards.append({
+                  'shard': shard_index,
+                  'branches_json': json.dumps(chunk, separators=(',', ':')),
+              })
+          assert len(shards) == 233
+          assert sum(len(json.loads(shard['branches_json'])) for shard in shards) == 2786
+          assert max(len(json.loads(shard['branches_json'])) for shard in shards) <= 12
           print('matrix=' + json.dumps({'include': shards}, separators=(',', ':')))
           PY
 
-  identity-334-heloise-residual-exact:
+  identity-334-heloise-residual-routing:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
-    needs: prepare-heloise-residual-shards
+    needs: prepare-heloise-residual-routing-shards
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.prepare-heloise-residual-shards.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.prepare-heloise-residual-routing-shards.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Run up to 24 independent Heloise exact branches
+      - name: Route up to twelve current-canonical Heloise residual branches
         env:
-          SHARD_PARENTS: ${{ matrix.parents_json }}
+          SHARD_BRANCHES: ${{ matrix.branches_json }}
           MACHINE_CONTINUATION_HALL_SIGNATURE: '1'
         run: |
           python - <<'PY'
@@ -97,6 +75,7 @@ jobs:
           import re
           import subprocess
           from pathlib import Path
+
           source_path = Path('src/domain/optimizerMachineContinuationProfile.test.ts')
           base_text = source_path.read_text()
           start_marker = "hallSignatureProfileIt(\n  'profiles Hall-closure membership signatures for unresolved 3+1+1 support',"
@@ -107,232 +86,185 @@ jobs:
               raise SystemExit('markers not found')
           base_test = base_text[start:end]
           ansi = re.compile(r'\x1b\[[0-9;]*m')
-          marker = '[machine-extra1-pair-heloise-result] '
-          parents = json.loads(os.environ['SHARD_PARENTS'])
-          assert 1 <= len(parents) <= 3
-          heloise_choices = [13, 15, 43, 44, 45, 46, 47, 1143]
+          marker = '[machine-extra1-pair-heloise-residual-routing] '
+          branches = json.loads(os.environ['SHARD_BRANCHES'])
+          assert 1 <= len(branches) <= 12
           shard_results = []
           had_outer_failure = False
-          ordinal = 0
-          for parent in parents:
-              if len(parent) != 5:
-                  raise SystemExit(f'invalid Dominic residual identity: {parent!r}')
-              octavius_choice, oliver_choice, hugo_choice, tiffany_choice, dominic_choice = parent
-              for heloise_choice in heloise_choices:
-                  ordinal += 1
-                  lines = [
-                      '',
-                      '    const fixedExactGroupIndex = 334',
-                      '    const fixedExactCustomerSet = new Set(groups[fixedExactGroupIndex].eligibleCustomerIds)',
-                      '    const fixedExactCustomers = [...fixedExactCustomerSet]',
-                      '    const requiredPair = [1052, 1070] as const',
-                      '    const saviusChoice = 692',
-                      '    const ambrosiaChoice = 1243',
-                      f'    const octaviusChoice = {octavius_choice}',
-                      f'    const oliverChoice = {oliver_choice}',
-                      f'    const hugoChoice = {hugo_choice}',
-                      f'    const tiffanyChoice = {tiffany_choice}',
-                      f'    const dominicChoice = {dominic_choice}',
-                      f'    const heloiseChoice = {heloise_choice}',
-                      "    expect(groups[saviusChoice].eligibleCustomerIds).toContain('savius')",
-                      "    expect(groups[ambrosiaChoice].eligibleCustomerIds).toContain('ambrosia')",
-                      "    expect(groups[octaviusChoice].eligibleCustomerIds).toContain('octavius')",
-                      "    expect(groups[oliverChoice].eligibleCustomerIds).toContain('oliver')",
-                      "    expect(groups[hugoChoice].eligibleCustomerIds).toContain('hugo')",
-                      "    expect(groups[tiffanyChoice].eligibleCustomerIds).toContain('tiffany')",
-                      "    expect(groups[dominicChoice].eligibleCustomerIds).toContain('dominic')",
-                      "    expect(groups[heloiseChoice].eligibleCustomerIds).toContain('heloise')",
-                      '    const thresholdCounts = [3, 1, 1, 0] as const',
-                      '    const supportCuts: number[][] = []',
-                      "    let status = 'round-limit'",
-                      '    let masterSolveMs = 0',
-                      '    let exactSolveMs = 0',
-                      '    let exactInfeasibleSupports = 0',
-                      '    let fixedSupportExactAttempts = 0',
-                      '    for (let round = 0; round < 16; round += 1) {',
-                      '      const built = build311ExtraCostSumSupportMaster(domain, fixedExactGroupIndex, 89, {',
-                      '        supportCuts,',
-                      '        includeCustomerFlow: true,',
-                      '        forcedCustomerIds: fixedExactCustomers,',
-                      '        requiredUsedGroupIndexes: [fixedExactGroupIndex, ...requiredPair, saviusChoice, ambrosiaChoice, octaviusChoice, oliverChoice, hugoChoice, tiffanyChoice, dominicChoice, heloiseChoice],',
-                      '        requiredExtraOneGroupIndexes: [...requiredPair],',
-                      '      })',
-                      '      const solved = await solveBounded(built.model, 0.5)',
-                      '      masterSolveMs += solved.solveMs',
-                      "      if (solved.status === 'infeasible') { status = 'infeasible'; break }",
-                      "      if (solved.status !== 'optimal' || !solved.namedSolution) { status = solved.status; break }",
-                      '      const support = groups.flatMap((_group, groupIndex) => {',
-                      "        const raw = solved.namedSolution!.get(`s31su_${groupIndex}`)",
-                      "        return typeof raw === 'number' && Number.isFinite(raw) && raw > 0.5 ? [groupIndex] : []",
-                      '      })',
-                      "      if (support.length !== 30) throw new Error(`Expected 30 support groups, got ${support.length}`)",
-                      "      const exact = buildFinalizing30MaskPartitionStage(domain, new Set<ProductionStepKind>(['juicing', 'seasoning', 'blending']), thresholdCounts, { max: 76 }, 0, new Set(support))",
-                      '      fixedSupportExactAttempts += 1',
-                      '      const exactSolved = await solveBounded(exact.model, 3)',
-                      '      exactSolveMs += exactSolved.solveMs',
-                      "      if (exactSolved.status === 'infeasible') { exactInfeasibleSupports += 1; supportCuts.push(support); status = 'exact-infeasible-support'; continue }",
-                      "      if (exactSolved.status === 'optimal') { status = 'global-witness'; break }",
-                      "      status = `exact-${exactSolved.status}`",
-                      '      break',
-                      '    }',
-                      "    console.info('[machine-extra1-pair-heloise-result]', JSON.stringify({ fixedGroupIndex: fixedExactGroupIndex, extraOneCostSum: 89, companionCost: 53, pair: requiredPair, saviusChoice, ambrosiaChoice, octaviusChoice, oliverChoice, hugoChoice, tiffanyChoice, dominicChoice, heloiseChoice, status, supportCuts: supportCuts.length, exactInfeasibleSupports, fixedSupportExactAttempts, masterSolveMs: Math.round(masterSolveMs), exactSolveMs: Math.round(exactSolveMs) }))",
-                  ]
-                  patched_test = base_test + '\n'.join(lines)
-                  source_path.write_text(base_text[:start] + patched_test + base_text[end:])
-                  command = ['npx', 'vitest', 'run', 'src/domain/optimizerMachineContinuationProfile.test.ts', '--maxWorkers=1', '--minWorkers=1', '-t', r'profiles Hall-closure membership signatures for unresolved 3\+1\+1 support']
-                  try:
-                      completed = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=150)
-                      output = completed.stdout
-                      returncode = completed.returncode
-                      outer_timeout = False
-                  except subprocess.TimeoutExpired as exc:
-                      output = (exc.stdout or '') if isinstance(exc.stdout, str) else (exc.stdout or b'').decode(errors='replace')
-                      returncode = 124
-                      outer_timeout = True
-                  Path(f'branch-{ordinal}.log').write_text(output)
-                  clean_lines = [ansi.sub('', line) for line in output.splitlines()]
-                  marked = [line for line in clean_lines if marker in line]
-                  result = {'octaviusChoice': octavius_choice, 'oliverChoice': oliver_choice, 'hugoChoice': hugo_choice, 'tiffanyChoice': tiffany_choice, 'dominicChoice': dominic_choice, 'heloiseChoice': heloise_choice, 'outerReturnCode': returncode, 'outerTimeout': outer_timeout, 'markerCount': len(marked), 'solver': None}
-                  if len(marked) == 1:
-                      marker_index = marked[0].find(marker)
-                      result['solver'] = json.loads(marked[0][marker_index + len(marker):])
-                  if returncode != 0 or len(marked) != 1:
-                      had_outer_failure = True
-                  shard_results.append(result)
+
+          for ordinal, values in enumerate(branches, start=1):
+              octavius_choice, oliver_choice, hugo_choice, tiffany_choice, dominic_choice, heloise_choice = values
+              lines = [
+                  '',
+                  '    const fixedExactGroupIndex = 334',
+                  '    const fixedExactCustomerSet = new Set(groups[fixedExactGroupIndex].eligibleCustomerIds)',
+                  "    const residualCustomerIds = domain.serviceableCustomerIds.filter((customerId) => !fixedExactCustomerSet.has(customerId) && !['savius', 'ambrosia', 'octavius', 'oliver', 'hugo', 'tiffany', 'dominic', 'heloise'].includes(customerId))",
+                  '    const requiredPair = [1052, 1070] as const',
+                  '    const saviusChoice = 692',
+                  '    const ambrosiaChoice = 1243',
+                  f'    const octaviusChoice = {octavius_choice}',
+                  f'    const oliverChoice = {oliver_choice}',
+                  f'    const hugoChoice = {hugo_choice}',
+                  f'    const tiffanyChoice = {tiffany_choice}',
+                  f'    const dominicChoice = {dominic_choice}',
+                  f'    const heloiseChoice = {heloise_choice}',
+                  "    expect(groups[saviusChoice].eligibleCustomerIds).toContain('savius')",
+                  "    expect(groups[ambrosiaChoice].eligibleCustomerIds).toContain('ambrosia')",
+                  "    expect(groups[octaviusChoice].eligibleCustomerIds).toContain('octavius')",
+                  "    expect(groups[oliverChoice].eligibleCustomerIds).toContain('oliver')",
+                  "    expect(groups[hugoChoice].eligibleCustomerIds).toContain('hugo')",
+                  "    expect(groups[tiffanyChoice].eligibleCustomerIds).toContain('tiffany')",
+                  "    expect(groups[dominicChoice].eligibleCustomerIds).toContain('dominic')",
+                  "    expect(groups[heloiseChoice].eligibleCustomerIds).toContain('heloise')",
+                  '    const alreadyRequiredUsedGroupIndexes = new Set<number>([fixedExactGroupIndex, ...requiredPair, saviusChoice, ambrosiaChoice, octaviusChoice, oliverChoice, hugoChoice, tiffanyChoice, dominicChoice, heloiseChoice])',
+                  '    const candidatesForCustomer = (customerId: string) => groups.flatMap((group, candidateGroupIndex) => {',
+                  '      if (candidateGroupIndex === fixedExactGroupIndex) return []',
+                  '      const residualEligible = group.eligibleCustomerIds.filter((eligibleCustomerId) => !fixedExactCustomerSet.has(eligibleCustomerId))',
+                  '      if (!residualEligible.includes(customerId)) return []',
+                  '      const normal = residualEligible.length >= 2',
+                  '      const slack = group.ingredientCost === SLACK_RECIPE_COST && residualEligible.length >= 1',
+                  '      return normal || slack ? [{ groupIndex: candidateGroupIndex, slackOnly: !normal && slack }] : []',
+                  '    })',
+                  '    const sparseCustomers = residualCustomerIds',
+                  '      .map((customerId) => ({ customerId, candidates: candidatesForCustomer(customerId) }))',
+                  '      .filter((entry) => entry.candidates.length > 0 && entry.candidates.every((candidate) => !alreadyRequiredUsedGroupIndexes.has(candidate.groupIndex)))',
+                  '      .sort((left, right) => left.candidates.length - right.candidates.length || left.customerId.localeCompare(right.customerId))',
+                  '    const sparse = sparseCustomers[0]',
+                  '    expect(sparse).toBeDefined()',
+                  '    if (sparse) {',
+                  "      console.info('[machine-extra1-pair-heloise-residual-routing]', JSON.stringify({ fixedGroupIndex: fixedExactGroupIndex, extraOneCostSum: 89, companionCost: 53, pair: requiredPair, saviusChoice, ambrosiaChoice, octaviusChoice, oliverChoice, hugoChoice, tiffanyChoice, dominicChoice, heloiseChoice, sparseCustomer: sparse.customerId, candidateCount: sparse.candidates.length, candidates: sparse.candidates }))",
+                  '    }',
+              ]
+              source_path.write_text(base_text[:start] + base_test + '\n'.join(lines) + base_text[end:])
+              command = [
+                  'npx', 'vitest', 'run',
+                  'src/domain/optimizerMachineContinuationProfile.test.ts',
+                  '--maxWorkers=1', '--minWorkers=1',
+                  '-t', r'profiles Hall-closure membership signatures for unresolved 3\+1\+1 support',
+              ]
+              try:
+                  completed = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=150)
+                  output = completed.stdout
+                  returncode = completed.returncode
+                  outer_timeout = False
+              except subprocess.TimeoutExpired as exc:
+                  output = (exc.stdout or '') if isinstance(exc.stdout, str) else (exc.stdout or b'').decode(errors='replace')
+                  returncode = 124
+                  outer_timeout = True
+              Path(f'branch-{ordinal}.log').write_text(output)
+              clean_lines = [ansi.sub('', line) for line in output.splitlines()]
+              marked = [line for line in clean_lines if marker in line]
+              result = {
+                  'branch': values,
+                  'outerReturnCode': returncode,
+                  'outerTimeout': outer_timeout,
+                  'markerCount': len(marked),
+                  'routing': None,
+              }
+              if len(marked) == 1:
+                  marker_index = marked[0].find(marker)
+                  result['routing'] = json.loads(marked[0][marker_index + len(marker):])
+              if returncode != 0 or len(marked) != 1:
+                  had_outer_failure = True
+              shard_results.append(result)
+
           source_path.write_text(base_text)
-          expected_count = len(parents) * len(heloise_choices)
-          assert ordinal == expected_count
-          assert len(shard_results) == expected_count
-          Path('shard-results.json').write_text(json.dumps(shard_results, indent=2, sort_keys=True) + '\n')
+          Path('routing-results.json').write_text(json.dumps(shard_results, indent=2, sort_keys=True) + '\n')
           if had_outer_failure:
-              raise SystemExit('one or more Heloise branch outer runs failed or emitted an invalid result count')
+              raise SystemExit('one or more routing branches failed or emitted an invalid result count')
           PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: identity-334-heloise-shard-${{ matrix.shard }}
+          name: identity-334-heloise-routing-shard-${{ matrix.shard }}
           path: |
-            shard-results.json
+            routing-results.json
             branch-*.log
           if-no-files-found: error
 
-  audit-heloise-residual-exact:
+  audit-heloise-residual-routing:
     if: always()
-    needs: identity-334-heloise-residual-exact
+    needs: identity-334-heloise-residual-routing
     runs-on: ubuntu-latest
     steps:
-      - name: Download all 174 Heloise shard artifacts safely
+      - name: Download all routing shard artifacts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh run download "$GITHUB_RUN_ID" --repo Prysline/medieval-juice-crafter-planner --pattern 'identity-334-heloise-shard-*' --dir heloise-shards
-          test "$(find heloise-shards -name shard-results.json | wc -l)" -eq 174
+          gh run download "$GITHUB_RUN_ID" --repo Prysline/medieval-juice-crafter-planner --pattern 'identity-334-heloise-routing-shard-*' --dir routing-shards
+          test "$(find routing-shards -name routing-results.json | wc -l)" -eq 233
           curl -fsSL \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11474735976/zip" \
-            -o dominic-audit.zip
-          unzip -q dominic-audit.zip -d dominic-audit
-          curl -fsSL \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11475550320/zip" \
-            -o heloise-routing.zip
-          unzip -q heloise-routing.zip -d heloise-routing
-      - name: Audit all 4,168 Heloise exact branches
+            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11491020023/zip" \
+            -o heloise-audit.zip
+          unzip -q heloise-audit.zip -d heloise-audit
+      - name: Audit 2786 current-canonical routing results
         run: |
           python - <<'PY'
           import json
-          from collections import Counter
+          from collections import Counter, defaultdict
           from pathlib import Path
+
           results = {}
           malformed = []
-          duplicates = []
-          statuses = Counter()
           outer_failures = []
-          support_cuts = 0
-          exact_infeasible_supports = 0
-          fixed_support_attempts = 0
-          exact_solve_ms = 0
-          witnesses = []
-          shard_files = list(Path('heloise-shards').rglob('shard-results.json'))
-          if len(shard_files) != 174:
-              malformed.append({'reason': 'shard-result-count', 'count': len(shard_files)})
-          for path in shard_files:
+          sparse_counts = Counter()
+          signature_counts = defaultdict(int)
+
+          files = list(Path('routing-shards').rglob('routing-results.json'))
+          if len(files) != 233:
+              malformed.append({'reason': 'shard-result-count', 'count': len(files)})
+          for path in files:
               entries = json.loads(path.read_text())
-              if len(entries) not in (8, 16, 24):
+              if not 1 <= len(entries) <= 12:
                   malformed.append({'path': str(path), 'reason': 'branch-count', 'count': len(entries)})
               for entry in entries:
-                  key = (entry['octaviusChoice'], entry['oliverChoice'], entry['hugoChoice'], entry['tiffanyChoice'], entry['dominicChoice'], entry['heloiseChoice'])
+                  key = tuple(entry['branch'])
                   if key in results:
-                      duplicates.append(list(key))
+                      malformed.append({'key': key, 'reason': 'duplicate'})
                       continue
                   results[key] = entry
-                  if entry['outerReturnCode'] != 0 or entry['outerTimeout'] or entry['markerCount'] != 1 or entry['solver'] is None:
+                  if entry['outerReturnCode'] != 0 or entry['outerTimeout'] or entry['markerCount'] != 1 or entry['routing'] is None:
                       outer_failures.append(entry)
                       continue
-                  solver = entry['solver']
-                  statuses[solver['status']] += 1
-                  support_cuts += solver['supportCuts']
-                  exact_infeasible_supports += solver['exactInfeasibleSupports']
-                  fixed_support_attempts += solver['fixedSupportExactAttempts']
-                  exact_solve_ms += solver['exactSolveMs']
-                  if solver['status'] == 'global-witness':
-                      witnesses.append(solver)
-          exact = json.loads(Path('dominic-audit/identity-334-dominic-exact-audit.json').read_text())
-          routing = json.loads(Path('heloise-routing/identity-334-dominic-routing-audit.json').read_text())
-          assert exact['complete'] is True
-          assert exact['statuses'] == {'infeasible': 199, 'timelimit': 521}
-          residuals = exact['branchesByStatus']['timelimit']
-          assert len(residuals) == 521
-          assert routing['complete'] is True
-          assert routing['sparseCustomerCounts'] == {'heloise': 521}
-          signatures = routing['routingSignatures']
-          assert len(signatures) == 1
-          signature = signatures[0]
-          assert signature['sparseCustomer'] == 'heloise'
-          heloise_choices = [entry['groupIndex'] for entry in signature['candidates']]
-          assert heloise_choices == [13, 15, 43, 44, 45, 46, 47, 1143]
-          assert all(entry['slackOnly'] is False for entry in signature['candidates'])
-          expected = {(o, oliver, hugo, tiffany, dominic, heloise) for o, oliver, hugo, tiffany, dominic in residuals for heloise in heloise_choices}
+                  routing = entry['routing']
+                  sparse_counts[routing['sparseCustomer']] += 1
+                  signature_key = json.dumps({
+                      'sparseCustomer': routing['sparseCustomer'],
+                      'candidates': routing['candidates'],
+                  }, sort_keys=True, separators=(',', ':'))
+                  signature_counts[signature_key] += 1
+
+          audit = json.loads(Path('heloise-audit/identity-334-heloise-exact-audit.json').read_text())
+          expected = {tuple(branch) for branch in audit['branchesByStatus']['timelimit']}
+          assert len(expected) == 2786
           observed = set(results)
-          outer_timeout_count = sum(1 for entry in outer_failures if entry.get('outerTimeout'))
+          signatures = []
+          for signature_key, count in sorted(signature_counts.items()):
+              signature = json.loads(signature_key)
+              signature['branchCount'] = count
+              signatures.append(signature)
           summary = {
-              'sourceDominicAuditRunId': 37604943047,
-              'sourceHeloiseRoutingRunId': 37605206455,
-              'expectedBranches': len(expected),
+              'sourceHeloiseExactRunId': 37630921128,
+              'expectedBranches': 2786,
               'observedBranches': len(observed),
-              'missingBranches': [list(key) for key in sorted(expected - observed)],
-              'unexpectedBranches': [list(key) for key in sorted(observed - expected)],
-              'duplicateBranches': duplicates,
+              'missingBranches': sorted(expected - observed),
+              'unexpectedBranches': sorted(observed - expected),
               'malformed': malformed,
               'outerFailures': len(outer_failures),
-              'outerTimeouts': outer_timeout_count,
-              'statuses': dict(sorted(statuses.items())),
-              'timelimitBranches': statuses.get('timelimit', 0),
-              'roundLimitBranches': statuses.get('round-limit', 0),
-              'masterTimeoutBranches': statuses.get('timelimit', 0),
-              'fixedSupportTimeoutBranches': statuses.get('exact-timelimit', 0),
-              'supportCuts': support_cuts,
-              'exactInfeasibleSupports': exact_infeasible_supports,
-              'fixedSupportExactAttempts': fixed_support_attempts,
-              'exactSolveMs': exact_solve_ms,
-              'witnessCount': len(witnesses),
-              'globalWitnessCount': statuses.get('global-witness', 0),
-              'witnesses': witnesses,
-              'complete': len(expected) == 4168 and observed == expected and not duplicates and not malformed and not outer_failures,
-              'branchesByStatus': {status: [list(key) for key, entry in sorted(results.items()) if entry.get('solver', {}).get('status') == status] for status in sorted(statuses)},
+              'sparseCustomerCounts': dict(sorted(sparse_counts.items())),
+              'routingSignatures': signatures,
+              'complete': observed == expected and not malformed and not outer_failures,
           }
-          Path('identity-334-heloise-exact-audit.json').write_text(json.dumps(summary, indent=2, sort_keys=True) + '\n')
-          print(json.dumps({k: v for k, v in summary.items() if k not in ('branchesByStatus', 'witnesses')}, indent=2, sort_keys=True))
-          assert summary['expectedBranches'] == 4168
+          Path('identity-334-heloise-routing-audit.json').write_text(json.dumps(summary, indent=2, sort_keys=True) + '\n')
+          print(json.dumps(summary, indent=2, sort_keys=True))
           assert summary['complete'] is True
           PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: identity-334-heloise-exact-audit
-          path: identity-334-heloise-exact-audit.json
+          name: identity-334-heloise-routing-audit
+          path: identity-334-heloise-routing-audit.json
           if-no-files-found: error
