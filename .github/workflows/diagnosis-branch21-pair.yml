@@ -1,282 +1,17 @@
-name: Identity 334 dominic residual exact split
+name: Identity 334 dominic residual exact audit
 on:
   pull_request:
 jobs:
-  prepare-dominic-residual-shards:
-    if: github.head_ref == 'perf/exact-machine-operation-continuation'
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.matrix.outputs.matrix }}
-    steps:
-      - name: Build 240 three-branch Dominic exact shards
-        id: matrix
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          curl -fsSL \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11472388530/zip" \
-            -o exact-audit.zip
-          unzip -q exact-audit.zip -d exact-audit
-          curl -fsSL \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11472803512/zip" \
-            -o routing-audit.zip
-          unzip -q routing-audit.zip -d routing-audit
-          python - <<'PY' >> "$GITHUB_OUTPUT"
-          import json
-          from pathlib import Path
-
-          exact = json.loads(Path('exact-audit/identity-334-tiffany-audit.json').read_text())
-          routing = json.loads(Path('routing-audit/identity-334-tiffany-routing-audit.json').read_text())
-          assert exact['complete'] is True
-          assert exact['statuses'] == {'infeasible': 36, 'timelimit': 90}
-          residuals = exact['branchesByStatus']['timelimit']
-          assert len(residuals) == 90
-          assert routing['complete'] is True
-          assert routing['expectedBranches'] == 90
-          assert routing['observedBranches'] == 90
-          assert routing['sparseCustomerCounts'] == {'dominic': 90}
-          signatures = routing['routingSignatures']
-          assert len(signatures) == 1
-          signature = signatures[0]
-          assert signature['sparseCustomer'] == 'dominic'
-          assert signature['branchCount'] == 90
-          dominic_choices = [entry['groupIndex'] for entry in signature['candidates']]
-          assert dominic_choices == [599, 868, 885, 891, 894, 895, 896, 897]
-          assert all(entry['slackOnly'] is False for entry in signature['candidates'])
-
-          branches = [
-              {
-                  'octaviusChoice': o,
-                  'oliverChoice': oliver,
-                  'hugoChoice': hugo,
-                  'tiffanyChoice': tiffany,
-                  'dominicChoice': dominic,
-              }
-              for o, oliver, hugo, tiffany in residuals
-              for dominic in dominic_choices
-          ]
-          assert len(branches) == 720
-          shards = [
-              {
-                  'shard': shard_index + 1,
-                  'branches_json': json.dumps(branches[shard_index * 3:(shard_index + 1) * 3], separators=(',', ':')),
-              }
-              for shard_index in range(240)
-          ]
-          assert all(len(json.loads(shard['branches_json'])) == 3 for shard in shards)
-          print('matrix=' + json.dumps({'include': shards}, separators=(',', ':')))
-          PY
-
-  identity-334-dominic-residual-exact:
-    if: github.head_ref == 'perf/exact-machine-operation-continuation'
-    needs: prepare-dominic-residual-shards
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.prepare-dominic-residual-shards.outputs.matrix) }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: npm install
-      - name: Run three Dominic residual exact branches
-        env:
-          SHARD_BRANCHES: ${{ matrix.branches_json }}
-          MACHINE_CONTINUATION_HALL_SIGNATURE: '1'
-        run: |
-          python - <<'PY'
-          import json
-          import os
-          import re
-          import subprocess
-          from pathlib import Path
-
-          source_path = Path('src/domain/optimizerMachineContinuationProfile.test.ts')
-          base_text = source_path.read_text()
-          start_marker = "hallSignatureProfileIt(\n  'profiles Hall-closure membership signatures for unresolved 3+1+1 support',"
-          end_marker = "\n  },\n  120000,\n)\n\n\nfunction build311HallSignatureSupportMaster"
-          start = base_text.find(start_marker)
-          end = base_text.find(end_marker, start)
-          if start < 0 or end < 0:
-              raise SystemExit('markers not found')
-          base_test = base_text[start:end]
-          ansi = re.compile(r'\x1b\[[0-9;]*m')
-          marker = '[machine-extra1-pair-dominic-result] '
-          branches = json.loads(os.environ['SHARD_BRANCHES'])
-          assert len(branches) == 3
-          shard_results = []
-          had_outer_failure = False
-
-          for ordinal, branch in enumerate(branches, start=1):
-              octavius_choice = branch['octaviusChoice']
-              oliver_choice = branch['oliverChoice']
-              hugo_choice = branch['hugoChoice']
-              tiffany_choice = branch['tiffanyChoice']
-              dominic_choice = branch['dominicChoice']
-              lines = [
-                  '',
-                  '    const fixedExactGroupIndex = 334',
-                  '    const fixedExactCustomerSet = new Set(groups[fixedExactGroupIndex].eligibleCustomerIds)',
-                  '    const fixedExactCustomers = [...fixedExactCustomerSet]',
-                  '    const requiredPair = [1052, 1070] as const',
-                  '    const saviusChoice = 692',
-                  '    const ambrosiaChoice = 1243',
-                  f'    const octaviusChoice = {octavius_choice}',
-                  f'    const oliverChoice = {oliver_choice}',
-                  f'    const hugoChoice = {hugo_choice}',
-                  f'    const tiffanyChoice = {tiffany_choice}',
-                  f'    const dominicChoice = {dominic_choice}',
-                  "    expect(groups[saviusChoice].eligibleCustomerIds).toContain('savius')",
-                  "    expect(groups[ambrosiaChoice].eligibleCustomerIds).toContain('ambrosia')",
-                  "    expect(groups[octaviusChoice].eligibleCustomerIds).toContain('octavius')",
-                  "    expect(groups[oliverChoice].eligibleCustomerIds).toContain('oliver')",
-                  "    expect(groups[hugoChoice].eligibleCustomerIds).toContain('hugo')",
-                  "    expect(groups[tiffanyChoice].eligibleCustomerIds).toContain('tiffany')",
-                  "    expect(groups[dominicChoice].eligibleCustomerIds).toContain('dominic')",
-                  '    const thresholdCounts = [3, 1, 1, 0] as const',
-                  '    const supportCuts: number[][] = []',
-                  "    let status = 'round-limit'",
-                  '    let masterSolveMs = 0',
-                  '    let exactSolveMs = 0',
-                  '    let exactInfeasibleSupports = 0',
-                  '    let fixedSupportExactAttempts = 0',
-                  '    for (let round = 0; round < 16; round += 1) {',
-                  '      const built = build311ExtraCostSumSupportMaster(domain, fixedExactGroupIndex, 89, {',
-                  '        supportCuts,',
-                  '        includeCustomerFlow: true,',
-                  '        forcedCustomerIds: fixedExactCustomers,',
-                  '        requiredUsedGroupIndexes: [saviusChoice, ambrosiaChoice, octaviusChoice, oliverChoice, hugoChoice, tiffanyChoice, dominicChoice],',
-                  '        requiredExtraOneGroupIndexes: [...requiredPair],',
-                  '      })',
-                  '      const solved = await solveBounded(built.model, 0.5)',
-                  '      masterSolveMs += solved.solveMs',
-                  "      if (solved.status === 'infeasible') { status = 'infeasible'; break }",
-                  "      if (solved.status !== 'optimal' || !solved.namedSolution) { status = solved.status; break }",
-                  '      const support = groups.flatMap((_group, groupIndex) => {',
-                  "        const raw = solved.namedSolution!.get(`s31su_${groupIndex}`)",
-                  "        return typeof raw === 'number' && Number.isFinite(raw) && raw > 0.5 ? [groupIndex] : []",
-                  '      })',
-                  "      if (support.length !== 30) throw new Error(`Expected 30 support groups, got ${support.length}`)",
-                  "      const exact = buildFinalizing30MaskPartitionStage(domain, new Set<ProductionStepKind>(['juicing', 'seasoning', 'blending']), thresholdCounts, { max: 76 }, 0, new Set(support))",
-                  '      fixedSupportExactAttempts += 1',
-                  '      const exactSolved = await solveBounded(exact.model, 3)',
-                  '      exactSolveMs += exactSolved.solveMs',
-                  "      if (exactSolved.status === 'infeasible') { exactInfeasibleSupports += 1; supportCuts.push(support); status = 'exact-infeasible-support'; continue }",
-                  "      if (exactSolved.status === 'optimal') { status = 'global-witness'; break }",
-                  "      status = `exact-${exactSolved.status}`",
-                  '      break',
-                  '    }',
-                  "    console.info('[machine-extra1-pair-dominic-result]', JSON.stringify({ fixedGroupIndex: fixedExactGroupIndex, extraOneCostSum: 89, companionCost: 53, pair: requiredPair, saviusChoice, ambrosiaChoice, octaviusChoice, oliverChoice, hugoChoice, tiffanyChoice, dominicChoice, status, supportCuts: supportCuts.length, exactInfeasibleSupports, fixedSupportExactAttempts, masterSolveMs: Math.round(masterSolveMs), exactSolveMs: Math.round(exactSolveMs) }))",
-              ]
-              patched_test = base_test + '\n'.join(lines)
-              source_path.write_text(base_text[:start] + patched_test + base_text[end:])
-              command = [
-                  'npx', 'vitest', 'run',
-                  'src/domain/optimizerMachineContinuationProfile.test.ts',
-                  '--maxWorkers=1', '--minWorkers=1',
-                  '-t', r'profiles Hall-closure membership signatures for unresolved 3\+1\+1 support',
-              ]
-              try:
-                  completed = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=150)
-                  output = completed.stdout
-                  returncode = completed.returncode
-                  outer_timeout = False
-              except subprocess.TimeoutExpired as exc:
-                  output = (exc.stdout or '') if isinstance(exc.stdout, str) else (exc.stdout or b'').decode(errors='replace')
-                  returncode = 124
-                  outer_timeout = True
-              log_path = Path(f'branch-{ordinal}.log')
-              log_path.write_text(output)
-              clean_lines = [ansi.sub('', line) for line in output.splitlines()]
-              marked = [line for line in clean_lines if marker in line]
-              result = {
-                  **branch,
-                  'outerReturnCode': returncode,
-                  'outerTimeout': outer_timeout,
-                  'markerCount': len(marked),
-              }
-              if len(marked) == 1:
-                  marker_index = marked[0].find(marker)
-                  result['solver'] = json.loads(marked[0][marker_index + len(marker):])
-              else:
-                  result['solver'] = None
-              if returncode != 0 or len(marked) != 1:
-                  had_outer_failure = True
-              shard_results.append(result)
-
-          source_path.write_text(base_text)
-          Path('shard-results.json').write_text(json.dumps(shard_results, indent=2, sort_keys=True) + '\n')
-          if had_outer_failure:
-              raise SystemExit('one or more branch outer runs failed or emitted an invalid result count')
-          PY
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: identity-334-dominic-shard-${{ matrix.shard }}
-          path: |
-            shard-results.json
-            branch-*.log
-          if-no-files-found: error
-
   audit-dominic-residual-exact:
-    if: always()
-    needs: identity-334-dominic-residual-exact
+    if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     steps:
-      - name: Download all 240 shard artifacts
+      - name: Download all 240 source shard artifacts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python - <<'PY'
-          import json
-          import os
-          import re
-          import urllib.request
-          import zipfile
-          from pathlib import Path
-
-          repo = 'Prysline/medieval-juice-crafter-planner'
-          run_id = os.environ['GITHUB_RUN_ID']
-          token = os.environ['GH_TOKEN']
-          headers = {
-              'Authorization': f'Bearer {token}',
-              'Accept': 'application/vnd.github+json',
-              'X-GitHub-Api-Version': '2022-11-28',
-              'User-Agent': 'dominic-exact-audit',
-          }
-          artifacts = []
-          for page in range(1, 10):
-              req = urllib.request.Request(
-                  f'https://api.github.com/repos/{repo}/actions/runs/{run_id}/artifacts?per_page=100&page={page}',
-                  headers=headers,
-              )
-              with urllib.request.urlopen(req) as response:
-                  data = json.load(response)
-              artifacts.extend(data['artifacts'])
-              if len(data['artifacts']) < 100:
-                  break
-          shards = [a for a in artifacts if re.fullmatch(r'identity-334-dominic-shard-\d+', a['name'])]
-          assert len(shards) == 240, f'expected 240 shard artifacts, got {len(shards)}'
-          out = Path('dominic-shards')
-          out.mkdir()
-          for artifact in shards:
-              req = urllib.request.Request(artifact['archive_download_url'], headers=headers)
-              zip_path = out / f"{artifact['id']}.zip"
-              with urllib.request.urlopen(req) as response, zip_path.open('wb') as target:
-                  target.write(response.read())
-              artifact_dir = out / str(artifact['id'])
-              artifact_dir.mkdir()
-              with zipfile.ZipFile(zip_path) as archive:
-                  archive.extractall(artifact_dir)
-              zip_path.unlink()
-          PY
+          gh run download 37603350033 --repo Prysline/medieval-juice-crafter-planner --pattern 'identity-334-dominic-shard-*' --dir dominic-shards
+          test "$(find dominic-shards -name shard-results.json | wc -l)" -eq 240
           curl -fsSL \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
@@ -310,11 +45,8 @@ jobs:
                   malformed.append({'path': str(path), 'reason': 'branch-count', 'count': len(entries)})
               for entry in entries:
                   key = (
-                      entry['octaviusChoice'],
-                      entry['oliverChoice'],
-                      entry['hugoChoice'],
-                      entry['tiffanyChoice'],
-                      entry['dominicChoice'],
+                      entry['octaviusChoice'], entry['oliverChoice'], entry['hugoChoice'],
+                      entry['tiffanyChoice'], entry['dominicChoice'],
                   )
                   if key in results:
                       malformed.append({'key': key, 'reason': 'duplicate'})
@@ -345,12 +77,17 @@ jobs:
           }
           observed = set(results)
           summary = {
+              'sourceRunId': 37603350033,
               'expectedBranches': len(expected),
               'observedBranches': len(observed),
               'missingBranches': sorted(expected - observed),
               'unexpectedBranches': sorted(observed - expected),
               'malformed': malformed,
               'outerFailures': len(outer_failures),
+              'outerFailureBranches': [
+                  [e['octaviusChoice'], e['oliverChoice'], e['hugoChoice'], e['tiffanyChoice'], e['dominicChoice']]
+                  for e in outer_failures
+              ],
               'statuses': dict(sorted(statuses.items())),
               'supportCuts': support_cuts,
               'exactInfeasibleSupports': exact_infeasible_supports,
