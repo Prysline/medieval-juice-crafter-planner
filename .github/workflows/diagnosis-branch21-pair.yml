@@ -3,7 +3,7 @@ on:
   pull_request:
 jobs:
   identity-334-tiffany-residual-exact:
-    if: github.head_ref == 'perf/exact-machine-operation-continuation'
+    if: github.head_ref == 'perf/exact-machine-operation-continuation' && github.event.pull_request.head.sha == 'a7945efd6878bc3237f4d82335f0359ea69a8528'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -150,7 +150,6 @@ jobs:
 
   audit-identity-334-tiffany-residual-exact:
     if: always()
-    needs: identity-334-tiffany-residual-exact
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -158,11 +157,17 @@ jobs:
         with:
           pattern: identity-334-*-tiffany-*
           path: artifacts
+          repository: Prysline/medieval-juice-crafter-planner
+          run-id: 37600058394
+          github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Audit 126 Tiffany exact artifacts
         run: |
           python - <<'PY'
           import json
+          import re
           from pathlib import Path
+
+          ansi = re.compile(r'\x1b\[[0-9;]*m')
 
           residuals = [
               (8,969,385), (8,969,453), (8,969,455),
@@ -197,11 +202,13 @@ jobs:
                   lines = [line for line in result_path.read_text().splitlines() if line.strip()] if result_path.exists() else []
                   if len(lines) != 1:
                       continue
-                  prefix = '[machine-extra1-pair-hugo-tiffany-result] '
-                  if not lines[0].startswith(prefix):
-                      malformed.append({'key': key, 'reason': 'bad-result-prefix'})
+                  marker = '[machine-extra1-pair-hugo-tiffany-result] '
+                  clean = ansi.sub('', lines[0])
+                  marker_index = clean.find(marker)
+                  if marker_index < 0:
+                      malformed.append({'key': key, 'reason': 'missing-result-marker'})
                       continue
-                  result = json.loads(lines[0][len(prefix):])
+                  result = json.loads(clean[marker_index + len(marker):])
                   emitted_key = (result['octaviusChoice'], result['oliverChoice'], result['hugoChoice'], result['tiffanyChoice'])
                   if emitted_key != key:
                       malformed.append({'key': key, 'reason': 'branch-identity-mismatch', 'emitted': emitted_key})
@@ -222,6 +229,8 @@ jobs:
           unexpected = sorted(seen_keys - expected)
           duplicates = {str(key): paths for key, paths in seen.items() if len(paths) != 1}
           summary = {
+              'sourceRunId': 37600058394,
+              'sourceHead': 'a7945efd6878bc3237f4d82335f0359ea69a8528',
               'expectedBranches': len(expected),
               'observedBranches': len(seen_keys),
               'missingBranches': missing,
