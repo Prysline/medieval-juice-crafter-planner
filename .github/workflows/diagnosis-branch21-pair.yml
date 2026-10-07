@@ -30,7 +30,6 @@ jobs:
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import json
           from pathlib import Path
-
           exact = json.loads(Path('dominic-audit/identity-334-dominic-exact-audit.json').read_text())
           routing = json.loads(Path('heloise-routing/identity-334-dominic-routing-audit.json').read_text())
           assert exact['complete'] is True
@@ -48,7 +47,6 @@ jobs:
           assert exact['witnessCount'] == 0
           residuals = exact['branchesByStatus']['timelimit']
           assert len(residuals) == 521
-
           assert routing['complete'] is True
           assert routing['expectedBranches'] == 521
           assert routing['observedBranches'] == 521
@@ -65,14 +63,10 @@ jobs:
           heloise_choices = [entry['groupIndex'] for entry in signature['candidates']]
           assert heloise_choices == [13, 15, 43, 44, 45, 46, 47, 1143]
           assert all(entry['slackOnly'] is False for entry in signature['candidates'])
-
           shards = []
           for shard_index, start in enumerate(range(0, len(residuals), 3), start=1):
               parents = residuals[start:start + 3]
-              shards.append({
-                  'shard': shard_index,
-                  'parents_json': json.dumps(parents, separators=(',', ':')),
-              })
+              shards.append({'shard': shard_index, 'parents_json': json.dumps(parents, separators=(',', ':'))})
           assert len(shards) == 174
           assert sum(len(json.loads(shard['parents_json'])) for shard in shards) == 521
           assert sum(len(json.loads(shard['parents_json'])) * len(heloise_choices) for shard in shards) == 4168
@@ -91,7 +85,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
       - run: npm install
       - name: Run up to 24 independent Heloise exact branches
         env:
@@ -104,7 +97,6 @@ jobs:
           import re
           import subprocess
           from pathlib import Path
-
           source_path = Path('src/domain/optimizerMachineContinuationProfile.test.ts')
           base_text = source_path.read_text()
           start_marker = "hallSignatureProfileIt(\n  'profiles Hall-closure membership signatures for unresolved 3+1+1 support',"
@@ -122,7 +114,6 @@ jobs:
           shard_results = []
           had_outer_failure = False
           ordinal = 0
-
           for parent in parents:
               if len(parent) != 5:
                   raise SystemExit(f'invalid Dominic residual identity: {parent!r}')
@@ -188,12 +179,7 @@ jobs:
                   ]
                   patched_test = base_test + '\n'.join(lines)
                   source_path.write_text(base_text[:start] + patched_test + base_text[end:])
-                  command = [
-                      'npx', 'vitest', 'run',
-                      'src/domain/optimizerMachineContinuationProfile.test.ts',
-                      '--maxWorkers=1', '--minWorkers=1',
-                      '-t', r'profiles Hall-closure membership signatures for unresolved 3\+1\+1 support',
-                  ]
+                  command = ['npx', 'vitest', 'run', 'src/domain/optimizerMachineContinuationProfile.test.ts', '--maxWorkers=1', '--minWorkers=1', '-t', r'profiles Hall-closure membership signatures for unresolved 3\+1\+1 support']
                   try:
                       completed = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=150)
                       output = completed.stdout
@@ -206,25 +192,13 @@ jobs:
                   Path(f'branch-{ordinal}.log').write_text(output)
                   clean_lines = [ansi.sub('', line) for line in output.splitlines()]
                   marked = [line for line in clean_lines if marker in line]
-                  result = {
-                      'octaviusChoice': octavius_choice,
-                      'oliverChoice': oliver_choice,
-                      'hugoChoice': hugo_choice,
-                      'tiffanyChoice': tiffany_choice,
-                      'dominicChoice': dominic_choice,
-                      'heloiseChoice': heloise_choice,
-                      'outerReturnCode': returncode,
-                      'outerTimeout': outer_timeout,
-                      'markerCount': len(marked),
-                      'solver': None,
-                  }
+                  result = {'octaviusChoice': octavius_choice, 'oliverChoice': oliver_choice, 'hugoChoice': hugo_choice, 'tiffanyChoice': tiffany_choice, 'dominicChoice': dominic_choice, 'heloiseChoice': heloise_choice, 'outerReturnCode': returncode, 'outerTimeout': outer_timeout, 'markerCount': len(marked), 'solver': None}
                   if len(marked) == 1:
                       marker_index = marked[0].find(marker)
                       result['solver'] = json.loads(marked[0][marker_index + len(marker):])
                   if returncode != 0 or len(marked) != 1:
                       had_outer_failure = True
                   shard_results.append(result)
-
           source_path.write_text(base_text)
           expected_count = len(parents) * len(heloise_choices)
           assert ordinal == expected_count
@@ -273,7 +247,6 @@ jobs:
           import json
           from collections import Counter
           from pathlib import Path
-
           results = {}
           malformed = []
           duplicates = []
@@ -284,7 +257,6 @@ jobs:
           fixed_support_attempts = 0
           exact_solve_ms = 0
           witnesses = []
-
           shard_files = list(Path('heloise-shards').rglob('shard-results.json'))
           if len(shard_files) != 174:
               malformed.append({'reason': 'shard-result-count', 'count': len(shard_files)})
@@ -293,10 +265,7 @@ jobs:
               if len(entries) not in (8, 16, 24):
                   malformed.append({'path': str(path), 'reason': 'branch-count', 'count': len(entries)})
               for entry in entries:
-                  key = (
-                      entry['octaviusChoice'], entry['oliverChoice'], entry['hugoChoice'],
-                      entry['tiffanyChoice'], entry['dominicChoice'], entry['heloiseChoice'],
-                  )
+                  key = (entry['octaviusChoice'], entry['oliverChoice'], entry['hugoChoice'], entry['tiffanyChoice'], entry['dominicChoice'], entry['heloiseChoice'])
                   if key in results:
                       duplicates.append(list(key))
                       continue
@@ -312,7 +281,6 @@ jobs:
                   exact_solve_ms += solver['exactSolveMs']
                   if solver['status'] == 'global-witness':
                       witnesses.append(solver)
-
           exact = json.loads(Path('dominic-audit/identity-334-dominic-exact-audit.json').read_text())
           routing = json.loads(Path('heloise-routing/identity-334-dominic-routing-audit.json').read_text())
           assert exact['complete'] is True
@@ -328,12 +296,7 @@ jobs:
           heloise_choices = [entry['groupIndex'] for entry in signature['candidates']]
           assert heloise_choices == [13, 15, 43, 44, 45, 46, 47, 1143]
           assert all(entry['slackOnly'] is False for entry in signature['candidates'])
-
-          expected = {
-              (o, oliver, hugo, tiffany, dominic, heloise)
-              for o, oliver, hugo, tiffany, dominic in residuals
-              for heloise in heloise_choices
-          }
+          expected = {(o, oliver, hugo, tiffany, dominic, heloise) for o, oliver, hugo, tiffany, dominic in residuals for heloise in heloise_choices}
           observed = set(results)
           outer_timeout_count = sum(1 for entry in outer_failures if entry.get('outerTimeout'))
           summary = {
@@ -359,17 +322,8 @@ jobs:
               'witnessCount': len(witnesses),
               'globalWitnessCount': statuses.get('global-witness', 0),
               'witnesses': witnesses,
-              'complete': (
-                  len(expected) == 4168 and
-                  observed == expected and
-                  not duplicates and
-                  not malformed and
-                  not outer_failures
-              ),
-              'branchesByStatus': {
-                  status: [list(key) for key, entry in sorted(results.items()) if entry.get('solver', {}).get('status') == status]
-                  for status in sorted(statuses)
-              },
+              'complete': len(expected) == 4168 and observed == expected and not duplicates and not malformed and not outer_failures,
+              'branchesByStatus': {status: [list(key) for key, entry in sorted(results.items()) if entry.get('solver', {}).get('status') == status] for status in sorted(statuses)},
           }
           Path('identity-334-heloise-exact-audit.json').write_text(json.dumps(summary, indent=2, sort_keys=True) + '\n')
           print(json.dumps({k: v for k, v in summary.items() if k not in ('branchesByStatus', 'witnesses')}, indent=2, sort_keys=True))
