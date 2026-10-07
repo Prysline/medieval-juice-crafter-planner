@@ -1,165 +1,30 @@
-name: Identity 334 tiffany residual exact split
+name: Identity 334 tiffany residual exact audit
 on:
   pull_request:
 jobs:
-  identity-334-tiffany-residual-exact:
-    if: github.head_ref == 'perf/exact-machine-operation-continuation' && github.event.pull_request.head.sha == 'a7945efd6878bc3237f4d82335f0359ea69a8528'
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        residual-branch:
-          - '8-969-385'
-          - '8-969-453'
-          - '8-969-455'
-          - '8-1367-385'
-          - '8-1367-453'
-          - '8-1367-455'
-          - '30-969-452'
-          - '30-969-453'
-          - '30-969-454'
-          - '30-969-455'
-          - '30-995-452'
-          - '30-995-453'
-          - '30-995-454'
-          - '30-995-455'
-          - '30-1367-385'
-          - '30-1367-452'
-          - '30-1367-453'
-          - '30-1367-455'
-        tiffany-choice: [839, 977, 1101, 1135, 1204, 1210, 1213]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: npm install
-      - name: Patch exhaustive tiffany residual split
-        env:
-          RESIDUAL_BRANCH: ${{ matrix.residual-branch }}
-          TIFFANY_CHOICE: ${{ matrix.tiffany-choice }}
-        run: |
-          python - <<'PY'
-          import os
-          from pathlib import Path
-          path = Path('src/domain/optimizerMachineContinuationProfile.test.ts')
-          text = path.read_text()
-          start_marker = "hallSignatureProfileIt(\n  'profiles Hall-closure membership signatures for unresolved 3+1+1 support',"
-          end_marker = "\n  },\n  120000,\n)\n\n\nfunction build311HallSignatureSupportMaster"
-          start = text.find(start_marker)
-          end = text.find(end_marker, start)
-          if start < 0 or end < 0:
-              raise SystemExit('markers not found')
-          branch = os.environ['RESIDUAL_BRANCH']
-          try:
-              octavius_choice, oliver_choice, hugo_choice = map(int, branch.split('-'))
-          except ValueError as error:
-              raise SystemExit(f'invalid residual branch {branch}') from error
-          tiffany_choice = int(os.environ['TIFFANY_CHOICE'])
-          valid_residual = {
-              (8, 969, 385), (8, 969, 453), (8, 969, 455),
-              (8, 1367, 385), (8, 1367, 453), (8, 1367, 455),
-              (30, 969, 452), (30, 969, 453), (30, 969, 454), (30, 969, 455),
-              (30, 995, 452), (30, 995, 453), (30, 995, 454), (30, 995, 455),
-              (30, 1367, 385), (30, 1367, 452), (30, 1367, 453), (30, 1367, 455),
-          }
-          if (octavius_choice, oliver_choice, hugo_choice) not in valid_residual:
-              raise SystemExit(f'unexpected residual branch {(octavius_choice, oliver_choice, hugo_choice)}')
-          if tiffany_choice not in (839, 977, 1101, 1135, 1204, 1210, 1213):
-              raise SystemExit(f'unexpected tiffany choice {tiffany_choice}')
-          test = text[start:end]
-          lines = [
-              '',
-              '    const fixedExactGroupIndex = 334',
-              '    const fixedExactCustomerSet = new Set(groups[fixedExactGroupIndex].eligibleCustomerIds)',
-              '    const fixedExactCustomers = [...fixedExactCustomerSet]',
-              '    const requiredPair = [1052, 1070] as const',
-              '    const saviusChoice = 692',
-              '    const ambrosiaChoice = 1243',
-              f'    const octaviusChoice = {octavius_choice}',
-              f'    const oliverChoice = {oliver_choice}',
-              f'    const hugoChoice = {hugo_choice}',
-              f'    const tiffanyChoice = {tiffany_choice}',
-              "    expect(groups[saviusChoice].eligibleCustomerIds).toContain('savius')",
-              "    expect(groups[ambrosiaChoice].eligibleCustomerIds).toContain('ambrosia')",
-              "    expect(groups[octaviusChoice].eligibleCustomerIds).toContain('octavius')",
-              "    expect(groups[oliverChoice].eligibleCustomerIds).toContain('oliver')",
-              "    expect(groups[hugoChoice].eligibleCustomerIds).toContain('hugo')",
-              "    expect(groups[tiffanyChoice].eligibleCustomerIds).toContain('tiffany')",
-              '    const thresholdCounts = [3, 1, 1, 0] as const',
-              '    const supportCuts: number[][] = []',
-              "    let status = 'round-limit'",
-              '    let masterSolveMs = 0',
-              '    let exactSolveMs = 0',
-              '    let exactInfeasibleSupports = 0',
-              '    for (let round = 0; round < 16; round += 1) {',
-              '      const built = build311ExtraCostSumSupportMaster(domain, fixedExactGroupIndex, 89, {',
-              '        supportCuts,',
-              '        includeCustomerFlow: true,',
-              '        forcedCustomerIds: fixedExactCustomers,',
-              '        requiredUsedGroupIndexes: [saviusChoice, ambrosiaChoice, octaviusChoice, oliverChoice, hugoChoice, tiffanyChoice],',
-              '        requiredExtraOneGroupIndexes: [...requiredPair],',
-              '      })',
-              '      const solved = await solveBounded(built.model, 0.5)',
-              '      masterSolveMs += solved.solveMs',
-              "      if (solved.status === 'infeasible') { status = 'infeasible'; break }",
-              "      if (solved.status !== 'optimal' || !solved.namedSolution) { status = solved.status; break }",
-              '      const support = groups.flatMap((_group, groupIndex) => {',
-              "        const raw = solved.namedSolution!.get(`s31su_${groupIndex}`)",
-              "        return typeof raw === 'number' && Number.isFinite(raw) && raw > 0.5 ? [groupIndex] : []",
-              '      })',
-              "      if (support.length !== 30) throw new Error(`Expected 30 support groups, got ${support.length}`)",
-              "      const exact = buildFinalizing30MaskPartitionStage(domain, new Set<ProductionStepKind>(['juicing', 'seasoning', 'blending']), thresholdCounts, { max: 76 }, 0, new Set(support))",
-              '      const exactSolved = await solveBounded(exact.model, 3)',
-              '      exactSolveMs += exactSolved.solveMs',
-              "      if (exactSolved.status === 'infeasible') { exactInfeasibleSupports += 1; supportCuts.push(support); status = 'exact-infeasible-support'; continue }",
-              "      if (exactSolved.status === 'optimal') { status = 'global-witness'; break }",
-              "      status = `exact-${exactSolved.status}`",
-              '      break',
-              '    }',
-              "    console.info('[machine-extra1-pair-hugo-tiffany-result]', JSON.stringify({ fixedGroupIndex: fixedExactGroupIndex, extraOneCostSum: 89, companionCost: 53, pair: requiredPair, saviusChoice, ambrosiaChoice, octaviusChoice, oliverChoice, hugoChoice, tiffanyChoice, status, supportCuts: supportCuts.length, exactInfeasibleSupports, masterSolveMs: Math.round(masterSolveMs), exactSolveMs: Math.round(exactSolveMs) }))",
-          ]
-          test += '\n'.join(lines)
-          path.write_text(text[:start] + test + text[end:])
-          PY
-      - name: Run exhaustive tiffany residual split
-        env:
-          MACHINE_CONTINUATION_HALL_SIGNATURE: '1'
-        run: |
-          set +e
-          set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'profiles Hall-closure membership signatures for unresolved 3\+1\+1 support' 2>&1 | tee identity-334-hugo-tiffany.log
-          vitest_exit=${PIPESTATUS[0]}
-          set -e
-          grep -F '[machine-extra1-pair-hugo-tiffany-result]' identity-334-hugo-tiffany.log > identity-334-hugo-tiffany-result.log || true
-          result_count=$(wc -l < identity-334-hugo-tiffany-result.log)
-          printf '{"branch":"%s","tiffanyChoice":%s,"vitestExit":%s,"resultCount":%s}\n' \
-            '${{ matrix.residual-branch }}' '${{ matrix.tiffany-choice }}' "$vitest_exit" "$result_count" \
-            > identity-334-hugo-tiffany-branch-audit.json
-          test "$vitest_exit" -eq 0
-          test "$result_count" -eq 1
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: identity-334-${{ matrix.residual-branch }}-tiffany-${{ matrix.tiffany-choice }}
-          path: |
-            identity-334-hugo-tiffany.log
-            identity-334-hugo-tiffany-result.log
-            identity-334-hugo-tiffany-branch-audit.json
-          if-no-files-found: error
-
   audit-identity-334-tiffany-residual-exact:
-    if: always()
+    if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          pattern: identity-334-*-tiffany-*
-          path: artifacts
-          repository: Prysline/medieval-juice-crafter-planner
-          run-id: 37600058394
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download all 126 source artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p artifacts
+          gh api --paginate /repos/Prysline/medieval-juice-crafter-planner/actions/runs/37600058394/artifacts \
+            --jq '.artifacts[] | select(.name | test("^identity-334-[0-9]+-[0-9]+-[0-9]+-tiffany-[0-9]+$")) | [.id, .name] | @tsv' \
+            > artifact-list.tsv
+          test "$(wc -l < artifact-list.tsv)" -eq 126
+          while IFS=$'\t' read -r artifact_id artifact_name; do
+            mkdir -p "artifacts/$artifact_name"
+            curl -fsSL \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/$artifact_id/zip" \
+              -o artifact.zip
+            unzip -q artifact.zip -d "artifacts/$artifact_name"
+          done < artifact-list.tsv
       - name: Audit 126 Tiffany exact artifacts
         run: |
           python - <<'PY'
@@ -168,7 +33,6 @@ jobs:
           from pathlib import Path
 
           ansi = re.compile(r'\x1b\[[0-9;]*m')
-
           residuals = [
               (8,969,385), (8,969,453), (8,969,455),
               (8,1367,385), (8,1367,453), (8,1367,455),
