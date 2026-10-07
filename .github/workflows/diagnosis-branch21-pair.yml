@@ -1,16 +1,20 @@
-name: Identity 334 one-hundred-ninety-five-pair exact cell
+name: Identity 334 two-hundred-three-pair exact cells
 on:
   pull_request:
 jobs:
-  identity-334-one-hundred-ninety-five-pair-exact-cell:
+  identity-334-two-hundred-three-pair-exact-cell:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - sum: 86
-            companion: 50
+          - sum: 89
+            companion: 55
+          - sum: 114
+            companion: 55
+          - sum: 114
+            companion: 59
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -21,7 +25,7 @@ jobs:
         env:
           TARGET_SUM: ${{ matrix.sum }}
           TARGET_COMPANION: ${{ matrix.companion }}
-          EXPECTED_FULL: 195
+          EXPECTED_FULL: 203
         run: |
           python - <<'PY'
           import os
@@ -106,7 +110,7 @@ jobs:
           npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'profiles Hall-closure membership signatures for unresolved 3\+1\+1 support' 2>&1 | tee identity-334-exact-pair-identity-cell.log
           grep -F '[machine-extra1-pair-identity-result]' identity-334-exact-pair-identity-cell.log | tee identity-334-exact-pair-results.log
           grep -F '[machine-extra1-pair-identity-cell]' identity-334-exact-pair-identity-cell.log | tee identity-334-exact-pair-cells.log
-          test "$(wc -l < identity-334-exact-pair-results.log)" -eq 195
+          test "$(wc -l < identity-334-exact-pair-results.log)" -eq 203
           test "$(wc -l < identity-334-exact-pair-cells.log)" -eq 1
       - uses: actions/upload-artifact@v4
         if: always()
