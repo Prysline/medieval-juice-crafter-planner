@@ -1,26 +1,75 @@
-name: Identity 334 oliver hugo residual exact split
+name: Identity 334 hugo residual branch routing
 on:
   pull_request:
 jobs:
-  identity-334-oliver-hugo-residual-exact:
+  identity-334-hugo-residual-branch-routing:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        octavius-choice: [8, 30]
-        oliver-choice: [969, 995, 1367]
-        hugo-choice: [385, 452, 453, 454, 455]
-        exclude:
+        include:
           - octavius-choice: 8
+            oliver-choice: 969
+            hugo-choice: 385
+          - octavius-choice: 8
+            oliver-choice: 969
+            hugo-choice: 453
+          - octavius-choice: 8
+            oliver-choice: 969
+            hugo-choice: 455
+          - octavius-choice: 8
+            oliver-choice: 1367
+            hugo-choice: 385
+          - octavius-choice: 8
+            oliver-choice: 1367
+            hugo-choice: 453
+          - octavius-choice: 8
+            oliver-choice: 1367
+            hugo-choice: 455
+          - octavius-choice: 30
+            oliver-choice: 969
+            hugo-choice: 452
+          - octavius-choice: 30
+            oliver-choice: 969
+            hugo-choice: 453
+          - octavius-choice: 30
+            oliver-choice: 969
+            hugo-choice: 454
+          - octavius-choice: 30
+            oliver-choice: 969
+            hugo-choice: 455
+          - octavius-choice: 30
             oliver-choice: 995
+            hugo-choice: 452
+          - octavius-choice: 30
+            oliver-choice: 995
+            hugo-choice: 453
+          - octavius-choice: 30
+            oliver-choice: 995
+            hugo-choice: 454
+          - octavius-choice: 30
+            oliver-choice: 995
+            hugo-choice: 455
+          - octavius-choice: 30
+            oliver-choice: 1367
+            hugo-choice: 385
+          - octavius-choice: 30
+            oliver-choice: 1367
+            hugo-choice: 452
+          - octavius-choice: 30
+            oliver-choice: 1367
+            hugo-choice: 453
+          - octavius-choice: 30
+            oliver-choice: 1367
+            hugo-choice: 455
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Patch exhaustive oliver hugo residual split
+      - name: Patch current-canonical hugo residual routing
         env:
           OCTAVIUS_CHOICE: ${{ matrix.octavius-choice }}
           OLIVER_CHOICE: ${{ matrix.oliver-choice }}
@@ -40,17 +89,21 @@ jobs:
           octavius_choice = int(os.environ['OCTAVIUS_CHOICE'])
           oliver_choice = int(os.environ['OLIVER_CHOICE'])
           hugo_choice = int(os.environ['HUGO_CHOICE'])
-          valid_residual = {(8, 969), (8, 1367), (30, 969), (30, 995), (30, 1367)}
-          if (octavius_choice, oliver_choice) not in valid_residual:
-              raise SystemExit(f'unexpected residual branch {(octavius_choice, oliver_choice)}')
-          if hugo_choice not in (385, 452, 453, 454, 455):
-              raise SystemExit(f'unexpected hugo choice {hugo_choice}')
+          valid = {
+              (8, 969, 385), (8, 969, 453), (8, 969, 455),
+              (8, 1367, 385), (8, 1367, 453), (8, 1367, 455),
+              (30, 969, 452), (30, 969, 453), (30, 969, 454), (30, 969, 455),
+              (30, 995, 452), (30, 995, 453), (30, 995, 454), (30, 995, 455),
+              (30, 1367, 385), (30, 1367, 452), (30, 1367, 453), (30, 1367, 455),
+          }
+          if (octavius_choice, oliver_choice, hugo_choice) not in valid:
+              raise SystemExit(f'unexpected residual branch {(octavius_choice, oliver_choice, hugo_choice)}')
           test = text[start:end]
           lines = [
               '',
               '    const fixedExactGroupIndex = 334',
               '    const fixedExactCustomerSet = new Set(groups[fixedExactGroupIndex].eligibleCustomerIds)',
-              '    const fixedExactCustomers = [...fixedExactCustomerSet]',
+              "    const residualCustomerIds = domain.serviceableCustomerIds.filter((customerId) => !fixedExactCustomerSet.has(customerId) && customerId !== 'savius' && customerId !== 'ambrosia' && customerId !== 'octavius' && customerId !== 'oliver' && customerId !== 'hugo')",
               '    const requiredPair = [1052, 1070] as const',
               '    const saviusChoice = 692',
               '    const ambrosiaChoice = 1243',
@@ -62,55 +115,41 @@ jobs:
               "    expect(groups[octaviusChoice].eligibleCustomerIds).toContain('octavius')",
               "    expect(groups[oliverChoice].eligibleCustomerIds).toContain('oliver')",
               "    expect(groups[hugoChoice].eligibleCustomerIds).toContain('hugo')",
-              '    const thresholdCounts = [3, 1, 1, 0] as const',
-              '    const supportCuts: number[][] = []',
-              "    let status = 'round-limit'",
-              '    let masterSolveMs = 0',
-              '    let exactSolveMs = 0',
-              '    let exactInfeasibleSupports = 0',
-              '    for (let round = 0; round < 16; round += 1) {',
-              '      const built = build311ExtraCostSumSupportMaster(domain, fixedExactGroupIndex, 89, {',
-              '        supportCuts,',
-              '        includeCustomerFlow: true,',
-              '        forcedCustomerIds: fixedExactCustomers,',
-              '        requiredUsedGroupIndexes: [saviusChoice, ambrosiaChoice, octaviusChoice, oliverChoice, hugoChoice],',
-              '        requiredExtraOneGroupIndexes: [...requiredPair],',
-              '      })',
-              '      const solved = await solveBounded(built.model, 0.5)',
-              '      masterSolveMs += solved.solveMs',
-              "      if (solved.status === 'infeasible') { status = 'infeasible'; break }",
-              "      if (solved.status !== 'optimal' || !solved.namedSolution) { status = solved.status; break }",
-              '      const support = groups.flatMap((_group, groupIndex) => {',
-              "        const raw = solved.namedSolution!.get(`s31su_${groupIndex}`)",
-              "        return typeof raw === 'number' && Number.isFinite(raw) && raw > 0.5 ? [groupIndex] : []",
-              '      })',
-              "      if (support.length !== 30) throw new Error(`Expected 30 support groups, got ${support.length}`)",
-              "      const exact = buildFinalizing30MaskPartitionStage(domain, new Set<ProductionStepKind>(['juicing', 'seasoning', 'blending']), thresholdCounts, { max: 76 }, 0, new Set(support))",
-              '      const exactSolved = await solveBounded(exact.model, 3)',
-              '      exactSolveMs += exactSolved.solveMs',
-              "      if (exactSolved.status === 'infeasible') { exactInfeasibleSupports += 1; supportCuts.push(support); status = 'exact-infeasible-support'; continue }",
-              "      if (exactSolved.status === 'optimal') { status = 'global-witness'; break }",
-              "      status = `exact-${exactSolved.status}`",
-              '      break',
+              '    const alreadyRequiredUsedGroupIndexes = new Set<number>([fixedExactGroupIndex, ...requiredPair, saviusChoice, ambrosiaChoice, octaviusChoice, oliverChoice, hugoChoice])',
+              '    const candidatesForCustomer = (customerId: string) => groups.flatMap((group, candidateGroupIndex) => {',
+              '      if (candidateGroupIndex === fixedExactGroupIndex) return []',
+              '      const residualEligible = group.eligibleCustomerIds.filter((eligibleCustomerId) => !fixedExactCustomerSet.has(eligibleCustomerId))',
+              '      if (!residualEligible.includes(customerId)) return []',
+              '      const normal = residualEligible.length >= 2',
+              '      const slack = group.ingredientCost === SLACK_RECIPE_COST && residualEligible.length >= 1',
+              '      return normal || slack ? [{ groupIndex: candidateGroupIndex, slackOnly: !normal && slack }] : []',
+              '    })',
+              '    const sparseCustomers = residualCustomerIds',
+              '      .map((customerId) => ({ customerId, candidates: candidatesForCustomer(customerId) }))',
+              '      .filter((entry) => entry.candidates.length > 0 && entry.candidates.every((candidate) => !alreadyRequiredUsedGroupIndexes.has(candidate.groupIndex)))',
+              '      .sort((left, right) => left.candidates.length - right.candidates.length || left.customerId.localeCompare(right.customerId))',
+              '    const sparse = sparseCustomers[0]',
+              '    expect(sparse).toBeDefined()',
+              '    if (sparse) {',
+              "      console.info('[machine-extra1-pair-hugo-residual-routing]', JSON.stringify({ fixedGroupIndex: fixedExactGroupIndex, extraOneCostSum: 89, companionCost: 53, pair: requiredPair, saviusChoice, ambrosiaChoice, octaviusChoice, oliverChoice, hugoChoice, sparseCustomer: sparse.customerId, candidateCount: sparse.candidates.length, candidates: sparse.candidates }))",
               '    }',
-              "    console.info('[machine-extra1-pair-oliver-hugo-result]', JSON.stringify({ fixedGroupIndex: fixedExactGroupIndex, extraOneCostSum: 89, companionCost: 53, pair: requiredPair, saviusChoice, ambrosiaChoice, octaviusChoice, oliverChoice, hugoChoice, status, supportCuts: supportCuts.length, exactInfeasibleSupports, masterSolveMs: Math.round(masterSolveMs), exactSolveMs: Math.round(exactSolveMs) }))",
           ]
           test += '\n'.join(lines)
           path.write_text(text[:start] + test + text[end:])
           PY
-      - name: Run exhaustive oliver hugo residual split
+      - name: Run current-canonical hugo residual routing
         env:
           MACHINE_CONTINUATION_HALL_SIGNATURE: '1'
         run: |
           set -o pipefail
-          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'profiles Hall-closure membership signatures for unresolved 3\+1\+1 support' 2>&1 | tee identity-334-oliver-hugo.log
-          grep -F '[machine-extra1-pair-oliver-hugo-result]' identity-334-oliver-hugo.log | tee identity-334-oliver-hugo-result.log
-          test "$(wc -l < identity-334-oliver-hugo-result.log)" -eq 1
+          npx vitest run src/domain/optimizerMachineContinuationProfile.test.ts --maxWorkers=1 --minWorkers=1 -t 'profiles Hall-closure membership signatures for unresolved 3\+1\+1 support' 2>&1 | tee identity-334-hugo-residual-routing.log
+          grep -F '[machine-extra1-pair-hugo-residual-routing]' identity-334-hugo-residual-routing.log | tee identity-334-hugo-residual-routing-only.log
+          test "$(wc -l < identity-334-hugo-residual-routing-only.log)" -eq 1
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: identity-334-octavius-${{ matrix.octavius-choice }}-oliver-${{ matrix.oliver-choice }}-hugo-${{ matrix.hugo-choice }}
+          name: identity-334-octavius-${{ matrix.octavius-choice }}-oliver-${{ matrix.oliver-choice }}-hugo-${{ matrix.hugo-choice }}-routing
           path: |
-            identity-334-oliver-hugo.log
-            identity-334-oliver-hugo-result.log
+            identity-334-hugo-residual-routing.log
+            identity-334-hugo-residual-routing-only.log
           if-no-files-found: error
