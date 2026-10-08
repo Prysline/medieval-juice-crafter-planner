@@ -35,10 +35,10 @@ jobs:
           assert audit['outerFailures'] == 0
           assert audit['outerTimeouts'] == 0
           assert audit['statuses'] == {'infeasible': 16229, 'timelimit': 6059}
-          assert len(audit['timelimitBranches']) == 6059
-          assert len(audit['masterTimeoutBranches']) == 6059
-          assert audit['roundLimitBranches'] == []
-          assert audit['fixedSupportTimeoutBranches'] == []
+          assert audit['timelimitBranches'] == 6059
+          assert audit['masterTimeoutBranches'] == 6059
+          assert audit['roundLimitBranches'] == 0
+          assert audit['fixedSupportTimeoutBranches'] == 0
           assert audit['supportCuts'] == 0
           assert audit['exactInfeasibleSupports'] == 0
           assert audit['fixedSupportExactAttempts'] == 0
