@@ -1,76 +1,73 @@
-name: Identity 334 bernard residual exact binary split
+name: Identity 334 bernard binary residual branch routing
 on:
   pull_request:
 
 jobs:
-  prepare-bernard-binary-shards:
+  prepare-bernard-binary-residual-routing-shards:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
-      - name: Download exact and routing source audits
+      - name: Download Bernard binary exact audit
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11548521516/zip" -o julia-exact.zip
-          unzip -q julia-exact.zip -d julia-exact
-          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11560475212/zip" -o bernard-routing.zip
-          unzip -q bernard-routing.zip -d bernard-routing
-      - name: Build 28796 Bernard binary exact branches
+            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11574742299/zip" -o bernard-exact.zip
+          unzip -q bernard-exact.zip -d bernard-exact
+      - name: Build 23066 Bernard binary residual routing branches
         id: matrix
-        run: python .github/scripts/diagnosis_branch21_bernard.py prepare >> "$GITHUB_OUTPUT"
+        run: python .github/scripts/diagnosis_branch21_bernard_routing.py prepare >> "$GITHUB_OUTPUT"
 
-  identity-334-bernard-binary-exact:
+  identity-334-bernard-binary-residual-routing:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
-    needs: prepare-bernard-binary-shards
+    needs: prepare-bernard-binary-residual-routing-shards
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.prepare-bernard-binary-shards.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.prepare-bernard-binary-residual-routing-shards.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Run up to 114 independent Bernard binary exact branches
+      - name: Route up to 96 current-canonical Bernard binary residual branches
         env:
-          SHARD_PARENTS: ${{ matrix.parents_json }}
+          SHARD_BRANCHES: ${{ matrix.branches_json }}
           MACHINE_CONTINUATION_HALL_SIGNATURE: '1'
-        run: python .github/scripts/diagnosis_branch21_bernard.py run
+        run: python .github/scripts/diagnosis_branch21_bernard_routing.py run
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: identity-334-bernard-binary-exact-shard-${{ matrix.shard }}
+          name: identity-334-bernard-binary-routing-shard-${{ matrix.shard }}
           path: |
-            exact-results.json
+            routing-results.json
             branch-*.log
           if-no-files-found: error
 
-  audit-bernard-binary-exact:
+  audit-bernard-binary-residual-routing:
     if: always()
-    needs: identity-334-bernard-binary-exact
+    needs: identity-334-bernard-binary-residual-routing
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Download all 253 Bernard exact shards and Julia source audit
+      - name: Download all 241 Bernard routing shards and exact source audit
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh run download "$GITHUB_RUN_ID" --repo Prysline/medieval-juice-crafter-planner --pattern 'identity-334-bernard-binary-exact-shard-*' --dir exact-shards
-          test "$(find exact-shards -name exact-results.json | wc -l)" -eq 253
+          gh run download "$GITHUB_RUN_ID" --repo Prysline/medieval-juice-crafter-planner --pattern 'identity-334-bernard-binary-routing-shard-*' --dir routing-shards
+          test "$(find routing-shards -name routing-results.json | wc -l)" -eq 241
           curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11548521516/zip" -o julia-exact.zip
-          unzip -q julia-exact.zip -d julia-exact
-      - name: Audit 28796 Bernard binary exact branches
-        run: python .github/scripts/diagnosis_branch21_bernard.py audit
+            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11574742299/zip" -o bernard-exact.zip
+          unzip -q bernard-exact.zip -d bernard-exact
+      - name: Audit 23066 current-canonical Bernard binary routing results
+        run: python .github/scripts/diagnosis_branch21_bernard_routing.py audit
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: identity-334-bernard-binary-exact-audit
-          path: identity-334-bernard-binary-exact-audit.json
+          name: identity-334-bernard-binary-routing-audit
+          path: identity-334-bernard-binary-routing-audit.json
           if-no-files-found: error
