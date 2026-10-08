@@ -1,351 +1,76 @@
-name: Identity 334 julia binary residual branch routing
+name: Identity 334 bernard residual exact binary split
 on:
   pull_request:
 
 jobs:
-  prepare-julia-binary-residual-routing-shards:
+  prepare-bernard-binary-shards:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
-      - name: Build 14398 Julia binary residual routing branches
-        id: matrix
+      - uses: actions/checkout@v4
+      - name: Download exact and routing source audits
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          curl -fsSL \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11548521516/zip" \
-            -o julia-exact.zip
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11548521516/zip" -o julia-exact.zip
           unzip -q julia-exact.zip -d julia-exact
-          python - <<'PY' >> "$GITHUB_OUTPUT"
-          import json
-          from pathlib import Path
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11560475212/zip" -o bernard-routing.zip
+          unzip -q bernard-routing.zip -d bernard-routing
+      - name: Build 28796 Bernard binary exact branches
+        id: matrix
+        run: python .github/scripts/diagnosis_branch21_bernard.py prepare >> "$GITHUB_OUTPUT"
 
-          audit = json.loads(Path('julia-exact/identity-334-julia-binary-exact-audit.json').read_text())
-          assert audit['complete'] is True
-          assert audit['sourceBetsyBinaryExactRunId'] == 37727009969
-          assert audit['sourceBetsyBinaryExactArtifactId'] == 11532240384
-          assert audit['sourceJuliaRoutingRunId'] == 37742557110
-          assert audit['sourceJuliaRoutingArtifactId'] == 11538516867
-          assert audit['splitKind'] == 'required-any-used-binary'
-          assert audit['juliaCandidateGroups'] == [60,81,120,124,160,161,163,253,270,284,287,328,329,330,331,401,419,443]
-          assert audit['juliaSubsets'] == [
-              [60,81,120,124,160,161,163,253,270],
-              [284,287,328,329,330,331,401,419,443],
-          ]
-          assert audit['expectedBranches'] == 18650
-          assert audit['observedBranches'] == 18650
-          assert audit['missingBranches'] == []
-          assert audit['unexpectedBranches'] == []
-          assert audit['duplicateBranches'] == []
-          assert audit['malformed'] == []
-          assert audit['outerFailures'] == 0
-          assert audit['outerTimeouts'] == 0
-          assert audit['statuses'] == {'infeasible': 4252, 'timelimit': 14398}
-          assert audit['exactInfeasibleBranches'] == 4252
-          assert audit['masterTimeoutBranches'] == 14398
-          assert audit['roundLimitBranches'] == 0
-          assert audit['fixedSupportTimeoutBranches'] == 0
-          assert audit['supportCuts'] == 0
-          assert audit['exactInfeasibleSupports'] == 0
-          assert audit['fixedSupportExactAttempts'] == 0
-          assert audit['exactSolveMs'] == 0
-          assert audit['witnessCount'] == 0
-          assert audit['globalWitnessCount'] == 0
-          assert audit['witnesses'] == []
-          residuals = audit['branchesByStatus']['timelimit']
-          assert len(residuals) == 14398
-          assert all(len(branch) == 9 and branch[-2] in (0, 1) and branch[-1] in (0, 1) for branch in residuals)
-
-          shards = []
-          for shard_index, start in enumerate(range(0, len(residuals), 60), start=1):
-              chunk = residuals[start:start + 60]
-              shards.append({
-                  'shard': shard_index,
-                  'branches_json': json.dumps(chunk, separators=(',', ':')),
-              })
-          assert len(shards) == 240
-          assert sum(len(json.loads(shard['branches_json'])) for shard in shards) == 14398
-          assert max(len(json.loads(shard['branches_json'])) for shard in shards) <= 60
-          print('matrix=' + json.dumps({'include': shards}, separators=(',', ':')))
-          PY
-
-  identity-334-julia-binary-residual-routing:
+  identity-334-bernard-binary-exact:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
-    needs: prepare-julia-binary-residual-routing-shards
+    needs: prepare-bernard-binary-shards
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.prepare-julia-binary-residual-routing-shards.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.prepare-bernard-binary-shards.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Route up to sixty current-canonical Julia binary residual branches
+      - name: Run up to 114 independent Bernard binary exact branches
         env:
-          SHARD_BRANCHES: ${{ matrix.branches_json }}
+          SHARD_PARENTS: ${{ matrix.parents_json }}
           MACHINE_CONTINUATION_HALL_SIGNATURE: '1'
-        run: |
-          python - <<'PY'
-          import json
-          import os
-          import re
-          import subprocess
-          from pathlib import Path
-
-          source_path = Path('src/domain/optimizerMachineContinuationProfile.test.ts')
-          base_text = source_path.read_text()
-          start_marker = "hallSignatureProfileIt(\n  'profiles Hall-closure membership signatures for unresolved 3+1+1 support',"
-          end_marker = "\n  },\n  120000,\n)\n\n\nfunction build311HallSignatureSupportMaster"
-          start = base_text.find(start_marker)
-          end = base_text.find(end_marker, start)
-          if start < 0 or end < 0:
-              raise SystemExit('markers not found')
-          base_test = base_text[start:end]
-          ansi = re.compile(r'\x1b\[[0-9;]*m')
-          marker = '[machine-extra1-pair-julia-binary-residual-routing] '
-          branches = json.loads(os.environ['SHARD_BRANCHES'])
-          assert 1 <= len(branches) <= 60
-          betsy_subsets = [
-              [180,258,418,489,497,536,541,547],
-              [552,554,564,576,595,619,623,632],
-          ]
-          julia_subsets = [
-              [60,81,120,124,160,161,163,253,270],
-              [284,287,328,329,330,331,401,419,443],
-          ]
-          shard_results = []
-          had_outer_failure = False
-
-          for ordinal, values in enumerate(branches, start=1):
-              if len(values) != 9 or values[-2] not in (0, 1) or values[-1] not in (0, 1):
-                  raise SystemExit(f'invalid Julia binary residual identity: {values!r}')
-              octavius_choice, oliver_choice, hugo_choice, tiffany_choice, dominic_choice, heloise_choice, solomon_choice, betsy_split_index, julia_split_index = values
-              betsy_subset = betsy_subsets[betsy_split_index]
-              julia_subset = julia_subsets[julia_split_index]
-              betsy_literal = json.dumps(betsy_subset, separators=(',', ':'))
-              julia_literal = json.dumps(julia_subset, separators=(',', ':'))
-              lines = [
-                  '',
-                  '    const fixedExactGroupIndex = 334',
-                  '    const fixedExactCustomerSet = new Set(groups[fixedExactGroupIndex].eligibleCustomerIds)',
-                  "    const residualCustomerIds = domain.serviceableCustomerIds.filter((customerId) => !fixedExactCustomerSet.has(customerId) && !['savius', 'ambrosia', 'octavius', 'oliver', 'hugo', 'tiffany', 'dominic', 'heloise', 'solomon', 'betsy', 'julia'].includes(customerId))",
-                  '    const requiredPair = [1052, 1070] as const',
-                  '    const saviusChoice = 692',
-                  '    const ambrosiaChoice = 1243',
-                  f'    const octaviusChoice = {octavius_choice}',
-                  f'    const oliverChoice = {oliver_choice}',
-                  f'    const hugoChoice = {hugo_choice}',
-                  f'    const tiffanyChoice = {tiffany_choice}',
-                  f'    const dominicChoice = {dominic_choice}',
-                  f'    const heloiseChoice = {heloise_choice}',
-                  f'    const solomonChoice = {solomon_choice}',
-                  f'    const betsySplitIndex = {betsy_split_index}',
-                  f'    const betsySubset = {betsy_literal} as const',
-                  f'    const juliaSplitIndex = {julia_split_index}',
-                  f'    const juliaSubset = {julia_literal} as const',
-                  "    expect(groups[saviusChoice].eligibleCustomerIds).toContain('savius')",
-                  "    expect(groups[ambrosiaChoice].eligibleCustomerIds).toContain('ambrosia')",
-                  "    expect(groups[octaviusChoice].eligibleCustomerIds).toContain('octavius')",
-                  "    expect(groups[oliverChoice].eligibleCustomerIds).toContain('oliver')",
-                  "    expect(groups[hugoChoice].eligibleCustomerIds).toContain('hugo')",
-                  "    expect(groups[tiffanyChoice].eligibleCustomerIds).toContain('tiffany')",
-                  "    expect(groups[dominicChoice].eligibleCustomerIds).toContain('dominic')",
-                  "    expect(groups[heloiseChoice].eligibleCustomerIds).toContain('heloise')",
-                  "    expect(groups[solomonChoice].eligibleCustomerIds).toContain('solomon')",
-                  "    betsySubset.forEach((groupIndex) => expect(groups[groupIndex].eligibleCustomerIds).toContain('betsy'))",
-                  "    juliaSubset.forEach((groupIndex) => expect(groups[groupIndex].eligibleCustomerIds).toContain('julia'))",
-                  '    const alreadyRequiredUsedGroupIndexes = new Set<number>([fixedExactGroupIndex, ...requiredPair, saviusChoice, ambrosiaChoice, octaviusChoice, oliverChoice, hugoChoice, tiffanyChoice, dominicChoice, heloiseChoice, solomonChoice])',
-                  '    const candidatesForCustomer = (customerId: string) => groups.flatMap((group, candidateGroupIndex) => {',
-                  '      if (candidateGroupIndex === fixedExactGroupIndex) return []',
-                  '      const residualEligible = group.eligibleCustomerIds.filter((eligibleCustomerId) => !fixedExactCustomerSet.has(eligibleCustomerId))',
-                  '      if (!residualEligible.includes(customerId)) return []',
-                  '      const normal = residualEligible.length >= 2',
-                  '      const slack = group.ingredientCost === SLACK_RECIPE_COST && residualEligible.length >= 1',
-                  '      return normal || slack ? [{ groupIndex: candidateGroupIndex, slackOnly: !normal && slack }] : []',
-                  '    })',
-                  '    const sparseCustomers = residualCustomerIds',
-                  '      .map((customerId) => ({ customerId, candidates: candidatesForCustomer(customerId) }))',
-                  '      .filter((entry) => entry.candidates.length > 0 && entry.candidates.every((candidate) => !alreadyRequiredUsedGroupIndexes.has(candidate.groupIndex)))',
-                  '      .sort((left, right) => left.candidates.length - right.candidates.length || left.customerId.localeCompare(right.customerId))',
-                  '    const sparse = sparseCustomers[0]',
-                  '    expect(sparse).toBeDefined()',
-                  '    if (sparse) {',
-                  "      console.info('[machine-extra1-pair-julia-binary-residual-routing]', JSON.stringify({ fixedGroupIndex: fixedExactGroupIndex, extraOneCostSum: 89, companionCost: 53, pair: requiredPair, saviusChoice, ambrosiaChoice, octaviusChoice, oliverChoice, hugoChoice, tiffanyChoice, dominicChoice, heloiseChoice, solomonChoice, betsySplitIndex, betsySubset, juliaSplitIndex, juliaSubset, sparseCustomer: sparse.customerId, candidateCount: sparse.candidates.length, candidates: sparse.candidates }))",
-                  '    }',
-              ]
-              source_path.write_text(base_text[:start] + base_test + '\n'.join(lines) + base_text[end:])
-              command = [
-                  'npx', 'vitest', 'run',
-                  'src/domain/optimizerMachineContinuationProfile.test.ts',
-                  '--maxWorkers=1', '--minWorkers=1',
-                  '-t', r'profiles Hall-closure membership signatures for unresolved 3\+1\+1 support',
-              ]
-              try:
-                  completed = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=150)
-                  output = completed.stdout
-                  returncode = completed.returncode
-                  outer_timeout = False
-              except subprocess.TimeoutExpired as exc:
-                  output = (exc.stdout or '') if isinstance(exc.stdout, str) else (exc.stdout or b'').decode(errors='replace')
-                  returncode = 124
-                  outer_timeout = True
-              Path(f'branch-{ordinal}.log').write_text(output)
-              clean_lines = [ansi.sub('', line) for line in output.splitlines()]
-              marked = [line for line in clean_lines if marker in line]
-              result = {
-                  'branch': values,
-                  'betsySubset': betsy_subset,
-                  'juliaSubset': julia_subset,
-                  'outerReturnCode': returncode,
-                  'outerTimeout': outer_timeout,
-                  'markerCount': len(marked),
-                  'routing': None,
-              }
-              if len(marked) == 1:
-                  marker_index = marked[0].find(marker)
-                  result['routing'] = json.loads(marked[0][marker_index + len(marker):])
-              if returncode != 0 or len(marked) != 1:
-                  had_outer_failure = True
-              shard_results.append(result)
-
-          source_path.write_text(base_text)
-          Path('routing-results.json').write_text(json.dumps(shard_results, indent=2, sort_keys=True) + '\n')
-          if had_outer_failure:
-              raise SystemExit('one or more Julia binary residual routing branches failed or emitted an invalid result count')
-          PY
+        run: python .github/scripts/diagnosis_branch21_bernard.py run
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: identity-334-julia-binary-routing-shard-${{ matrix.shard }}
+          name: identity-334-bernard-binary-exact-shard-${{ matrix.shard }}
           path: |
-            routing-results.json
+            exact-results.json
             branch-*.log
           if-no-files-found: error
 
-  audit-julia-binary-residual-routing:
+  audit-bernard-binary-exact:
     if: always()
-    needs: identity-334-julia-binary-residual-routing
+    needs: identity-334-bernard-binary-exact
     runs-on: ubuntu-latest
     steps:
-      - name: Download all 240 Julia binary routing shard artifacts
+      - uses: actions/checkout@v4
+      - name: Download all 253 Bernard exact shards and Julia source audit
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh run download "$GITHUB_RUN_ID" --repo Prysline/medieval-juice-crafter-planner --pattern 'identity-334-julia-binary-routing-shard-*' --dir routing-shards
-          test "$(find routing-shards -name routing-results.json | wc -l)" -eq 240
-          curl -fsSL \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11548521516/zip" \
-            -o julia-exact.zip
+          gh run download "$GITHUB_RUN_ID" --repo Prysline/medieval-juice-crafter-planner --pattern 'identity-334-bernard-binary-exact-shard-*' --dir exact-shards
+          test "$(find exact-shards -name exact-results.json | wc -l)" -eq 253
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11548521516/zip" -o julia-exact.zip
           unzip -q julia-exact.zip -d julia-exact
-      - name: Audit 14398 current-canonical Julia binary routing results
-        run: |
-          python - <<'PY'
-          import json
-          from collections import Counter, defaultdict
-          from pathlib import Path
-
-          results = {}
-          duplicates = []
-          malformed = []
-          outer_failures = []
-          sparse_counts = Counter()
-          signature_counts = defaultdict(int)
-          betsy_subsets = [
-              [180,258,418,489,497,536,541,547],
-              [552,554,564,576,595,619,623,632],
-          ]
-          julia_subsets = [
-              [60,81,120,124,160,161,163,253,270],
-              [284,287,328,329,330,331,401,419,443],
-          ]
-
-          files = list(Path('routing-shards').rglob('routing-results.json'))
-          if len(files) != 240:
-              malformed.append({'reason': 'shard-result-count', 'count': len(files)})
-          for path in files:
-              entries = json.loads(path.read_text())
-              if not 1 <= len(entries) <= 60:
-                  malformed.append({'path': str(path), 'reason': 'branch-count', 'count': len(entries)})
-              for entry in entries:
-                  branch = entry.get('branch')
-                  if not isinstance(branch, list) or len(branch) != 9 or branch[-2] not in (0, 1) or branch[-1] not in (0, 1):
-                      malformed.append({'path': str(path), 'reason': 'branch-identity', 'entry': entry})
-                      continue
-                  key = tuple(branch)
-                  if key in results:
-                      duplicates.append(branch)
-                      continue
-                  expected_betsy = betsy_subsets[branch[-2]]
-                  expected_julia = julia_subsets[branch[-1]]
-                  if entry.get('betsySubset') != expected_betsy or entry.get('juliaSubset') != expected_julia:
-                      malformed.append({'branch': branch, 'reason': 'subset-identity'})
-                  if entry.get('outerReturnCode') != 0 or entry.get('outerTimeout') or entry.get('markerCount') != 1:
-                      outer_failures.append(entry)
-                  routing = entry.get('routing')
-                  if not isinstance(routing, dict):
-                      malformed.append({'branch': branch, 'reason': 'routing-missing'})
-                  else:
-                      if routing.get('betsySplitIndex') != branch[-2] or routing.get('betsySubset') != expected_betsy or routing.get('juliaSplitIndex') != branch[-1] or routing.get('juliaSubset') != expected_julia:
-                          malformed.append({'branch': branch, 'reason': 'routing-identity'})
-                      sparse_customer = routing.get('sparseCustomer')
-                      candidates = routing.get('candidates')
-                      if not isinstance(sparse_customer, str) or not isinstance(candidates, list):
-                          malformed.append({'branch': branch, 'reason': 'routing-shape'})
-                      else:
-                          sparse_counts[sparse_customer] += 1
-                          signature = json.dumps({
-                              'betsySplitIndex': branch[-2],
-                              'juliaSplitIndex': branch[-1],
-                              'sparseCustomer': sparse_customer,
-                              'candidates': candidates,
-                          }, sort_keys=True, separators=(',', ':'))
-                          signature_counts[signature] += 1
-                  results[key] = entry
-
-          source = json.loads(Path('julia-exact/identity-334-julia-binary-exact-audit.json').read_text())
-          assert source['complete'] is True
-          assert source['expectedBranches'] == 18650
-          assert source['statuses'] == {'infeasible': 4252, 'timelimit': 14398}
-          expected = {tuple(branch) for branch in source['branchesByStatus']['timelimit']}
-          assert len(expected) == 14398
-          observed = set(results)
-          signatures = []
-          for signature, branch_count in sorted(signature_counts.items()):
-              decoded = json.loads(signature)
-              decoded['branchCount'] = branch_count
-              signatures.append(decoded)
-
-          summary = {
-              'sourceJuliaBinaryExactRunId': 37753097739,
-              'sourceJuliaBinaryExactArtifactId': 11548521516,
-              'expectedBranches': len(expected),
-              'observedBranches': len(observed),
-              'missingBranches': sorted([list(key) for key in expected - observed]),
-              'unexpectedBranches': sorted([list(key) for key in observed - expected]),
-              'duplicateBranches': duplicates,
-              'malformed': malformed,
-              'outerFailures': len(outer_failures),
-              'sparseCustomerCounts': dict(sorted(sparse_counts.items())),
-              'routingSignatures': signatures,
-              'complete': observed == expected and not duplicates and not malformed and not outer_failures,
-          }
-          Path('identity-334-julia-binary-routing-audit.json').write_text(json.dumps(summary, indent=2, sort_keys=True) + '\n')
-          print(json.dumps(summary, indent=2, sort_keys=True))
-          assert summary['complete'] is True
-          PY
+      - name: Audit 28796 Bernard binary exact branches
+        run: python .github/scripts/diagnosis_branch21_bernard.py audit
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: identity-334-julia-binary-routing-audit
-          path: identity-334-julia-binary-routing-audit.json
+          name: identity-334-bernard-binary-exact-audit
+          path: identity-334-bernard-binary-exact-audit.json
           if-no-files-found: error
