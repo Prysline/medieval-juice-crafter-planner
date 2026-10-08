@@ -1,14 +1,14 @@
-name: Identity 334 betsy residual exact binary split
+name: Identity 334 betsy binary residual branch routing
 on:
   pull_request:
 jobs:
-  prepare-betsy-binary-shards:
+  prepare-betsy-binary-residual-routing-shards:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
-      - name: Build 253 Betsy binary exact shards from canonical Solomon residual
+      - name: Build 9325 Betsy binary residual routing branches
         id: matrix
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -17,99 +17,76 @@ jobs:
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11511676725/zip" \
-            -o solomon-audit.zip
-          unzip -q solomon-audit.zip -d solomon-audit
-          curl -fsSL \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11525284047/zip" \
-            -o betsy-routing.zip
-          unzip -q betsy-routing.zip -d betsy-routing
+            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11532240384/zip" \
+            -o betsy-audit.zip
+          unzip -q betsy-audit.zip -d betsy-audit
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import json
           from pathlib import Path
 
-          exact = json.loads(Path('solomon-audit/identity-334-solomon-exact-audit.json').read_text())
-          routing = json.loads(Path('betsy-routing/identity-334-solomon-routing-audit.json').read_text())
-
-          assert exact['complete'] is True
-          assert exact['expectedBranches'] == 22288
-          assert exact['observedBranches'] == 22288
-          assert exact['missingBranches'] == []
-          assert exact['unexpectedBranches'] == []
-          assert exact['duplicateBranches'] == []
-          assert exact['malformed'] == []
-          assert exact['outerFailures'] == 0
-          assert exact['outerTimeouts'] == 0
-          assert exact['statuses'] == {'infeasible': 16229, 'timelimit': 6059}
-          assert exact['timelimitBranches'] == 6059
-          assert exact['masterTimeoutBranches'] == 6059
-          assert exact['roundLimitBranches'] == 0
-          assert exact['fixedSupportTimeoutBranches'] == 0
-          assert exact['supportCuts'] == 0
-          assert exact['exactInfeasibleSupports'] == 0
-          assert exact['fixedSupportExactAttempts'] == 0
-          assert exact['exactSolveMs'] == 0
-          assert exact['witnessCount'] == 0
-          assert exact['globalWitnessCount'] == 0
-          residuals = exact['branchesByStatus']['timelimit']
-          assert len(residuals) == 6059
-          assert all(len(branch) == 7 for branch in residuals)
-
-          assert routing['complete'] is True
-          assert routing['sourceSolomonExactRunId'] == 37662969934
-          assert routing['expectedBranches'] == 6059
-          assert routing['observedBranches'] == 6059
-          assert routing['missingBranches'] == []
-          assert routing['unexpectedBranches'] == []
-          assert routing['malformed'] == []
-          assert routing['outerFailures'] == 0
-          assert routing['sparseCustomerCounts'] == {'betsy': 6059}
-          signatures = routing['routingSignatures']
-          assert len(signatures) == 1
-          signature = signatures[0]
-          assert signature['sparseCustomer'] == 'betsy'
-          assert signature['branchCount'] == 6059
-          betsy_choices = [entry['groupIndex'] for entry in signature['candidates']]
-          assert betsy_choices == [180, 258, 418, 489, 497, 536, 541, 547, 552, 554, 564, 576, 595, 619, 623, 632]
-          assert all(entry['slackOnly'] is False for entry in signature['candidates'])
-          betsy_subsets = [betsy_choices[:8], betsy_choices[8:]]
-          assert [len(subset) for subset in betsy_subsets] == [8, 8]
-          assert sorted(betsy_subsets[0] + betsy_subsets[1]) == sorted(betsy_choices)
-          assert set(betsy_subsets[0]).isdisjoint(betsy_subsets[1])
+          audit = json.loads(Path('betsy-audit/identity-334-betsy-binary-exact-audit.json').read_text())
+          assert audit['complete'] is True
+          assert audit['sourceSolomonExactRunId'] == 37662969934
+          assert audit['sourceBetsyRoutingRunId'] == 37716342240
+          assert audit['splitKind'] == 'required-any-used-binary'
+          assert audit['betsyCandidateGroups'] == [180, 258, 418, 489, 497, 536, 541, 547, 552, 554, 564, 576, 595, 619, 623, 632]
+          assert audit['betsySubsets'] == [
+              [180, 258, 418, 489, 497, 536, 541, 547],
+              [552, 554, 564, 576, 595, 619, 623, 632],
+          ]
+          assert audit['expectedBranches'] == 12118
+          assert audit['observedBranches'] == 12118
+          assert audit['missingBranches'] == []
+          assert audit['unexpectedBranches'] == []
+          assert audit['duplicateBranches'] == []
+          assert audit['malformed'] == []
+          assert audit['outerFailures'] == 0
+          assert audit['outerTimeouts'] == 0
+          assert audit['statuses'] == {'infeasible': 2793, 'timelimit': 9325}
+          assert audit['exactInfeasibleBranches'] == 2793
+          assert audit['masterTimeoutBranches'] == 9325
+          assert audit['roundLimitBranches'] == 0
+          assert audit['fixedSupportTimeoutBranches'] == 0
+          assert audit['supportCuts'] == 0
+          assert audit['exactInfeasibleSupports'] == 0
+          assert audit['fixedSupportExactAttempts'] == 0
+          assert audit['exactSolveMs'] == 0
+          assert audit['witnessCount'] == 0
+          assert audit['globalWitnessCount'] == 0
+          assert audit['witnesses'] == []
+          residuals = audit['branchesByStatus']['timelimit']
+          assert len(residuals) == 9325
+          assert all(len(branch) == 8 and branch[-1] in (0, 1) for branch in residuals)
 
           shards = []
-          for shard_index, start in enumerate(range(0, len(residuals), 24), start=1):
-              parents = residuals[start:start + 24]
+          for shard_index, start in enumerate(range(0, len(residuals), 39), start=1):
+              chunk = residuals[start:start + 39]
               shards.append({
                   'shard': shard_index,
-                  'parents_json': json.dumps(parents, separators=(',', ':')),
+                  'branches_json': json.dumps(chunk, separators=(',', ':')),
               })
-          assert len(shards) == 253
-          assert sum(len(json.loads(shard['parents_json'])) for shard in shards) == 6059
-          assert max(len(json.loads(shard['parents_json'])) for shard in shards) <= 24
-          assert sum(len(json.loads(shard['parents_json'])) * len(betsy_subsets) for shard in shards) == 12118
+          assert len(shards) == 240
+          assert sum(len(json.loads(shard['branches_json'])) for shard in shards) == 9325
+          assert max(len(json.loads(shard['branches_json'])) for shard in shards) <= 39
           print('matrix=' + json.dumps({'include': shards}, separators=(',', ':')))
           PY
 
-  identity-334-betsy-binary-exact:
+  identity-334-betsy-binary-residual-routing:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
-    needs: prepare-betsy-binary-shards
+    needs: prepare-betsy-binary-residual-routing-shards
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.prepare-betsy-binary-shards.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.prepare-betsy-binary-residual-routing-shards.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Run up to 48 independent Betsy binary exact branches
+      - name: Route up to thirty-nine current-canonical Betsy binary residual branches
         env:
-          SHARD_PARENTS: ${{ matrix.parents_json }}
+          SHARD_BRANCHES: ${{ matrix.branches_json }}
           MACHINE_CONTINUATION_HALL_SIGNATURE: '1'
         run: |
           python - <<'PY'
@@ -120,229 +97,166 @@ jobs:
           from pathlib import Path
 
           source_path = Path('src/domain/optimizerMachineContinuationProfile.test.ts')
-          original_text = source_path.read_text()
-
-          type_old = "    requiredUsedGroupIndexes?: readonly number[]\n    requiredSlackGroupIndexes?: readonly number[]"
-          type_new = "    requiredUsedGroupIndexes?: readonly number[]\n    requiredAnyUsedGroupIndexSets?: readonly (readonly number[])[]\n    requiredSlackGroupIndexes?: readonly number[]"
-          if original_text.count(type_old) != 1:
-              raise SystemExit('requiredUsed options marker not unique')
-          patched_text = original_text.replace(type_old, type_new)
-
-          destructure_old = "  const requiredUsedGroupIndexes =\n    options.requiredUsedGroupIndexes ?? []\n  const requiredSlackGroupIndexes ="
-          destructure_new = "  const requiredUsedGroupIndexes =\n    options.requiredUsedGroupIndexes ?? []\n  const requiredAnyUsedGroupIndexSets =\n    options.requiredAnyUsedGroupIndexSets ?? []\n  const requiredSlackGroupIndexes ="
-          if patched_text.count(destructure_old) != 1:
-              raise SystemExit('requiredUsed destructure marker not unique')
-          patched_text = patched_text.replace(destructure_old, destructure_new)
-
-          constraint_marker = "  requiredSlackGroupIndexes.forEach((groupIndex, index) => {"
-          if patched_text.count(constraint_marker) != 1:
-              raise SystemExit('requiredSlack constraint marker not unique')
-          any_constraint = """  requiredAnyUsedGroupIndexSets.forEach((groupIndexes, setIndex) => {\n    const requiredAnyUsed = groupIndexes.flatMap((groupIndex) => {\n      const used = usedGroupVars[groupIndex]\n      return used ? [used] : []\n    })\n    if (requiredAnyUsed.length !== groupIndexes.length || requiredAnyUsed.length === 0) {\n      model.addConstraint(\n        sum(...usedGroupVars).leq(-1),\n        `s31s_invalid_required_any_used_${setIndex}`,\n      )\n      return\n    }\n    model.addConstraint(\n      sum(...requiredAnyUsed).geq(1),\n      `s31s_required_any_used_${setIndex}`,\n    )\n  })\n"""
-          patched_text = patched_text.replace(constraint_marker, any_constraint + constraint_marker)
-
+          base_text = source_path.read_text()
           start_marker = "hallSignatureProfileIt(\n  'profiles Hall-closure membership signatures for unresolved 3+1+1 support',"
           end_marker = "\n  },\n  120000,\n)\n\n\nfunction build311HallSignatureSupportMaster"
-          start = patched_text.find(start_marker)
-          end = patched_text.find(end_marker, start)
+          start = base_text.find(start_marker)
+          end = base_text.find(end_marker, start)
           if start < 0 or end < 0:
-              raise SystemExit('test markers not found')
-          base_test = patched_text[start:end]
+              raise SystemExit('markers not found')
+          base_test = base_text[start:end]
           ansi = re.compile(r'\x1b\[[0-9;]*m')
-          marker = '[machine-extra1-pair-betsy-binary-result] '
-          parents = json.loads(os.environ['SHARD_PARENTS'])
-          assert 1 <= len(parents) <= 24
+          marker = '[machine-extra1-pair-betsy-binary-residual-routing] '
+          branches = json.loads(os.environ['SHARD_BRANCHES'])
+          assert 1 <= len(branches) <= 39
           betsy_subsets = [
               [180, 258, 418, 489, 497, 536, 541, 547],
               [552, 554, 564, 576, 595, 619, 623, 632],
           ]
           shard_results = []
           had_outer_failure = False
-          ordinal = 0
 
-          for parent in parents:
-              if len(parent) != 7:
-                  raise SystemExit(f'invalid Solomon residual identity: {parent!r}')
-              octavius_choice, oliver_choice, hugo_choice, tiffany_choice, dominic_choice, heloise_choice, solomon_choice = parent
-              for split_index, betsy_subset in enumerate(betsy_subsets):
-                  ordinal += 1
-                  subset_literal = json.dumps(betsy_subset, separators=(',', ':'))
-                  lines = [
-                      '',
-                      '    const fixedExactGroupIndex = 334',
-                      '    const fixedExactCustomerSet = new Set(groups[fixedExactGroupIndex].eligibleCustomerIds)',
-                      '    const fixedExactCustomers = [...fixedExactCustomerSet]',
-                      '    const requiredPair = [1052, 1070] as const',
-                      '    const saviusChoice = 692',
-                      '    const ambrosiaChoice = 1243',
-                      f'    const octaviusChoice = {octavius_choice}',
-                      f'    const oliverChoice = {oliver_choice}',
-                      f'    const hugoChoice = {hugo_choice}',
-                      f'    const tiffanyChoice = {tiffany_choice}',
-                      f'    const dominicChoice = {dominic_choice}',
-                      f'    const heloiseChoice = {heloise_choice}',
-                      f'    const solomonChoice = {solomon_choice}',
-                      f'    const betsySplitIndex = {split_index}',
-                      f'    const betsySubset = {subset_literal} as const',
-                      "    expect(groups[saviusChoice].eligibleCustomerIds).toContain('savius')",
-                      "    expect(groups[ambrosiaChoice].eligibleCustomerIds).toContain('ambrosia')",
-                      "    expect(groups[octaviusChoice].eligibleCustomerIds).toContain('octavius')",
-                      "    expect(groups[oliverChoice].eligibleCustomerIds).toContain('oliver')",
-                      "    expect(groups[hugoChoice].eligibleCustomerIds).toContain('hugo')",
-                      "    expect(groups[tiffanyChoice].eligibleCustomerIds).toContain('tiffany')",
-                      "    expect(groups[dominicChoice].eligibleCustomerIds).toContain('dominic')",
-                      "    expect(groups[heloiseChoice].eligibleCustomerIds).toContain('heloise')",
-                      "    expect(groups[solomonChoice].eligibleCustomerIds).toContain('solomon')",
-                      "    betsySubset.forEach((groupIndex) => expect(groups[groupIndex].eligibleCustomerIds).toContain('betsy'))",
-                      '    const thresholdCounts = [3, 1, 1, 0] as const',
-                      '    const supportCuts: number[][] = []',
-                      "    let status = 'round-limit'",
-                      '    let masterSolveMs = 0',
-                      '    let exactSolveMs = 0',
-                      '    let exactInfeasibleSupports = 0',
-                      '    let fixedSupportExactAttempts = 0',
-                      '    for (let round = 0; round < 16; round += 1) {',
-                      '      const built = build311ExtraCostSumSupportMaster(domain, fixedExactGroupIndex, 89, {',
-                      '        supportCuts,',
-                      '        includeCustomerFlow: true,',
-                      '        forcedCustomerIds: fixedExactCustomers,',
-                      '        requiredUsedGroupIndexes: [fixedExactGroupIndex, ...requiredPair, saviusChoice, ambrosiaChoice, octaviusChoice, oliverChoice, hugoChoice, tiffanyChoice, dominicChoice, heloiseChoice, solomonChoice],',
-                      '        requiredAnyUsedGroupIndexSets: [betsySubset],',
-                      '        requiredExtraOneGroupIndexes: [...requiredPair],',
-                      '      })',
-                      '      const solved = await solveBounded(built.model, 0.5)',
-                      '      masterSolveMs += solved.solveMs',
-                      "      if (solved.status === 'infeasible') { status = 'infeasible'; break }",
-                      "      if (solved.status !== 'optimal' || !solved.namedSolution) { status = solved.status; break }",
-                      '      const support = groups.flatMap((_group, groupIndex) => {',
-                      "        const raw = solved.namedSolution!.get(`s31su_${groupIndex}`)",
-                      "        return typeof raw === 'number' && Number.isFinite(raw) && raw > 0.5 ? [groupIndex] : []",
-                      '      })',
-                      "      if (support.length !== 30) throw new Error(`Expected 30 support groups, got ${support.length}`)",
-                      "      const exact = buildFinalizing30MaskPartitionStage(domain, new Set<ProductionStepKind>(['juicing', 'seasoning', 'blending']), thresholdCounts, { max: 76 }, 0, new Set(support))",
-                      '      fixedSupportExactAttempts += 1',
-                      '      const exactSolved = await solveBounded(exact.model, 3)',
-                      '      exactSolveMs += exactSolved.solveMs',
-                      "      if (exactSolved.status === 'infeasible') { exactInfeasibleSupports += 1; supportCuts.push(support); status = 'exact-infeasible-support'; continue }",
-                      "      if (exactSolved.status === 'optimal') { status = 'global-witness'; break }",
-                      "      status = `exact-${exactSolved.status}`",
-                      '      break',
-                      '    }',
-                      "    console.info('[machine-extra1-pair-betsy-binary-result]', JSON.stringify({ fixedGroupIndex: fixedExactGroupIndex, extraOneCostSum: 89, companionCost: 53, pair: requiredPair, saviusChoice, ambrosiaChoice, octaviusChoice, oliverChoice, hugoChoice, tiffanyChoice, dominicChoice, heloiseChoice, solomonChoice, betsySplitIndex, betsySubset, status, supportCuts: supportCuts.length, exactInfeasibleSupports, fixedSupportExactAttempts, masterSolveMs: Math.round(masterSolveMs), exactSolveMs: Math.round(exactSolveMs) }))",
-                  ]
-                  source_path.write_text(patched_text[:start] + base_test + '\n'.join(lines) + patched_text[end:])
-                  command = [
-                      'npx', 'vitest', 'run',
-                      'src/domain/optimizerMachineContinuationProfile.test.ts',
-                      '--maxWorkers=1', '--minWorkers=1',
-                      '-t', r'profiles Hall-closure membership signatures for unresolved 3\+1\+1 support',
-                  ]
-                  try:
-                      completed = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=150)
-                      output = completed.stdout
-                      returncode = completed.returncode
-                      outer_timeout = False
-                  except subprocess.TimeoutExpired as exc:
-                      output = (exc.stdout or '') if isinstance(exc.stdout, str) else (exc.stdout or b'').decode(errors='replace')
-                      returncode = 124
-                      outer_timeout = True
-                  Path(f'branch-{ordinal}.log').write_text(output)
-                  clean_lines = [ansi.sub('', line) for line in output.splitlines()]
-                  marked = [line for line in clean_lines if marker in line]
-                  result = {
-                      'branch': [*parent, split_index],
-                      'betsySubset': betsy_subset,
-                      'outerReturnCode': returncode,
-                      'outerTimeout': outer_timeout,
-                      'markerCount': len(marked),
-                      'solver': None,
-                  }
-                  if len(marked) == 1:
-                      marker_index = marked[0].find(marker)
-                      result['solver'] = json.loads(marked[0][marker_index + len(marker):])
-                  if returncode != 0 or len(marked) != 1:
-                      had_outer_failure = True
-                  shard_results.append(result)
+          for ordinal, values in enumerate(branches, start=1):
+              if len(values) != 8 or values[-1] not in (0, 1):
+                  raise SystemExit(f'invalid Betsy binary residual identity: {values!r}')
+              octavius_choice, oliver_choice, hugo_choice, tiffany_choice, dominic_choice, heloise_choice, solomon_choice, betsy_split_index = values
+              betsy_subset = betsy_subsets[betsy_split_index]
+              subset_literal = json.dumps(betsy_subset, separators=(',', ':'))
+              lines = [
+                  '',
+                  '    const fixedExactGroupIndex = 334',
+                  '    const fixedExactCustomerSet = new Set(groups[fixedExactGroupIndex].eligibleCustomerIds)',
+                  "    const residualCustomerIds = domain.serviceableCustomerIds.filter((customerId) => !fixedExactCustomerSet.has(customerId) && !['savius', 'ambrosia', 'octavius', 'oliver', 'hugo', 'tiffany', 'dominic', 'heloise', 'solomon', 'betsy'].includes(customerId))",
+                  '    const requiredPair = [1052, 1070] as const',
+                  '    const saviusChoice = 692',
+                  '    const ambrosiaChoice = 1243',
+                  f'    const octaviusChoice = {octavius_choice}',
+                  f'    const oliverChoice = {oliver_choice}',
+                  f'    const hugoChoice = {hugo_choice}',
+                  f'    const tiffanyChoice = {tiffany_choice}',
+                  f'    const dominicChoice = {dominic_choice}',
+                  f'    const heloiseChoice = {heloise_choice}',
+                  f'    const solomonChoice = {solomon_choice}',
+                  f'    const betsySplitIndex = {betsy_split_index}',
+                  f'    const betsySubset = {subset_literal} as const',
+                  "    expect(groups[saviusChoice].eligibleCustomerIds).toContain('savius')",
+                  "    expect(groups[ambrosiaChoice].eligibleCustomerIds).toContain('ambrosia')",
+                  "    expect(groups[octaviusChoice].eligibleCustomerIds).toContain('octavius')",
+                  "    expect(groups[oliverChoice].eligibleCustomerIds).toContain('oliver')",
+                  "    expect(groups[hugoChoice].eligibleCustomerIds).toContain('hugo')",
+                  "    expect(groups[tiffanyChoice].eligibleCustomerIds).toContain('tiffany')",
+                  "    expect(groups[dominicChoice].eligibleCustomerIds).toContain('dominic')",
+                  "    expect(groups[heloiseChoice].eligibleCustomerIds).toContain('heloise')",
+                  "    expect(groups[solomonChoice].eligibleCustomerIds).toContain('solomon')",
+                  "    betsySubset.forEach((groupIndex) => expect(groups[groupIndex].eligibleCustomerIds).toContain('betsy'))",
+                  '    const alreadyRequiredUsedGroupIndexes = new Set<number>([fixedExactGroupIndex, ...requiredPair, saviusChoice, ambrosiaChoice, octaviusChoice, oliverChoice, hugoChoice, tiffanyChoice, dominicChoice, heloiseChoice, solomonChoice])',
+                  '    const candidatesForCustomer = (customerId: string) => groups.flatMap((group, candidateGroupIndex) => {',
+                  '      if (candidateGroupIndex === fixedExactGroupIndex) return []',
+                  '      const residualEligible = group.eligibleCustomerIds.filter((eligibleCustomerId) => !fixedExactCustomerSet.has(eligibleCustomerId))',
+                  '      if (!residualEligible.includes(customerId)) return []',
+                  '      const normal = residualEligible.length >= 2',
+                  '      const slack = group.ingredientCost === SLACK_RECIPE_COST && residualEligible.length >= 1',
+                  '      return normal || slack ? [{ groupIndex: candidateGroupIndex, slackOnly: !normal && slack }] : []',
+                  '    })',
+                  '    const sparseCustomers = residualCustomerIds',
+                  '      .map((customerId) => ({ customerId, candidates: candidatesForCustomer(customerId) }))',
+                  '      .filter((entry) => entry.candidates.length > 0 && entry.candidates.every((candidate) => !alreadyRequiredUsedGroupIndexes.has(candidate.groupIndex)))',
+                  '      .sort((left, right) => left.candidates.length - right.candidates.length || left.customerId.localeCompare(right.customerId))',
+                  '    const sparse = sparseCustomers[0]',
+                  '    expect(sparse).toBeDefined()',
+                  '    if (sparse) {',
+                  "      console.info('[machine-extra1-pair-betsy-binary-residual-routing]', JSON.stringify({ fixedGroupIndex: fixedExactGroupIndex, extraOneCostSum: 89, companionCost: 53, pair: requiredPair, saviusChoice, ambrosiaChoice, octaviusChoice, oliverChoice, hugoChoice, tiffanyChoice, dominicChoice, heloiseChoice, solomonChoice, betsySplitIndex, betsySubset, sparseCustomer: sparse.customerId, candidateCount: sparse.candidates.length, candidates: sparse.candidates }))",
+                  '    }',
+              ]
+              source_path.write_text(base_text[:start] + base_test + '\n'.join(lines) + base_text[end:])
+              command = [
+                  'npx', 'vitest', 'run',
+                  'src/domain/optimizerMachineContinuationProfile.test.ts',
+                  '--maxWorkers=1', '--minWorkers=1',
+                  '-t', r'profiles Hall-closure membership signatures for unresolved 3\+1\+1 support',
+              ]
+              try:
+                  completed = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=150)
+                  output = completed.stdout
+                  returncode = completed.returncode
+                  outer_timeout = False
+              except subprocess.TimeoutExpired as exc:
+                  output = (exc.stdout or '') if isinstance(exc.stdout, str) else (exc.stdout or b'').decode(errors='replace')
+                  returncode = 124
+                  outer_timeout = True
+              Path(f'branch-{ordinal}.log').write_text(output)
+              clean_lines = [ansi.sub('', line) for line in output.splitlines()]
+              marked = [line for line in clean_lines if marker in line]
+              result = {
+                  'branch': values,
+                  'betsySubset': betsy_subset,
+                  'outerReturnCode': returncode,
+                  'outerTimeout': outer_timeout,
+                  'markerCount': len(marked),
+                  'routing': None,
+              }
+              if len(marked) == 1:
+                  marker_index = marked[0].find(marker)
+                  result['routing'] = json.loads(marked[0][marker_index + len(marker):])
+              if returncode != 0 or len(marked) != 1:
+                  had_outer_failure = True
+              shard_results.append(result)
 
-          source_path.write_text(original_text)
-          expected_count = len(parents) * len(betsy_subsets)
-          assert ordinal == expected_count
-          assert len(shard_results) == expected_count
-          Path('shard-results.json').write_text(json.dumps(shard_results, indent=2, sort_keys=True) + '\n')
+          source_path.write_text(base_text)
+          Path('routing-results.json').write_text(json.dumps(shard_results, indent=2, sort_keys=True) + '\n')
           if had_outer_failure:
-              raise SystemExit('one or more Betsy binary branch outer runs failed or emitted an invalid result count')
+              raise SystemExit('one or more Betsy binary residual routing branches failed or emitted an invalid result count')
           PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: identity-334-betsy-binary-shard-${{ matrix.shard }}
+          name: identity-334-betsy-binary-routing-shard-${{ matrix.shard }}
           path: |
-            shard-results.json
+            routing-results.json
             branch-*.log
           if-no-files-found: error
 
-  audit-betsy-binary-exact:
+  audit-betsy-binary-residual-routing:
     if: always()
-    needs: identity-334-betsy-binary-exact
+    needs: identity-334-betsy-binary-residual-routing
     runs-on: ubuntu-latest
     steps:
-      - name: Download all 253 Betsy binary shard artifacts safely
+      - name: Download all 240 Betsy binary routing shard artifacts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh run download "$GITHUB_RUN_ID" --repo Prysline/medieval-juice-crafter-planner --pattern 'identity-334-betsy-binary-shard-*' --dir betsy-shards
-          test "$(find betsy-shards -name shard-results.json | wc -l)" -eq 253
+          gh run download "$GITHUB_RUN_ID" --repo Prysline/medieval-juice-crafter-planner --pattern 'identity-334-betsy-binary-routing-shard-*' --dir routing-shards
+          test "$(find routing-shards -name routing-results.json | wc -l)" -eq 240
           curl -fsSL \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11511676725/zip" \
-            -o solomon-audit.zip
-          unzip -q solomon-audit.zip -d solomon-audit
-          curl -fsSL \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11525284047/zip" \
-            -o betsy-routing.zip
-          unzip -q betsy-routing.zip -d betsy-routing
-      - name: Audit all 12,118 Betsy binary exact branches
+            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11532240384/zip" \
+            -o betsy-audit.zip
+          unzip -q betsy-audit.zip -d betsy-audit
+      - name: Audit 9325 current-canonical Betsy binary routing results
         run: |
           python - <<'PY'
           import json
-          from collections import Counter
+          from collections import Counter, defaultdict
           from pathlib import Path
-
-          exact = json.loads(Path('solomon-audit/identity-334-solomon-exact-audit.json').read_text())
-          routing = json.loads(Path('betsy-routing/identity-334-solomon-routing-audit.json').read_text())
-          residuals = exact['branchesByStatus']['timelimit']
-          signature = routing['routingSignatures'][0]
-          betsy_choices = [entry['groupIndex'] for entry in signature['candidates']]
-          betsy_subsets = [betsy_choices[:8], betsy_choices[8:]]
-          expected = {
-              tuple(parent) + (split_index,)
-              for parent in residuals
-              for split_index in range(2)
-          }
-          assert len(expected) == 12118
 
           results = {}
           malformed = []
-          duplicates = []
           outer_failures = []
-          outer_timeouts = []
-          statuses = Counter()
-          support_cuts = 0
-          exact_infeasible_supports = 0
-          fixed_support_attempts = 0
-          exact_solve_ms = 0
-          witnesses = []
+          sparse_counts = Counter()
+          signature_counts = defaultdict(int)
+          betsy_subsets = [
+              [180, 258, 418, 489, 497, 536, 541, 547],
+              [552, 554, 564, 576, 595, 619, 623, 632],
+          ]
 
-          files = list(Path('betsy-shards').rglob('shard-results.json'))
-          if len(files) != 253:
+          files = list(Path('routing-shards').rglob('routing-results.json'))
+          if len(files) != 240:
               malformed.append({'reason': 'shard-result-count', 'count': len(files)})
           for path in files:
               entries = json.loads(path.read_text())
-              if not 1 <= len(entries) <= 48:
+              if not 1 <= len(entries) <= 39:
                   malformed.append({'path': str(path), 'reason': 'branch-count', 'count': len(entries)})
               for entry in entries:
                   key = tuple(entry.get('branch', []))
@@ -350,79 +264,60 @@ jobs:
                       malformed.append({'path': str(path), 'reason': 'branch-identity', 'branch': entry.get('branch')})
                       continue
                   if key in results:
-                      duplicates.append(list(key))
+                      malformed.append({'key': list(key), 'reason': 'duplicate'})
                       continue
                   results[key] = entry
                   expected_subset = betsy_subsets[key[-1]]
                   if entry.get('betsySubset') != expected_subset:
-                      malformed.append({'branch': list(key), 'reason': 'betsy-subset', 'observed': entry.get('betsySubset'), 'expected': expected_subset})
-                  if entry.get('outerReturnCode') != 0 or entry.get('markerCount') != 1 or entry.get('solver') is None:
+                      malformed.append({'key': list(key), 'reason': 'betsy-subset', 'observed': entry.get('betsySubset'), 'expected': expected_subset})
+                  if entry.get('outerReturnCode') != 0 or entry.get('outerTimeout') or entry.get('markerCount') != 1 or entry.get('routing') is None:
                       outer_failures.append(entry)
-                  if entry.get('outerTimeout'):
-                      outer_timeouts.append(entry)
-                  solver = entry.get('solver')
-                  if solver is None:
                       continue
-                  if solver.get('betsySplitIndex') != key[-1] or solver.get('betsySubset') != expected_subset:
-                      malformed.append({'branch': list(key), 'reason': 'solver-identity'})
-                  status = solver.get('status')
-                  if not isinstance(status, str):
-                      malformed.append({'branch': list(key), 'reason': 'solver-status'})
+                  routing = entry['routing']
+                  if routing.get('betsySplitIndex') != key[-1] or routing.get('betsySubset') != expected_subset:
+                      malformed.append({'key': list(key), 'reason': 'routing-identity'})
                       continue
-                  statuses[status] += 1
-                  support_cuts += int(solver.get('supportCuts', 0))
-                  exact_infeasible_supports += int(solver.get('exactInfeasibleSupports', 0))
-                  fixed_support_attempts += int(solver.get('fixedSupportExactAttempts', 0))
-                  exact_solve_ms += int(solver.get('exactSolveMs', 0))
-                  if status == 'global-witness':
-                      witnesses.append(list(key))
+                  sparse_counts[routing['sparseCustomer']] += 1
+                  signature_key = json.dumps({
+                      'betsySplitIndex': key[-1],
+                      'sparseCustomer': routing['sparseCustomer'],
+                      'candidates': routing['candidates'],
+                  }, sort_keys=True, separators=(',', ':'))
+                  signature_counts[signature_key] += 1
 
+          audit = json.loads(Path('betsy-audit/identity-334-betsy-binary-exact-audit.json').read_text())
+          assert audit['complete'] is True
+          assert audit['expectedBranches'] == 12118
+          assert audit['observedBranches'] == 12118
+          assert audit['statuses'] == {'infeasible': 2793, 'timelimit': 9325}
+          expected = {tuple(branch) for branch in audit['branchesByStatus']['timelimit']}
+          assert len(expected) == 9325
           observed = set(results)
-          branches_by_status = {}
-          for key, entry in results.items():
-              solver = entry.get('solver')
-              if solver is None or not isinstance(solver.get('status'), str):
-                  continue
-              branches_by_status.setdefault(solver['status'], []).append(list(key))
-          for value in branches_by_status.values():
-              value.sort()
-
+          signatures = []
+          for signature_key, count in sorted(signature_counts.items()):
+              signature = json.loads(signature_key)
+              signature['branchCount'] = count
+              signatures.append(signature)
           summary = {
-              'sourceSolomonExactRunId': 37662969934,
-              'sourceBetsyRoutingRunId': 37716342240,
-              'splitKind': 'required-any-used-binary',
-              'betsyCandidateGroups': betsy_choices,
-              'betsySubsets': betsy_subsets,
-              'expectedBranches': len(expected),
+              'sourceBetsyBinaryExactRunId': 37727009969,
+              'sourceBetsyBinaryExactArtifactId': 11532240384,
+              'expectedBranches': 9325,
               'observedBranches': len(observed),
               'missingBranches': sorted([list(key) for key in expected - observed]),
               'unexpectedBranches': sorted([list(key) for key in observed - expected]),
-              'duplicateBranches': duplicates,
               'malformed': malformed,
               'outerFailures': len(outer_failures),
-              'outerTimeouts': len(outer_timeouts),
-              'statuses': dict(sorted(statuses.items())),
-              'exactInfeasibleBranches': statuses.get('infeasible', 0),
-              'masterTimeoutBranches': statuses.get('timelimit', 0),
-              'roundLimitBranches': statuses.get('round-limit', 0) + statuses.get('exact-infeasible-support', 0),
-              'fixedSupportTimeoutBranches': statuses.get('exact-timelimit', 0),
-              'supportCuts': support_cuts,
-              'exactInfeasibleSupports': exact_infeasible_supports,
-              'fixedSupportExactAttempts': fixed_support_attempts,
-              'exactSolveMs': exact_solve_ms,
-              'witnessCount': len(witnesses),
-              'globalWitnessCount': len(witnesses),
-              'witnesses': witnesses,
-              'branchesByStatus': branches_by_status,
-              'complete': observed == expected and not duplicates and not malformed and not outer_failures and not outer_timeouts,
+              'sparseCustomerCounts': dict(sorted(sparse_counts.items())),
+              'routingSignatures': signatures,
+              'complete': observed == expected and not malformed and not outer_failures,
           }
-          Path('identity-334-betsy-binary-exact-audit.json').write_text(json.dumps(summary, indent=2, sort_keys=True) + '\n')
-          print(json.dumps({key: value for key, value in summary.items() if key != 'branchesByStatus'}, indent=2, sort_keys=True))
+          Path('identity-334-betsy-binary-routing-audit.json').write_text(json.dumps(summary, indent=2, sort_keys=True) + '\n')
+          print(json.dumps(summary, indent=2, sort_keys=True))
           assert summary['complete'] is True
           PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: identity-334-betsy-binary-exact-audit
-          path: identity-334-betsy-binary-exact-audit.json
+          name: identity-334-betsy-binary-routing-audit
+          path: identity-334-betsy-binary-routing-audit.json
           if-no-files-found: error
