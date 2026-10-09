@@ -1,84 +1,77 @@
-name: Identity 334 frotga residual exact binary split
+name: Identity 334 frotga residual routing
 on:
   pull_request:
 
 jobs:
-  prepare-frotga-binary-shards:
+  prepare-frotga-binary-residual-routing-shards:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
-      - name: Download Charles exact and routing evidence
+      - name: Download Frotga binary exact audit
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11611858688/zip" -o charles-exact.zip
-          unzip -q charles-exact.zip -d charles-exact
-          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11612948479/zip" -o charles-routing.zip
-          unzip -q charles-routing.zip -d charles-routing
-          gh run download "37922329738" --repo Prysline/medieval-juice-crafter-planner --pattern 'identity-334-charles-binary-routing-shard-*' --dir charles-routing-shards
-          test "$(find charles-routing-shards -name routing-results.json | wc -l)" -eq 31
-      - name: Build 3220 Frotga binary exact branches from 1610 routed parents
+            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11626287107/zip" -o frotga-exact.zip
+          unzip -q frotga-exact.zip -d frotga-exact
+      - name: Build 2396 Frotga binary residual routing branches
         id: matrix
-        run: python .github/scripts/diagnosis_branch21_frotga.py prepare >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: identity-334-frotga-binary-exact-source
-          path: identity-334-frotga-binary-exact-source.json
-          if-no-files-found: error
+        run: python .github/scripts/diagnosis_branch21_frotga_routing.py prepare >> "$GITHUB_OUTPUT"
 
-  identity-334-frotga-binary-exact:
+  identity-334-frotga-binary-residual-routing:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
-    needs: prepare-frotga-binary-shards
+    needs: prepare-frotga-binary-residual-routing-shards
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.prepare-frotga-binary-shards.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.prepare-frotga-binary-residual-routing-shards.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Run up to 20 independent Frotga binary exact branches
+      - name: Route up to 60 current-canonical Frotga binary residual branches
         env:
-          SHARD_PARENTS: ${{ matrix.parents_json }}
+          SHARD_BRANCHES: ${{ matrix.branches_json }}
           MACHINE_CONTINUATION_HALL_SIGNATURE: '1'
-        run: python .github/scripts/diagnosis_branch21_frotga.py run
+        run: python .github/scripts/diagnosis_branch21_frotga_routing.py run
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: identity-334-frotga-binary-exact-shard-${{ matrix.shard }}
+          name: identity-334-frotga-binary-routing-shard-${{ matrix.shard }}
           path: |
-            exact-results.json
+            routing-results.json
             branch-*.log
           if-no-files-found: error
 
-  audit-frotga-binary-exact:
+  audit-frotga-binary-residual-routing:
     if: always()
-    needs: identity-334-frotga-binary-exact
+    needs: identity-334-frotga-binary-residual-routing
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: identity-334-frotga-binary-exact-source
-          path: frotga-source
-      - name: Download all 161 Frotga exact shards
+      - name: Download Frotga binary exact audit
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh run download "$GITHUB_RUN_ID" --repo Prysline/medieval-juice-crafter-planner --pattern 'identity-334-frotga-binary-exact-shard-*' --dir exact-shards
-          test "$(find exact-shards -name exact-results.json | wc -l)" -eq 161
-      - name: Audit 3220 Frotga binary exact branches
-        run: python .github/scripts/diagnosis_branch21_frotga.py audit
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11626287107/zip" -o frotga-exact.zip
+          unzip -q frotga-exact.zip -d frotga-exact
+      - name: Download all 40 Frotga routing shards
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh run download "$GITHUB_RUN_ID" --repo Prysline/medieval-juice-crafter-planner --pattern 'identity-334-frotga-binary-routing-shard-*' --dir routing-shards
+          test "$(find routing-shards -name routing-results.json | wc -l)" -eq 40
+      - name: Audit 2396 current-canonical Frotga binary routing results
+        run: python .github/scripts/diagnosis_branch21_frotga_routing.py audit
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: identity-334-frotga-binary-exact-audit
-          path: identity-334-frotga-binary-exact-audit.json
+          name: identity-334-frotga-binary-routing-audit
+          path: identity-334-frotga-binary-routing-audit.json
           if-no-files-found: error
