@@ -1,84 +1,77 @@
-name: Identity 334 ulbert residual exact binary split
+name: Identity 334 ulbert residual routing
 on:
   pull_request:
 
 jobs:
-  prepare-ulbert-binary-shards:
+  prepare-ulbert-binary-residual-routing-shards:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
-      - name: Download Martha exact and routing evidence
+      - name: Download Ulbert binary exact audit
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11639564867/zip" -o martha-exact.zip
-          unzip -q martha-exact.zip -d martha-exact
-          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11641217137/zip" -o martha-routing.zip
-          unzip -q martha-routing.zip -d martha-routing
-          gh run download "37979747825" --repo Prysline/medieval-juice-crafter-planner --pattern 'identity-334-martha-binary-routing-shard-*' --dir martha-routing-shards
-          test "$(find martha-routing-shards -name routing-results.json | wc -l)" -eq 7
-      - name: Build 758 Ulbert binary exact branches from 379 routed parents
+            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11642000936/zip" -o ulbert-exact.zip
+          unzip -q ulbert-exact.zip -d ulbert-exact
+      - name: Build 602 Ulbert binary residual routing branches
         id: matrix
-        run: python .github/scripts/diagnosis_branch21_ulbert.py prepare >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: identity-334-ulbert-binary-exact-source
-          path: identity-334-ulbert-binary-exact-source.json
-          if-no-files-found: error
+        run: python .github/scripts/diagnosis_branch21_ulbert_routing.py prepare >> "$GITHUB_OUTPUT"
 
-  identity-334-ulbert-binary-exact:
+  identity-334-ulbert-binary-residual-routing:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
-    needs: prepare-ulbert-binary-shards
+    needs: prepare-ulbert-binary-residual-routing-shards
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.prepare-ulbert-binary-shards.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.prepare-ulbert-binary-residual-routing-shards.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Run up to 20 independent Ulbert binary exact branches
+      - name: Route up to 60 current-canonical Ulbert binary residual branches
         env:
-          SHARD_PARENTS: ${{ matrix.parents_json }}
+          SHARD_BRANCHES: ${{ matrix.branches_json }}
           MACHINE_CONTINUATION_HALL_SIGNATURE: '1'
-        run: python .github/scripts/diagnosis_branch21_ulbert.py run
+        run: python .github/scripts/diagnosis_branch21_ulbert_routing.py run
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: identity-334-ulbert-binary-exact-shard-${{ matrix.shard }}
+          name: identity-334-ulbert-binary-routing-shard-${{ matrix.shard }}
           path: |
-            exact-results.json
+            routing-results.json
             branch-*.log
           if-no-files-found: error
 
-  audit-ulbert-binary-exact:
+  audit-ulbert-binary-residual-routing:
     if: always()
-    needs: identity-334-ulbert-binary-exact
+    needs: identity-334-ulbert-binary-residual-routing
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: identity-334-ulbert-binary-exact-source
-          path: ulbert-source
-      - name: Download all 38 Ulbert exact shards
+      - name: Download Ulbert binary exact audit
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh run download "$GITHUB_RUN_ID" --repo Prysline/medieval-juice-crafter-planner --pattern 'identity-334-ulbert-binary-exact-shard-*' --dir exact-shards
-          test "$(find exact-shards -name exact-results.json | wc -l)" -eq 38
-      - name: Audit 758 Ulbert binary exact branches
-        run: python .github/scripts/diagnosis_branch21_ulbert.py audit
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11642000936/zip" -o ulbert-exact.zip
+          unzip -q ulbert-exact.zip -d ulbert-exact
+      - name: Download all 11 Ulbert routing shards
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh run download "$GITHUB_RUN_ID" --repo Prysline/medieval-juice-crafter-planner --pattern 'identity-334-ulbert-binary-routing-shard-*' --dir routing-shards
+          test "$(find routing-shards -name routing-results.json | wc -l)" -eq 11
+      - name: Audit 602 current-canonical Ulbert binary routing results
+        run: python .github/scripts/diagnosis_branch21_ulbert_routing.py audit
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: identity-334-ulbert-binary-exact-audit
-          path: identity-334-ulbert-binary-exact-audit.json
+          name: identity-334-ulbert-binary-routing-audit
+          path: identity-334-ulbert-binary-routing-audit.json
           if-no-files-found: error
