@@ -18,8 +18,42 @@ jobs:
             "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11574742299/zip" -o bernard-exact.zip
           unzip -q bernard-exact.zip -d bernard-exact
       - name: Build 23066 Bernard binary residual routing branches
+        run: python .github/scripts/diagnosis_branch21_bernard_routing.py prepare > bernard-routing-matrix.txt
+      - name: Persist Bernard routing shards outside the job output
         id: matrix
-        run: python .github/scripts/diagnosis_branch21_bernard_routing.py prepare >> "$GITHUB_OUTPUT"
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+
+          raw = Path('bernard-routing-matrix.txt').read_text().strip()
+          assert raw.startswith('matrix=')
+          source_matrix = json.loads(raw.removeprefix('matrix='))
+          source_entries = source_matrix['include']
+          assert len(source_entries) == 241
+
+          source_shards = []
+          matrix_entries = []
+          total = 0
+          for expected_shard, entry in enumerate(source_entries, start=1):
+              assert entry['shard'] == expected_shard
+              branches = json.loads(entry['branches_json'])
+              assert 1 <= len(branches) <= 96
+              source_shards.append({'shard': expected_shard, 'branches': branches})
+              matrix_entries.append({'shard': expected_shard})
+              total += len(branches)
+          assert total == 23066
+
+          Path('bernard-routing-source.json').write_text(
+              json.dumps({'shards': source_shards}, separators=(',', ':')) + '\n'
+          )
+          print('matrix=' + json.dumps({'include': matrix_entries}, separators=(',', ':')))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: identity-334-bernard-binary-routing-source
+          path: bernard-routing-source.json
+          if-no-files-found: error
 
   identity-334-bernard-binary-residual-routing:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
@@ -30,15 +64,37 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare-bernard-binary-residual-routing-shards.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: identity-334-bernard-binary-routing-source
+          path: bernard-routing-source
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
       - name: Route up to 96 current-canonical Bernard binary residual branches
         env:
-          SHARD_BRANCHES: ${{ matrix.branches_json }}
+          SHARD_INDEX: ${{ matrix.shard }}
           MACHINE_CONTINUATION_HALL_SIGNATURE: '1'
-        run: python .github/scripts/diagnosis_branch21_bernard_routing.py run
+        run: |
+          SHARD_BRANCHES="$(python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          shard_index = int(os.environ['SHARD_INDEX'])
+          source = json.loads(Path('bernard-routing-source/bernard-routing-source.json').read_text())
+          shards = source['shards']
+          assert 1 <= shard_index <= len(shards) == 241
+          shard = shards[shard_index - 1]
+          assert shard['shard'] == shard_index
+          branches = shard['branches']
+          assert 1 <= len(branches) <= 96
+          print(json.dumps(branches, separators=(',', ':')))
+          PY
+          )"
+          export SHARD_BRANCHES
+          python .github/scripts/diagnosis_branch21_bernard_routing.py run
       - uses: actions/upload-artifact@v4
         if: always()
         with:
