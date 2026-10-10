@@ -20,7 +20,12 @@ jobs:
           test "$(find nicholas-routing-shards -name routing-results.json | wc -l)" -eq 91
       - name: Build 10880 routed binary exact branches from 5440 Nicholas residual parents
         id: matrix
-        run: python .github/scripts/diagnosis_branch21_post_nicholas.py prepare >> "$GITHUB_OUTPUT"
+        run: |
+          python .github/scripts/diagnosis_branch21_post_nicholas.py prepare > /tmp/full-matrix.txt
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          print('matrix=' + json.dumps({'include': [{'shard': i} for i in range(1, 249)]}, separators=(',', ':')))
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: identity-334-post-nicholas-routed-binary-exact-source
@@ -40,9 +45,30 @@ jobs:
         with:
           node-version: 22
       - run: npm install
+      - name: Download validated routed exact source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh run download "$GITHUB_RUN_ID" --repo Prysline/medieval-juice-crafter-planner --name identity-334-post-nicholas-routed-binary-exact-source --dir post-nicholas-source
+      - name: Select this exact shard's 22 routed parents
+        env:
+          SHARD_INDEX: ${{ matrix.shard }}
+        run: |
+          python - <<'PY' >> "$GITHUB_ENV"
+          import json
+          import os
+          from pathlib import Path
+          source = json.loads(Path('post-nicholas-source/identity-334-post-nicholas-routed-binary-exact-source.json').read_text())
+          parents = source['parentBranches']
+          assert len(parents) == 5440
+          shard = int(os.environ['SHARD_INDEX'])
+          assert 1 <= shard <= 248
+          chunk = parents[(shard - 1) * 22:shard * 22]
+          assert len(chunk) == (6 if shard == 248 else 22)
+          print('SHARD_PARENTS=' + json.dumps(chunk, separators=(',', ':')))
+          PY
       - name: Run up to 44 independent post-Nicholas routed binary exact branches
         env:
-          SHARD_PARENTS: ${{ matrix.parents_json }}
           MACHINE_CONTINUATION_HALL_SIGNATURE: '1'
         run: python .github/scripts/diagnosis_branch21_post_nicholas.py run
       - uses: actions/upload-artifact@v4
