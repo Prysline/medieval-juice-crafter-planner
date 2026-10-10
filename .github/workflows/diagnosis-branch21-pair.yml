@@ -1,77 +1,77 @@
-name: Identity 334 tacy residual routing
+name: Identity 334 christina residual exact binary split
 on:
   pull_request:
 
 jobs:
-  prepare-tacy-binary-residual-routing-shards:
+  prepare-christina-binary-shards:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
-      - name: Download Tacy binary exact audit
+      - name: Download Tacy exact and routing evidence
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11643631020/zip" -o tacy-exact.zip
-          unzip -q tacy-exact.zip -d tacy-exact
-      - name: Build 970 Tacy binary residual routing branches
+          gh run download 37984707367 --repo Prysline/medieval-juice-crafter-planner --name identity-334-tacy-binary-exact-audit --dir tacy-exact
+          gh run download 38014113202 --repo Prysline/medieval-juice-crafter-planner --name identity-334-tacy-binary-routing-audit --dir tacy-routing
+          gh run download 38014113202 --repo Prysline/medieval-juice-crafter-planner --pattern 'identity-334-tacy-binary-routing-shard-*' --dir tacy-routing-shards
+          test "$(find tacy-routing-shards -name routing-results.json | wc -l)" -eq 17
+      - name: Build 1940 Christina binary exact branches from 970 routed parents
         id: matrix
-        run: python .github/scripts/diagnosis_branch21_tacy_routing.py prepare >> "$GITHUB_OUTPUT"
+        run: python .github/scripts/diagnosis_branch21_christina.py prepare >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: identity-334-christina-binary-exact-source
+          path: identity-334-christina-binary-exact-source.json
+          if-no-files-found: error
 
-  identity-334-tacy-binary-residual-routing:
+  identity-334-christina-binary-exact:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
-    needs: prepare-tacy-binary-residual-routing-shards
+    needs: prepare-christina-binary-shards
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.prepare-tacy-binary-residual-routing-shards.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.prepare-christina-binary-shards.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Route up to 60 current-canonical Tacy binary residual branches
+      - name: Run up to 20 independent Christina binary exact branches
         env:
-          SHARD_BRANCHES: ${{ matrix.branches_json }}
+          SHARD_PARENTS: ${{ matrix.parents_json }}
           MACHINE_CONTINUATION_HALL_SIGNATURE: '1'
-        run: python .github/scripts/diagnosis_branch21_tacy_routing.py run
+        run: python .github/scripts/diagnosis_branch21_christina.py run
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: identity-334-tacy-binary-routing-shard-${{ matrix.shard }}
+          name: identity-334-christina-binary-exact-shard-${{ matrix.shard }}
           path: |
-            routing-results.json
+            exact-results.json
             branch-*.log
           if-no-files-found: error
 
-  audit-tacy-binary-residual-routing:
+  audit-christina-binary-exact:
     if: always()
-    needs: identity-334-tacy-binary-residual-routing
+    needs: identity-334-christina-binary-exact
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Download Tacy binary exact audit
+      - name: Download Christina exact source and all 97 shards
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11643631020/zip" -o tacy-exact.zip
-          unzip -q tacy-exact.zip -d tacy-exact
-      - name: Download all 17 Tacy routing shards
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh run download "$GITHUB_RUN_ID" --repo Prysline/medieval-juice-crafter-planner --pattern 'identity-334-tacy-binary-routing-shard-*' --dir routing-shards
-          test "$(find routing-shards -name routing-results.json | wc -l)" -eq 17
-      - name: Audit 970 Tacy binary residual routing branches
-        run: python .github/scripts/diagnosis_branch21_tacy_routing.py audit
+          gh run download "$GITHUB_RUN_ID" --repo Prysline/medieval-juice-crafter-planner --name identity-334-christina-binary-exact-source --dir christina-source
+          gh run download "$GITHUB_RUN_ID" --repo Prysline/medieval-juice-crafter-planner --pattern 'identity-334-christina-binary-exact-shard-*' --dir exact-shards
+          test "$(find exact-shards -name exact-results.json | wc -l)" -eq 97
+      - name: Audit all 1940 Christina binary exact branches
+        run: python .github/scripts/diagnosis_branch21_christina.py audit
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: identity-334-tacy-binary-routing-audit
-          path: identity-334-tacy-binary-routing-audit.json
+          name: identity-334-christina-binary-exact-audit
+          path: identity-334-christina-binary-exact-audit.json
           if-no-files-found: error
