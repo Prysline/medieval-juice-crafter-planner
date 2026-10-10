@@ -1,77 +1,77 @@
-name: Identity 334 emerys residual routing
+name: Identity 334 william residual exact binary split
 on:
   pull_request:
 
 jobs:
-  prepare-emerys-binary-residual-routing-shards:
+  prepare-william-binary-shards:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
-      - name: Download Emerys binary exact audit
+      - name: Download Emerys exact and routing evidence
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11661629649/zip" -o emerys-exact.zip
-          unzip -q emerys-exact.zip -d emerys-exact
-      - name: Build 1872 Emerys binary residual routing branches
+          gh run download 38030208025 --repo Prysline/medieval-juice-crafter-planner --name identity-334-emerys-binary-exact-audit --dir emerys-exact
+          gh run download 38035351318 --repo Prysline/medieval-juice-crafter-planner --name identity-334-emerys-binary-routing-audit --dir emerys-routing
+          gh run download 38035351318 --repo Prysline/medieval-juice-crafter-planner --pattern 'identity-334-emerys-binary-routing-shard-*' --dir emerys-routing-shards
+          test "$(find emerys-routing-shards -name routing-results.json | wc -l)" -eq 32
+      - name: Build 3744 William binary exact branches from 1872 routed parents
         id: matrix
-        run: python .github/scripts/diagnosis_branch21_emerys_routing.py prepare >> "$GITHUB_OUTPUT"
+        run: python .github/scripts/diagnosis_branch21_william.py prepare >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: identity-334-william-binary-exact-source
+          path: identity-334-william-binary-exact-source.json
+          if-no-files-found: error
 
-  identity-334-emerys-binary-residual-routing:
+  identity-334-william-binary-exact:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
-    needs: prepare-emerys-binary-residual-routing-shards
+    needs: prepare-william-binary-shards
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.prepare-emerys-binary-residual-routing-shards.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.prepare-william-binary-shards.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Route up to 60 current-canonical Emerys binary residual branches
+      - name: Run up to 20 independent William binary exact branches
         env:
-          SHARD_BRANCHES: ${{ matrix.branches_json }}
+          SHARD_PARENTS: ${{ matrix.parents_json }}
           MACHINE_CONTINUATION_HALL_SIGNATURE: '1'
-        run: python .github/scripts/diagnosis_branch21_emerys_routing.py run
+        run: python .github/scripts/diagnosis_branch21_william.py run
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: identity-334-emerys-binary-routing-shard-${{ matrix.shard }}
+          name: identity-334-william-binary-exact-shard-${{ matrix.shard }}
           path: |
-            routing-results.json
+            exact-results.json
             branch-*.log
           if-no-files-found: error
 
-  audit-emerys-binary-residual-routing:
+  audit-william-binary-exact:
     if: always()
-    needs: identity-334-emerys-binary-residual-routing
+    needs: identity-334-william-binary-exact
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Download Emerys binary exact audit
+      - name: Download William exact source and all 188 shards
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/Prysline/medieval-juice-crafter-planner/actions/artifacts/11661629649/zip" -o emerys-exact.zip
-          unzip -q emerys-exact.zip -d emerys-exact
-      - name: Download all 32 Emerys routing shards
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh run download "$GITHUB_RUN_ID" --repo Prysline/medieval-juice-crafter-planner --pattern 'identity-334-emerys-binary-routing-shard-*' --dir routing-shards
-          test "$(find routing-shards -name routing-results.json | wc -l)" -eq 32
-      - name: Audit 1872 Emerys binary residual routing branches
-        run: python .github/scripts/diagnosis_branch21_emerys_routing.py audit
+          gh run download "$GITHUB_RUN_ID" --repo Prysline/medieval-juice-crafter-planner --name identity-334-william-binary-exact-source --dir william-source
+          gh run download "$GITHUB_RUN_ID" --repo Prysline/medieval-juice-crafter-planner --pattern 'identity-334-william-binary-exact-shard-*' --dir exact-shards
+          test "$(find exact-shards -name exact-results.json | wc -l)" -eq 188
+      - name: Audit all 3744 William binary exact branches
+        run: python .github/scripts/diagnosis_branch21_william.py audit
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: identity-334-emerys-binary-routing-audit
-          path: identity-334-emerys-binary-routing-audit.json
+          name: identity-334-william-binary-exact-audit
+          path: identity-334-william-binary-exact-audit.json
           if-no-files-found: error
