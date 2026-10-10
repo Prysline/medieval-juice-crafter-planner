@@ -1,77 +1,69 @@
-name: Identity 334 nicholas residual exact binary split
+name: Identity 334 nicholas residual routing
 on:
   pull_request:
 
 jobs:
-  prepare-nicholas-binary-shards:
+  prepare-nicholas-routing-shards:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
-      - name: Download Gonzalo exact and routing evidence
+      - name: Download Nicholas exact final audit
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh run download 38043599182 --repo Prysline/medieval-juice-crafter-planner --name identity-334-gonzalo-binary-exact-audit --dir gonzalo-exact
-          gh run download 38055666477 --repo Prysline/medieval-juice-crafter-planner --name identity-334-gonzalo-binary-routing-audit --dir gonzalo-routing
-          gh run download 38055666477 --repo Prysline/medieval-juice-crafter-planner --pattern 'identity-334-gonzalo-binary-routing-shard-*' --dir gonzalo-routing-shards
-          test "$(find gonzalo-routing-shards -name routing-results.json | wc -l)" -eq 62
-      - name: Build 7378 Nicholas binary exact branches from 3689 routed parents
+          gh run download 38062004689 --repo Prysline/medieval-juice-crafter-planner --name identity-334-nicholas-binary-exact-audit --dir nicholas-exact
+      - name: Build 5440 Nicholas residual routing branches
         id: matrix
-        run: python .github/scripts/diagnosis_branch21_nicholas.py prepare >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: identity-334-nicholas-binary-exact-source
-          path: identity-334-nicholas-binary-exact-source.json
-          if-no-files-found: error
+        run: python .github/scripts/diagnosis_branch21_nicholas_routing.py prepare >> "$GITHUB_OUTPUT"
 
-  identity-334-nicholas-binary-exact:
+  identity-334-nicholas-routing:
     if: github.head_ref == 'perf/exact-machine-operation-continuation'
-    needs: prepare-nicholas-binary-shards
+    needs: prepare-nicholas-routing-shards
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.prepare-nicholas-binary-shards.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.prepare-nicholas-routing-shards.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Run up to 32 independent Nicholas binary exact branches
+      - name: Route up to 60 genuine Nicholas timelimit residual branches
         env:
-          SHARD_PARENTS: ${{ matrix.parents_json }}
+          SHARD_BRANCHES: ${{ matrix.branches_json }}
           MACHINE_CONTINUATION_HALL_SIGNATURE: '1'
-        run: python .github/scripts/diagnosis_branch21_nicholas.py run
+        run: python .github/scripts/diagnosis_branch21_nicholas_routing.py run
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: identity-334-nicholas-binary-exact-shard-${{ matrix.shard }}
+          name: identity-334-nicholas-binary-routing-shard-${{ matrix.shard }}
           path: |
-            exact-results.json
+            routing-results.json
             branch-*.log
           if-no-files-found: error
 
-  audit-nicholas-binary-exact:
+  audit-nicholas-routing:
     if: always()
-    needs: identity-334-nicholas-binary-exact
+    needs: identity-334-nicholas-routing
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Download Nicholas exact source and all 231 shards
+      - name: Download Nicholas exact final audit and all 91 routing shards
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh run download "$GITHUB_RUN_ID" --repo Prysline/medieval-juice-crafter-planner --name identity-334-nicholas-binary-exact-source --dir nicholas-source
-          gh run download "$GITHUB_RUN_ID" --repo Prysline/medieval-juice-crafter-planner --pattern 'identity-334-nicholas-binary-exact-shard-*' --dir exact-shards
-          test "$(find exact-shards -name exact-results.json | wc -l)" -eq 231
-      - name: Audit all 7378 Nicholas binary exact branches
-        run: python .github/scripts/diagnosis_branch21_nicholas.py audit
+          gh run download 38062004689 --repo Prysline/medieval-juice-crafter-planner --name identity-334-nicholas-binary-exact-audit --dir nicholas-exact
+          gh run download "$GITHUB_RUN_ID" --repo Prysline/medieval-juice-crafter-planner --pattern 'identity-334-nicholas-binary-routing-shard-*' --dir routing-shards
+          test "$(find routing-shards -name routing-results.json | wc -l)" -eq 91
+      - name: Audit all 5440 Nicholas residual routing branches
+        run: python .github/scripts/diagnosis_branch21_nicholas_routing.py audit
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: identity-334-nicholas-binary-exact-audit
-          path: identity-334-nicholas-binary-exact-audit.json
+          name: identity-334-nicholas-binary-routing-audit
+          path: identity-334-nicholas-binary-routing-audit.json
           if-no-files-found: error
