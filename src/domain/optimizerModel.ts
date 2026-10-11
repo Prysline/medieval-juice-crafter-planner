@@ -370,13 +370,16 @@ export function buildOptimizationModel(
         return true
       },
     }
-    const candidateSource = source.candidatePool
+    const searchResult = source.candidatePool
       ? searchRecipeCandidatesForCustomer(
           source.candidatePool,
           request.currentProgress,
           customer,
           searchOptions,
-        ).candidates
+        )
+      : null
+    const candidateSource = searchResult
+      ? searchResult.eligibleFullMatchCandidates
       : preferUniqueIngredientFullMatchesForCustomer(
           source.candidates ?? [],
           customer,
@@ -387,10 +390,14 @@ export function buildOptimizationModel(
     for (const candidate of candidateSource) {
       const entry = cachedEligibleEntry(candidate)
       if (!entry) continue
-      if (!recipeCandidateMatchesCustomer(candidate, customer)) {
+      if (
+        !searchResult &&
+        !recipeCandidateMatchesCustomer(candidate, customer)
+      ) {
         continue
       }
       if (
+        !searchResult &&
         revenueSensitive &&
         formalIds.has(customerId) &&
         candidate.salePrice === null

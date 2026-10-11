@@ -39,6 +39,12 @@ export interface ProgressiveRecipeSearchStop {
 
 export interface ProgressiveRecipeSearchResult {
   readonly candidates: readonly RecipeCandidate[]
+  /**
+   * Final candidates that already passed search eligibility, full-match, and
+   * unique-ingredient preference for this customer. Optimizer callers may
+   * consume these directly instead of repeating the same matching pass.
+   */
+  readonly eligibleFullMatchCandidates: readonly RecipeCandidate[]
   readonly exploredLayers: readonly ProgressiveRecipeSearchLayerResult[]
   readonly guaranteedFullMatchFound: boolean
   readonly stoppedAt: ProgressiveRecipeSearchStop | null
@@ -122,7 +128,6 @@ export function preferUniqueIngredientFullMatchesForCustomer(
   )
 }
 
-
 function layerHasGuaranteedFullMatch(
   candidates: readonly RecipeCandidate[],
   customer: Customer,
@@ -187,9 +192,17 @@ function resultWithStop({
   options: ProgressiveRecipeSearchOptions
   guaranteedFullMatchFound?: boolean
 }): ProgressiveRecipeSearchResult {
-  return {
-    candidates: preferUniqueIngredientFullMatchesForCustomer(
+  const preferredCandidates =
+    preferUniqueIngredientFullMatchesForCustomer(
       candidates,
+      customer,
+      options,
+    )
+
+  return {
+    candidates: preferredCandidates,
+    eligibleFullMatchCandidates: eligibleFullMatchCandidates(
+      preferredCandidates,
       customer,
       options,
     ),
