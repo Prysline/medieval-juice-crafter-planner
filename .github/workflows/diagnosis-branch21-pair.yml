@@ -1,0 +1,95 @@
+name: Identity 334 post-Nicholas residual routing
+on:
+  pull_request:
+
+jobs:
+  prepare-post-nicholas-residual-routing:
+    if: github.head_ref == 'perf/exact-machine-operation-continuation'
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download post-Nicholas exact audit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh run download 38070874020 --repo Prysline/medieval-juice-crafter-planner --name identity-334-post-nicholas-routed-binary-exact-audit --dir post-nicholas-exact
+      - name: Build 8505 residual routing branches
+        id: matrix
+        run: python .github/scripts/diagnosis_branch21_post_nicholas_routing.py prepare >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: identity-334-post-nicholas-residual-routing-source
+          path: identity-334-post-nicholas-residual-routing-source.json
+          if-no-files-found: error
+
+  identity-334-post-nicholas-residual-routing:
+    if: github.head_ref == 'perf/exact-machine-operation-continuation'
+    needs: prepare-post-nicholas-residual-routing
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare-post-nicholas-residual-routing.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Download validated residual routing source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh run download "$GITHUB_RUN_ID" --repo Prysline/medieval-juice-crafter-planner --name identity-334-post-nicholas-residual-routing-source --dir post-nicholas-source
+      - name: Select this routing shard's residual parents
+        env:
+          SHARD_INDEX: ${{ matrix.shard }}
+        run: |
+          python - <<'PY' >> "$GITHUB_ENV"
+          import json
+          import os
+          from pathlib import Path
+          source = json.loads(Path('post-nicholas-source/identity-334-post-nicholas-residual-routing-source.json').read_text())
+          parents = source['parentBranches']
+          assert len(parents) == 8505
+          shard = int(os.environ['SHARD_INDEX'])
+          assert 1 <= shard <= 142
+          chunk = parents[(shard - 1) * 60:shard * 60]
+          assert len(chunk) == (45 if shard == 142 else 60)
+          print('SHARD_BRANCHES=' + json.dumps(chunk, separators=(',', ':')))
+          PY
+      - name: Route up to 60 genuine post-Nicholas residual branches
+        env:
+          MACHINE_CONTINUATION_HALL_SIGNATURE: '1'
+        run: python .github/scripts/diagnosis_branch21_post_nicholas_routing.py run
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: identity-334-post-nicholas-residual-routing-shard-${{ matrix.shard }}
+          path: |
+            routing-results.json
+            branch-*.log
+          if-no-files-found: error
+
+  audit-post-nicholas-residual-routing:
+    if: always()
+    needs: identity-334-post-nicholas-residual-routing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download post-Nicholas exact audit and all 142 routing shards
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh run download 38070874020 --repo Prysline/medieval-juice-crafter-planner --name identity-334-post-nicholas-routed-binary-exact-audit --dir post-nicholas-exact
+          gh run download "$GITHUB_RUN_ID" --repo Prysline/medieval-juice-crafter-planner --pattern 'identity-334-post-nicholas-residual-routing-shard-*' --dir routing-shards
+          test "$(find routing-shards -name routing-results.json | wc -l)" -eq 142
+      - name: Audit all 8505 post-Nicholas residual routing branches
+        run: python .github/scripts/diagnosis_branch21_post_nicholas_routing.py audit
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: identity-334-post-nicholas-residual-routing-audit
+          path: identity-334-post-nicholas-residual-routing-audit.json
+          if-no-files-found: error
