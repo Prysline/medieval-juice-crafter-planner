@@ -1,0 +1,20 @@
+name: Optimizer computed performance baseline
+
+on:
+  workflow_dispatch:
+
+jobs:
+  paired-structure-profile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Run trusted vs computed paired structural profile
+        env:
+          OPTIMIZER_PERF_PROFILE: '1'
+        run: npx vitest run src/domain/optimizerPerformanceProfile.test.ts --reporter=verbose
