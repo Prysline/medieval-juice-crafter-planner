@@ -105,4 +105,26 @@ describe('progressive search reusable match result', () => {
       result.eligibleFullMatchCandidates.map((item) => item.id),
     ).toEqual(['included-full-match'])
   })
+
+  it('does not expose an eligible candidate that is not a full match', () => {
+    const nonMatch = {
+      ...candidate('non-match', ['梨']),
+      effects: [{ name: '酸味', value: 5 }],
+    }
+    const match = candidate('full-match', ['檸檬'])
+
+    const result = searchRecipeCandidatesForCustomer(
+      pool([nonMatch, match]),
+      'seasoner-unlocked',
+      customer(),
+      {
+        candidatePolicy: 'allow-unambiguous-computed',
+        mode: 'bounded-exhaustive',
+      },
+    )
+
+    expect(
+      result.eligibleFullMatchCandidates.map((item) => item.id),
+    ).toEqual(['full-match'])
+  })
 })
