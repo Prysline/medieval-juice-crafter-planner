@@ -1,6 +1,9 @@
 name: Optimizer computed performance baseline
 
 on:
+  push:
+    branches:
+      - perf/computed-optimizer-paired-baseline
   workflow_dispatch:
 
 jobs:
