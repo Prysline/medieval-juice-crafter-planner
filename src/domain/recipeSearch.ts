@@ -103,18 +103,24 @@ function eligibleFullMatchCandidates(
   )
 }
 
-export function preferUniqueIngredientFullMatchesForCustomer(
+function preferredCandidateMatchResult(
   candidates: readonly RecipeCandidate[],
   customer: Customer,
   options: ProgressiveRecipeSearchOptions,
-): RecipeCandidate[] {
+): {
+  candidates: RecipeCandidate[]
+  eligibleFullMatchCandidates: RecipeCandidate[]
+} {
   const fullMatches = eligibleFullMatchCandidates(
     candidates,
     customer,
     options,
   )
   if (!fullMatches.some(usesUniqueIngredients)) {
-    return [...candidates]
+    return {
+      candidates: [...candidates],
+      eligibleFullMatchCandidates: fullMatches,
+    }
   }
 
   const repeatedFullMatchIds = new Set(
@@ -123,9 +129,24 @@ export function preferUniqueIngredientFullMatchesForCustomer(
       .map((candidate) => candidate.id),
   )
 
-  return candidates.filter(
-    (candidate) => !repeatedFullMatchIds.has(candidate.id),
-  )
+  return {
+    candidates: candidates.filter(
+      (candidate) => !repeatedFullMatchIds.has(candidate.id),
+    ),
+    eligibleFullMatchCandidates: fullMatches.filter(usesUniqueIngredients),
+  }
+}
+
+export function preferUniqueIngredientFullMatchesForCustomer(
+  candidates: readonly RecipeCandidate[],
+  customer: Customer,
+  options: ProgressiveRecipeSearchOptions,
+): RecipeCandidate[] {
+  return preferredCandidateMatchResult(
+    candidates,
+    customer,
+    options,
+  ).candidates
 }
 
 function layerHasGuaranteedFullMatch(
@@ -192,20 +213,15 @@ function resultWithStop({
   options: ProgressiveRecipeSearchOptions
   guaranteedFullMatchFound?: boolean
 }): ProgressiveRecipeSearchResult {
-  const preferredCandidates =
-    preferUniqueIngredientFullMatchesForCustomer(
-      candidates,
-      customer,
-      options,
-    )
+  const preferred = preferredCandidateMatchResult(
+    candidates,
+    customer,
+    options,
+  )
 
   return {
-    candidates: preferredCandidates,
-    eligibleFullMatchCandidates: eligibleFullMatchCandidates(
-      preferredCandidates,
-      customer,
-      options,
-    ),
+    candidates: preferred.candidates,
+    eligibleFullMatchCandidates: preferred.eligibleFullMatchCandidates,
     exploredLayers,
     guaranteedFullMatchFound,
     stoppedAt,
