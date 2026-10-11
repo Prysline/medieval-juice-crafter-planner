@@ -1,49 +1,48 @@
-name: Identity 334 Gavinus-route Ivo exact binary split
+name: Identity 334 Ivo residual routing
 on:
   pull_request:
 
 jobs:
-  prepare-ivo-binary-shards:
+  prepare-ivo-residual-routing:
     if: github.head_ref == 'perf/exact-machine-operation-ivo-continuation'
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
-      - name: Download completed post-Nicholas residual routing evidence
+      - name: Download completed Ivo binary exact audit
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh run download 38104396220 --repo Prysline/medieval-juice-crafter-planner --name identity-334-post-nicholas-residual-routing-source --dir post-nicholas-routing-source
-          gh run download 38104396220 --repo Prysline/medieval-juice-crafter-planner --name identity-334-post-nicholas-residual-routing-audit --dir post-nicholas-routing-audit
-      - name: Build 6948 Ivo binary exact branches from 3474 Gavinus-route parents
+          gh run download 38112733603 --repo Prysline/medieval-juice-crafter-planner --name identity-334-ivo-binary-exact-audit --dir ivo-exact
+      - name: Build 5051 genuine Ivo residual routing branches
         id: matrix
-        run: python .github/scripts/diagnosis_branch21_ivo.py prepare >> "$GITHUB_OUTPUT"
+        run: python .github/scripts/diagnosis_branch21_ivo_routing.py prepare >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
-          name: identity-334-ivo-binary-exact-source
-          path: identity-334-ivo-binary-exact-source.json
+          name: identity-334-ivo-residual-routing-source
+          path: identity-334-ivo-residual-routing-source.json
           if-no-files-found: error
 
-  identity-334-ivo-binary-exact:
+  identity-334-ivo-residual-routing:
     if: github.head_ref == 'perf/exact-machine-operation-ivo-continuation'
-    needs: prepare-ivo-binary-shards
+    needs: prepare-ivo-residual-routing
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.prepare-ivo-binary-shards.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.prepare-ivo-residual-routing.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - name: Download validated Ivo exact source
+      - name: Download validated Ivo residual routing source
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh run download "$GITHUB_RUN_ID" --repo Prysline/medieval-juice-crafter-planner --name identity-334-ivo-binary-exact-source --dir ivo-source
-      - name: Select this exact shard's up to 16 Gavinus-route parents
+          gh run download "$GITHUB_RUN_ID" --repo Prysline/medieval-juice-crafter-planner --name identity-334-ivo-residual-routing-source --dir ivo-routing-source
+      - name: Select this routing shard's up to 60 Ivo residual parents
         env:
           SHARD_INDEX: ${{ matrix.shard }}
         run: |
@@ -51,46 +50,47 @@ jobs:
           import json
           import os
           from pathlib import Path
-          source = json.loads(Path('ivo-source/identity-334-ivo-binary-exact-source.json').read_text())
+          source = json.loads(Path('ivo-routing-source/identity-334-ivo-residual-routing-source.json').read_text())
           parents = source['parentBranches']
-          assert len(parents) == 3474
+          assert len(parents) == 5051
           shard = int(os.environ['SHARD_INDEX'])
-          assert 1 <= shard <= 218
-          chunk = parents[(shard - 1) * 16:shard * 16]
-          assert len(chunk) == (2 if shard == 218 else 16)
-          print('SHARD_PARENTS=' + json.dumps(chunk, separators=(',', ':')))
+          assert 1 <= shard <= 85
+          chunk = parents[(shard - 1) * 60:shard * 60]
+          assert len(chunk) == (11 if shard == 85 else 60)
+          print('SHARD_BRANCHES=' + json.dumps(chunk, separators=(',', ':')))
           PY
-      - name: Run up to 32 independent Ivo binary exact branches
+      - name: Route up to 60 genuine Ivo residual branches
         env:
           MACHINE_CONTINUATION_HALL_SIGNATURE: '1'
-        run: python .github/scripts/diagnosis_branch21_ivo.py run
+        run: python .github/scripts/diagnosis_branch21_ivo_routing.py run
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: identity-334-ivo-binary-exact-shard-${{ matrix.shard }}
+          name: identity-334-ivo-residual-routing-shard-${{ matrix.shard }}
           path: |
-            exact-results.json
+            routing-results.json
             branch-*.log
           if-no-files-found: error
 
-  audit-ivo-binary-exact:
+  audit-ivo-residual-routing:
     if: always() && github.head_ref == 'perf/exact-machine-operation-ivo-continuation'
-    needs: identity-334-ivo-binary-exact
+    needs: identity-334-ivo-residual-routing
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Download Ivo exact source and all 218 shards
+      - name: Download Ivo exact audit, routing source, and all 85 shards
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh run download "$GITHUB_RUN_ID" --repo Prysline/medieval-juice-crafter-planner --name identity-334-ivo-binary-exact-source --dir ivo-source
-          gh run download "$GITHUB_RUN_ID" --repo Prysline/medieval-juice-crafter-planner --pattern 'identity-334-ivo-binary-exact-shard-*' --dir exact-shards
-          test "$(find exact-shards -name exact-results.json | wc -l)" -eq 218
-      - name: Audit all 6948 Ivo binary exact branches
-        run: python .github/scripts/diagnosis_branch21_ivo.py audit
+          gh run download 38112733603 --repo Prysline/medieval-juice-crafter-planner --name identity-334-ivo-binary-exact-audit --dir ivo-exact
+          gh run download "$GITHUB_RUN_ID" --repo Prysline/medieval-juice-crafter-planner --name identity-334-ivo-residual-routing-source --dir ivo-routing-source
+          gh run download "$GITHUB_RUN_ID" --repo Prysline/medieval-juice-crafter-planner --pattern 'identity-334-ivo-residual-routing-shard-*' --dir routing-shards
+          test "$(find routing-shards -name routing-results.json | wc -l)" -eq 85
+      - name: Audit all 5051 Ivo residual routing branches
+        run: python .github/scripts/diagnosis_branch21_ivo_routing.py audit
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: identity-334-ivo-binary-exact-audit
-          path: identity-334-ivo-binary-exact-audit.json
+          name: identity-334-ivo-residual-routing-audit
+          path: identity-334-ivo-residual-routing-audit.json
           if-no-files-found: error
