@@ -3,6 +3,10 @@ import { customers } from '../data/customers'
 import type { OptimizationObjective, OptimizationRequest } from './optimizerModel'
 import { profileOptimizerPolicyPair } from './optimizerPerformanceProfile'
 
+declare const process: {
+  env: Record<string, string | undefined>
+}
+
 const runProfile = process.env.OPTIMIZER_PERF_PROFILE === '1'
 
 const baseRequest: Omit<OptimizationRequest, 'candidatePolicy' | 'objective'> = {
