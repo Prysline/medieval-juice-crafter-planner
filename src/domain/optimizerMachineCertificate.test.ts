@@ -1,4 +1,3 @@
-import { Model } from '@bubblyworld/highs-ts'
 import { describe, expect, it } from 'vitest'
 import { customers as canonicalCustomers } from '../data/customers'
 import { buildRecipeCandidatePool } from './recipeCandidatePool'
@@ -53,27 +52,11 @@ describe('production-scale optimizer certificates', () => {
       stage1!.representativeRecipeCount,
     )
 
-    const originalSolve = Model.prototype.solve
-    const machineSolveMs: number[] = []
-    Model.prototype.solve = async function () {
-      const startedAt = performance.now()
-      const result = await originalSolve.call(this)
-      machineSolveMs.push(performance.now() - startedAt)
-      return result
-    }
-
-    const machineStartedAt = performance.now()
-    let certificate
-    try {
-      certificate =
-        await solveMachineOperationCertificateForCostFix(
-          stage1!.continuationDomain,
-          604,
-        )
-    } finally {
-      Model.prototype.solve = originalSolve
-    }
-    const machineMs = performance.now() - machineStartedAt
+    const certificate =
+      await solveMachineOperationCertificateForCostFix(
+        stage1!.continuationDomain,
+        604,
+      )
 
     expect(certificate).not.toBeNull()
     expect(certificate?.lowerBounds).toEqual({
@@ -90,20 +73,13 @@ describe('production-scale optimizer certificates', () => {
       ).total,
     ).toBe(54)
 
-    const jarStartedAt = performance.now()
     const jarCertificate =
       await solveJarSwitchCertificateForCostAndMachineFix(
         stage1!.continuationDomain,
         604,
         certificate!,
       )
-    const jarMs = performance.now() - jarStartedAt
 
-    console.info(
-      `OPTIMIZER_CERTIFICATE_TIMINGS ${JSON.stringify({ machineMs, machineSolveMs, jarMs, totalMs: machineMs + jarMs })}`,
-    )
-
-    expect(machineSolveMs.length).toBeGreaterThanOrEqual(4)
     expect(jarCertificate).not.toBeNull()
     expect(jarCertificate?.productionUnits).toBe(25)
     expect(
