@@ -1,0 +1,20 @@
+name: ThroughSeasoning incidence audit
+
+on:
+  push:
+    branches:
+      - diagnosis/p4-machine-partition-timing
+    paths:
+      - src/domain/optimizerThroughSeasoningIncidenceAudit.test.ts
+      - .github/workflows/through-seasoning-incidence-audit.yml
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npx vitest run src/domain/optimizerThroughSeasoningIncidenceAudit.test.ts --reporter=verbose
