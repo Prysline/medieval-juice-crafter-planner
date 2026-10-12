@@ -52,11 +52,13 @@ describe('production-scale optimizer certificates', () => {
       stage1!.representativeRecipeCount,
     )
 
+    const machineStartedAt = performance.now()
     const certificate =
       await solveMachineOperationCertificateForCostFix(
         stage1!.continuationDomain,
         604,
       )
+    const machineMs = performance.now() - machineStartedAt
 
     expect(certificate).not.toBeNull()
     expect(certificate?.lowerBounds).toEqual({
@@ -73,12 +75,18 @@ describe('production-scale optimizer certificates', () => {
       ).total,
     ).toBe(54)
 
+    const jarStartedAt = performance.now()
     const jarCertificate =
       await solveJarSwitchCertificateForCostAndMachineFix(
         stage1!.continuationDomain,
         604,
         certificate!,
       )
+    const jarMs = performance.now() - jarStartedAt
+
+    console.info(
+      `OPTIMIZER_CERTIFICATE_TIMINGS ${JSON.stringify({ machineMs, jarMs, totalMs: machineMs + jarMs })}`,
+    )
 
     expect(jarCertificate).not.toBeNull()
     expect(jarCertificate?.productionUnits).toBe(25)
