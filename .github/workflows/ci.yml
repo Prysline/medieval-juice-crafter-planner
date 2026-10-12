@@ -24,7 +24,7 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - name: Compare baseline and machine partition reduction on one runner
+      - name: Compare baseline, combined, and finalizing-only reduction on one runner
         run: |
           ORIGINAL_SHA="$(git rev-parse HEAD)"
           cp src/domain/optimizerMachineCertificate.test.ts /tmp/optimizerMachineCertificate.test.ts
@@ -35,11 +35,25 @@ jobs:
           npx vitest run src/domain/optimizerMachineCertificate.test.ts --reporter=verbose
           echo '=== BASELINE P4 0464c011 ==='
           npx vitest run src/domain/optimizerP4.test.ts -t 'solves the Blender workload through the production solver with the current certified optimum' --reporter=verbose
-          echo '=== REDUCED MACHINE CERTIFICATE 79f48a62 ==='
+          git restore src/domain/optimizerMachineCertificate.test.ts
+          echo '=== COMBINED MACHINE CERTIFICATE 79f48a62 ==='
           git checkout --detach 79f48a62e411fcaf5b445ea2da68935956138ad4
           npx vitest run src/domain/optimizerMachineCertificate.test.ts --reporter=verbose
-          echo '=== REDUCED P4 79f48a62 ==='
+          echo '=== COMBINED P4 79f48a62 ==='
           npx vitest run src/domain/optimizerP4.test.ts -t 'solves the Blender workload through the production solver with the current certified optimum' --reporter=verbose
+          echo '=== FINALIZING-ONLY EXPERIMENT ==='
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/domain/optimizerMachinePartitionReduction.ts')
+          text = path.read_text()
+          start = text.index("  if (partition.key === 'throughSeasoning') {")
+          end = text.index("\n\n  if (!sameKinds(partition.kinds, ['finalizing']))", start)
+          text = text[:start] + "  if (partition.key === 'throughSeasoning') return domain" + text[end:]
+          path.write_text(text)
+          PY
+          npx vitest run src/domain/optimizerMachineCertificate.test.ts --reporter=verbose
+          npx vitest run src/domain/optimizerP4.test.ts -t 'solves the Blender workload through the production solver with the current certified optimum' --reporter=verbose
+          git reset --hard
           git checkout --detach "$ORIGINAL_SHA"
       - run: npm run smoke:highs:dev
       - run: npm test
