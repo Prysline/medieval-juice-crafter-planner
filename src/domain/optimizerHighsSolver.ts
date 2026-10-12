@@ -108,6 +108,7 @@ interface HighsStageOptions {
   aggregateEquivalentMaximumCostProductionUnits?: boolean
   tightenRecipeBoundsFromMinimumCostFix?: boolean
   tightenOperationBoundsFromRecipeBounds?: boolean
+  machineOperationActiveEdgeLowerBound?: boolean
   machineOperationKinds?: Set<ProductionStepKind>
   fixedRecipeUnits?: Map<string, number>
   productionUnitsLowerBound?: number
@@ -877,16 +878,19 @@ function buildHighsStage(
 
     ;[...quantityTermsByEdgeKey.entries()].forEach(
       ([edgeKey, quantityTerms], edgeIndex) => {
+        const quantityUpperBound =
+          quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0
         const operationUpperBound =
-          options.tightenOperationBoundsFromRecipeBounds
-            ? Math.min(
-                maxTotalJuiceUnits,
-                Math.ceil(
-                  (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) /
-                    PROCESSING_STACK_CAPACITY,
-                ),
-              )
-            : maxTotalJuiceUnits
+          options.machineOperationActiveEdgeLowerBound
+            ? 1
+            : options.tightenOperationBoundsFromRecipeBounds
+              ? Math.min(
+                  maxTotalJuiceUnits,
+                  Math.ceil(
+                    quantityUpperBound / PROCESSING_STACK_CAPACITY,
+                  ),
+                )
+              : maxTotalJuiceUnits
         const operationCount = model.intVar(
           0,
           operationUpperBound,
@@ -896,11 +900,19 @@ function buildHighsStage(
         const quantityExpression = sum(...quantityTerms)
 
         model.addConstraint(
-          quantityExpression
-            .minus(
-              operationCount.times(PROCESSING_STACK_CAPACITY),
-            )
-            .leq(0),
+          options.machineOperationActiveEdgeLowerBound
+            ? quantityExpression
+                .minus(
+                  operationCount.times(
+                    Math.max(1, quantityUpperBound),
+                  ),
+                )
+                .leq(0)
+            : quantityExpression
+                .minus(
+                  operationCount.times(PROCESSING_STACK_CAPACITY),
+                )
+                .leq(0),
           `operation_capacity_${edgeIndex}`,
         )
         model.addConstraint(
@@ -1446,10 +1458,16 @@ async function tryMachineOperationCertificate(
   const partitions: Array<{
     key: keyof MachineOperationCertificateSummary['lowerBounds']
     kinds: ProductionStepKind[]
+    activeEdgeLowerBound?: boolean
   }> = [
     {
       key: 'throughSeasoning',
-      kinds: ['juicing', 'seasoning'],
+      kinds: ['juicing'],
+    },
+    {
+      key: 'throughSeasoning',
+      kinds: ['seasoning'],
+      activeEdgeLowerBound: true,
     },
     {
       key: 'blending',
@@ -1481,13 +1499,19 @@ async function tryMachineOperationCertificate(
         aggregateEquivalentAssignments: true,
         tightenRecipeBoundsFromMinimumCostFix: true,
         tightenOperationBoundsFromRecipeBounds: true,
+        machineOperationActiveEdgeLowerBound:
+          partition.activeEdgeLowerBound,
         machineOperationKinds: new Set(partition.kinds),
       },
     )
     const solution = await built.model.solve()
     if (solution.status !== 'optimal') return null
 
-    lowerBounds[partition.key] = Math.round(
+    // For seasoning, active edges are a valid lower bound because every
+    // active processing edge requires at least one machine operation. The
+    // independent partition minima may come from different recipe vectors;
+    // their sum is still a lower bound on every feasible combined solution.
+    lowerBounds[partition.key] += Math.round(
       requiredFiniteNumber(
         solution.objective,
         `${partition.key} lower-bound objective`,
