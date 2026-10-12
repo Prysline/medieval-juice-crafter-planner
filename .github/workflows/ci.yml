@@ -24,10 +24,23 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - name: Run trusted vs computed paired structural profile
+      - name: Compare baseline and PR optimizer runtime on one runner
         env:
           OPTIMIZER_PERF_PROFILE: '1'
-        run: npx vitest run src/domain/optimizerPerformanceProfile.test.ts --reporter=verbose
+        run: |
+          ORIGINAL_SHA="$(git rev-parse HEAD)"
+          git fetch --no-tags --depth=1 origin 0464c011eb67a06495e834aac29475827a7ee968 71aeaa87eb0754f39ddf16b23f1d83ed5fbb5405
+          echo '=== BASELINE STRUCTURE 0464c011 ==='
+          git checkout --detach 0464c011eb67a06495e834aac29475827a7ee968
+          npx vitest run src/domain/optimizerPerformanceProfile.test.ts --reporter=verbose
+          echo '=== BASELINE P4 0464c011 ==='
+          npx vitest run src/domain/optimizerP4.test.ts -t 'solves the Blender workload through the production solver with the current certified optimum' --reporter=verbose
+          echo '=== PR STRUCTURE 71aeaa87 ==='
+          git checkout --detach 71aeaa87eb0754f39ddf16b23f1d83ed5fbb5405
+          npx vitest run src/domain/optimizerPerformanceProfile.test.ts --reporter=verbose
+          echo '=== PR P4 71aeaa87 ==='
+          npx vitest run src/domain/optimizerP4.test.ts -t 'solves the Blender workload through the production solver with the current certified optimum' --reporter=verbose
+          git checkout --detach "$ORIGINAL_SHA"
       - run: npm run smoke:highs:dev
       - run: npm test
       - run: npm run build
