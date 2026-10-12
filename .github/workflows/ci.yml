@@ -24,6 +24,23 @@ jobs:
         with:
           node-version: 22
       - run: npm install
+      - name: Compare baseline and machine partition reduction on one runner
+        run: |
+          ORIGINAL_SHA="$(git rev-parse HEAD)"
+          cp src/domain/optimizerMachineCertificate.test.ts /tmp/optimizerMachineCertificate.test.ts
+          git fetch --no-tags --depth=1 origin 0464c011eb67a06495e834aac29475827a7ee968 79f48a62e411fcaf5b445ea2da68935956138ad4
+          echo '=== BASELINE MACHINE CERTIFICATE 0464c011 ==='
+          git checkout --detach 0464c011eb67a06495e834aac29475827a7ee968
+          cp /tmp/optimizerMachineCertificate.test.ts src/domain/optimizerMachineCertificate.test.ts
+          npx vitest run src/domain/optimizerMachineCertificate.test.ts --reporter=verbose
+          echo '=== BASELINE P4 0464c011 ==='
+          npx vitest run src/domain/optimizerP4.test.ts -t 'solves the Blender workload through the production solver with the current certified optimum' --reporter=verbose
+          echo '=== REDUCED MACHINE CERTIFICATE 79f48a62 ==='
+          git checkout --detach 79f48a62e411fcaf5b445ea2da68935956138ad4
+          npx vitest run src/domain/optimizerMachineCertificate.test.ts --reporter=verbose
+          echo '=== REDUCED P4 79f48a62 ==='
+          npx vitest run src/domain/optimizerP4.test.ts -t 'solves the Blender workload through the production solver with the current certified optimum' --reporter=verbose
+          git checkout --detach "$ORIGINAL_SHA"
       - run: npm run smoke:highs:dev
       - run: npm test
       - run: npm run build
