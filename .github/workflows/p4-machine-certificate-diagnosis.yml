@@ -9,7 +9,9 @@ on:
 jobs:
   profile:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 6
+    env:
+      P4_MACHINE_CERTIFICATE_DIAGNOSIS: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
