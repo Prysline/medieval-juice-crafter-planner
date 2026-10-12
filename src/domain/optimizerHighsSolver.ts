@@ -9,6 +9,7 @@ import {
   repairMachineOperationWitness,
   type RecipeUnitSelection,
 } from './optimizerCertificates'
+import { reduceMachineCertificatePartitionDomain } from './optimizerMachinePartitionReduction'
 import { PlanningUserError } from './planningErrors'
 import type { ProductionStepKind } from './productionPlan'
 import type {
@@ -1467,8 +1468,12 @@ async function tryMachineOperationCertificate(
   const witnessCandidates: RecipeUnitSelection[][] = []
 
   for (const partition of partitions) {
-    const built = buildHighsStage(
+    const partitionDomain = reduceMachineCertificatePartitionDomain(
       domain,
+      partition,
+    )
+    const built = buildHighsStage(
+      partitionDomain,
       'machineOperations',
       fixes,
       {
@@ -1489,7 +1494,7 @@ async function tryMachineOperationCertificate(
       ),
     )
     witnessCandidates.push(
-      selectedRecipeUnits(domain, built, solution),
+      selectedRecipeUnits(partitionDomain, built, solution),
     )
   }
 
