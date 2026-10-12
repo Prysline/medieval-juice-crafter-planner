@@ -28,7 +28,7 @@ function sameKinds(
   )
 }
 
-function partitionReductionIsSafe(
+function finalizingReductionIsSafe(
   domain: BatchOptimizationModel,
 ): boolean {
   if (domain.request.materialSourceMode === 'inventory-only') {
@@ -84,30 +84,8 @@ function serviceCostKey(
   return `${serviceKey}\u001d${recipe.juiceUnitIngredientCost}`
 }
 
-function partitionOperationSignature(
-  recipe: EligibleOptimizationRecipe,
-  kinds: ReadonlySet<ProductionStepKind>,
-): string {
-  const multiplicityByEdge = new Map<string, number>()
-
-  for (const edge of recipe.productionPath.edges) {
-    if (!kinds.has(edge.kind)) continue
-    const key = `${edge.kind}\u001f${edge.key}`
-    multiplicityByEdge.set(
-      key,
-      (multiplicityByEdge.get(key) ?? 0) + 1,
-    )
-  }
-
-  return [...multiplicityByEdge.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([key, multiplicity]) => `${key}\u001c${multiplicity}`)
-    .join('\u001b')
-}
-
-function representativesByKey(
+function representativesByServiceAndCost(
   domain: BatchOptimizationModel,
-  keyForRecipe: (recipe: EligibleOptimizationRecipe) => string,
 ): EligibleOptimizationRecipe[] {
   const representativeByKey = new Map<
     string,
@@ -115,7 +93,7 @@ function representativesByKey(
   >()
 
   for (const recipe of domain.recipes) {
-    const key = keyForRecipe(recipe)
+    const key = serviceCostKey(recipe)
     if (!representativeByKey.has(key)) {
       representativeByKey.set(key, recipe)
     }
@@ -125,63 +103,36 @@ function representativesByKey(
 }
 
 /**
- * Build a certificate-local exact quotient of real recipe identities.
+ * Build a certificate-local exact quotient for the finalizing lower bound.
  *
- * The quotient is deliberately limited to lower-bound partitions whose
- * objective cannot distinguish recipes inside one group. The full original
- * domain remains authoritative for witness repair and fixed-x verification.
+ * This reduction is intentionally not used for through-seasoning or blending:
+ * same-runner production profiling showed that shrinking through-seasoning
+ * made HiGHS slower despite reducing the structural model, while blending had
+ * negligible structural equivalence.
  *
- * throughSeasoning:
- * - same service set
- * - same fixed minimum-cost coefficient
- * - same selected operation-edge multiplicity
+ * For finalizing, every original recipe must own exactly one recipe-identity
+ * finalizing edge and the stage must have no per-recipe stock/cap/jar hard
+ * constraints. Recipes with the same service set and fixed minimum-cost
+ * coefficient are then interchangeable for this lower bound. Consolidating
+ * their units onto one real representative cannot increase
+ * sum(ceil(units / stackCapacity)); the representative itself is an original
+ * feasible recipe, so the reduced and original lower-bound optima are equal.
  *
- * finalizing:
- * - same service set
- * - same fixed minimum-cost coefficient
- * - one recipe-unique finalizing edge per original recipe
- *
- * Consolidating interchangeable finalizing production onto one real
- * representative cannot increase sum(ceil(x / stackCapacity)); conversely
- * the representative is itself an original recipe, so the reduced optimum
- * cannot beat the original optimum. The two optima are therefore equal.
+ * The full original domain remains authoritative for witness repair and the
+ * fixed-x verification solve that closes the certificate.
  */
 export function reduceMachineCertificatePartitionDomain(
   domain: BatchOptimizationModel,
   partition: MachineCertificatePartitionSpec,
 ): BatchOptimizationModel {
-  if (!partitionReductionIsSafe(domain)) return domain
-
-  if (partition.key === 'blending') return domain
-
-  if (partition.key === 'throughSeasoning') {
-    if (
-      !sameKinds(partition.kinds, ['juicing', 'seasoning'])
-    ) {
-      return domain
-    }
-    const kinds = new Set(partition.kinds)
-    const recipes = representativesByKey(
-      domain,
-      (recipe) =>
-        `${serviceCostKey(recipe)}\u001a${partitionOperationSignature(recipe, kinds)}`,
-    )
-    return recipes.length < domain.recipes.length
-      ? { ...domain, recipes }
-      : domain
-  }
-
-  if (!sameKinds(partition.kinds, ['finalizing'])) {
-    return domain
-  }
+  if (partition.key !== 'finalizing') return domain
+  if (!sameKinds(partition.kinds, ['finalizing'])) return domain
+  if (!finalizingReductionIsSafe(domain)) return domain
   if (!finalizingEdgesAreRecipeIdentityUnique(domain)) {
     return domain
   }
 
-  const recipes = representativesByKey(
-    domain,
-    serviceCostKey,
-  )
+  const recipes = representativesByServiceAndCost(domain)
   return recipes.length < domain.recipes.length
     ? { ...domain, recipes }
     : domain
