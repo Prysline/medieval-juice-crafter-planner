@@ -26,7 +26,7 @@ jobs:
         run: |
           set -euo pipefail
           BASE=11fcbcda9f80fa35e8395f7c466c8007a226b639
-          VARIANT=9baa2ec851333e5aeb10636c1fa46ce60da8ecc3
+          VARIANT=d0bd65afd8f71c502c7617a3641d77b00d9b106d
           git fetch origin main perf/exact-ceiling-machine-certificate
 
           run_p4() {
