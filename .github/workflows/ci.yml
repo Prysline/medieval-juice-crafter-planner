@@ -24,6 +24,10 @@ jobs:
         with:
           node-version: 22
       - run: npm install
+      - name: Run trusted vs computed paired structural profile
+        env:
+          OPTIMIZER_PERF_PROFILE: '1'
+        run: npx vitest run src/domain/optimizerPerformanceProfile.test.ts --reporter=verbose
       - run: npm run smoke:highs:dev
       - run: npm test
       - run: npm run build
