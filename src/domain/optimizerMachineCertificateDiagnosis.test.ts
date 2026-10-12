@@ -7,6 +7,7 @@ import {
   buildOptimizationModel,
   type OptimizationRequest,
 } from './optimizerModel'
+import { buildRecipeCandidatePool } from './recipeCandidatePool'
 
 describe('diagnosis-only P4 machine certificate solve timing', () => {
   it('profiles the existing exact certificate without changing production behavior', async () => {
@@ -31,6 +32,7 @@ describe('diagnosis-only P4 machine certificate solve timing', () => {
     }
     const domain = buildOptimizationModel(request, {
       customers: canonicalCustomers,
+      candidatePool: buildRecipeCandidatePool(request.currentProgress),
     })
     const stage1 = prepareMinimumCostStageCertificate(domain)
 
