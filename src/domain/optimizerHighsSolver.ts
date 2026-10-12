@@ -1487,7 +1487,8 @@ async function tryMachineOperationCertificate(
         aggregateEquivalentAssignments: true,
         tightenRecipeBoundsFromMinimumCostFix: true,
         tightenOperationBoundsFromRecipeBounds: true,
-        exactMachineOperationCeilingLink: true,
+        exactMachineOperationCeilingLink:
+          partition.key === 'throughSeasoning',
         machineOperationKinds: new Set(partition.kinds),
       },
     )
