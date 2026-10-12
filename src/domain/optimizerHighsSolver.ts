@@ -108,6 +108,7 @@ interface HighsStageOptions {
   aggregateEquivalentMaximumCostProductionUnits?: boolean
   tightenRecipeBoundsFromMinimumCostFix?: boolean
   tightenOperationBoundsFromRecipeBounds?: boolean
+  exactMachineOperationCeilingLink?: boolean
   machineOperationKinds?: Set<ProductionStepKind>
   fixedRecipeUnits?: Map<string, number>
   productionUnitsLowerBound?: number
@@ -904,7 +905,12 @@ function buildHighsStage(
           `operation_capacity_${edgeIndex}`,
         )
         model.addConstraint(
-          operationCount.minus(quantityExpression).leq(0),
+          options.exactMachineOperationCeilingLink
+            ? operationCount
+                .times(PROCESSING_STACK_CAPACITY)
+                .minus(quantityExpression)
+                .leq(PROCESSING_STACK_CAPACITY - 1)
+            : operationCount.minus(quantityExpression).leq(0),
           `operation_usage_${edgeIndex}`,
         )
       },
@@ -1481,6 +1487,7 @@ async function tryMachineOperationCertificate(
         aggregateEquivalentAssignments: true,
         tightenRecipeBoundsFromMinimumCostFix: true,
         tightenOperationBoundsFromRecipeBounds: true,
+        exactMachineOperationCeilingLink: true,
         machineOperationKinds: new Set(partition.kinds),
       },
     )
