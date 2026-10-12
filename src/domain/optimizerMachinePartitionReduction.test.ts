@@ -30,7 +30,7 @@ function edge(
   return {
     key,
     kind,
-    equipment: 'test',
+    equipment: '果汁成品台' as const,
     fromIngredientIds: ['lemon'],
     toIngredientIds: ['lemon'],
   }
