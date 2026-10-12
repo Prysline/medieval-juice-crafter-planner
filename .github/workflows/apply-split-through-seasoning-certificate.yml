@@ -1,0 +1,71 @@
+name: Apply split through-seasoning certificate
+
+on:
+  push:
+    branches:
+      - perf/split-through-seasoning-certificate
+    paths:
+      - .github/workflows/apply-split-through-seasoning-certificate.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: perf/split-through-seasoning-certificate
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Apply scoped certificate decomposition
+        shell: python
+        run: |
+          from pathlib import Path
+
+          solver = Path('src/domain/optimizerHighsSolver.ts')
+          text = solver.read_text()
+          replacements = [
+              (
+                  "  tightenOperationBoundsFromRecipeBounds?: boolean\n  machineOperationKinds?: Set<ProductionStepKind>\n",
+                  "  tightenOperationBoundsFromRecipeBounds?: boolean\n  machineOperationActiveEdgeLowerBound?: boolean\n  machineOperationKinds?: Set<ProductionStepKind>\n",
+              ),
+              (
+                  "        const operationUpperBound =\n          options.tightenOperationBoundsFromRecipeBounds\n            ? Math.min(\n                maxTotalJuiceUnits,\n                Math.ceil(\n                  (quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0) /\n                    PROCESSING_STACK_CAPACITY,\n                ),\n              )\n            : maxTotalJuiceUnits\n        const operationCount = model.intVar(\n          0,\n          operationUpperBound,\n          `op_${edgeIndex}`,\n        )\n        operationByEdgeKey.set(edgeKey, operationCount)\n        const quantityExpression = sum(...quantityTerms)\n\n        model.addConstraint(\n          quantityExpression\n            .minus(\n              operationCount.times(PROCESSING_STACK_CAPACITY),\n            )\n            .leq(0),\n          `operation_capacity_${edgeIndex}`,\n        )\n",
+                  "        const quantityUpperBound =\n          quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0\n        const operationUpperBound =\n          options.machineOperationActiveEdgeLowerBound\n            ? 1\n            : options.tightenOperationBoundsFromRecipeBounds\n              ? Math.min(\n                  maxTotalJuiceUnits,\n                  Math.ceil(\n                    quantityUpperBound / PROCESSING_STACK_CAPACITY,\n                  ),\n                )\n              : maxTotalJuiceUnits\n        const operationCount = model.intVar(\n          0,\n          operationUpperBound,\n          `op_${edgeIndex}`,\n        )\n        operationByEdgeKey.set(edgeKey, operationCount)\n        const quantityExpression = sum(...quantityTerms)\n\n        model.addConstraint(\n          options.machineOperationActiveEdgeLowerBound\n            ? quantityExpression\n                .minus(\n                  operationCount.times(\n                    Math.max(1, quantityUpperBound),\n                  ),\n                )\n                .leq(0)\n            : quantityExpression\n                .minus(\n                  operationCount.times(PROCESSING_STACK_CAPACITY),\n                )\n                .leq(0),\n          `operation_capacity_${edgeIndex}`,\n        )\n",
+              ),
+              (
+                  "  const partitions: Array<{\n    key: keyof MachineOperationCertificateSummary['lowerBounds']\n    kinds: ProductionStepKind[]\n  }> = [\n    {\n      key: 'throughSeasoning',\n      kinds: ['juicing', 'seasoning'],\n    },\n",
+                  "  const partitions: Array<{\n    key: keyof MachineOperationCertificateSummary['lowerBounds']\n    kinds: ProductionStepKind[]\n    activeEdgeLowerBound?: boolean\n  }> = [\n    {\n      key: 'throughSeasoning',\n      kinds: ['juicing'],\n    },\n    {\n      key: 'throughSeasoning',\n      kinds: ['seasoning'],\n      activeEdgeLowerBound: true,\n    },\n",
+              ),
+              (
+                  "        tightenOperationBoundsFromRecipeBounds: true,\n        machineOperationKinds: new Set(partition.kinds),\n",
+                  "        tightenOperationBoundsFromRecipeBounds: true,\n        machineOperationActiveEdgeLowerBound:\n          partition.activeEdgeLowerBound,\n        machineOperationKinds: new Set(partition.kinds),\n",
+              ),
+              (
+                  "    lowerBounds[partition.key] = Math.round(\n      requiredFiniteNumber(\n        solution.objective,\n        `${partition.key} lower-bound objective`,\n      ),\n    )\n",
+                  "    // For seasoning, active edges are a valid lower bound because every\n    // active processing edge requires at least one machine operation. The\n    // independent partition minima may come from different recipe vectors;\n    // their sum is still a lower bound on every feasible combined solution.\n    lowerBounds[partition.key] += Math.round(\n      requiredFiniteNumber(\n        solution.objective,\n        `${partition.key} lower-bound objective`,\n      ),\n    )\n",
+              ),
+          ]
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one solver match, found {count}: {old!r}')
+              text = text.replace(old, new, 1)
+          solver.write_text(text)
+      - name: Run focused certificate regressions
+        run: npx vitest run src/domain/optimizerMachineCertificate.test.ts --reporter=verbose
+      - name: Commit clean production diff
+        run: |
+          git rm .github/workflows/apply-split-through-seasoning-certificate.yml
+          git add src/domain/optimizerHighsSolver.ts
+          git diff --cached --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "Perf: split through-seasoning certificate bounds"
+          git push origin HEAD:perf/split-through-seasoning-certificate
