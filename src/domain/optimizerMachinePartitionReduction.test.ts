@@ -81,52 +81,7 @@ function ids(domain: BatchOptimizationModel): string[] {
   return domain.recipes.map((entry) => entry.candidate.id)
 }
 
-describe('machine certificate partition reduction', () => {
-  it('groups through-seasoning recipes only when service, cost, and selected edge multiplicity are identical', () => {
-    const domain = model([
-      recipe('same-1', 4, ['a', 'b'], [
-        edge('juice-lemon', 'juicing'),
-        edge('season-sugar', 'seasoning'),
-        edge('final-1', 'finalizing'),
-      ]),
-      recipe('same-2', 4, ['b', 'a'], [
-        edge('juice-lemon', 'juicing'),
-        edge('season-sugar', 'seasoning'),
-        edge('final-2', 'finalizing'),
-      ]),
-      recipe('different-edge', 4, ['a', 'b'], [
-        edge('juice-lemon', 'juicing'),
-        edge('season-honey', 'seasoning'),
-        edge('final-3', 'finalizing'),
-      ]),
-      recipe('different-cost', 5, ['a', 'b'], [
-        edge('juice-lemon', 'juicing'),
-        edge('season-sugar', 'seasoning'),
-        edge('final-4', 'finalizing'),
-      ]),
-      recipe('different-service', 4, ['a'], [
-        edge('juice-lemon', 'juicing'),
-        edge('season-sugar', 'seasoning'),
-        edge('final-5', 'finalizing'),
-      ]),
-    ])
-
-    const reduced = reduceMachineCertificatePartitionDomain(
-      domain,
-      {
-        key: 'throughSeasoning',
-        kinds: ['juicing', 'seasoning'],
-      },
-    )
-
-    expect(ids(reduced)).toEqual([
-      'same-1',
-      'different-edge',
-      'different-cost',
-      'different-service',
-    ])
-  })
-
+describe('machine certificate finalizing reduction', () => {
   it('groups finalizing recipes by service and cost when every finalizing edge is recipe-unique', () => {
     const domain = model([
       recipe('same-1', 4, ['a', 'b'], [
@@ -155,12 +110,18 @@ describe('machine certificate partition reduction', () => {
     ])
   })
 
-  it('keeps blending on the original domain', () => {
+  it('keeps through-seasoning and blending on the original domain', () => {
     const domain = model([
-      recipe('a', 4, ['a', 'b'], [edge('blend', 'blending')]),
-      recipe('b', 4, ['a', 'b'], [edge('blend', 'blending')]),
+      recipe('a', 4, ['a', 'b'], [edge('shared', 'juicing')]),
+      recipe('b', 4, ['a', 'b'], [edge('shared', 'juicing')]),
     ])
 
+    expect(
+      reduceMachineCertificatePartitionDomain(domain, {
+        key: 'throughSeasoning',
+        kinds: ['juicing', 'seasoning'],
+      }),
+    ).toBe(domain)
     expect(
       reduceMachineCertificatePartitionDomain(domain, {
         key: 'blending',
@@ -246,15 +207,15 @@ describe('machine certificate partition reduction', () => {
     }
   })
 
-  it('rejects a partition proof when its kind set no longer matches the certified partition', () => {
+  it('rejects a finalizing proof when the partition kind set changes', () => {
     const domain = model([
-      recipe('a', 4, ['a', 'b'], [edge('juice', 'juicing')]),
-      recipe('b', 4, ['a', 'b'], [edge('juice', 'juicing')]),
+      recipe('a', 4, ['a', 'b'], [edge('final-a', 'finalizing')]),
+      recipe('b', 4, ['a', 'b'], [edge('final-b', 'finalizing')]),
     ])
 
     expect(
       reduceMachineCertificatePartitionDomain(domain, {
-        key: 'throughSeasoning',
+        key: 'finalizing',
         kinds: ['juicing'],
       }),
     ).toBe(domain)
