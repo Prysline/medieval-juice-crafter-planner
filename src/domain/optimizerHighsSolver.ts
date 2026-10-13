@@ -112,6 +112,7 @@ interface HighsStageOptions {
   machineOperationKinds?: Set<ProductionStepKind>
   fixedRecipeUnits?: Map<string, number>
   productionUnitsLowerBound?: number
+  productionUnitsFix?: number
   allowUnassignedCustomers?: boolean
 }
 
@@ -937,7 +938,8 @@ function buildHighsStage(
 
   const productionUnitsExpression =
     needsAnyObjective('productionUnits') ||
-    typeof options.productionUnitsLowerBound === 'number'
+    typeof options.productionUnitsLowerBound === 'number' ||
+    typeof options.productionUnitsFix === 'number'
       ? sum(
           ...(groupedProductionUnitsByAssignmentGroupKey.size > 0
             ? [...groupedProductionUnitsByAssignmentGroupKey.values()]
@@ -957,6 +959,18 @@ function buildHighsStage(
         .times(-1)
         .leq(-Math.max(0, Math.floor(options.productionUnitsLowerBound))),
       'production_units_lower_bound',
+    )
+  }
+
+  if (
+    productionUnitsExpression &&
+    typeof options.productionUnitsFix === 'number'
+  ) {
+    model.addConstraint(
+      productionUnitsExpression.eq(
+        Math.max(0, Math.floor(options.productionUnitsFix)),
+      ),
+      'production_units_fix',
     )
   }
 
@@ -1418,6 +1432,58 @@ function verifiedAssignmentCount(
   ).length
 }
 
+interface ExactProductionUnitsAtMinimumCost {
+  productionUnits: number
+  extraProductionUnitCostLowerBound: number
+}
+
+async function tryExactProductionUnitsAtMinimumCost(
+  domain: BatchOptimizationModel,
+  fixedMinimumCost: number,
+): Promise<ExactProductionUnitsAtMinimumCost | null> {
+  if (domain.request.materialSourceMode === 'inventory-only') {
+    return null
+  }
+  if (
+    domain.recipes.some(
+      (recipe) => (recipe.initialFinishedServings ?? 0) > 0,
+    )
+  ) {
+    return null
+  }
+
+  const productionUnits = Math.ceil(
+    domain.serviceableCustomerIds.length / 2,
+  )
+  const extraUnitProbe = buildHighsStage(
+    domain,
+    'cost',
+    [],
+    {
+      relaxAssignmentVariables: true,
+      aggregateEquivalentAssignments: true,
+      productionUnitsLowerBound: productionUnits + 1,
+    },
+  )
+  const extraUnitSolution = await extraUnitProbe.model.solve()
+  if (extraUnitSolution.status !== 'optimal') return null
+
+  const extraProductionUnitCostLowerBound = Math.round(
+    requiredFiniteNumber(
+      extraUnitSolution.objective,
+      'extra-production-unit cost lower bound',
+    ),
+  )
+  if (extraProductionUnitCostLowerBound <= fixedMinimumCost) {
+    return null
+  }
+
+  return {
+    productionUnits,
+    extraProductionUnitCostLowerBound,
+  }
+}
+
 export interface MachineOperationCertificateSummary {
   optimum: number
   lowerBounds: {
@@ -1455,10 +1521,16 @@ async function tryMachineOperationCertificate(
       value: fixedMinimumCost,
     },
   ]
+  const exactProductionUnitsProof =
+    await tryExactProductionUnitsAtMinimumCost(
+      domain,
+      fixedMinimumCost,
+    )
   const partitions: Array<{
     key: keyof MachineOperationCertificateSummary['lowerBounds']
     kinds: ProductionStepKind[]
     activeEdgeLowerBound?: boolean
+    useExactProductionUnits?: boolean
   }> = [
     {
       key: 'throughSeasoning',
@@ -1468,6 +1540,7 @@ async function tryMachineOperationCertificate(
       key: 'throughSeasoning',
       kinds: ['seasoning'],
       activeEdgeLowerBound: true,
+      useExactProductionUnits: true,
     },
     {
       key: 'blending',
@@ -1501,6 +1574,12 @@ async function tryMachineOperationCertificate(
         tightenOperationBoundsFromRecipeBounds: true,
         machineOperationActiveEdgeLowerBound:
           partition.activeEdgeLowerBound,
+        ...(partition.useExactProductionUnits && exactProductionUnitsProof
+          ? {
+              productionUnitsFix:
+                exactProductionUnitsProof.productionUnits,
+            }
+          : {}),
         machineOperationKinds: new Set(partition.kinds),
       },
     )
@@ -1646,31 +1725,16 @@ async function tryJarSwitchCertificate(
     return null
   }
 
-  const productionUnits = Math.ceil(
-    domain.serviceableCustomerIds.length / 2,
-  )
-  const extraUnitProbe = buildHighsStage(
-    domain,
-    'cost',
-    [],
-    {
-      relaxAssignmentVariables: true,
-      aggregateEquivalentAssignments: true,
-      productionUnitsLowerBound: productionUnits + 1,
-    },
-  )
-  const extraUnitSolution = await extraUnitProbe.model.solve()
-  if (extraUnitSolution.status !== 'optimal') return null
-
-  const extraProductionUnitCostLowerBound = Math.round(
-    requiredFiniteNumber(
-      extraUnitSolution.objective,
-      'extra-production-unit cost lower bound',
-    ),
-  )
-  if (extraProductionUnitCostLowerBound <= fixedMinimumCost) {
-    return null
-  }
+  const exactProductionUnitsProof =
+    await tryExactProductionUnitsAtMinimumCost(
+      domain,
+      fixedMinimumCost,
+    )
+  if (!exactProductionUnitsProof) return null
+  const {
+    productionUnits,
+    extraProductionUnitCostLowerBound,
+  } = exactProductionUnitsProof
 
   if (!finalizingEdgesAreRecipeIdentityUnique(domain)) {
     return null
