@@ -1,0 +1,45 @@
+name: Optimizer scalability diagnosis
+
+on:
+  pull_request:
+    paths:
+      - 'src/domain/optimizerScalabilityProfile.test.ts'
+      - '.github/workflows/optimizer-scalability-diagnosis.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scalability-profile:
+    name: scalability-${{ matrix.case }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        case:
+          - canonical-12
+          - canonical-32
+          - canonical-69
+          - p4
+          - synthetic-1000
+          - synthetic-2000
+          - synthetic-2999
+          - synthetic-3000
+          - synthetic-4000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Run optimizer scalability profile
+        env:
+          OPTIMIZER_SCALABILITY_PROFILE: '1'
+          OPTIMIZER_SCALABILITY_CASE: ${{ matrix.case }}
+        run: >
+          npx vitest run
+          src/domain/optimizerScalabilityProfile.test.ts
+          --reporter=verbose
