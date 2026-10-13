@@ -1,0 +1,20 @@
+name: P4 seasoning symmetry audit
+
+on:
+  pull_request:
+    paths:
+      - 'src/domain/optimizerSeasoningSymmetryAudit.test.ts'
+      - '.github/workflows/p4-seasoning-symmetry-audit.yml'
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    env:
+      P4_SEASONING_SYMMETRY_AUDIT: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npx vitest run src/domain/optimizerSeasoningSymmetryAudit.test.ts --reporter=verbose
