@@ -110,9 +110,7 @@ function printedModelStats(lp: string): PrintedModelStats {
     lpLines: lp.split('\n').length,
     constraints,
     variables: variables.size,
-    productionVariables:
-      countByPrefix(variables, 'x_') +
-      countByPrefix(variables, 'x_group_'),
+    productionVariables: countByPrefix(variables, 'x_'),
     assignmentVariables: countByPrefix(variables, 'y_'),
     recipeUsageVariables: countByPrefix(variables, 'z_'),
     operationVariables: countByPrefix(variables, 'op_'),
@@ -234,6 +232,17 @@ type ProbeSolve = (
   ...args: unknown[]
 ) => Promise<ProbeSolution>
 
+function recordSolveProbeEvent(
+  context: SolveProbeContext,
+  event: SolveProbeEvent,
+): void {
+  context.events.push(event)
+  console.info(
+    '[optimizer-scalability-stage]',
+    JSON.stringify({ caseName: context.caseName, ...event }),
+  )
+}
+
 function installSolveProbe(context: SolveProbeContext): () => void {
   const prototype = Model.prototype as unknown as {
     solve: ProbeSolve
@@ -269,7 +278,7 @@ function installSolveProbe(context: SolveProbeContext): () => void {
       const solveMs = performance.now() - solveStartedAt
       const memoryAfter = memorySnapshot()
       context.lastSolveEndedAt = performance.now()
-      context.events.push({
+      recordSolveProbeEvent(context, {
         index: context.events.length + 1,
         label,
         caller: optimizerCaller(stack),
@@ -292,7 +301,7 @@ function installSolveProbe(context: SolveProbeContext): () => void {
       const solveMs = performance.now() - solveStartedAt
       const memoryAfter = memorySnapshot()
       context.lastSolveEndedAt = performance.now()
-      context.events.push({
+      recordSolveProbeEvent(context, {
         index: context.events.length + 1,
         label,
         caller: optimizerCaller(stack),
@@ -414,14 +423,7 @@ async function runWithProbe<T>(
 function emitProfile(
   caseName: string,
   payload: Record<string, unknown>,
-  events: readonly SolveProbeEvent[],
 ): void {
-  for (const event of events) {
-    console.info(
-      '[optimizer-scalability-stage]',
-      JSON.stringify({ caseName, ...event }),
-    )
-  }
   console.info(
     '[optimizer-scalability-summary]',
     JSON.stringify({ caseName, ...payload }),
@@ -614,7 +616,6 @@ async function runCanonicalCase(
         ...(pipeline.error ? { error: pipeline.error } : {}),
       },
     },
-    context.events,
   )
 
   expect(dimensions.recipes).toBeGreaterThan(0)
@@ -662,7 +663,6 @@ async function runSyntheticCase(
         ...(pipeline.error ? { error: pipeline.error } : {}),
       },
     },
-    context.events,
   )
 
   expect(dimensions.recipes).toBe(recipeCount)
