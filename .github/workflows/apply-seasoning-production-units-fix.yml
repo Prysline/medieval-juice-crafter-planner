@@ -1,0 +1,90 @@
+name: Apply seasoning production-unit tightening slice
+
+on:
+  push:
+    branches:
+      - perf/tighten-seasoning-production-units
+    paths:
+      - '.github/workflows/apply-seasoning-production-units-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: perf/tighten-seasoning-production-units
+      - name: Apply focused solver patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/domain/optimizerHighsSolver.ts')
+          text = path.read_text()
+
+          def replace_once(old: str, new: str) -> None:
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one match, got {count}: {old[:80]!r}')
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              "  fixedRecipeUnits?: Map<string, number>\n  productionUnitsLowerBound?: number\n  allowUnassignedCustomers?: boolean\n",
+              "  fixedRecipeUnits?: Map<string, number>\n  productionUnitsLowerBound?: number\n  productionUnitsFix?: number\n  allowUnassignedCustomers?: boolean\n",
+          )
+
+          replace_once(
+              "  const productionUnitsExpression =\n    needsAnyObjective('productionUnits') ||\n    typeof options.productionUnitsLowerBound === 'number'\n      ? sum(\n",
+              "  const productionUnitsExpression =\n    needsAnyObjective('productionUnits') ||\n    typeof options.productionUnitsLowerBound === 'number' ||\n    typeof options.productionUnitsFix === 'number'\n      ? sum(\n",
+          )
+
+          old_lower_bound = """  if (\n    productionUnitsExpression &&\n    typeof options.productionUnitsLowerBound === 'number'\n  ) {\n    model.addConstraint(\n      productionUnitsExpression\n        .times(-1)\n        .leq(-Math.max(0, Math.floor(options.productionUnitsLowerBound))),\n      'production_units_lower_bound',\n    )\n  }\n"""
+          new_lower_bound = old_lower_bound + """\n  if (\n    productionUnitsExpression &&\n    typeof options.productionUnitsFix === 'number'\n  ) {\n    model.addConstraint(\n      productionUnitsExpression.eq(\n        Math.max(0, Math.floor(options.productionUnitsFix)),\n      ),\n      'production_units_fix',\n    )\n  }\n"""
+          replace_once(old_lower_bound, new_lower_bound)
+
+          marker = "export interface MachineOperationCertificateSummary {\n"
+          helper = """interface ExactProductionUnitsAtMinimumCost {\n  productionUnits: number\n  extraProductionUnitCostLowerBound: number\n}\n\nasync function tryExactProductionUnitsAtMinimumCost(\n  domain: BatchOptimizationModel,\n  fixedMinimumCost: number,\n): Promise<ExactProductionUnitsAtMinimumCost | null> {\n  if (domain.request.materialSourceMode === 'inventory-only') {\n    return null\n  }\n  if (\n    domain.recipes.some(\n      (recipe) => (recipe.initialFinishedServings ?? 0) > 0,\n    )\n  ) {\n    return null\n  }\n\n  const productionUnits = Math.ceil(\n    domain.serviceableCustomerIds.length / 2,\n  )\n  const extraUnitProbe = buildHighsStage(\n    domain,\n    'cost',\n    [],\n    {\n      relaxAssignmentVariables: true,\n      aggregateEquivalentAssignments: true,\n      productionUnitsLowerBound: productionUnits + 1,\n    },\n  )\n  const extraUnitSolution = await extraUnitProbe.model.solve()\n  if (extraUnitSolution.status !== 'optimal') return null\n\n  const extraProductionUnitCostLowerBound = Math.round(\n    requiredFiniteNumber(\n      extraUnitSolution.objective,\n      'extra-production-unit cost lower bound',\n    ),\n  )\n  if (extraProductionUnitCostLowerBound <= fixedMinimumCost) {\n    return null\n  }\n\n  return {\n    productionUnits,\n    extraProductionUnitCostLowerBound,\n  }\n}\n\n"""
+          replace_once(marker, helper + marker)
+
+          replace_once(
+              "    activeEdgeLowerBound?: boolean\n  }> = [\n",
+              "    activeEdgeLowerBound?: boolean\n    useExactProductionUnits?: boolean\n  }> = [\n",
+          )
+
+          replace_once(
+              "    {\n      key: 'throughSeasoning',\n      kinds: ['seasoning'],\n      activeEdgeLowerBound: true,\n    },\n",
+              "    {\n      key: 'throughSeasoning',\n      kinds: ['seasoning'],\n      activeEdgeLowerBound: true,\n      useExactProductionUnits: true,\n    },\n",
+          )
+
+          fixes_marker = """  const fixes: ObjectiveFix[] = [\n    {\n      objective: 'cost',\n      value: fixedMinimumCost,\n    },\n  ]\n"""
+          fixes_replacement = fixes_marker + """  const exactProductionUnitsProof =\n    await tryExactProductionUnitsAtMinimumCost(\n      domain,\n      fixedMinimumCost,\n    )\n"""
+          replace_once(fixes_marker, fixes_replacement)
+
+          replace_once(
+              """        machineOperationActiveEdgeLowerBound:\n          partition.activeEdgeLowerBound,\n        machineOperationKinds: new Set(partition.kinds),\n""",
+              """        machineOperationActiveEdgeLowerBound:\n          partition.activeEdgeLowerBound,\n        ...(partition.useExactProductionUnits && exactProductionUnitsProof\n          ? {\n              productionUnitsFix:\n                exactProductionUnitsProof.productionUnits,\n            }\n          : {}),\n        machineOperationKinds: new Set(partition.kinds),\n""",
+          )
+
+          old_jar_probe = """  const productionUnits = Math.ceil(\n    domain.serviceableCustomerIds.length / 2,\n  )\n  const extraUnitProbe = buildHighsStage(\n    domain,\n    'cost',\n    [],\n    {\n      relaxAssignmentVariables: true,\n      aggregateEquivalentAssignments: true,\n      productionUnitsLowerBound: productionUnits + 1,\n    },\n  )\n  const extraUnitSolution = await extraUnitProbe.model.solve()\n  if (extraUnitSolution.status !== 'optimal') return null\n\n  const extraProductionUnitCostLowerBound = Math.round(\n    requiredFiniteNumber(\n      extraUnitSolution.objective,\n      'extra-production-unit cost lower bound',\n    ),\n  )\n  if (extraProductionUnitCostLowerBound <= fixedMinimumCost) {\n    return null\n  }\n"""
+          new_jar_probe = """  const exactProductionUnitsProof =\n    await tryExactProductionUnitsAtMinimumCost(\n      domain,\n      fixedMinimumCost,\n    )\n  if (!exactProductionUnitsProof) return null\n  const {\n    productionUnits,\n    extraProductionUnitCostLowerBound,\n  } = exactProductionUnitsProof\n"""
+          replace_once(old_jar_probe, new_jar_probe)
+
+          path.write_text(text)
+          PY
+
+          git diff --check
+          git diff -- src/domain/optimizerHighsSolver.ts
+      - name: Commit focused solver patch
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/domain/optimizerHighsSolver.ts
+          git commit -m 'Perf: tighten seasoning certificate with exact production units'
+          git push origin HEAD:perf/tighten-seasoning-production-units
