@@ -1,0 +1,32 @@
+name: Optimizer Non-Cost Machine Certificate 69 Diagnosis
+
+on:
+  push:
+    branches:
+      - diagnosis/non-cost-machine-certificate
+    paths:
+      - .github/workflows/optimizer-non-cost-machine-certificate-69-diagnosis.yml
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: diagnosis/non-cost-machine-certificate
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Run 69-customer non-cost machine certificate diagnosis
+        env:
+          OPTIMIZER_POST_MAX_COST_MACHINE_CERTIFICATE_PROFILE: '1'
+          OPTIMIZER_POST_MAX_COST_MACHINE_CERTIFICATE_CUSTOMERS: '69'
+        run: >-
+          npx vitest run
+          src/domain/optimizerPostMaximumCostMachineCertificateProfile.test.ts
+          --reporter=verbose
