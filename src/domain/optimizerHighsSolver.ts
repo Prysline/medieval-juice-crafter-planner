@@ -110,6 +110,7 @@ interface HighsStageOptions {
   tightenOperationBoundsFromRecipeBounds?: boolean
   machineOperationActiveEdgeLowerBound?: boolean
   machineOperationKinds?: Set<ProductionStepKind>
+  machineOperationsUpperBound?: number
   fixedRecipeUnits?: Map<string, number>
   productionUnitsLowerBound?: number
   productionUnitsFix?: number
@@ -293,9 +294,13 @@ function buildHighsStage(
     needsAnyObjective('jarSwitches') || hasJarHardConstraint
   const needsRecipeUsageStructure =
     needsAnyObjective('kinds') || needsJarStructure
+  const hasMachineOperationsUpperBound =
+    typeof options.machineOperationsUpperBound === 'number' &&
+    Number.isFinite(options.machineOperationsUpperBound)
   const needsProductionOperations =
     needsAnyObjective('machineOperations', 'jarFillOperations') ||
-    hasJarFillHardConstraint
+    hasJarFillHardConstraint ||
+    hasMachineOperationsUpperBound
   const needsRecipeSpecificAssignments = needsAnyObjective(
     'negativeAssignedIngredientCost',
     'negativeKnownRevenue',
@@ -983,9 +988,19 @@ function buildHighsStage(
       )
     : undefined
 
-  const machineOperationsExpression = needsAnyObjective('machineOperations')
-    ? sum(...operationByEdgeKey.values())
-    : undefined
+  const machineOperationsExpression =
+    needsAnyObjective('machineOperations') || hasMachineOperationsUpperBound
+      ? sum(...operationByEdgeKey.values())
+      : undefined
+
+  if (machineOperationsExpression && hasMachineOperationsUpperBound) {
+    model.addConstraint(
+      machineOperationsExpression.leq(
+        Math.max(0, Math.floor(options.machineOperationsUpperBound!)),
+      ),
+      'machine_operations_hard_limit',
+    )
+  }
 
   const jarFillOperationsExpression =
     needsAnyObjective('jarFillOperations') || hasJarFillHardConstraint
@@ -2157,6 +2172,258 @@ export async function solvePostMaximumIngredientCostMachineCertificateForDiagnos
         },
       }
     }
+  }
+
+  return { prefix, certificate: null, combinedCertificate: null }
+}
+
+
+/**
+ * Diagnosis-only alternative to the direct front3 optimization above.
+ * It starts from disjoint per-kind lower bounds, then asks a sequence of
+ * exact feasibility questions at consecutive front3 operation caps. The
+ * first feasible cap is therefore the exact front3 optimum. This remains
+ * diagnosis-only until it is both faster and covered by production regressions.
+ */
+export async function solvePostMaximumIngredientCostMachineThresholdCertificateForDiagnosis(
+  domain: BatchOptimizationModel,
+): Promise<PostMaximumIngredientCostMachineCertificateDiagnosis | null> {
+  if (!maximumIngredientCostGroupedProductionIsSafe(domain)) return null
+  if (
+    domain.recipes.some(
+      (recipe) => (recipe.initialFinishedServings ?? 0) > 0,
+    )
+  ) {
+    return null
+  }
+
+  const fixes: ObjectiveFix[] = []
+  const minimumWasteBuilt = buildHighsStage(
+    domain,
+    'productionUnits',
+    [],
+    { aggregateEquivalentAssignments: true },
+  )
+  const minimumWasteSolution = await minimumWasteBuilt.model.solve()
+  if (minimumWasteSolution.status !== 'optimal') return null
+  const productionUnits = Math.round(
+    requiredFiniteNumber(
+      minimumWasteSolution.objective,
+      'threshold diagnosis minimum-waste objective',
+    ),
+  )
+  fixes.push({ objective: 'productionUnits', value: productionUnits })
+
+  const maximumIngredientCostBuilt = buildHighsStage(
+    domain,
+    'negativeAssignedIngredientCost',
+    fixes,
+    {
+      aggregateEquivalentMaximumCostAssignments: true,
+      aggregateEquivalentMaximumCostProductionUnits: true,
+    },
+  )
+  const maximumIngredientCostSolution =
+    await maximumIngredientCostBuilt.model.solve()
+  if (maximumIngredientCostSolution.status !== 'optimal') return null
+  const negativeAssignedIngredientCost = Math.round(
+    requiredFiniteNumber(
+      maximumIngredientCostSolution.objective,
+      'threshold diagnosis maximum-ingredient-cost objective',
+    ),
+  )
+  fixes.push({
+    objective: 'negativeAssignedIngredientCost',
+    value: negativeAssignedIngredientCost,
+  })
+
+  const productionCost =
+    await tryPostMaximumIngredientCostPairParityOptimum(domain, fixes)
+  if (productionCost === null) return null
+  fixes.push({ objective: 'cost', value: productionCost })
+
+  const prefix = {
+    productionUnits,
+    assignedIngredientCost: -negativeAssignedIngredientCost,
+    productionCost,
+  }
+  const partitionDefinitions: Array<{
+    key: ProductionStepKind
+    kinds: ProductionStepKind[]
+    activeEdgeLowerBound?: boolean
+  }> = [
+    { key: 'juicing', kinds: ['juicing'] },
+    {
+      key: 'seasoning',
+      kinds: ['seasoning'],
+      activeEdgeLowerBound: true,
+    },
+    { key: 'blending', kinds: ['blending'] },
+    { key: 'finalizing', kinds: ['finalizing'] },
+  ]
+  const lowerBounds: Record<ProductionStepKind, number> = {
+    juicing: 0,
+    seasoning: 0,
+    blending: 0,
+    finalizing: 0,
+  }
+  const witnessCandidates: RecipeUnitSelection[][] = []
+
+  for (const partition of partitionDefinitions) {
+    const built = buildHighsStage(
+      domain,
+      'machineOperations',
+      fixes,
+      {
+        relaxAssignmentVariables: true,
+        aggregateEquivalentMaximumCostAssignments: true,
+        tightenRecipeBoundsFromMinimumCostFix: true,
+        tightenOperationBoundsFromRecipeBounds: true,
+        machineOperationActiveEdgeLowerBound:
+          partition.activeEdgeLowerBound,
+        machineOperationKinds: new Set(partition.kinds),
+      },
+    )
+    const solution = await built.model.solve()
+    if (solution.status !== 'optimal') {
+      return { prefix, certificate: null, combinedCertificate: null }
+    }
+    lowerBounds[partition.key] = Math.round(
+      requiredFiniteNumber(
+        solution.objective,
+        `threshold diagnosis ${partition.key} lower-bound objective`,
+      ),
+    )
+    witnessCandidates.push(selectedRecipeUnits(domain, built, solution))
+  }
+
+  const frontKinds: ProductionStepKind[] = [
+    'juicing',
+    'seasoning',
+    'blending',
+  ]
+  const initialFrontLowerBound =
+    lowerBounds.juicing + lowerBounds.seasoning + lowerBounds.blending
+  const finalizingLowerBound = lowerBounds.finalizing
+  const maxThresholdGap = 4
+
+  for (
+    let frontCap = initialFrontLowerBound;
+    frontCap <= initialFrontLowerBound + maxThresholdGap;
+    frontCap += 1
+  ) {
+    const built = buildHighsStage(
+      domain,
+      'productionUnits',
+      fixes,
+      {
+        relaxAssignmentVariables: true,
+        aggregateEquivalentMaximumCostAssignments: true,
+        tightenRecipeBoundsFromMinimumCostFix: true,
+        tightenOperationBoundsFromRecipeBounds: true,
+        machineOperationKinds: new Set(frontKinds),
+        machineOperationsUpperBound: frontCap,
+      },
+    )
+    const solution = await built.model.solve()
+    if (solution.status === 'infeasible') continue
+    if (solution.status !== 'optimal') {
+      return { prefix, certificate: null, combinedCertificate: null }
+    }
+
+    const totalLowerBound = frontCap + finalizingLowerBound
+    const candidates = [
+      selectedRecipeUnits(domain, built, solution),
+      ...witnessCandidates,
+    ]
+    for (const candidate of candidates) {
+      const repaired = repairMachineOperationWitness(
+        domain,
+        candidate,
+        productionCost,
+        totalLowerBound,
+      )
+      if (repaired.breakdown.total !== totalLowerBound) continue
+
+      const fixedRecipeUnits = new Map(
+        repaired.selections.map((selection) => [
+          selection.recipeId,
+          selection.units,
+        ]),
+      )
+      const verificationBuilt = buildHighsStage(
+        domain,
+        'machineOperations',
+        fixes,
+        { fixedRecipeUnits },
+      )
+      const verificationSolution = await verificationBuilt.model.solve()
+      if (verificationSolution.status !== 'optimal') continue
+      const verifiedObjective = Math.round(
+        requiredFiniteNumber(
+          verificationSolution.objective,
+          'threshold diagnosis fixed-x machine objective',
+        ),
+      )
+      const assignmentCount = verifiedAssignmentCount(
+        domain,
+        verificationBuilt,
+        verificationSolution,
+      )
+      if (
+        verifiedObjective !== totalLowerBound ||
+        assignmentCount !== domain.serviceableCustomerIds.length
+      ) {
+        continue
+      }
+
+      const positiveWitnessRecipeUnits = repaired.selections.filter(
+        (selection) => selection.units > 0,
+      )
+      const witnessProductionUnits = positiveWitnessRecipeUnits.reduce(
+        (total, selection) => total + Math.round(selection.units),
+        0,
+      )
+      const recipeKindsLowerBound =
+        finalizingEdgesAreRecipeIdentityUnique(domain) &&
+        witnessProductionUnits === productionUnits
+          ? minimumRecipeKindsFromFinalizingBound(
+              productionUnits,
+              finalizingLowerBound,
+            )
+          : null
+      const recipeKindsOptimum =
+        recipeKindsLowerBound !== null &&
+        positiveWitnessRecipeUnits.length === recipeKindsLowerBound
+          ? recipeKindsLowerBound
+          : undefined
+
+      return {
+        prefix,
+        certificate: null,
+        combinedCertificate: {
+          optimum: totalLowerBound,
+          partitions: [
+            { kinds: frontKinds, lowerBound: frontCap },
+            {
+              kinds: ['finalizing'],
+              lowerBound: finalizingLowerBound,
+            },
+          ],
+          ...(recipeKindsOptimum === undefined
+            ? {}
+            : { recipeKindsOptimum }),
+          witnessRecipeUnits: repaired.selections,
+          witnessRepairSteps: repaired.steps.length,
+          verifiedAssignmentCount: assignmentCount,
+        },
+      }
+    }
+
+    // The first feasible cap proves the front3 optimum. If no witness can be
+    // repaired and verified at that value, do not skip to a higher cap and
+    // accidentally weaken lexicographic exactness.
+    return { prefix, certificate: null, combinedCertificate: null }
   }
 
   return { prefix, certificate: null, combinedCertificate: null }

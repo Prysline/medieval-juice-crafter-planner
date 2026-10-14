@@ -4,6 +4,7 @@ import { customers as canonicalCustomers } from '../data/customers'
 import { customerVillageIsAvailable } from './availability'
 import {
   solvePostMaximumIngredientCostMachineCertificateForDiagnosis,
+  solvePostMaximumIngredientCostMachineThresholdCertificateForDiagnosis,
 } from './optimizerHighsSolver'
 import {
   buildOptimizationModel,
@@ -35,7 +36,10 @@ interface SolveEvent {
   memoryAfterRss: number
 }
 
+const thresholdEnabled =
+  process.env.OPTIMIZER_POST_MAX_COST_MACHINE_THRESHOLD_PROFILE === '1'
 const enabled =
+  thresholdEnabled ||
   process.env.OPTIMIZER_POST_MAX_COST_MACHINE_CERTIFICATE_PROFILE === '1'
 const requestedCustomerCount = Number(
   process.env.OPTIMIZER_POST_MAX_COST_MACHINE_CERTIFICATE_CUSTOMERS ?? '12',
@@ -194,10 +198,13 @@ describe.skipIf(!enabled)(
         const startedAt = performance.now()
         let diagnosis
         try {
-          diagnosis =
-            await solvePostMaximumIngredientCostMachineCertificateForDiagnosis(
-              domain,
-            )
+          diagnosis = thresholdEnabled
+            ? await solvePostMaximumIngredientCostMachineThresholdCertificateForDiagnosis(
+                domain,
+              )
+            : await solvePostMaximumIngredientCostMachineCertificateForDiagnosis(
+                domain,
+              )
         } finally {
           restore()
         }
@@ -206,6 +213,7 @@ describe.skipIf(!enabled)(
         console.info(
           '[post-max-cost-machine-certificate-summary]',
           JSON.stringify({
+            mode: thresholdEnabled ? 'threshold' : 'direct',
             requestedCustomers: requestedCustomerCount,
             dimensions: dimensions(domain),
             wallMs,
@@ -229,7 +237,9 @@ describe.skipIf(!enabled)(
           expect(diagnosis!.combinedCertificate?.recipeKindsOptimum).toBe(
             expected.recipeKinds,
           )
-          expect(events).toHaveLength(expected.solveCount)
+          if (!thresholdEnabled) {
+            expect(events).toHaveLength(expected.solveCount)
+          }
         }
         if (exactCertificate) {
           expect(exactCertificate.verifiedAssignmentCount).toBe(
