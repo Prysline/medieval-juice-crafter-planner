@@ -1,0 +1,37 @@
+name: Optimizer Non-Cost Machine Certificate Diagnosis
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - src/domain/optimizerHighsSolver.ts
+      - src/domain/optimizerPostMaximumCostMachineCertificateProfile.test.ts
+      - .github/workflows/optimizer-non-cost-machine-certificate-diagnosis.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    strategy:
+      fail-fast: false
+      matrix:
+        customers: [12, 32]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Run non-cost machine certificate diagnosis
+        env:
+          OPTIMIZER_POST_MAX_COST_MACHINE_CERTIFICATE_PROFILE: '1'
+          OPTIMIZER_POST_MAX_COST_MACHINE_CERTIFICATE_CUSTOMERS: ${{ matrix.customers }}
+        run: >-
+          npx vitest run
+          src/domain/optimizerPostMaximumCostMachineCertificateProfile.test.ts
+          --reporter=verbose

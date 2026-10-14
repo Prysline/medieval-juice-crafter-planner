@@ -1683,6 +1683,487 @@ export async function solveMachineOperationCertificateForCostFix(
   }
 }
 
+export interface PostMaximumIngredientCostMachineCertificateDiagnosis {
+  prefix: {
+    productionUnits: number
+    assignedIngredientCost: number
+    productionCost: number
+  }
+  certificate: MachineOperationCertificateSummary | null
+  combinedCertificate?: {
+    optimum: number
+    partitions: Array<{
+      kinds: ProductionStepKind[]
+      lowerBound: number
+    }>
+    recipeKindsOptimum?: number
+    witnessRecipeUnits: RecipeUnitSelection[]
+    witnessRepairSteps: number
+    verifiedAssignmentCount: number
+  } | null
+}
+
+/**
+ * Diagnosis-only exact-certificate experiment for the current
+ * minimum-waste -> maximum-ingredient-cost -> production-cost prefix.
+ *
+ * This helper is intentionally NOT wired into highsSolverAdapter.solve.
+ * It replays the existing exact prefix stages, then first asks whether a
+ * through-blending + finalizing decomposition can close against a repaired
+ * witness. Every prior lexicographic optimum is fixed during the lower-bound
+ * solves, and any candidate certificate still requires a full original-domain
+ * fixed-x verification. Historical finer partitions remain diagnosis fallback.
+ */
+export async function solvePostMaximumIngredientCostMachineCertificateForDiagnosis(
+  domain: BatchOptimizationModel,
+): Promise<PostMaximumIngredientCostMachineCertificateDiagnosis | null> {
+  if (!maximumIngredientCostGroupedProductionIsSafe(domain)) {
+    return null
+  }
+  if (
+    domain.recipes.some(
+      (recipe) => (recipe.initialFinishedServings ?? 0) > 0,
+    )
+  ) {
+    return null
+  }
+
+  const fixes: ObjectiveFix[] = []
+
+  const minimumWasteBuilt = buildHighsStage(
+    domain,
+    'productionUnits',
+    [],
+    { aggregateEquivalentAssignments: true },
+  )
+  const minimumWasteSolution = await minimumWasteBuilt.model.solve()
+  if (minimumWasteSolution.status !== 'optimal') return null
+  const productionUnits = Math.round(
+    requiredFiniteNumber(
+      minimumWasteSolution.objective,
+      'diagnosis minimum-waste objective',
+    ),
+  )
+  fixes.push({ objective: 'productionUnits', value: productionUnits })
+
+  const maximumIngredientCostBuilt = buildHighsStage(
+    domain,
+    'negativeAssignedIngredientCost',
+    fixes,
+    {
+      aggregateEquivalentMaximumCostAssignments: true,
+      aggregateEquivalentMaximumCostProductionUnits: true,
+    },
+  )
+  const maximumIngredientCostSolution =
+    await maximumIngredientCostBuilt.model.solve()
+  if (maximumIngredientCostSolution.status !== 'optimal') return null
+  const negativeAssignedIngredientCost = Math.round(
+    requiredFiniteNumber(
+      maximumIngredientCostSolution.objective,
+      'diagnosis maximum-ingredient-cost objective',
+    ),
+  )
+  fixes.push({
+    objective: 'negativeAssignedIngredientCost',
+    value: negativeAssignedIngredientCost,
+  })
+
+  const productionCost =
+    await tryPostMaximumIngredientCostPairParityOptimum(domain, fixes)
+  if (productionCost === null) return null
+  fixes.push({ objective: 'cost', value: productionCost })
+
+  const prefix = {
+    productionUnits,
+    assignedIngredientCost: -negativeAssignedIngredientCost,
+    productionCost,
+  }
+
+  // Diagnosis fast path discovered by the 32-customer pairwise probe:
+  // keep through-blending coupled, while finalizing remains an independent
+  // disjoint lower-bound partition. A result is still accepted only after
+  // full original-domain fixed-x exact verification under every prefix fix.
+  const directPartitions: ProductionStepKind[][] = [
+    ['juicing', 'seasoning', 'blending'],
+    ['finalizing'],
+  ]
+  const directResults: Array<{
+    kinds: ProductionStepKind[]
+    lowerBound: number
+    candidate: RecipeUnitSelection[]
+  }> = []
+
+  for (const kinds of directPartitions) {
+    const built = buildHighsStage(
+      domain,
+      'machineOperations',
+      fixes,
+      {
+        relaxAssignmentVariables: true,
+        aggregateEquivalentMaximumCostAssignments: true,
+        tightenRecipeBoundsFromMinimumCostFix: true,
+        tightenOperationBoundsFromRecipeBounds: true,
+        machineOperationKinds: new Set(kinds),
+      },
+    )
+    const solution = await built.model.solve()
+    if (solution.status !== 'optimal') {
+      directResults.length = 0
+      break
+    }
+
+    directResults.push({
+      kinds,
+      lowerBound: Math.round(
+        requiredFiniteNumber(
+          solution.objective,
+          `diagnosis direct ${kinds.join('+')} lower-bound objective`,
+        ),
+      ),
+      candidate: selectedRecipeUnits(domain, built, solution),
+    })
+  }
+
+  if (directResults.length === directPartitions.length) {
+    const directLowerBound = directResults.reduce(
+      (sum, result) => sum + result.lowerBound,
+      0,
+    )
+
+    for (const candidate of directResults.map((result) => result.candidate)) {
+      const repaired = repairMachineOperationWitness(
+        domain,
+        candidate,
+        productionCost,
+        directLowerBound,
+      )
+      if (repaired.breakdown.total !== directLowerBound) continue
+
+      const fixedRecipeUnits = new Map(
+        repaired.selections.map((selection) => [
+          selection.recipeId,
+          selection.units,
+        ]),
+      )
+      const built = buildHighsStage(
+        domain,
+        'machineOperations',
+        fixes,
+        { fixedRecipeUnits },
+      )
+      const solution = await built.model.solve()
+      if (solution.status !== 'optimal') continue
+
+      const verifiedObjective = Math.round(
+        requiredFiniteNumber(
+          solution.objective,
+          'diagnosis direct fixed-x machine objective',
+        ),
+      )
+      const assignmentCount = verifiedAssignmentCount(
+        domain,
+        built,
+        solution,
+      )
+      if (
+        verifiedObjective !== directLowerBound ||
+        assignmentCount !== domain.serviceableCustomerIds.length
+      ) {
+        continue
+      }
+
+      const positiveWitnessRecipeUnits = repaired.selections.filter(
+        (selection) => selection.units > 0,
+      )
+      const witnessProductionUnits = positiveWitnessRecipeUnits.reduce(
+        (total, selection) => total + Math.round(selection.units),
+        0,
+      )
+      const finalizingLowerBound = directResults.find(
+        (result) =>
+          result.kinds.length === 1 &&
+          result.kinds[0] === 'finalizing',
+      )?.lowerBound
+      const recipeKindsLowerBound =
+        finalizingLowerBound !== undefined &&
+        finalizingEdgesAreRecipeIdentityUnique(domain) &&
+        witnessProductionUnits === productionUnits
+          ? minimumRecipeKindsFromFinalizingBound(
+              productionUnits,
+              finalizingLowerBound,
+            )
+          : null
+      const recipeKindsOptimum =
+        recipeKindsLowerBound !== null &&
+        positiveWitnessRecipeUnits.length === recipeKindsLowerBound
+          ? recipeKindsLowerBound
+          : undefined
+
+      // Because the exact machine optimum equals the sum of two disjoint
+      // partition lower bounds, every machine-optimal solution must attain
+      // the finalizing lower bound exactly. With one identity-unique
+      // finalizing edge per recipe, the stack-capacity formula is therefore
+      // a recipe-kind lower bound at this exact prefix. Matching it with the
+      // already verified machine-optimal witness closes recipe kinds without
+      // another MIP solve.
+      return {
+        prefix,
+        certificate: null,
+        combinedCertificate: {
+          optimum: directLowerBound,
+          partitions: directResults.map((result) => ({
+            kinds: result.kinds,
+            lowerBound: result.lowerBound,
+          })),
+          ...(recipeKindsOptimum === undefined
+            ? {}
+            : { recipeKindsOptimum }),
+          witnessRecipeUnits: repaired.selections,
+          witnessRepairSteps: repaired.steps.length,
+          verifiedAssignmentCount: assignmentCount,
+        },
+      }
+    }
+  }
+  const partitions: Array<{
+    key: keyof MachineOperationCertificateSummary['lowerBounds']
+    kinds: ProductionStepKind[]
+  }> = [
+    {
+      key: 'throughSeasoning',
+      kinds: ['juicing', 'seasoning'],
+    },
+    { key: 'blending', kinds: ['blending'] },
+    { key: 'finalizing', kinds: ['finalizing'] },
+  ]
+  const lowerBounds = {
+    throughSeasoning: 0,
+    blending: 0,
+    finalizing: 0,
+  }
+  const witnessCandidates: RecipeUnitSelection[][] = []
+
+  // Keep the full current domain for every partition in this first
+  // non-cost-first experiment. This isolates the decomposition proof
+  // from the separate finalizing quotient reduction.
+  for (const partition of partitions) {
+    const built = buildHighsStage(
+      domain,
+      'machineOperations',
+      fixes,
+      {
+        relaxAssignmentVariables: true,
+        aggregateEquivalentMaximumCostAssignments: true,
+        tightenRecipeBoundsFromMinimumCostFix: true,
+        tightenOperationBoundsFromRecipeBounds: true,
+        machineOperationKinds: new Set(partition.kinds),
+      },
+    )
+    const solution = await built.model.solve()
+    if (solution.status !== 'optimal') {
+      return { prefix, certificate: null }
+    }
+
+    lowerBounds[partition.key] += Math.round(
+      requiredFiniteNumber(
+        solution.objective,
+        `diagnosis ${partition.key} lower-bound objective`,
+      ),
+    )
+    witnessCandidates.push(
+      selectedRecipeUnits(domain, built, solution),
+    )
+  }
+
+  const lowerBound =
+    lowerBounds.throughSeasoning +
+    lowerBounds.blending +
+    lowerBounds.finalizing
+
+  for (const candidate of witnessCandidates) {
+    const repaired = repairMachineOperationWitness(
+      domain,
+      candidate,
+      productionCost,
+      lowerBound,
+    )
+    if (repaired.breakdown.total !== lowerBound) continue
+
+    const fixedRecipeUnits = new Map(
+      repaired.selections.map((selection) => [
+        selection.recipeId,
+        selection.units,
+      ]),
+    )
+    const built = buildHighsStage(
+      domain,
+      'machineOperations',
+      fixes,
+      { fixedRecipeUnits },
+    )
+    const solution = await built.model.solve()
+    if (solution.status !== 'optimal') continue
+
+    const verifiedObjective = Math.round(
+      requiredFiniteNumber(
+        solution.objective,
+        'diagnosis fixed-x machine objective',
+      ),
+    )
+    const assignmentCount = verifiedAssignmentCount(
+      domain,
+      built,
+      solution,
+    )
+    if (
+      verifiedObjective !== lowerBound ||
+      assignmentCount !== domain.serviceableCustomerIds.length
+    ) {
+      continue
+    }
+
+    return {
+      prefix,
+      certificate: {
+        optimum: lowerBound,
+        lowerBounds,
+        witnessRecipeUnits: repaired.selections,
+        witnessRepairSteps: repaired.steps.length,
+        verifiedAssignmentCount: assignmentCount,
+      },
+    }
+  }
+
+  const pairwiseSchemes: Array<{
+    combinedKinds: ProductionStepKind[]
+    remainingKinds: ProductionStepKind[]
+    remainingLowerBound: number
+    remainingCandidate: RecipeUnitSelection[]
+  }> = [
+    {
+      combinedKinds: ['juicing', 'seasoning', 'blending'],
+      remainingKinds: ['finalizing'],
+      remainingLowerBound: lowerBounds.finalizing,
+      remainingCandidate: witnessCandidates[2],
+    },
+    {
+      combinedKinds: ['juicing', 'seasoning', 'finalizing'],
+      remainingKinds: ['blending'],
+      remainingLowerBound: lowerBounds.blending,
+      remainingCandidate: witnessCandidates[1],
+    },
+    {
+      combinedKinds: ['blending', 'finalizing'],
+      remainingKinds: ['juicing', 'seasoning'],
+      remainingLowerBound: lowerBounds.throughSeasoning,
+      remainingCandidate: witnessCandidates[0],
+    },
+  ]
+
+  for (const scheme of pairwiseSchemes) {
+    const combinedBuilt = buildHighsStage(
+      domain,
+      'machineOperations',
+      fixes,
+      {
+        relaxAssignmentVariables: true,
+        aggregateEquivalentMaximumCostAssignments: true,
+        tightenRecipeBoundsFromMinimumCostFix: true,
+        tightenOperationBoundsFromRecipeBounds: true,
+        machineOperationKinds: new Set(scheme.combinedKinds),
+      },
+    )
+    const combinedSolution = await combinedBuilt.model.solve()
+    if (combinedSolution.status !== 'optimal') continue
+
+    const combinedLowerBound = Math.round(
+      requiredFiniteNumber(
+        combinedSolution.objective,
+        `diagnosis ${scheme.combinedKinds.join('+')} lower-bound objective`,
+      ),
+    )
+    const combinedCandidate = selectedRecipeUnits(
+      domain,
+      combinedBuilt,
+      combinedSolution,
+    )
+    const schemeLowerBound =
+      combinedLowerBound + scheme.remainingLowerBound
+
+    for (const candidate of [
+      combinedCandidate,
+      scheme.remainingCandidate,
+    ]) {
+      const repaired = repairMachineOperationWitness(
+        domain,
+        candidate,
+        productionCost,
+        schemeLowerBound,
+      )
+      if (repaired.breakdown.total !== schemeLowerBound) continue
+
+      const fixedRecipeUnits = new Map(
+        repaired.selections.map((selection) => [
+          selection.recipeId,
+          selection.units,
+        ]),
+      )
+      const built = buildHighsStage(
+        domain,
+        'machineOperations',
+        fixes,
+        { fixedRecipeUnits },
+      )
+      const solution = await built.model.solve()
+      if (solution.status !== 'optimal') continue
+
+      const verifiedObjective = Math.round(
+        requiredFiniteNumber(
+          solution.objective,
+          'diagnosis pairwise fixed-x machine objective',
+        ),
+      )
+      const assignmentCount = verifiedAssignmentCount(
+        domain,
+        built,
+        solution,
+      )
+      if (
+        verifiedObjective !== schemeLowerBound ||
+        assignmentCount !== domain.serviceableCustomerIds.length
+      ) {
+        continue
+      }
+
+      return {
+        prefix,
+        certificate: null,
+        combinedCertificate: {
+          optimum: schemeLowerBound,
+          partitions: [
+            {
+              kinds: scheme.combinedKinds,
+              lowerBound: combinedLowerBound,
+            },
+            {
+              kinds: scheme.remainingKinds,
+              lowerBound: scheme.remainingLowerBound,
+            },
+          ],
+          witnessRecipeUnits: repaired.selections,
+          witnessRepairSteps: repaired.steps.length,
+          verifiedAssignmentCount: assignmentCount,
+        },
+      }
+    }
+  }
+
+  return { prefix, certificate: null, combinedCertificate: null }
+}
+
+
+
 export interface JarSwitchCertificateSummary {
   optimum: number
   productionUnits: number
