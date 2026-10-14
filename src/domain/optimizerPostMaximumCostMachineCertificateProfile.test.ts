@@ -156,6 +156,8 @@ const expectedByRequestedCustomers = new Map([
         productionCost: 339,
       },
       machineOperations: 24,
+      recipeKinds: 6,
+      solveCount: 6,
     },
   ],
   [
@@ -167,6 +169,8 @@ const expectedByRequestedCustomers = new Map([
         productionCost: 899,
       },
       machineOperations: 55,
+      recipeKinds: 15,
+      solveCount: 6,
     },
   ],
 ])
@@ -222,6 +226,10 @@ describe.skipIf(!enabled)(
           expect(exactCertificate!.optimum).toBe(
             expected.machineOperations,
           )
+          expect(diagnosis!.combinedCertificate?.recipeKindsOptimum).toBe(
+            expected.recipeKinds,
+          )
+          expect(events).toHaveLength(expected.solveCount)
         }
         if (exactCertificate) {
           expect(exactCertificate.verifiedAssignmentCount).toBe(

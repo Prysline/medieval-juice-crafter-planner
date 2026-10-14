@@ -1696,6 +1696,7 @@ export interface PostMaximumIngredientCostMachineCertificateDiagnosis {
       kinds: ProductionStepKind[]
       lowerBound: number
     }>
+    recipeKindsOptimum?: number
     witnessRecipeUnits: RecipeUnitSelection[]
     witnessRepairSteps: number
     verifiedAssignmentCount: number
@@ -1707,11 +1708,11 @@ export interface PostMaximumIngredientCostMachineCertificateDiagnosis {
  * minimum-waste -> maximum-ingredient-cost -> production-cost prefix.
  *
  * This helper is intentionally NOT wired into highsSolverAdapter.solve.
- * It replays the existing exact prefix stages, then asks whether three
- * independent full-domain machine-operation lower bounds can close
- * against a repaired witness. Every prior lexicographic optimum is
- * fixed during the lower-bound solves, and any candidate certificate
- * still requires a full original-domain fixed-x verification.
+ * It replays the existing exact prefix stages, then first asks whether a
+ * through-blending + finalizing decomposition can close against a repaired
+ * witness. Every prior lexicographic optimum is fixed during the lower-bound
+ * solves, and any candidate certificate still requires a full original-domain
+ * fixed-x verification. Historical finer partitions remain diagnosis fallback.
  */
 export async function solvePostMaximumIngredientCostMachineCertificateForDiagnosis(
   domain: BatchOptimizationModel,
@@ -1872,6 +1873,40 @@ export async function solvePostMaximumIngredientCostMachineCertificateForDiagnos
         continue
       }
 
+      const positiveWitnessRecipeUnits = repaired.selections.filter(
+        (selection) => selection.units > 0,
+      )
+      const witnessProductionUnits = positiveWitnessRecipeUnits.reduce(
+        (total, selection) => total + Math.round(selection.units),
+        0,
+      )
+      const finalizingLowerBound = directResults.find(
+        (result) =>
+          result.kinds.length === 1 &&
+          result.kinds[0] === 'finalizing',
+      )?.lowerBound
+      const recipeKindsLowerBound =
+        finalizingLowerBound !== undefined &&
+        finalizingEdgesAreRecipeIdentityUnique(domain) &&
+        witnessProductionUnits === productionUnits
+          ? minimumRecipeKindsFromFinalizingBound(
+              productionUnits,
+              finalizingLowerBound,
+            )
+          : null
+      const recipeKindsOptimum =
+        recipeKindsLowerBound !== null &&
+        positiveWitnessRecipeUnits.length === recipeKindsLowerBound
+          ? recipeKindsLowerBound
+          : undefined
+
+      // Because the exact machine optimum equals the sum of two disjoint
+      // partition lower bounds, every machine-optimal solution must attain
+      // the finalizing lower bound exactly. With one identity-unique
+      // finalizing edge per recipe, the stack-capacity formula is therefore
+      // a recipe-kind lower bound at this exact prefix. Matching it with the
+      // already verified machine-optimal witness closes recipe kinds without
+      // another MIP solve.
       return {
         prefix,
         certificate: null,
@@ -1881,6 +1916,9 @@ export async function solvePostMaximumIngredientCostMachineCertificateForDiagnos
             kinds: result.kinds,
             lowerBound: result.lowerBound,
           })),
+          ...(recipeKindsOptimum === undefined
+            ? {}
+            : { recipeKindsOptimum }),
           witnessRecipeUnits: repaired.selections,
           witnessRepairSteps: repaired.steps.length,
           verifiedAssignmentCount: assignmentCount,
