@@ -1697,7 +1697,7 @@ export interface PostMaximumIngredientCostMachineCertificateDiagnosis {
  * minimum-waste -> maximum-ingredient-cost -> production-cost prefix.
  *
  * This helper is intentionally NOT wired into highsSolverAdapter.solve.
- * It replays the existing exact prefix stages, then asks whether four
+ * It replays the existing exact prefix stages, then asks whether three
  * independent full-domain machine-operation lower bounds can close
  * against a repaired witness. Every prior lexicographic optimum is
  * fixed during the lower-bound solves, and any candidate certificate
@@ -1771,13 +1771,10 @@ export async function solvePostMaximumIngredientCostMachineCertificateForDiagnos
   const partitions: Array<{
     key: keyof MachineOperationCertificateSummary['lowerBounds']
     kinds: ProductionStepKind[]
-    activeEdgeLowerBound?: boolean
   }> = [
-    { key: 'throughSeasoning', kinds: ['juicing'] },
     {
       key: 'throughSeasoning',
-      kinds: ['seasoning'],
-      activeEdgeLowerBound: true,
+      kinds: ['juicing', 'seasoning'],
     },
     { key: 'blending', kinds: ['blending'] },
     { key: 'finalizing', kinds: ['finalizing'] },
@@ -1802,8 +1799,6 @@ export async function solvePostMaximumIngredientCostMachineCertificateForDiagnos
         aggregateEquivalentMaximumCostAssignments: true,
         tightenRecipeBoundsFromMinimumCostFix: true,
         tightenOperationBoundsFromRecipeBounds: true,
-        machineOperationActiveEdgeLowerBound:
-          partition.activeEdgeLowerBound,
         machineOperationKinds: new Set(partition.kinds),
       },
     )
