@@ -1,0 +1,76 @@
+name: Apply non-cost machine certificate coupling diagnosis
+
+on:
+  push:
+    branches:
+      - diagnosis/non-cost-machine-certificate
+    paths:
+      - .github/workflows/apply-non-cost-machine-certificate-coupling.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: diagnosis/non-cost-machine-certificate
+          fetch-depth: 0
+      - name: Couple through-seasoning lower bound
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/domain/optimizerHighsSolver.ts')
+          source = path.read_text()
+          old = '''  const partitions: Array<{
+            key: keyof MachineOperationCertificateSummary['lowerBounds']
+            kinds: ProductionStepKind[]
+            activeEdgeLowerBound?: boolean
+          }> = [
+            { key: 'throughSeasoning', kinds: ['juicing'] },
+            {
+              key: 'throughSeasoning',
+              kinds: ['seasoning'],
+              activeEdgeLowerBound: true,
+            },
+            { key: 'blending', kinds: ['blending'] },
+            { key: 'finalizing', kinds: ['finalizing'] },
+          ]'''
+          new = '''  const partitions: Array<{
+            key: keyof MachineOperationCertificateSummary['lowerBounds']
+            kinds: ProductionStepKind[]
+          }> = [
+            {
+              key: 'throughSeasoning',
+              kinds: ['juicing', 'seasoning'],
+            },
+            { key: 'blending', kinds: ['blending'] },
+            { key: 'finalizing', kinds: ['finalizing'] },
+          ]'''
+          if old not in source:
+              raise SystemExit('partition block not found')
+          source = source.replace(old, new, 1)
+          source = source.replace(
+              'then asks whether four\n * independent full-domain machine-operation lower bounds can close',
+              'then asks whether three\n * independent full-domain machine-operation lower bounds can close',
+              1,
+          )
+          source = source.replace(
+              '''        machineOperationActiveEdgeLowerBound:
+          partition.activeEdgeLowerBound,
+        machineOperationKinds: new Set(partition.kinds),''',
+              '''        machineOperationKinds: new Set(partition.kinds),''',
+              1,
+          )
+          path.write_text(source)
+          PY
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/domain/optimizerHighsSolver.ts
+          git commit -m 'Debug: couple through-seasoning machine lower bound'
+          git push origin HEAD:diagnosis/non-cost-machine-certificate
