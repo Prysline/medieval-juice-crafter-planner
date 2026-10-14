@@ -1683,6 +1683,208 @@ export async function solveMachineOperationCertificateForCostFix(
   }
 }
 
+export interface PostMaximumIngredientCostMachineCertificateDiagnosis {
+  prefix: {
+    productionUnits: number
+    assignedIngredientCost: number
+    productionCost: number
+  }
+  certificate: MachineOperationCertificateSummary | null
+}
+
+/**
+ * Diagnosis-only exact-certificate experiment for the current
+ * minimum-waste -> maximum-ingredient-cost -> production-cost prefix.
+ *
+ * This helper is intentionally NOT wired into highsSolverAdapter.solve.
+ * It replays the existing exact prefix stages, then asks whether four
+ * independent full-domain machine-operation lower bounds can close
+ * against a repaired witness. Every prior lexicographic optimum is
+ * fixed during the lower-bound solves, and any candidate certificate
+ * still requires a full original-domain fixed-x verification.
+ */
+export async function solvePostMaximumIngredientCostMachineCertificateForDiagnosis(
+  domain: BatchOptimizationModel,
+): Promise<PostMaximumIngredientCostMachineCertificateDiagnosis | null> {
+  if (!maximumIngredientCostGroupedProductionIsSafe(domain)) {
+    return null
+  }
+  if (
+    domain.recipes.some(
+      (recipe) => (recipe.initialFinishedServings ?? 0) > 0,
+    )
+  ) {
+    return null
+  }
+
+  const fixes: ObjectiveFix[] = []
+
+  const minimumWasteBuilt = buildHighsStage(
+    domain,
+    'productionUnits',
+    [],
+    { aggregateEquivalentAssignments: true },
+  )
+  const minimumWasteSolution = await minimumWasteBuilt.model.solve()
+  if (minimumWasteSolution.status !== 'optimal') return null
+  const productionUnits = Math.round(
+    requiredFiniteNumber(
+      minimumWasteSolution.objective,
+      'diagnosis minimum-waste objective',
+    ),
+  )
+  fixes.push({ objective: 'productionUnits', value: productionUnits })
+
+  const maximumIngredientCostBuilt = buildHighsStage(
+    domain,
+    'negativeAssignedIngredientCost',
+    fixes,
+    {
+      aggregateEquivalentMaximumCostAssignments: true,
+      aggregateEquivalentMaximumCostProductionUnits: true,
+    },
+  )
+  const maximumIngredientCostSolution =
+    await maximumIngredientCostBuilt.model.solve()
+  if (maximumIngredientCostSolution.status !== 'optimal') return null
+  const negativeAssignedIngredientCost = Math.round(
+    requiredFiniteNumber(
+      maximumIngredientCostSolution.objective,
+      'diagnosis maximum-ingredient-cost objective',
+    ),
+  )
+  fixes.push({
+    objective: 'negativeAssignedIngredientCost',
+    value: negativeAssignedIngredientCost,
+  })
+
+  const productionCost =
+    await tryPostMaximumIngredientCostPairParityOptimum(domain, fixes)
+  if (productionCost === null) return null
+  fixes.push({ objective: 'cost', value: productionCost })
+
+  const prefix = {
+    productionUnits,
+    assignedIngredientCost: -negativeAssignedIngredientCost,
+    productionCost,
+  }
+  const partitions: Array<{
+    key: keyof MachineOperationCertificateSummary['lowerBounds']
+    kinds: ProductionStepKind[]
+    activeEdgeLowerBound?: boolean
+  }> = [
+    { key: 'throughSeasoning', kinds: ['juicing'] },
+    {
+      key: 'throughSeasoning',
+      kinds: ['seasoning'],
+      activeEdgeLowerBound: true,
+    },
+    { key: 'blending', kinds: ['blending'] },
+    { key: 'finalizing', kinds: ['finalizing'] },
+  ]
+  const lowerBounds = {
+    throughSeasoning: 0,
+    blending: 0,
+    finalizing: 0,
+  }
+  const witnessCandidates: RecipeUnitSelection[][] = []
+
+  // Keep the full current domain for every partition in this first
+  // non-cost-first experiment. This isolates the decomposition proof
+  // from the separate finalizing quotient reduction.
+  for (const partition of partitions) {
+    const built = buildHighsStage(
+      domain,
+      'machineOperations',
+      fixes,
+      {
+        relaxAssignmentVariables: true,
+        aggregateEquivalentMaximumCostAssignments: true,
+        tightenRecipeBoundsFromMinimumCostFix: true,
+        tightenOperationBoundsFromRecipeBounds: true,
+        machineOperationActiveEdgeLowerBound:
+          partition.activeEdgeLowerBound,
+        machineOperationKinds: new Set(partition.kinds),
+      },
+    )
+    const solution = await built.model.solve()
+    if (solution.status !== 'optimal') {
+      return { prefix, certificate: null }
+    }
+
+    lowerBounds[partition.key] += Math.round(
+      requiredFiniteNumber(
+        solution.objective,
+        `diagnosis ${partition.key} lower-bound objective`,
+      ),
+    )
+    witnessCandidates.push(
+      selectedRecipeUnits(domain, built, solution),
+    )
+  }
+
+  const lowerBound =
+    lowerBounds.throughSeasoning +
+    lowerBounds.blending +
+    lowerBounds.finalizing
+
+  for (const candidate of witnessCandidates) {
+    const repaired = repairMachineOperationWitness(
+      domain,
+      candidate,
+      productionCost,
+      lowerBound,
+    )
+    if (repaired.breakdown.total !== lowerBound) continue
+
+    const fixedRecipeUnits = new Map(
+      repaired.selections.map((selection) => [
+        selection.recipeId,
+        selection.units,
+      ]),
+    )
+    const built = buildHighsStage(
+      domain,
+      'machineOperations',
+      fixes,
+      { fixedRecipeUnits },
+    )
+    const solution = await built.model.solve()
+    if (solution.status !== 'optimal') continue
+
+    const verifiedObjective = Math.round(
+      requiredFiniteNumber(
+        solution.objective,
+        'diagnosis fixed-x machine objective',
+      ),
+    )
+    const assignmentCount = verifiedAssignmentCount(
+      domain,
+      built,
+      solution,
+    )
+    if (
+      verifiedObjective !== lowerBound ||
+      assignmentCount !== domain.serviceableCustomerIds.length
+    ) {
+      continue
+    }
+
+    return {
+      prefix,
+      certificate: {
+        optimum: lowerBound,
+        lowerBounds,
+        witnessRecipeUnits: repaired.selections,
+        witnessRepairSteps: repaired.steps.length,
+        verifiedAssignmentCount: assignmentCount,
+      },
+    }
+  }
+
+  return { prefix, certificate: null }
+}
+
 export interface JarSwitchCertificateSummary {
   optimum: number
   productionUnits: number
