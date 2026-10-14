@@ -1,0 +1,60 @@
+name: Optimizer Non-Cost Machine Certificate 69 Partition Isolation
+
+on:
+  push:
+    branches:
+      - diagnosis/non-cost-machine-certificate
+    paths:
+      - .github/workflows/optimizer-non-cost-machine-certificate-69-partition-isolation.yml
+
+permissions:
+  contents: read
+
+jobs:
+  isolate:
+    strategy:
+      fail-fast: false
+      matrix:
+        partition:
+          - through-seasoning
+          - blending
+          - finalizing
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: diagnosis/non-cost-machine-certificate
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Select one direct machine partition
+        env:
+          DIAG_PARTITION: ${{ matrix.partition }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          mapping = {
+              'through-seasoning': "[['juicing', 'seasoning']]",
+              'blending': "[['blending']]",
+              'finalizing': "[['finalizing']]",
+          }
+          selected = mapping[os.environ['DIAG_PARTITION']]
+          path = Path('src/domain/optimizerHighsSolver.ts')
+          text = path.read_text()
+          old = """  const directPartitions: ProductionStepKind[][] = [\n    ['juicing', 'seasoning', 'blending'],\n    ['finalizing'],\n  ]"""
+          new = f"  const directPartitions: ProductionStepKind[][] = {selected}"
+          if old not in text:
+              raise SystemExit('direct partition target not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Run 69-customer isolated partition diagnosis
+        env:
+          OPTIMIZER_POST_MAX_COST_MACHINE_CERTIFICATE_PROFILE: '1'
+          OPTIMIZER_POST_MAX_COST_MACHINE_CERTIFICATE_CUSTOMERS: '69'
+        run: >-
+          npx vitest run
+          src/domain/optimizerPostMaximumCostMachineCertificateProfile.test.ts
+          --reporter=verbose
