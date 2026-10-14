@@ -1,0 +1,30 @@
+name: Optimizer Non-Cost Machine Kind-Box Diagnosis
+
+on:
+  pull_request:
+    paths:
+      - src/domain/optimizerHighsSolver.ts
+      - src/domain/optimizerPostMaximumCostMachineCertificateProfile.test.ts
+      - .github/workflows/optimizer-non-cost-machine-kind-box-diagnosis.yml
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        customers: [12, 32]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Run front3 kind-box diagnosis
+        env:
+          OPTIMIZER_POST_MAX_COST_MACHINE_KIND_BOX_PROFILE: '1'
+          OPTIMIZER_POST_MAX_COST_MACHINE_CERTIFICATE_CUSTOMERS: ${{ matrix.customers }}
+        run: npx vitest run src/domain/optimizerPostMaximumCostMachineCertificateProfile.test.ts --reporter=verbose
