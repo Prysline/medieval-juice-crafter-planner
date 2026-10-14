@@ -1690,6 +1690,16 @@ export interface PostMaximumIngredientCostMachineCertificateDiagnosis {
     productionCost: number
   }
   certificate: MachineOperationCertificateSummary | null
+  combinedCertificate?: {
+    optimum: number
+    partitions: Array<{
+      kinds: ProductionStepKind[]
+      lowerBound: number
+    }>
+    witnessRecipeUnits: RecipeUnitSelection[]
+    witnessRepairSteps: number
+    verifiedAssignmentCount: number
+  } | null
 }
 
 /**
@@ -1877,7 +1887,131 @@ export async function solvePostMaximumIngredientCostMachineCertificateForDiagnos
     }
   }
 
-  return { prefix, certificate: null }
+  const pairwiseSchemes: Array<{
+    combinedKinds: ProductionStepKind[]
+    remainingKinds: ProductionStepKind[]
+    remainingLowerBound: number
+    remainingCandidate: RecipeUnitSelection[]
+  }> = [
+    {
+      combinedKinds: ['juicing', 'seasoning', 'blending'],
+      remainingKinds: ['finalizing'],
+      remainingLowerBound: lowerBounds.finalizing,
+      remainingCandidate: witnessCandidates[2],
+    },
+    {
+      combinedKinds: ['juicing', 'seasoning', 'finalizing'],
+      remainingKinds: ['blending'],
+      remainingLowerBound: lowerBounds.blending,
+      remainingCandidate: witnessCandidates[1],
+    },
+    {
+      combinedKinds: ['blending', 'finalizing'],
+      remainingKinds: ['juicing', 'seasoning'],
+      remainingLowerBound: lowerBounds.throughSeasoning,
+      remainingCandidate: witnessCandidates[0],
+    },
+  ]
+
+  for (const scheme of pairwiseSchemes) {
+    const combinedBuilt = buildHighsStage(
+      domain,
+      'machineOperations',
+      fixes,
+      {
+        relaxAssignmentVariables: true,
+        aggregateEquivalentMaximumCostAssignments: true,
+        tightenRecipeBoundsFromMinimumCostFix: true,
+        tightenOperationBoundsFromRecipeBounds: true,
+        machineOperationKinds: new Set(scheme.combinedKinds),
+      },
+    )
+    const combinedSolution = await combinedBuilt.model.solve()
+    if (combinedSolution.status !== 'optimal') continue
+
+    const combinedLowerBound = Math.round(
+      requiredFiniteNumber(
+        combinedSolution.objective,
+        `diagnosis ${scheme.combinedKinds.join('+')} lower-bound objective`,
+      ),
+    )
+    const combinedCandidate = selectedRecipeUnits(
+      domain,
+      combinedBuilt,
+      combinedSolution,
+    )
+    const schemeLowerBound =
+      combinedLowerBound + scheme.remainingLowerBound
+
+    for (const candidate of [
+      combinedCandidate,
+      scheme.remainingCandidate,
+    ]) {
+      const repaired = repairMachineOperationWitness(
+        domain,
+        candidate,
+        productionCost,
+        schemeLowerBound,
+      )
+      if (repaired.breakdown.total !== schemeLowerBound) continue
+
+      const fixedRecipeUnits = new Map(
+        repaired.selections.map((selection) => [
+          selection.recipeId,
+          selection.units,
+        ]),
+      )
+      const built = buildHighsStage(
+        domain,
+        'machineOperations',
+        fixes,
+        { fixedRecipeUnits },
+      )
+      const solution = await built.model.solve()
+      if (solution.status !== 'optimal') continue
+
+      const verifiedObjective = Math.round(
+        requiredFiniteNumber(
+          solution.objective,
+          'diagnosis pairwise fixed-x machine objective',
+        ),
+      )
+      const assignmentCount = verifiedAssignmentCount(
+        domain,
+        built,
+        solution,
+      )
+      if (
+        verifiedObjective !== schemeLowerBound ||
+        assignmentCount !== domain.serviceableCustomerIds.length
+      ) {
+        continue
+      }
+
+      return {
+        prefix,
+        certificate: null,
+        combinedCertificate: {
+          optimum: schemeLowerBound,
+          partitions: [
+            {
+              kinds: scheme.combinedKinds,
+              lowerBound: combinedLowerBound,
+            },
+            {
+              kinds: scheme.remainingKinds,
+              lowerBound: scheme.remainingLowerBound,
+            },
+          ],
+          witnessRecipeUnits: repaired.selections,
+          witnessRepairSteps: repaired.steps.length,
+          verifiedAssignmentCount: assignmentCount,
+        },
+      }
+    }
+  }
+
+  return { prefix, certificate: null, combinedCertificate: null }
 }
 
 export interface JarSwitchCertificateSummary {

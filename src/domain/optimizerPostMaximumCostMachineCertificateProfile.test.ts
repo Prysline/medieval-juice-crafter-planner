@@ -214,17 +214,19 @@ describe.skipIf(!enabled)(
         expect(diagnosis).not.toBeNull()
         const expected =
           expectedByRequestedCustomers.get(requestedCustomerCount)
+        const exactCertificate =
+          diagnosis?.certificate ?? diagnosis?.combinedCertificate ?? null
         if (expected) {
           expect(diagnosis!.prefix).toEqual(expected.prefix)
-          expect(diagnosis!.certificate).not.toBeNull()
-          expect(diagnosis!.certificate!.optimum).toBe(
+          expect(exactCertificate).not.toBeNull()
+          expect(exactCertificate!.optimum).toBe(
             expected.machineOperations,
           )
         }
-        if (diagnosis?.certificate) {
-          expect(
-            diagnosis.certificate.verifiedAssignmentCount,
-          ).toBe(domain.serviceableCustomerIds.length)
+        if (exactCertificate) {
+          expect(exactCertificate.verifiedAssignmentCount).toBe(
+            domain.serviceableCustomerIds.length,
+          )
         }
       },
       1_200_000,
