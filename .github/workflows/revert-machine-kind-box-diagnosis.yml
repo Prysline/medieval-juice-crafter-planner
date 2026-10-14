@@ -1,0 +1,29 @@
+name: Remove slow front3 kind-box diagnosis
+
+on:
+  push:
+    branches:
+      - diagnosis/non-cost-machine-certificate
+    paths:
+      - .github/workflows/revert-machine-kind-box-diagnosis.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: diagnosis/non-cost-machine-certificate
+          fetch-depth: 0
+      - name: Remove kind-box experiment
+        run: python scripts/revert-machine-kind-box-diagnosis.py
+      - name: Commit diagnosis cleanup
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Debug: drop slow front3 kind-box diagnosis'
+          git push origin HEAD:diagnosis/non-cost-machine-certificate
