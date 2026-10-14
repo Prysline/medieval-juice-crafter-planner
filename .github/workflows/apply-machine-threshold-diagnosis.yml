@@ -1,0 +1,29 @@
+name: Apply front3 threshold diagnosis
+
+on:
+  push:
+    branches:
+      - diagnosis/non-cost-machine-certificate
+    paths:
+      - .github/workflows/apply-machine-threshold-diagnosis.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: diagnosis/non-cost-machine-certificate
+          fetch-depth: 0
+      - name: Apply threshold diagnosis patch
+        run: python scripts/apply-machine-threshold-diagnosis.py
+      - name: Commit diagnosis source and profile test
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/domain/optimizerHighsSolver.ts src/domain/optimizerPostMaximumCostMachineCertificateProfile.test.ts
+          git commit -m 'Debug: add front3 threshold feasibility diagnosis'
+          git push origin HEAD:diagnosis/non-cost-machine-certificate
