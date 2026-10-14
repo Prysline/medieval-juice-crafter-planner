@@ -1,0 +1,29 @@
+name: Apply through-blending exact quotient diagnosis
+
+on:
+  push:
+    branches:
+      - diagnosis/non-cost-machine-certificate
+    paths:
+      - .github/workflows/apply-through-blending-exact-quotient.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: diagnosis/non-cost-machine-certificate
+          fetch-depth: 0
+      - name: Apply through-blending quotient patch
+        run: python scripts/apply-through-blending-exact-quotient.py
+      - name: Commit diagnosis source
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/domain/optimizerHighsSolver.ts
+          git commit -m 'Debug: quotient equivalent through-blending recipes'
+          git push origin HEAD:diagnosis/non-cost-machine-certificate
