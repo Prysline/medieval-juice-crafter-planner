@@ -1,3 +1,4 @@
+# refresh final-head checks after bot cleanup
 name: Optimizer Non-Cost Machine Certificate Diagnosis
 
 on:
