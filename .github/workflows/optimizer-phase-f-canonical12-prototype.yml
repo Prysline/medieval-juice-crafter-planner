@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - src/domain/optimizerLbbdCanonical12Prototype.test.ts
+      - src/domain/optimizerLbbdCanonical12Fallback.test.ts
       - src/domain/optimizerHighsSolver.ts
       - src/domain/optimizerModel.ts
       - src/domain/optimizerCertificates.ts
@@ -24,10 +25,11 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - name: Run Phase F canonical-12 prototype
+      - name: Run Phase F canonical-12 prototype and fallback parity
         env:
           OPTIMIZER_PHASE_F_CANONICAL12_PROTOTYPE: '1'
         run: >-
           npx vitest run
           src/domain/optimizerLbbdCanonical12Prototype.test.ts
+          src/domain/optimizerLbbdCanonical12Fallback.test.ts
           --reporter=verbose
