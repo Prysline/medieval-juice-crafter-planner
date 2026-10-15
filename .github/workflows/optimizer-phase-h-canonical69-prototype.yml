@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - src/domain/optimizerLbbdCanonical69CouplingPrototype.test.ts
+      - src/domain/optimizerLbbdCanonical69WitnessPrototype.test.ts
       - src/domain/optimizerHighsSolver.ts
       - src/domain/optimizerModel.ts
       - src/domain/optimizerCertificates.ts
@@ -15,6 +16,36 @@ permissions:
   contents: read
 
 jobs:
+  witness-69:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Expose diagnosis-only Phase H model seam
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/domain/optimizerHighsSolver.ts')
+          text = path.read_text()
+          old = 'function buildHighsStage('
+          new = 'export function buildHighsStage('
+          if text.count(old) != 1:
+              raise SystemExit('buildHighsStage diagnosis seam target not found exactly once')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Run Phase H canonical-69 witness-first prototype
+        env:
+          OPTIMIZER_PHASE_H_CANONICAL69_WITNESS: '1'
+        run: >-
+          /usr/bin/time -v
+          npx vitest run
+          src/domain/optimizerLbbdCanonical69WitnessPrototype.test.ts
+          --reporter=verbose
+
   canonical-69:
     runs-on: ubuntu-latest
     timeout-minutes: 35
