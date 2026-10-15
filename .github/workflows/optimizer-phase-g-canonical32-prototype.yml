@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - src/domain/optimizerLbbdCanonical32Prototype.test.ts
+      - src/domain/optimizerLbbdCanonical32BuildProfile.test.ts
       - src/domain/optimizerLbbdCanonical12Prototype.test.ts
       - src/domain/optimizerHighsSolver.ts
       - src/domain/optimizerModel.ts
@@ -29,6 +30,8 @@ jobs:
         env:
           OPTIMIZER_PHASE_G_CANONICAL32_PROTOTYPE: '1'
         run: >-
+          /usr/bin/time -v
           npx vitest run
+          src/domain/optimizerLbbdCanonical32BuildProfile.test.ts
           src/domain/optimizerLbbdCanonical32Prototype.test.ts
           --reporter=verbose
