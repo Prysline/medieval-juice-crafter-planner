@@ -37,6 +37,7 @@ const TARGET_MACHINE = 102
 
 type IntVariable = ReturnType<Model['intVar']>
 type BoolVariable = ReturnType<Model['boolVar']>
+type NumVariable = ReturnType<Model['numVar']>
 type HighsSolution = Awaited<ReturnType<Model['solve']>>
 type ObjectiveFix = {
   objective:
@@ -170,6 +171,97 @@ function addImpliedRecipeUnitBounds(
   return maximumRecipeUnits
 }
 
+function maximumCostAssignmentGroupKey(
+  eligibleCustomerIds: readonly string[],
+  ingredientCost: number,
+) {
+  return `${[...eligibleCustomerIds].sort().join('\u001e')}\u001d${ingredientCost}`
+}
+
+function addExactUnusedServingFlow(
+  domain: BatchOptimizationModel,
+  built: HarnessBuilt,
+) {
+  const globalServingSlack =
+    EXPECTED_PREFIX.productionUnits * 2 - domain.serviceableCustomerIds.length
+  const unusedServingIngredientCost =
+    EXPECTED_PREFIX.productionCost * 2 -
+    EXPECTED_PREFIX.assignedIngredientCost
+
+  expect(globalServingSlack).toBe(1)
+  expect(unusedServingIngredientCost).toBe(43)
+  expect(
+    domain.recipes.every(
+      (recipe) => (recipe.initialFinishedServings ?? 0) === 0,
+    ),
+  ).toBe(true)
+
+  const groups = new Map<
+    string,
+    { ingredientCost: number; recipeIds: string[] }
+  >()
+  for (const recipe of domain.recipes) {
+    const key = maximumCostAssignmentGroupKey(
+      recipe.eligibleCustomerIds,
+      recipe.juiceUnitIngredientCost,
+    )
+    const group = groups.get(key)
+    if (group) {
+      group.recipeIds.push(recipe.candidate.id)
+    } else {
+      groups.set(key, {
+        ingredientCost: recipe.juiceUnitIngredientCost,
+        recipeIds: [recipe.candidate.id],
+      })
+    }
+  }
+
+  const unusedServingByGroup: NumVariable[] = []
+  let groupIndex = 0
+  for (const [groupKey, group] of groups) {
+    const assignmentVariables = domain.serviceableCustomerIds.flatMap(
+      (customerId) => {
+        const variable = built.yByCustomerRecipe.get(
+          `${customerId}\u001f${groupKey}`,
+        )
+        return variable ? [variable] : []
+      },
+    )
+    const capacityTerms = group.recipeIds.flatMap((recipeId) => {
+      const variable = built.xByRecipeId.get(recipeId)
+      return variable ? [variable.times(2)] : []
+    })
+    const unusedServing =
+      group.ingredientCost === unusedServingIngredientCost
+        ? built.model.numVar(0, 1, `phase_h_unused_serving_${groupIndex}`)
+        : null
+    if (unusedServing) unusedServingByGroup.push(unusedServing)
+
+    built.model.addConstraint(
+      sum(
+        ...assignmentVariables,
+        ...(unusedServing ? [unusedServing] : []),
+      )
+        .minus(sum(...capacityTerms))
+        .eq(0),
+      `phase_h_exact_group_flow_${groupIndex}`,
+    )
+    groupIndex += 1
+  }
+
+  expect(unusedServingByGroup.length).toBeGreaterThan(0)
+  built.model.addConstraint(
+    sum(...unusedServingByGroup).eq(globalServingSlack),
+    'phase_h_exact_unused_serving_total',
+  )
+
+  return {
+    exactFlowGroups: groups.size,
+    unusedServingIngredientCost,
+    unusedServingGroupCount: unusedServingByGroup.length,
+  }
+}
+
 function value(
   solution: HighsSolution,
   variable: IntVariable | BoolVariable,
@@ -290,7 +382,7 @@ async function fullVerify(
 
 describe.skipIf(!enabled)('Phase H canonical-69 witness-first prototype', () => {
   it(
-    'uses assignment relaxation only to propose x and accepts only full original-domain verification',
+    'uses an exact dummy-serving flow to find x and requires full original-domain verification',
     async () => {
       const totalStartedAt = performance.now()
       const request = request69()
@@ -320,6 +412,7 @@ describe.skipIf(!enabled)('Phase H canonical-69 witness-first prototype', () => 
         domain,
         relaxed,
       )
+      const exactFlow = addExactUnusedServingFlow(domain, relaxed)
       const relaxedStartedAt = performance.now()
       const relaxedSolution = await relaxed.model.solve()
       const relaxedSolveMs = performance.now() - relaxedStartedAt
@@ -337,6 +430,7 @@ describe.skipIf(!enabled)('Phase H canonical-69 witness-first prototype', () => 
           relaxedAssignmentVars: relaxed.yByCustomerRecipe.size,
           operationIntegerVars: relaxed.operationByEdgeKey.size,
           impliedMaximumRecipeUnits,
+          ...exactFlow,
           candidatePoolMs,
           domainBuildMs,
           relaxedSolveMs,
@@ -346,12 +440,12 @@ describe.skipIf(!enabled)('Phase H canonical-69 witness-first prototype', () => 
 
       if (relaxedSolution.status === 'infeasible') {
         throw new Error(
-          'Assignment-relaxed superset is exactly infeasible at total machine 102; no original-domain 102 witness exists',
+          'Exact dummy-serving flow is infeasible at total machine 102; no original-domain 102 witness exists',
         )
       }
       expect(
         relaxedSolution.status,
-        'Limit/unknown on witness relaxation is performance evidence only',
+        'Limit/unknown on exact-flow witness search is performance evidence only',
       ).toBe('optimal')
       if (relaxedSolution.status !== 'optimal') return
 
@@ -367,7 +461,7 @@ describe.skipIf(!enabled)('Phase H canonical-69 witness-first prototype', () => 
       )
       expect(
         verification.verified,
-        'Relaxed assignment candidate is not an exact result until full original-domain fixed-x verification succeeds',
+        'Exact-flow x candidate still requires full original-domain fixed-x verification',
       ).toBe(true)
     },
     1_800_000,
