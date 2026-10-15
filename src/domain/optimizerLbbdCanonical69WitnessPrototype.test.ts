@@ -2,7 +2,9 @@ import { Model, sum } from '@bubblyworld/highs-ts'
 import { describe, expect, it } from 'vitest'
 import { customers as canonicalCustomers } from '../data/customers'
 import { customerVillageIsAvailable } from './availability'
+import { PROCESSING_STACK_CAPACITY } from './inventoryRules'
 import {
+  finalizingEdgesAreRecipeIdentityUnique,
   machineOperationBreakdownForSelection,
   type RecipeUnitSelection,
 } from './optimizerCertificates'
@@ -132,6 +134,40 @@ function add102Equalities(domain: BatchOptimizationModel, built: HarnessBuilt) {
     sum(...built.operationByEdgeKey.values()).eq(TARGET_MACHINE),
     'phase_h_witness_total',
   )
+}
+
+function maximumRecipeUnitsImpliedByFinalizingBound() {
+  const globalExcess =
+    EXPECTED_PREFIX.productionUnits - PARTITION.finalizing
+  let maximum = 0
+  for (let units = 1; units <= EXPECTED_PREFIX.productionUnits; units += 1) {
+    const finalizingOperations = Math.ceil(
+      units / PROCESSING_STACK_CAPACITY,
+    )
+    if (units - finalizingOperations <= globalExcess) {
+      maximum = units
+    }
+  }
+  return maximum
+}
+
+function addImpliedRecipeUnitBounds(
+  domain: BatchOptimizationModel,
+  built: HarnessBuilt,
+) {
+  expect(finalizingEdgesAreRecipeIdentityUnique(domain)).toBe(true)
+  const maximumRecipeUnits = maximumRecipeUnitsImpliedByFinalizingBound()
+  expect(maximumRecipeUnits).toBe(7)
+
+  let index = 0
+  for (const variable of built.xByRecipeId.values()) {
+    built.model.addConstraint(
+      variable.leq(maximumRecipeUnits),
+      `phase_h_witness_recipe_unit_cap_${index}`,
+    )
+    index += 1
+  }
+  return maximumRecipeUnits
 }
 
 function value(
@@ -280,6 +316,10 @@ describe.skipIf(!enabled)('Phase H canonical-69 witness-first prototype', () => 
         },
       )
       add102Equalities(domain, relaxed)
+      const impliedMaximumRecipeUnits = addImpliedRecipeUnitBounds(
+        domain,
+        relaxed,
+      )
       const relaxedStartedAt = performance.now()
       const relaxedSolution = await relaxed.model.solve()
       const relaxedSolveMs = performance.now() - relaxedStartedAt
@@ -296,6 +336,7 @@ describe.skipIf(!enabled)('Phase H canonical-69 witness-first prototype', () => 
           recipeIntegerVars: relaxed.xByRecipeId.size,
           relaxedAssignmentVars: relaxed.yByCustomerRecipe.size,
           operationIntegerVars: relaxed.operationByEdgeKey.size,
+          impliedMaximumRecipeUnits,
           candidatePoolMs,
           domainBuildMs,
           relaxedSolveMs,
