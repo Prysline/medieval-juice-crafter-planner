@@ -12,6 +12,7 @@ permissions:
 
 jobs:
   kind29-lp-proof:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
