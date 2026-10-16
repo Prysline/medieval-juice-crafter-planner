@@ -12,6 +12,7 @@ permissions:
 
 jobs:
   split:
+    if: github.event_name == 'workflow_dispatch'
     name: ${{ matrix.mode }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
