@@ -16,6 +16,7 @@ permissions:
 
 jobs:
   quotient-69:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
