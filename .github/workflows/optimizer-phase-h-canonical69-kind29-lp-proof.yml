@@ -1,4 +1,4 @@
-name: Optimizer Phase H Canonical-69 Kind29 LP Proof
+name: Optimizer Phase H Canonical-69 Kind29 LP Support
 
 on:
   pull_request:
@@ -11,8 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  kind29-lp-proof:
-    if: github.event_name == 'workflow_dispatch'
+  kind29-lp-support:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -33,7 +32,7 @@ jobs:
               raise SystemExit('buildHighsStage diagnosis seam target not found exactly once')
           path.write_text(text.replace(old, new, 1))
           PY
-      - name: Build 29-kind LP superset
+      - name: Build 29-kind LP support probe
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -51,17 +50,75 @@ jobs:
               raise SystemExit('Phase H recipe-kind patch target not found exactly once')
           text = text.replace(target, replacement, 1)
           text = text.replace('model.intVar(', 'model.numVar(')
-          assertion = "        ).toBe('witness-ready')"
-          if text.count(assertion) != 1:
-              raise SystemExit('Phase H disposition assertion target not found exactly once')
-          text = text.replace(
-              assertion,
-              "        ).toBe('exact-infeasible-at-102')",
-              1,
+
+          old = """        expect(
+          state,
+          state === 'exact-infeasible-at-102'
+            ? 'Exact quotient proves no original-domain 102 witness exists'
+            : 'Limit/unknown remains performance evidence only',
+        ).toBe('witness-ready')
+        if (state !== 'witness-ready') return
+
+        const witness: RecipeUnitSelection[] = []"""
+          new = """        if (state !== 'witness-ready') return
+        const lpSupport = groups
+          .map((group) => {
+            const variables = varsByGroup.get(group.key)!
+            const units = requiredValue(
+              solution,
+              variables.units,
+              `${group.key}/lp-units`,
+            )
+            const normal = requiredValue(
+              solution,
+              variables.normalIdentities,
+              `${group.key}/lp-normal`,
+            )
+            const sixPlus = variables.sixPlusIdentities
+              ? requiredValue(
+                  solution,
+                  variables.sixPlusIdentities,
+                  `${group.key}/lp-six`,
+                )
+              : 0
+            return {
+              recipeId: group.recipeIds[0],
+              ingredientCost: group.ingredientCost,
+              units,
+              normal,
+              sixPlus,
+              activity: normal + sixPlus,
+            }
+          })
+          .filter((entry) => entry.activity > 1e-8 || entry.units > 1e-8)
+          .sort((left, right) =>
+            right.activity - left.activity ||
+            right.units - left.units ||
+            left.recipeId.localeCompare(right.recipeId),
           )
-          path.write_text(text)
+        console.info(
+          '[phase-h-canonical69-lp-support]',
+          JSON.stringify({
+            supportCount: lpSupport.length,
+            activitySum: lpSupport.reduce(
+              (sum, entry) => sum + entry.activity,
+              0,
+            ),
+            unitSum: lpSupport.reduce(
+              (sum, entry) => sum + entry.units,
+              0,
+            ),
+            top: lpSupport.slice(0, 200),
+          }),
+        )
+        return
+
+        const witness: RecipeUnitSelection[] = []"""
+          if text.count(old) != 1:
+              raise SystemExit('Phase H LP support injection target not found exactly once')
+          path.write_text(text.replace(old, new, 1))
           PY
-      - name: Prove LP superset infeasible or reject proof
+      - name: Print LP support only
         env:
           OPTIMIZER_PHASE_H_CANONICAL69_QUOTIENT: '1'
         run: >-
