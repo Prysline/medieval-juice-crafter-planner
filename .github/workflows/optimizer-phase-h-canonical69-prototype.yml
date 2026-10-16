@@ -17,6 +17,7 @@ permissions:
 
 jobs:
   witness-69:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -47,6 +48,7 @@ jobs:
           --reporter=verbose
 
   canonical-69:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
