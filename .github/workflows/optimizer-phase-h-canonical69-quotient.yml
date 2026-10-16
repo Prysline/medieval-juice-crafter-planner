@@ -1,0 +1,46 @@
+name: Optimizer Phase H Canonical-69 Quotient
+
+on:
+  pull_request:
+    paths:
+      - src/domain/optimizerLbbdCanonical69QuotientPrototype.test.ts
+      - src/domain/optimizerHighsSolver.ts
+      - src/domain/optimizerModel.ts
+      - src/domain/optimizerCertificates.ts
+      - src/domain/recipeCandidatePool.ts
+      - .github/workflows/optimizer-phase-h-canonical69-quotient.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quotient-69:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Expose diagnosis-only Phase H model seam
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/domain/optimizerHighsSolver.ts')
+          text = path.read_text()
+          old = 'function buildHighsStage('
+          new = 'export function buildHighsStage('
+          if text.count(old) != 1:
+              raise SystemExit('buildHighsStage diagnosis seam target not found exactly once')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Run Phase H canonical-69 exact quotient prototype
+        env:
+          OPTIMIZER_PHASE_H_CANONICAL69_QUOTIENT: '1'
+        run: >-
+          /usr/bin/time -v
+          npx vitest run
+          src/domain/optimizerLbbdCanonical69QuotientPrototype.test.ts
+          --reporter=verbose
