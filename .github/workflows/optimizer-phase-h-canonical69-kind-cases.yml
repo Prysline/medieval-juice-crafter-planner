@@ -1,0 +1,69 @@
+name: Optimizer Phase H Canonical-69 Kind Cases
+
+on:
+  pull_request:
+    paths:
+      - src/domain/optimizerLbbdCanonical69QuotientPrototype.test.ts
+      - .github/workflows/optimizer-phase-h-canonical69-kind-cases.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  kind-case:
+    name: kind-case-${{ matrix.recipe_kinds }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        recipe_kinds: [28, 29]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Expose diagnosis-only Phase H model seam
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/domain/optimizerHighsSolver.ts')
+          text = path.read_text()
+          old = 'function buildHighsStage('
+          new = 'export function buildHighsStage('
+          if text.count(old) != 1:
+              raise SystemExit('buildHighsStage diagnosis seam target not found exactly once')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Fix exact recipe-kind case
+        env:
+          RECIPE_KINDS: ${{ matrix.recipe_kinds }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          path = Path('src/domain/optimizerLbbdCanonical69QuotientPrototype.test.ts')
+          text = path.read_text()
+          target = '        model.minimize(positiveKinds)'
+          case = int(os.environ['RECIPE_KINDS'])
+          replacement = (
+              "        model.addConstraint(\n"
+              f"          positiveKinds.eq({case}),\n"
+              "          'q_recipe_kinds_case',\n"
+              "        )\n"
+              "        model.minimize(positiveKinds)"
+          )
+          if text.count(target) != 1:
+              raise SystemExit('Phase H recipe-kind patch target not found exactly once')
+          path.write_text(text.replace(target, replacement, 1))
+          PY
+      - name: Run exact recipe-kind case
+        env:
+          OPTIMIZER_PHASE_H_CANONICAL69_QUOTIENT: '1'
+        run: >-
+          /usr/bin/time -v
+          npx vitest run
+          src/domain/optimizerLbbdCanonical69QuotientPrototype.test.ts
+          --reporter=verbose
