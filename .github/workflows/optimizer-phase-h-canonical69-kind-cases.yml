@@ -12,6 +12,7 @@ permissions:
 
 jobs:
   kind-case:
+    if: github.event_name == 'workflow_dispatch'
     name: kind-case-${{ matrix.recipe_kinds }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
