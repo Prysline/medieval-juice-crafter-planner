@@ -1,5 +1,34 @@
 from pathlib import Path
 
+EXPECTED_EXTRA_PARTITIONS = {
+    (4, 1),
+    (3, 2),
+    (3, 1, 1),
+    (2, 2, 1),
+    (2, 1, 1, 1),
+    (1, 1, 1, 1, 1),
+}
+
+
+def integer_partitions(total: int, maximum: int | None = None) -> set[tuple[int, ...]]:
+    if total == 0:
+        return {()}
+    upper = total if maximum is None else min(total, maximum)
+    result: set[tuple[int, ...]] = set()
+    for first in range(upper, 0, -1):
+        for rest in integer_partitions(total - first, first):
+            result.add((first, *rest))
+    return result
+
+
+actual_partitions = integer_partitions(5)
+if actual_partitions != EXPECTED_EXTRA_PARTITIONS:
+    raise SystemExit(
+        'Phase H five-extra partition drift: '
+        f'expected {sorted(EXPECTED_EXTRA_PARTITIONS, reverse=True)}, '
+        f'got {sorted(actual_partitions, reverse=True)}'
+    )
+
 path = Path('src/domain/optimizerLbbdCanonical69QuotientPrototype.test.ts')
 text = path.read_text()
 
