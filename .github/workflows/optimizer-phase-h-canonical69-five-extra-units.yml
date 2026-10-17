@@ -10,6 +10,12 @@ on:
 permissions:
   contents: read
 
+# Diagnosis-only proof seam. The 29-kind + finalizing=29 implication fixes
+# every used original identity to 1..5 units, so exactly five units remain
+# above the one-unit baseline. The six matrix cases are the complete integer
+# partitions of those five extras. Infeasibility is accepted only from the
+# exact-safe superset; any feasible x candidate must pass the existing full
+# original-domain fixed-x verifier before the job succeeds.
 jobs:
   extra-unit-case:
     name: extra-${{ matrix.extra_case }}
@@ -44,11 +50,8 @@ jobs:
           path.write_text(text.replace(old, new, 1))
           PY
       - name: Apply exact-safe five-extra-unit partition
-        env:
-          EXTRA_CASE: ${{ matrix.extra_case }}
         run: |
           python - <<'PY'
-          import os
           from pathlib import Path
 
           path = Path('src/domain/optimizerLbbdCanonical69QuotientPrototype.test.ts')
