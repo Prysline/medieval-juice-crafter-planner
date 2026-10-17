@@ -29,7 +29,7 @@ def integer_partitions(total: int, maximum: int | None = None) -> set[tuple[int,
     return result
 
 
-actual_partitions = integer_partitions(5)
+actual_partitions = integer_partitions(5, 4)
 if actual_partitions != EXPECTED_EXTRA_PARTITIONS:
     raise SystemExit(
         'Phase H five-extra partition drift: '
