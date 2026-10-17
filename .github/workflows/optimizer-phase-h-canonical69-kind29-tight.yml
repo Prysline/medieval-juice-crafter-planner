@@ -1,12 +1,9 @@
 name: Optimizer Phase H Canonical-69 Kind29 Tight
 
 on:
-  push:
-    branches:
-      - test/phase-h-canonical-69-prototype
+  pull_request:
     paths:
       - src/domain/optimizerLbbdCanonical69QuotientPrototype.test.ts
-      - .github/scripts/optimizer-phase-h-canonical69-five-extra.py
       - .github/workflows/optimizer-phase-h-canonical69-kind29-tight.yml
   workflow_dispatch:
 
@@ -62,57 +59,6 @@ jobs:
       - name: Run exact tight 29-kind case
         env:
           OPTIMIZER_PHASE_H_CANONICAL69_QUOTIENT: '1'
-        run: >-
-          /usr/bin/time -v
-          npx vitest run
-          src/domain/optimizerLbbdCanonical69QuotientPrototype.test.ts
-          --reporter=verbose
-
-  # Diagnosis-only exact-safe decomposition. With 29 used identities, exact
-  # finalizing=29 and total production=34 imply x<=5 and exactly five units
-  # above the mandatory one-unit-per-identity baseline. These six cases are
-  # the complete disjoint integer partitions of those five extras. A solver
-  # infeasible result safely excludes only that case; any feasible x must still
-  # pass the existing full original-domain fixed-x verifier before acceptance.
-  extra-unit-case:
-    if: github.event_name == 'push'
-    name: extra-${{ matrix.extra_case }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    strategy:
-      fail-fast: false
-      matrix:
-        extra_case:
-          - '4-1'
-          - '3-2'
-          - '3-1-1'
-          - '2-2-1'
-          - '2-1-1-1'
-          - '1-1-1-1-1'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: npm install
-      - name: Expose diagnosis-only Phase H model seam
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          path = Path('src/domain/optimizerHighsSolver.ts')
-          text = path.read_text()
-          old = 'function buildHighsStage('
-          new = 'export function buildHighsStage('
-          if text.count(old) != 1:
-              raise SystemExit('buildHighsStage diagnosis seam target not found exactly once')
-          path.write_text(text.replace(old, new, 1))
-          PY
-      - name: Apply exact-safe five-extra-unit partition
-        run: python .github/scripts/optimizer-phase-h-canonical69-five-extra.py
-      - name: Solve exact-safe extra-unit case
-        env:
-          OPTIMIZER_PHASE_H_CANONICAL69_QUOTIENT: '1'
-          OPTIMIZER_PHASE_H_EXTRA_PARTITION: ${{ matrix.extra_case }}
         run: >-
           /usr/bin/time -v
           npx vitest run
