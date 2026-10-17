@@ -1,5 +1,7 @@
 name: Optimizer Phase H Canonical-69 Five Extra Units
 
+# Push-only because this focused workflow exists only on the Phase H branch;
+# workflow_dispatch is reserved for workflows already available on default.
 on:
   push:
     branches:
