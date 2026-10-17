@@ -8,6 +8,14 @@ EXPECTED_EXTRA_PARTITIONS = {
     (2, 1, 1, 1),
     (1, 1, 1, 1, 1),
 }
+EXPECTED_CASE_NAMES = {
+    '4-1',
+    '3-2',
+    '3-1-1',
+    '2-2-1',
+    '2-1-1-1',
+    '1-1-1-1-1',
+}
 
 
 def integer_partitions(total: int, maximum: int | None = None) -> set[tuple[int, ...]]:
@@ -27,6 +35,12 @@ if actual_partitions != EXPECTED_EXTRA_PARTITIONS:
         'Phase H five-extra partition drift: '
         f'expected {sorted(EXPECTED_EXTRA_PARTITIONS, reverse=True)}, '
         f'got {sorted(actual_partitions, reverse=True)}'
+    )
+actual_case_names = {'-'.join(map(str, parts)) for parts in actual_partitions}
+if actual_case_names != EXPECTED_CASE_NAMES:
+    raise SystemExit(
+        'Phase H five-extra case-name drift: '
+        f'expected {sorted(EXPECTED_CASE_NAMES)}, got {sorted(actual_case_names)}'
     )
 
 path = Path('src/domain/optimizerLbbdCanonical69QuotientPrototype.test.ts')
