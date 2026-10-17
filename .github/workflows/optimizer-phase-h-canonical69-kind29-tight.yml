@@ -5,6 +5,12 @@ on:
     paths:
       - src/domain/optimizerLbbdCanonical69QuotientPrototype.test.ts
       - .github/workflows/optimizer-phase-h-canonical69-kind29-tight.yml
+  push:
+    branches:
+      - test/phase-h-canonical-69-prototype
+    paths:
+      - src/domain/optimizerLbbdCanonical69QuotientPrototype.test.ts
+      - .github/workflows/optimizer-phase-h-canonical69-kind29-tight.yml
   workflow_dispatch:
 
 permissions:
@@ -72,7 +78,7 @@ jobs:
   # infeasible result safely excludes only that case; any feasible x must still
   # pass the existing full original-domain fixed-x verifier below.
   extra-unit-case:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'push'
     name: extra-${{ matrix.extra_case }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
