@@ -29,23 +29,19 @@ jobs:
       - run: npm run build
       - run: npm run smoke:highs:pages-like
 
-  # Phase H diagnosis-only: CI workflow is registered on main; newer PR-local
-  # workflows are not assumed to be discoverable before entering the base.
-  extra-unit-case:
+  # Phase H diagnosis-only: only the current Draft stacked PR. The prior six
+  # extra-unit cases yielded one exact-infeasible and five 25m cancellations.
+  # This run splits ONLY the still-open 3-2 case by the cap of its unique
+  # four-unit original recipe identity. Neither subcase uses heuristic pruning.
+  phase-h-three-two-cap-case:
     if: github.event_name == 'pull_request' && github.head_ref == 'test/phase-h-canonical-69-prototype'
-    name: extra-${{ matrix.extra_case }}
+    name: phase-h-3-2-${{ matrix.high_cap_bucket }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        extra_case:
-          - '4-1'
-          - '3-2'
-          - '3-1-1'
-          - '2-2-1'
-          - '2-1-1-1'
-          - '1-1-1-1-1'
+        high_cap_bucket: ['cap4', 'cap5']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -66,10 +62,69 @@ jobs:
           PY
       - name: Apply exact-safe five-extra-unit partition
         run: python .github/scripts/optimizer-phase-h-five-extra-patch.py
-      - name: Solve exact-safe extra-unit case
+      - name: Split 3-2 by original-identity high-unit cap
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          # Two bonus identities have 3 and 2 extras; the 4-unit identity's
+          # original-domain cap must be 4 or 5. Exhaustively audit cap classes.
+          checked = missing = duplicate = 0
+          for first_extra in range(1, 5):
+              for second_extra in range(1, 5):
+                  if sorted((first_extra, second_extra), reverse=True) != [3, 2]:
+                      continue
+                  for first_cap in range(first_extra + 1, 6):
+                      for second_cap in range(second_extra + 1, 6):
+                          high_cap = first_cap if first_extra == 3 else second_cap
+                          matches = int(high_cap == 4) + int(high_cap == 5)
+                          checked += 1
+                          missing += matches == 0
+                          duplicate += matches > 1
+          assert (checked, missing, duplicate) == (12, 0, 0)
+          print(f'[phase-h-three-two-cap-audit] checked={checked} missing={missing} duplicate={duplicate}')
+          path = Path('src/domain/optimizerLbbdCanonical69QuotientPrototype.test.ts')
+          text = path.read_text()
+          def replace_once(old, new, label):
+              global text
+              if text.count(old) != 1:
+                  raise SystemExit(f'{label}: expected one target, found {text.count(old)}')
+              text = text.replace(old, new, 1)
+          replace_once(
+              "'3-2': { bonusKinds: 2, extraUpper: 3 },",
+              "'3-2': { bonusKinds: 2, extraUpper: 3, highUnits: 4 },",
+              '3-2 high-unit implication',
+          )
+          replace_once(
+              '        const bonusIdentityVars: BoolVariable[] = []',
+              '        const highCapBucket = process.env.OPTIMIZER_PHASE_H_HIGH_CAP_BUCKET\n'
+              "        if (extraCase !== '3-2' ||\n"
+              "          (highCapBucket !== 'cap4' && highCapBucket !== 'cap5')) {\n"
+              "          throw new Error('Phase H high cap split expects 3-2/cap4 or cap5')\n"
+              '        }\n\n'
+              '        const bonusIdentityVars: BoolVariable[] = []',
+              '3-2 cap bucket guard',
+          )
+          replace_once(
+              '            group.normalUnitCap >= extraCaseSpec.highUnits',
+              '            group.normalUnitCap >= extraCaseSpec.highUnits &&\n'
+              "            group.normalUnitCap === (highCapBucket === 'cap4' ? 4 : 5)",
+              '3-2 high identity cap predicate',
+          )
+          replace_once(
+              '            highIdentityVars: highIdentityVars.length,',
+              '            highIdentityVars: highIdentityVars.length,\n'
+              '            highCapBucket,\n'
+              '            eligibleHighCap4: groups.filter((group) => group.normalUnitCap === 4).length,\n'
+              '            eligibleHighCap5: groups.filter((group) => group.normalUnitCap === 5).length,',
+              '3-2 bucket structural telemetry',
+          )
+          path.write_text(text)
+          PY
+      - name: Solve exact-safe 3-2 cap subcase
         env:
           OPTIMIZER_PHASE_H_CANONICAL69_QUOTIENT: '1'
-          OPTIMIZER_PHASE_H_EXTRA_PARTITION: ${{ matrix.extra_case }}
+          OPTIMIZER_PHASE_H_EXTRA_PARTITION: '3-2'
+          OPTIMIZER_PHASE_H_HIGH_CAP_BUCKET: ${{ matrix.high_cap_bucket }}
         run: >-
           /usr/bin/time -v
           npx vitest run
