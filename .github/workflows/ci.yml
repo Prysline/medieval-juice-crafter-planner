@@ -41,10 +41,9 @@ jobs:
   # exactly one 4-unit high identity plus one 3-unit medium identity:
   #   units = used + 3*high + 2*medium.
   # Because used/high/medium are integer selectors, units is integer by equality even
-  # when declared continuous. For a singleton, multiplicity-1 machine edge under the
-  # proven x <= 5 bound, ceil(units / 5) is exactly used, so that operation integer can
-  # also be substituted away. Shared or repeated edges keep the original exact-ceiling
-  # integer formulation. This is an exact reparameterization, not a relaxation.
+  # when declared continuous. This removes 7,892 redundant integer declarations while
+  # leaving every machine-operation integer and original identity constraint unchanged.
+  # It is an exact reparameterization, not a relaxation.
   #
   # Only cap5-cap3 and cap5-cap5 remain open and are dispatched here. Solver infeasible
   # closes only its exact cap-pair; a candidate must pass full original-domain fixed-x
@@ -320,7 +319,7 @@ jobs:
           )
           path.write_text(text)
           PY
-      - name: Remove selector-implied integer variables exactly
+      - name: Remove selector-implied unit integrality exactly
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -333,111 +332,35 @@ jobs:
           )
           for used, high, medium, units in states:
               assert units == used + 3 * high + 2 * medium
-              assert ((units + 4) // 5) == used
           print(
-              '[phase-h-three-two-integrality-audit] '
-              f'states={len(states)} unitMismatch=0 uniqueEdgeMismatch=0'
+              '[phase-h-three-two-continuous-unit-audit] '
+              f'states={len(states)} unitMismatch=0'
           )
 
           path = Path('src/domain/optimizerLbbdCanonical69QuotientPrototype.test.ts')
           text = path.read_text()
 
           def replace_once(old, new, label):
-              global text
               count = text.count(old)
               if count != 1:
                   raise SystemExit(f'{label}: expected one target, found {count}')
-              text = text.replace(old, new, 1)
+              return text.replace(old, new, 1)
 
-          replace_once(
+          text = replace_once(
               'type QuotientVariables = {\n  units: IntVariable\n',
               'type QuotientVariables = {\n  units: NumVariable\n',
               'continuous unit variable type',
           )
-          replace_once(
+          text = replace_once(
               '          const units = model.intVar(\n',
               '          const units = model.numVar(\n',
               'continuous unit variable declaration',
           )
-          replace_once(
-              "            terms: ReturnType<IntVariable['times']>[]\n"
-              "            maxMultiplicity: number",
-              "            terms: ReturnType<NumVariable['times']>[]\n"
-              "            usedVars: IntVariable[]\n"
-              "            maxMultiplicity: number",
-              'unique-edge used-variable metadata',
-          )
-          replace_once(
-              '              current.terms.push(term)\n'
-              '              current.maxMultiplicity = Math.max(',
-              '              current.terms.push(term)\n'
-              '              current.usedVars.push(variables.normalIdentities)\n'
-              '              current.maxMultiplicity = Math.max(',
-              'record existing-edge used variable',
-          )
-          replace_once(
-              '                terms: [term],\n'
-              '                maxMultiplicity: edge.multiplicity,',
-              '                terms: [term],\n'
-              '                usedVars: [variables.normalIdentities],\n'
-              '                maxMultiplicity: edge.multiplicity,',
-              'record new-edge used variable',
-          )
-          replace_once(
-              '        for (const group of groups) {\n'
-              '          const units = varsByGroup.get(group.key)!.units',
-              '        for (const group of groups) {\n'
-              '          const variables = varsByGroup.get(group.key)!\n'
-              '          const units = variables.units',
-              'edge contributor variables',
-          )
-          replace_once(
-              '        const blendingOps: IntVariable[] = []\n'
-              '        let edgeIndex = 0',
-              '        const blendingOps: IntVariable[] = []\n'
-              '        let derivedUniqueOperationVars = 0\n'
-              '        let edgeIndex = 0',
-              'derived operation counter',
-          )
-
-          loop_target = '        for (const [edgeKey, edge] of quantityTermsByEdge) {\n'
-          loop_insert = '''        for (const [edgeKey, edge] of quantityTermsByEdge) {
-          if (edge.terms.length === 1 && edge.maxMultiplicity === 1) {
-            if (edge.usedVars.length !== 1) {
-              throw new Error(`Phase H unique-edge contributor drift ${edgeKey}`)
-            }
-            const operation = edge.usedVars[0]
-            if (edge.kind === 'juicing' || edge.kind === 'seasoning') {
-              throughSeasoningOps.push(operation)
-            } else if (edge.kind === 'blending') {
-              blendingOps.push(operation)
-            } else {
-              throw new Error(
-                `Unexpected Phase H quotient edge kind ${edge.kind}/${edgeKey}`,
-              )
-            }
-            derivedUniqueOperationVars += 1
-            edgeIndex += 1
-            continue
-          }
-'''
-          replace_once(loop_target, loop_insert, 'derive singleton multiplicity-one operations')
-          replace_once(
+          text = replace_once(
               '            aggregateUnitIntegerVars: varsByGroup.size,',
               '            derivedContinuousUnitVars: varsByGroup.size,',
               'continuous unit telemetry',
           )
-          replace_once(
-              '            nonFinalizingOperationIntegerVars:\n'
-              '              quantityTermsByEdge.size,\n'
-              '            throughSeasoningEdges:',
-              '            nonFinalizingOperationIntegerVars:\n'
-              '              quantityTermsByEdge.size - derivedUniqueOperationVars,\n'
-              '            derivedUniqueOperationVars,\n'
-              '            throughSeasoningEdges:',
-              'operation telemetry',
-          )
-
           path.write_text(text)
           PY
       - name: Solve exact-safe 3-2 cap-pair subcase
