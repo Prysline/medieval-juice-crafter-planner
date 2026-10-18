@@ -419,7 +419,7 @@ jobs:
               'derived operation counter',
           )
           text = replace_once(
-              '        for (const [edgeKey, edge] of quantityTermsByEdge) {\n'
+              '        for (const [edgeKey, edge] of quantityTermsByEdge) {\n',
               '''        for (const [edgeKey, edge] of quantityTermsByEdge) {
           if (edge.terms.length === 1 && edge.maxMultiplicity === 1) {
             if (edge.usedVars.length !== 1) {
