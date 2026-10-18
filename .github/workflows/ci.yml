@@ -31,17 +31,23 @@ jobs:
 
   # Phase H diagnosis-only: only the current Draft stacked PR. The prior six
   # extra-unit cases yielded one exact-infeasible and five 25m cancellations.
-  # This run splits ONLY the still-open 3-2 case by the cap of its unique
-  # four-unit original recipe identity. Neither subcase uses heuristic pruning.
+  # The first exact-safe 3-2 split by the unique four-unit identity cap (4/5)
+  # also timed out in both buckets. This continuation fixes BOTH bonus identities'
+  # original caps: four-unit cap 4/5 and three-unit cap 3/4/5. The 2x3 matrix is
+  # disjoint and complete, preserves every original recipe identity, and uses no
+  # first-N or heuristic pruning. Each subcase keeps the existing 25 minute cap;
+  # infeasible closes only that subcase, a candidate still needs full fixed-x
+  # verification, and cancellation/limit remains performance evidence only.
   phase-h-three-two-cap-case:
     if: github.event_name == 'pull_request' && github.head_ref == 'test/phase-h-canonical-69-prototype'
-    name: phase-h-3-2-${{ matrix.high_cap_bucket }}
+    name: phase-h-3-2-${{ matrix.high_cap_bucket }}-${{ matrix.medium_cap_bucket }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
         high_cap_bucket: ['cap4', 'cap5']
+        medium_cap_bucket: ['cap3', 'cap4', 'cap5']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -62,12 +68,12 @@ jobs:
           PY
       - name: Apply exact-safe five-extra-unit partition
         run: python .github/scripts/optimizer-phase-h-five-extra-patch.py
-      - name: Split 3-2 by original-identity high-unit cap
+      - name: Split 3-2 by original-identity four-unit and three-unit caps
         run: |
           python - <<'PY'
           from pathlib import Path
-          # Two bonus identities have 3 and 2 extras; the 4-unit identity's
-          # original-domain cap must be 4 or 5. Exhaustively audit cap classes.
+
+          cases = [(h, m) for h in (4, 5) for m in (3, 4, 5)]
           checked = missing = duplicate = 0
           for first_extra in range(1, 5):
               for second_extra in range(1, 5):
@@ -76,19 +82,32 @@ jobs:
                   for first_cap in range(first_extra + 1, 6):
                       for second_cap in range(second_extra + 1, 6):
                           high_cap = first_cap if first_extra == 3 else second_cap
-                          matches = int(high_cap == 4) + int(high_cap == 5)
+                          medium_cap = first_cap if first_extra == 2 else second_cap
+                          matches = sum(
+                              high_cap == case_high and medium_cap == case_medium
+                              for case_high, case_medium in cases
+                          )
                           checked += 1
                           missing += matches == 0
                           duplicate += matches > 1
           assert (checked, missing, duplicate) == (12, 0, 0)
-          print(f'[phase-h-three-two-cap-audit] checked={checked} missing={missing} duplicate={duplicate}')
+          print(
+              '[phase-h-three-two-cap-pair-audit] '
+              f'checked={checked} cases={len(cases)} '
+              f'missing={missing} duplicate={duplicate}'
+          )
+
           path = Path('src/domain/optimizerLbbdCanonical69QuotientPrototype.test.ts')
           text = path.read_text()
+
           def replace_once(old, new, label):
               global text
               if text.count(old) != 1:
-                  raise SystemExit(f'{label}: expected one target, found {text.count(old)}')
+                  raise SystemExit(
+                      f'{label}: expected one target, found {text.count(old)}'
+                  )
               text = text.replace(old, new, 1)
+
           replace_once(
               "'3-2': { bonusKinds: 2, extraUpper: 3 },",
               "'3-2': { bonusKinds: 2, extraUpper: 3, highUnits: 4 },",
@@ -97,34 +116,101 @@ jobs:
           replace_once(
               '        const bonusIdentityVars: BoolVariable[] = []',
               '        const highCapBucket = process.env.OPTIMIZER_PHASE_H_HIGH_CAP_BUCKET\n'
-              "        if (extraCase !== '3-2' ||\n"
-              "          (highCapBucket !== 'cap4' && highCapBucket !== 'cap5')) {\n"
-              "          throw new Error('Phase H high cap split expects 3-2/cap4 or cap5')\n"
+              '        const mediumCapBucket = process.env.OPTIMIZER_PHASE_H_MEDIUM_CAP_BUCKET\n'
+              "        const highCap = highCapBucket === 'cap4' ? 4 : highCapBucket === 'cap5' ? 5 : null\n"
+              "        const mediumCap = mediumCapBucket === 'cap3' ? 3 : mediumCapBucket === 'cap4' ? 4 : mediumCapBucket === 'cap5' ? 5 : null\n"
+              "        if (extraCase !== '3-2' || highCap === null || mediumCap === null) {\n"
+              "          throw new Error('Phase H 3-2 cap-pair split expects high cap4/cap5 and medium cap3/cap4/cap5')\n"
               '        }\n\n'
-              '        const bonusIdentityVars: BoolVariable[] = []',
-              '3-2 cap bucket guard',
+              '        const bonusIdentityVars: BoolVariable[] = []\n'
+              '        const highIdentityVars: BoolVariable[] = []\n'
+              '        const threePlusIdentityVars: BoolVariable[] = []\n'
+              '        const threePlusIdentityVarsByCap = new Map<number, BoolVariable[]>()',
+              '3-2 cap-pair guard',
+          )
+          replace_once(
+              '        const highIdentityVars: BoolVariable[] = []\n'
+              '        for (const [groupIndex, group] of groups.entries()) {',
+              '        for (const [groupIndex, group] of groups.entries()) {',
+              'remove duplicate high identity declaration',
+          )
+          replace_once(
+              '          if (extraCaseSpec.extraUpper !== undefined) {',
+              '          if (group.normalUnitCap >= 3) {\n'
+              "            const threePlus = model.boolVar('q_three_plus_' + groupIndex)\n"
+              '            threePlusIdentityVars.push(threePlus)\n'
+              '            const sameCap = threePlusIdentityVarsByCap.get(group.normalUnitCap) ?? []\n'
+              '            sameCap.push(threePlus)\n'
+              '            threePlusIdentityVarsByCap.set(group.normalUnitCap, sameCap)\n'
+              '            model.addConstraint(\n'
+              '              threePlus.minus(bonus).leq(0),\n'
+              "              'q_three_plus_bonus_' + groupIndex,\n"
+              '            )\n'
+              '            model.addConstraint(\n'
+              '              threePlus.times(3).minus(variables.units).leq(0),\n'
+              "              'q_three_plus_lower_' + groupIndex,\n"
+              '            )\n'
+              '            model.addConstraint(\n'
+              '              variables.units\n'
+              '                .minus(variables.normalIdentities)\n'
+              '                .minus(bonus)\n'
+              '                .minus(threePlus.times(group.normalUnitCap - 2))\n'
+              '                .leq(0),\n'
+              "              'q_three_plus_upper_' + groupIndex,\n"
+              '            )\n'
+              '          }\n\n'
+              '          if (extraCaseSpec.extraUpper !== undefined) {',
+              '3-2 exact three-plus selector',
           )
           replace_once(
               '            group.normalUnitCap >= extraCaseSpec.highUnits',
               '            group.normalUnitCap >= extraCaseSpec.highUnits &&\n'
-              "            group.normalUnitCap === (highCapBucket === 'cap4' ? 4 : 5)",
+              '            group.normalUnitCap === highCap',
               '3-2 high identity cap predicate',
+          )
+          replace_once(
+              "        console.info(\n"
+              "          '[phase-h-canonical69-five-extra-case-model]',",
+              '        model.addConstraint(\n'
+              '          sum(...threePlusIdentityVars).eq(2),\n'
+              "          'q_three_plus_kind_count',\n"
+              '        )\n'
+              '        const mediumCapThreePlus =\n'
+              '          threePlusIdentityVarsByCap.get(mediumCap) ?? []\n'
+              '        const expectedMediumCapThreePlus = mediumCap === highCap ? 2 : 1\n'
+              '        if (mediumCapThreePlus.length < expectedMediumCapThreePlus) {\n'
+              "          throw new Error('Phase H 3-2 medium cap has insufficient eligible identities')\n"
+              '        }\n'
+              '        model.addConstraint(\n'
+              '          sum(...mediumCapThreePlus).eq(expectedMediumCapThreePlus),\n'
+              "          'q_medium_cap_three_plus_count',\n"
+              '        )\n\n'
+              "        console.info(\n"
+              "          '[phase-h-canonical69-five-extra-case-model]',",
+              '3-2 medium identity cap count',
           )
           replace_once(
               '            highIdentityVars: highIdentityVars.length,',
               '            highIdentityVars: highIdentityVars.length,\n'
+              '            threePlusIdentityVars: threePlusIdentityVars.length,\n'
               '            highCapBucket,\n'
-              '            eligibleHighCap4: groups.filter((group) => group.normalUnitCap === 4).length,\n'
-              '            eligibleHighCap5: groups.filter((group) => group.normalUnitCap === 5).length,',
-              '3-2 bucket structural telemetry',
+              '            mediumCapBucket,\n'
+              '            highCap,\n'
+              '            mediumCap,\n'
+              '            mediumCapThreePlusVars: mediumCapThreePlus.length,\n'
+              '            eligibleCap3: groups.filter((group) => group.normalUnitCap === 3).length,\n'
+              '            eligibleCap4: groups.filter((group) => group.normalUnitCap === 4).length,\n'
+              '            eligibleCap5: groups.filter((group) => group.normalUnitCap === 5).length,',
+              '3-2 cap-pair structural telemetry',
           )
           path.write_text(text)
           PY
-      - name: Solve exact-safe 3-2 cap subcase
+      - name: Solve exact-safe 3-2 cap-pair subcase
         env:
           OPTIMIZER_PHASE_H_CANONICAL69_QUOTIENT: '1'
           OPTIMIZER_PHASE_H_EXTRA_PARTITION: '3-2'
           OPTIMIZER_PHASE_H_HIGH_CAP_BUCKET: ${{ matrix.high_cap_bucket }}
+          OPTIMIZER_PHASE_H_MEDIUM_CAP_BUCKET: ${{ matrix.medium_cap_bucket }}
         run: >-
           /usr/bin/time -v
           npx vitest run
