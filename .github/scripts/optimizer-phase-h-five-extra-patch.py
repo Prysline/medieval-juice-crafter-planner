@@ -17,129 +17,129 @@ replace_once(
 
 target = '        model.minimize(positiveKinds)'
 replacement = """        model.addConstraint(
-positiveKinds.eq(29),
-'q_recipe_kinds_case',
+          positiveKinds.eq(29),
+          'q_recipe_kinds_case',
         )
 
         if (
-groups.length !== domain.recipes.length ||
-groups.some((group) => group.recipeIds.length !== 1)
+          groups.length !== domain.recipes.length ||
+          groups.some((group) => group.recipeIds.length !== 1)
         ) {
-throw new Error(
-  'Phase H five-extra proof requires one quotient group per original recipe identity',
-)
+          throw new Error(
+            'Phase H five-extra proof requires one quotient group per original recipe identity',
+          )
         }
 
         const extraCase = process.env.OPTIMIZER_PHASE_H_EXTRA_PARTITION
         const extraCaseSpecs: Record<
-string,
-{
-  bonusKinds: number
-  extraUpper?: number
-  highUnits?: number
-}
+          string,
+          {
+            bonusKinds: number
+            extraUpper?: number
+            highUnits?: number
+          }
         > = {
-'4-1': { bonusKinds: 2, highUnits: 5 },
-'3-2': { bonusKinds: 2, extraUpper: 3 },
-'3-1-1': { bonusKinds: 3, highUnits: 4 },
-'2-2-1': { bonusKinds: 3, extraUpper: 2 },
-'2-1-1-1': { bonusKinds: 4 },
-'1-1-1-1-1': { bonusKinds: 5 },
+          '4-1': { bonusKinds: 2, highUnits: 5 },
+          '3-2': { bonusKinds: 2, extraUpper: 3 },
+          '3-1-1': { bonusKinds: 3, highUnits: 4 },
+          '2-2-1': { bonusKinds: 3, extraUpper: 2 },
+          '2-1-1-1': { bonusKinds: 4 },
+          '1-1-1-1-1': { bonusKinds: 5 },
         }
         const extraCaseSpec = extraCase
-? extraCaseSpecs[extraCase]
-: undefined
+          ? extraCaseSpecs[extraCase]
+          : undefined
         if (!extraCaseSpec) {
-throw new Error(`Unknown Phase H five-extra case ${extraCase}`)
+          throw new Error(`Unknown Phase H five-extra case ${extraCase}`)
         }
 
         const bonusIdentityVars: BoolVariable[] = []
         const highIdentityVars: BoolVariable[] = []
         for (const [groupIndex, group] of groups.entries()) {
-const variables = varsByGroup.get(group.key)!
-if (variables.sixPlusIdentities) {
-  throw new Error(
-    `Phase H five-extra cap drift for ${group.recipeIds[0]}`,
-  )
-}
-if (group.normalUnitCap <= 1) continue
+          const variables = varsByGroup.get(group.key)!
+          if (variables.sixPlusIdentities) {
+            throw new Error(
+              `Phase H five-extra cap drift for ${group.recipeIds[0]}`,
+            )
+          }
+          if (group.normalUnitCap <= 1) continue
 
-const bonus = model.boolVar(`q_bonus_${groupIndex}`)
-bonusIdentityVars.push(bonus)
-model.addConstraint(
-  bonus.minus(variables.normalIdentities).leq(0),
-  `q_bonus_used_${groupIndex}`,
-)
-model.addConstraint(
-  sum(variables.normalIdentities, bonus)
-    .minus(variables.units)
-    .leq(0),
-  `q_bonus_lower_${groupIndex}`,
-)
-model.addConstraint(
-  variables.units
-    .minus(variables.normalIdentities)
-    .minus(bonus.times(group.normalUnitCap - 1))
-    .leq(0),
-  `q_bonus_upper_${groupIndex}`,
-)
+          const bonus = model.boolVar(`q_bonus_${groupIndex}`)
+          bonusIdentityVars.push(bonus)
+          model.addConstraint(
+            bonus.minus(variables.normalIdentities).leq(0),
+            `q_bonus_used_${groupIndex}`,
+          )
+          model.addConstraint(
+            sum(variables.normalIdentities, bonus)
+              .minus(variables.units)
+              .leq(0),
+            `q_bonus_lower_${groupIndex}`,
+          )
+          model.addConstraint(
+            variables.units
+              .minus(variables.normalIdentities)
+              .minus(bonus.times(group.normalUnitCap - 1))
+              .leq(0),
+            `q_bonus_upper_${groupIndex}`,
+          )
 
-if (extraCaseSpec.extraUpper !== undefined) {
-  model.addConstraint(
-    variables.units
-      .minus(variables.normalIdentities)
-      .minus(bonus.times(extraCaseSpec.extraUpper))
-      .leq(0),
-    `q_case_extra_upper_${groupIndex}`,
-  )
-}
+          if (extraCaseSpec.extraUpper !== undefined) {
+            model.addConstraint(
+              variables.units
+                .minus(variables.normalIdentities)
+                .minus(bonus.times(extraCaseSpec.extraUpper))
+                .leq(0),
+              `q_case_extra_upper_${groupIndex}`,
+            )
+          }
 
-if (
-  extraCaseSpec.highUnits !== undefined &&
-  group.normalUnitCap >= extraCaseSpec.highUnits
-) {
-  const high = model.boolVar(`q_high_${groupIndex}`)
-  highIdentityVars.push(high)
-  model.addConstraint(
-    high.minus(bonus).leq(0),
-    `q_high_bonus_${groupIndex}`,
-  )
-  model.addConstraint(
-    high
-      .times(extraCaseSpec.highUnits)
-      .minus(variables.units)
-      .leq(0),
-    `q_high_units_${groupIndex}`,
-  )
-}
+          if (
+            extraCaseSpec.highUnits !== undefined &&
+            group.normalUnitCap >= extraCaseSpec.highUnits
+          ) {
+            const high = model.boolVar(`q_high_${groupIndex}`)
+            highIdentityVars.push(high)
+            model.addConstraint(
+              high.minus(bonus).leq(0),
+              `q_high_bonus_${groupIndex}`,
+            )
+            model.addConstraint(
+              high
+                .times(extraCaseSpec.highUnits)
+                .minus(variables.units)
+                .leq(0),
+              `q_high_units_${groupIndex}`,
+            )
+          }
         }
 
         model.addConstraint(
-sum(...bonusIdentityVars).eq(extraCaseSpec.bonusKinds),
-'q_bonus_kind_count',
+          sum(...bonusIdentityVars).eq(extraCaseSpec.bonusKinds),
+          'q_bonus_kind_count',
         )
         if (extraCaseSpec.highUnits !== undefined) {
-if (highIdentityVars.length === 0) {
-  throw new Error(
-    `Phase H five-extra case ${extraCase} has no eligible high-unit identity`,
-  )
-}
-model.addConstraint(
-  sum(...highIdentityVars).eq(1),
-  'q_high_kind_count',
-)
+          if (highIdentityVars.length === 0) {
+            throw new Error(
+              `Phase H five-extra case ${extraCase} has no eligible high-unit identity`,
+            )
+          }
+          model.addConstraint(
+            sum(...highIdentityVars).eq(1),
+            'q_high_kind_count',
+          )
         }
 
         console.info(
-'[phase-h-canonical69-five-extra-case-model]',
-JSON.stringify({
-  extraCase,
-  bonusKinds: extraCaseSpec.bonusKinds,
-  extraUpper: extraCaseSpec.extraUpper ?? null,
-  highUnits: extraCaseSpec.highUnits ?? null,
-  bonusIdentityVars: bonusIdentityVars.length,
-  highIdentityVars: highIdentityVars.length,
-}),
+          '[phase-h-canonical69-five-extra-case-model]',
+          JSON.stringify({
+            extraCase,
+            bonusKinds: extraCaseSpec.bonusKinds,
+            extraUpper: extraCaseSpec.extraUpper ?? null,
+            highUnits: extraCaseSpec.highUnits ?? null,
+            bonusIdentityVars: bonusIdentityVars.length,
+            highIdentityVars: highIdentityVars.length,
+          }),
         )
         model.minimize(positiveKinds)"""
 replace_once(
@@ -149,30 +149,30 @@ replace_once(
 )
 
 old = """        expect(
-state,
-state === 'exact-infeasible-at-102'
-  ? 'Exact quotient proves no original-domain 102 witness exists'
-  : 'Limit/unknown remains performance evidence only',
+          state,
+          state === 'exact-infeasible-at-102'
+            ? 'Exact quotient proves no original-domain 102 witness exists'
+            : 'Limit/unknown remains performance evidence only',
         ).toBe('witness-ready')
         if (state !== 'witness-ready') return
 
         const witness: RecipeUnitSelection[] = []"""
 new = """        console.info(
-'[phase-h-canonical69-five-extra-case-result]',
-JSON.stringify({
-  extraCase: process.env.OPTIMIZER_PHASE_H_EXTRA_PARTITION,
-  status: solution.status,
-  disposition: state,
-  objective:
-    typeof solution.objective === 'number'
-      ? solution.objective
-      : null,
-}),
+          '[phase-h-canonical69-five-extra-case-result]',
+          JSON.stringify({
+            extraCase: process.env.OPTIMIZER_PHASE_H_EXTRA_PARTITION,
+            status: solution.status,
+            disposition: state,
+            objective:
+              typeof solution.objective === 'number'
+                ? solution.objective
+                : null,
+          }),
         )
         if (state === 'exact-infeasible-at-102') return
         expect(
-state,
-'Limit/unknown remains performance evidence only',
+          state,
+          'Limit/unknown remains performance evidence only',
         ).toBe('witness-ready')
         if (state !== 'witness-ready') return
 
