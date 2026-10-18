@@ -142,165 +142,165 @@ jobs:
               text = text.replace(old, new, 1)
 
           old = """        const bonusIdentityVars: BoolVariable[] = []
-        const highIdentityVars: BoolVariable[] = []
-        for (const [groupIndex, group] of groups.entries()) {
-          const variables = varsByGroup.get(group.key)!
-          if (variables.sixPlusIdentities) {
-            throw new Error(
-              `Phase H five-extra cap drift for ${group.recipeIds[0]}`,
-            )
-          }
-          if (group.normalUnitCap <= 1) continue
+                  const highIdentityVars: BoolVariable[] = []
+                  for (const [groupIndex, group] of groups.entries()) {
+                    const variables = varsByGroup.get(group.key)!
+                    if (variables.sixPlusIdentities) {
+                      throw new Error(
+                        `Phase H five-extra cap drift for ${group.recipeIds[0]}`,
+                      )
+                    }
+                    if (group.normalUnitCap <= 1) continue
 
-          const bonus = model.boolVar(`q_bonus_${groupIndex}`)
-          bonusIdentityVars.push(bonus)
-          model.addConstraint(
-            bonus.minus(variables.normalIdentities).leq(0),
-            `q_bonus_used_${groupIndex}`,
-          )
-          model.addConstraint(
-            sum(variables.normalIdentities, bonus)
-              .minus(variables.units)
-              .leq(0),
-            `q_bonus_lower_${groupIndex}`,
-          )
-          model.addConstraint(
-            variables.units
-              .minus(variables.normalIdentities)
-              .minus(bonus.times(group.normalUnitCap - 1))
-              .leq(0),
-            `q_bonus_upper_${groupIndex}`,
-          )
+                    const bonus = model.boolVar(`q_bonus_${groupIndex}`)
+                    bonusIdentityVars.push(bonus)
+                    model.addConstraint(
+                      bonus.minus(variables.normalIdentities).leq(0),
+                      `q_bonus_used_${groupIndex}`,
+                    )
+                    model.addConstraint(
+                      sum(variables.normalIdentities, bonus)
+                        .minus(variables.units)
+                        .leq(0),
+                      `q_bonus_lower_${groupIndex}`,
+                    )
+                    model.addConstraint(
+                      variables.units
+                        .minus(variables.normalIdentities)
+                        .minus(bonus.times(group.normalUnitCap - 1))
+                        .leq(0),
+                      `q_bonus_upper_${groupIndex}`,
+                    )
 
-          if (extraCaseSpec.extraUpper !== undefined) {
-            model.addConstraint(
-              variables.units
-                .minus(variables.normalIdentities)
-                .minus(bonus.times(extraCaseSpec.extraUpper))
-                .leq(0),
-              `q_case_extra_upper_${groupIndex}`,
-            )
-          }
+                    if (extraCaseSpec.extraUpper !== undefined) {
+                      model.addConstraint(
+                        variables.units
+                          .minus(variables.normalIdentities)
+                          .minus(bonus.times(extraCaseSpec.extraUpper))
+                          .leq(0),
+                        `q_case_extra_upper_${groupIndex}`,
+                      )
+                    }
 
-          if (
-            extraCaseSpec.highUnits !== undefined &&
-            group.normalUnitCap >= extraCaseSpec.highUnits
-          ) {
-            const high = model.boolVar(`q_high_${groupIndex}`)
-            highIdentityVars.push(high)
-            model.addConstraint(
-              high.minus(bonus).leq(0),
-              `q_high_bonus_${groupIndex}`,
-            )
-            model.addConstraint(
-              high
-                .times(extraCaseSpec.highUnits)
-                .minus(variables.units)
-                .leq(0),
-              `q_high_units_${groupIndex}`,
-            )
-          }
-        }
+                    if (
+                      extraCaseSpec.highUnits !== undefined &&
+                      group.normalUnitCap >= extraCaseSpec.highUnits
+                    ) {
+                      const high = model.boolVar(`q_high_${groupIndex}`)
+                      highIdentityVars.push(high)
+                      model.addConstraint(
+                        high.minus(bonus).leq(0),
+                        `q_high_bonus_${groupIndex}`,
+                      )
+                      model.addConstraint(
+                        high
+                          .times(extraCaseSpec.highUnits)
+                          .minus(variables.units)
+                          .leq(0),
+                        `q_high_units_${groupIndex}`,
+                      )
+                    }
+                  }
 
-        model.addConstraint(
-          sum(...bonusIdentityVars).eq(extraCaseSpec.bonusKinds),
-          'q_bonus_kind_count',
-        )
-        if (extraCaseSpec.highUnits !== undefined) {
-          if (highIdentityVars.length === 0) {
-            throw new Error(
-              `Phase H five-extra case ${extraCase} has no eligible high-unit identity`,
-            )
-          }
-          model.addConstraint(
-            sum(...highIdentityVars).eq(1),
-            'q_high_kind_count',
-          )
-        }"""
+                  model.addConstraint(
+                    sum(...bonusIdentityVars).eq(extraCaseSpec.bonusKinds),
+                    'q_bonus_kind_count',
+                  )
+                  if (extraCaseSpec.highUnits !== undefined) {
+                    if (highIdentityVars.length === 0) {
+                      throw new Error(
+                        `Phase H five-extra case ${extraCase} has no eligible high-unit identity`,
+                      )
+                    }
+                    model.addConstraint(
+                      sum(...highIdentityVars).eq(1),
+                      'q_high_kind_count',
+                    )
+                  }"""
 
           new = """        const highCapBucket = process.env.OPTIMIZER_PHASE_H_HIGH_CAP_BUCKET
-        const mediumCapBucket = process.env.OPTIMIZER_PHASE_H_MEDIUM_CAP_BUCKET
-        const highCap =
-          highCapBucket === 'cap4' ? 4 : highCapBucket === 'cap5' ? 5 : null
-        const mediumCap =
-          mediumCapBucket === 'cap3'
-            ? 3
-            : mediumCapBucket === 'cap4'
-              ? 4
-              : mediumCapBucket === 'cap5'
-                ? 5
-                : null
-        if (extraCase !== '3-2' || highCap === null || mediumCap === null) {
-          throw new Error(
-            'Phase H direct 3-2 selectors expect high cap4/cap5 and medium cap3/cap4/cap5',
-          )
-        }
+                  const mediumCapBucket = process.env.OPTIMIZER_PHASE_H_MEDIUM_CAP_BUCKET
+                  const highCap =
+                    highCapBucket === 'cap4' ? 4 : highCapBucket === 'cap5' ? 5 : null
+                  const mediumCap =
+                    mediumCapBucket === 'cap3'
+                      ? 3
+                      : mediumCapBucket === 'cap4'
+                        ? 4
+                        : mediumCapBucket === 'cap5'
+                          ? 5
+                          : null
+                  if (extraCase !== '3-2' || highCap === null || mediumCap === null) {
+                    throw new Error(
+                      'Phase H direct 3-2 selectors expect high cap4/cap5 and medium cap3/cap4/cap5',
+                    )
+                  }
 
-        const highIdentityVars: BoolVariable[] = []
-        const mediumIdentityVars: BoolVariable[] = []
-        for (const [groupIndex, group] of groups.entries()) {
-          const variables = varsByGroup.get(group.key)!
-          if (variables.sixPlusIdentities) {
-            throw new Error(
-              `Phase H direct 3-2 cap drift for ${group.recipeIds[0]}`,
-            )
-          }
+                  const highIdentityVars: BoolVariable[] = []
+                  const mediumIdentityVars: BoolVariable[] = []
+                  for (const [groupIndex, group] of groups.entries()) {
+                    const variables = varsByGroup.get(group.key)!
+                    if (variables.sixPlusIdentities) {
+                      throw new Error(
+                        `Phase H direct 3-2 cap drift for ${group.recipeIds[0]}`,
+                      )
+                    }
 
-          let high: BoolVariable | null = null
-          let medium: BoolVariable | null = null
+                    let high: BoolVariable | null = null
+                    let medium: BoolVariable | null = null
 
-          if (group.normalUnitCap === highCap) {
-            high = model.boolVar(`q_direct_high_${groupIndex}`)
-            highIdentityVars.push(high)
-            model.addConstraint(
-              high.minus(variables.normalIdentities).leq(0),
-              `q_direct_high_used_${groupIndex}`,
-            )
-          }
+                    if (group.normalUnitCap === highCap) {
+                      high = model.boolVar(`q_direct_high_${groupIndex}`)
+                      highIdentityVars.push(high)
+                      model.addConstraint(
+                        high.minus(variables.normalIdentities).leq(0),
+                        `q_direct_high_used_${groupIndex}`,
+                      )
+                    }
 
-          if (group.normalUnitCap === mediumCap) {
-            medium = model.boolVar(`q_direct_medium_${groupIndex}`)
-            mediumIdentityVars.push(medium)
-            model.addConstraint(
-              medium.minus(variables.normalIdentities).leq(0),
-              `q_direct_medium_used_${groupIndex}`,
-            )
-          }
+                    if (group.normalUnitCap === mediumCap) {
+                      medium = model.boolVar(`q_direct_medium_${groupIndex}`)
+                      mediumIdentityVars.push(medium)
+                      model.addConstraint(
+                        medium.minus(variables.normalIdentities).leq(0),
+                        `q_direct_medium_used_${groupIndex}`,
+                      )
+                    }
 
-          if (high && medium) {
-            model.addConstraint(
-              sum(high, medium)
-                .minus(variables.normalIdentities)
-                .leq(0),
-              `q_direct_role_disjoint_${groupIndex}`,
-            )
-          }
+                    if (high && medium) {
+                      model.addConstraint(
+                        sum(high, medium)
+                          .minus(variables.normalIdentities)
+                          .leq(0),
+                        `q_direct_role_disjoint_${groupIndex}`,
+                      )
+                    }
 
-          model.addConstraint(
-            variables.units
-              .minus(
-                sum(
-                  variables.normalIdentities,
-                  ...(high ? [high.times(3)] : []),
-                  ...(medium ? [medium.times(2)] : []),
-                ),
-              )
-              .eq(0),
-            `q_direct_units_${groupIndex}`,
-          )
-        }
+                    model.addConstraint(
+                      variables.units
+                        .minus(
+                          sum(
+                            variables.normalIdentities,
+                            ...(high ? [high.times(3)] : []),
+                            ...(medium ? [medium.times(2)] : []),
+                          ),
+                        )
+                        .eq(0),
+                      `q_direct_units_${groupIndex}`,
+                    )
+                  }
 
-        if (highIdentityVars.length === 0 || mediumIdentityVars.length === 0) {
-          throw new Error('Phase H direct 3-2 selector bucket has no eligible identity')
-        }
-        model.addConstraint(
-          sum(...highIdentityVars).eq(1),
-          'q_direct_high_kind_count',
-        )
-        model.addConstraint(
-          sum(...mediumIdentityVars).eq(1),
-          'q_direct_medium_kind_count',
-        )"""
+                  if (highIdentityVars.length === 0 || mediumIdentityVars.length === 0) {
+                    throw new Error('Phase H direct 3-2 selector bucket has no eligible identity')
+                  }
+                  model.addConstraint(
+                    sum(...highIdentityVars).eq(1),
+                    'q_direct_high_kind_count',
+                  )
+                  model.addConstraint(
+                    sum(...mediumIdentityVars).eq(1),
+                    'q_direct_medium_kind_count',
+                  )"""
 
           replace_once(
               old,
