@@ -29,15 +29,20 @@ jobs:
       - run: npm run build
       - run: npm run smoke:highs:pages-like
 
-  # Phase H diagnosis-only: only the current Draft stacked PR. The prior six
-  # extra-unit cases yielded one exact-infeasible and five 25m cancellations.
-  # The first exact-safe 3-2 split by the unique four-unit identity cap (4/5)
-  # also timed out in both buckets. This continuation fixes BOTH bonus identities'
-  # original caps: four-unit cap 4/5 and three-unit cap 3/4/5. The 2x3 matrix is
-  # disjoint and complete, preserves every original recipe identity, and uses no
-  # first-N or heuristic pruning. Each subcase keeps the existing 25 minute cap;
-  # infeasible closes only that subcase, a candidate still needs full fixed-x
-  # verification, and cancellation/limit remains performance evidence only.
+  # Phase H diagnosis-only: only the current Draft stacked PR. Run 39124343250
+  # exactly closed cap4-cap3 and cap4-cap4; the other four cap-pairs hit the
+  # existing 25 minute cap without a terminal solver status.
+  #
+  # Question: can an exact redundant per-identity [3,2] equation tighten the LP
+  # relaxation enough to close the four remaining original-identity cases?
+  # Integer-feasible semantics already imply:
+  #   units = used + bonus(>=2) + threePlus(>=3) + high(4-unit identity).
+  # This equality removes no legal integer witness. Infeasible closes only that
+  # cap-pair; a candidate still needs full fixed-x verification; cancellation,
+  # timeout, or another non-terminal status remains performance evidence only.
+  # Resource limit stays 25 minutes per open subcase. If this still does not
+  # close them, continue with a different exact reformulation/decomposition,
+  # not a timeout increase or an unchanged rerun.
   phase-h-three-two-cap-case:
     if: github.event_name == 'pull_request' && github.head_ref == 'test/phase-h-canonical-69-prototype'
     name: phase-h-3-2-${{ matrix.high_cap_bucket }}-${{ matrix.medium_cap_bucket }}
@@ -46,8 +51,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        high_cap_bucket: ['cap4', 'cap5']
-        medium_cap_bucket: ['cap3', 'cap4', 'cap5']
+        include:
+          - high_cap_bucket: cap4
+            medium_cap_bucket: cap5
+          - high_cap_bucket: cap5
+            medium_cap_bucket: cap3
+          - high_cap_bucket: cap5
+            medium_cap_bucket: cap4
+          - high_cap_bucket: cap5
+            medium_cap_bucket: cap5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -74,7 +86,7 @@ jobs:
           from pathlib import Path
 
           cases = [(h, m) for h in (4, 5) for m in (3, 4, 5)]
-          checked = missing = duplicate = 0
+          checked = missing = duplicate = tightening_mismatch = 0
           for first_extra in range(1, 5):
               for second_extra in range(1, 5):
                   if sorted((first_extra, second_extra), reverse=True) != [3, 2]:
@@ -90,11 +102,27 @@ jobs:
                           checked += 1
                           missing += matches == 0
                           duplicate += matches > 1
-          assert (checked, missing, duplicate) == (12, 0, 0)
+                          if matches == 1:
+                              first_units = first_extra + 1
+                              second_units = second_extra + 1
+                              first_high = int(first_extra == 3)
+                              second_high = int(second_extra == 3)
+                              first_three_plus = int(first_units >= 3)
+                              second_three_plus = int(second_units >= 3)
+                              tightening_mismatch += (
+                                  first_units
+                                  != 1 + 1 + first_three_plus + first_high
+                              )
+                              tightening_mismatch += (
+                                  second_units
+                                  != 1 + 1 + second_three_plus + second_high
+                              )
+          assert (checked, missing, duplicate, tightening_mismatch) == (12, 0, 0, 0)
           print(
               '[phase-h-three-two-cap-pair-audit] '
               f'checked={checked} cases={len(cases)} '
-              f'missing={missing} duplicate={duplicate}'
+              f'missing={missing} duplicate={duplicate} '
+              f'tighteningMismatch={tightening_mismatch}'
           )
 
           path = Path('src/domain/optimizerLbbdCanonical69QuotientPrototype.test.ts')
@@ -136,8 +164,10 @@ jobs:
           )
           replace_once(
               '          if (extraCaseSpec.extraUpper !== undefined) {',
+              '          let threePlus: BoolVariable | null = null\n'
+              '          let highForEquality: BoolVariable | null = null\n'
               '          if (group.normalUnitCap >= 3) {\n'
-              "            const threePlus = model.boolVar('q_three_plus_' + groupIndex)\n"
+              "            threePlus = model.boolVar('q_three_plus_' + groupIndex)\n"
               '            threePlusIdentityVars.push(threePlus)\n'
               '            const sameCap = threePlusIdentityVarsByCap.get(group.normalUnitCap) ?? []\n'
               '            sameCap.push(threePlus)\n'
@@ -167,6 +197,38 @@ jobs:
               '            group.normalUnitCap >= extraCaseSpec.highUnits &&\n'
               '            group.normalUnitCap === highCap',
               '3-2 high identity cap predicate',
+          )
+          replace_once(
+              '            const high = model.boolVar(`q_high_${groupIndex}`)\n'
+              '            highIdentityVars.push(high)',
+              '            const high = model.boolVar(`q_high_${groupIndex}`)\n'
+              '            highForEquality = high\n'
+              '            highIdentityVars.push(high)',
+              '3-2 tightening high selector link',
+          )
+          replace_once(
+              '          }\n'
+              '        }\n\n'
+              '        model.addConstraint(\n'
+              '          sum(...bonusIdentityVars).eq(extraCaseSpec.bonusKinds),',
+              '          }\n\n'
+              '          model.addConstraint(\n'
+              '            variables.units\n'
+              '              .minus(\n'
+              '                sum(\n'
+              '                  variables.normalIdentities,\n'
+              '                  bonus,\n'
+              '                  ...(threePlus ? [threePlus] : []),\n'
+              '                  ...(highForEquality ? [highForEquality] : []),\n'
+              '                ),\n'
+              '              )\n'
+              '              .eq(0),\n'
+              "            'q_three_two_units_exact_' + groupIndex,\n"
+              '          )\n'
+              '        }\n\n'
+              '        model.addConstraint(\n'
+              '          sum(...bonusIdentityVars).eq(extraCaseSpec.bonusKinds),',
+              '3-2 redundant exact unit equation',
           )
           replace_once(
               "        console.info(\n"
