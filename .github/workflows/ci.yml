@@ -37,8 +37,8 @@ jobs:
   # Next exact proof unit: [3,1,1]. With 29 used identities and 34 production units,
   # exactly three bonus identities and one high identity at 4 units force
   # units = used + bonus + 2*high. The unique 4-unit identity has normalUnitCap 4 or 5,
-  # so high-cap4 / high-cap5 are a disjoint complete split. Dispatch only high-cap4
-  # here; high-cap5 remains open until this cell reaches a terminal result.
+  # so high-cap4 / high-cap5 are a disjoint complete split. Run 39473930722
+  # exactly excluded high-cap4 (job 118804883881); dispatch only high-cap5 here.
   #
   # The five-extra patch caps every original identity at <=5 units. Therefore for any
   # non-finalizing edge with exactly one contributing identity and multiplicity 1,
@@ -58,7 +58,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - high_cap_bucket: cap4
+          - high_cap_bucket: cap5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
