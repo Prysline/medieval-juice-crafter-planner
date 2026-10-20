@@ -421,25 +421,25 @@ jobs:
           text = replace_once(
               '        for (const [edgeKey, edge] of quantityTermsByEdge) {\n',
               '''        for (const [edgeKey, edge] of quantityTermsByEdge) {
-          if (edge.terms.length === 1 && edge.maxMultiplicity === 1) {
-            if (edge.usedVars.length !== 1) {
-              throw new Error(`Phase H unique-edge contributor drift ${edgeKey}`)
-            }
-            const operation = edge.usedVars[0]
-            if (edge.kind === 'juicing' || edge.kind === 'seasoning') {
-              throughSeasoningOps.push(operation)
-            } else if (edge.kind === 'blending') {
-              blendingOps.push(operation)
-            } else {
-              throw new Error(
-                `Unexpected Phase H quotient edge kind ${edge.kind}/${edgeKey}`,
-              )
-            }
-            derivedUniqueOperationVars += 1
-            edgeIndex += 1
-            continue
-          }
-''',
+                    if (edge.terms.length === 1 && edge.maxMultiplicity === 1) {
+                      if (edge.usedVars.length !== 1) {
+                        throw new Error(`Phase H unique-edge contributor drift ${edgeKey}`)
+                      }
+                      const operation = edge.usedVars[0]
+                      if (edge.kind === 'juicing' || edge.kind === 'seasoning') {
+                        throughSeasoningOps.push(operation)
+                      } else if (edge.kind === 'blending') {
+                        blendingOps.push(operation)
+                      } else {
+                        throw new Error(
+                          `Unexpected Phase H quotient edge kind ${edge.kind}/${edgeKey}`,
+                        )
+                      }
+                      derivedUniqueOperationVars += 1
+                      edgeIndex += 1
+                      continue
+                    }
+              ''',
               'derive singleton multiplicity-one operations',
           )
           text = replace_once(
