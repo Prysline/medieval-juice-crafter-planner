@@ -28,3 +28,407 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run smoke:highs:pages-like
+
+  # Phase H diagnosis-only: only the current Draft stacked PR.
+  # Run 39375181563 returned terminal HiGHS infeasible for cap5-cap3 after the
+  # selector-implied continuous-unit and singleton-operation exact reformulations.
+  # Together with the five earlier cap-pairs, [3,2] is now 6/6 exact excluded.
+  #
+  # Next exact proof unit: [3,1,1]. With 29 used identities and 34 production units,
+  # exactly three bonus identities and one high identity at 4 units force
+  # units = used + bonus + 2*high. The unique 4-unit identity has normalUnitCap 4 or 5,
+  # so high-cap4 / high-cap5 are a disjoint complete split. Run 39473930722
+  # exactly excluded high-cap4 (job 118804883881); dispatch only high-cap5 here.
+  #
+  # The five-extra patch caps every original identity at <=5 units. Therefore for any
+  # non-finalizing edge with exactly one contributing identity and multiplicity 1,
+  # ceil(units / 5) is exactly the original identity's used variable. Shared edges and
+  # repeated edges retain the original exact-ceiling integer formulation.
+  #
+  # This remains original-identity-preserving diagnosis only: no timeout increase,
+  # pruning, sampling, identity aggregation, production optimizer change, or relaxed
+  # lexicographic prefix. Solver infeasible closes only this subcase; any candidate
+  # must pass the existing full original-domain fixed-x verification.
+  phase-h-three-one-one-high-cap-case:
+    if: github.event_name == 'pull_request' && github.head_ref == 'test/phase-h-canonical-69-prototype'
+    name: phase-h-3-1-1-${{ matrix.high_cap_bucket }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - high_cap_bucket: cap5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Expose diagnosis-only Phase H model seam
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/domain/optimizerHighsSolver.ts')
+          text = path.read_text()
+          old = 'function buildHighsStage('
+          new = 'export function buildHighsStage('
+          if text.count(old) != 1:
+              raise SystemExit('buildHighsStage diagnosis seam target not found exactly once')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Apply exact-safe five-extra-unit partition
+        run: python .github/scripts/optimizer-phase-h-five-extra-patch.py
+      - name: Reparameterize 3-1-1 with exact bonus and high selectors
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          from itertools import product
+
+          cases = (4, 5)
+          checked = missing = duplicate = direct_mismatch = 0
+          for high_index in range(3):
+              extras = [1, 1, 1]
+              extras[high_index] = 3
+              cap_ranges = [range(extra + 1, 6) for extra in extras]
+              for caps in product(*cap_ranges):
+                  high_cap = caps[high_index]
+                  matches = sum(high_cap == case_high for case_high in cases)
+                  checked += 1
+                  missing += matches == 0
+                  duplicate += matches > 1
+                  if matches == 1:
+                      for index, extra in enumerate(extras):
+                          used = 1
+                          bonus = 1
+                          high = int(index == high_index)
+                          units = extra + 1
+                          direct_mismatch += (
+                              units != used + bonus + 2 * high
+                          )
+          assert (checked, missing, duplicate, direct_mismatch) == (96, 0, 0, 0)
+          print(
+              '[phase-h-three-one-one-direct-selector-audit] '
+              f'checked={checked} cases={len(cases)} '
+              f'missing={missing} duplicate={duplicate} '
+              f'directMismatch={direct_mismatch}'
+          )
+
+          path = Path('src/domain/optimizerLbbdCanonical69QuotientPrototype.test.ts')
+          text = path.read_text()
+
+          def replace_once(old, new, label):
+              global text
+              if text.count(old) != 1:
+                  raise SystemExit(
+                      f'{label}: expected one target, found {text.count(old)}'
+                  )
+              text = text.replace(old, new, 1)
+
+          old = """        const bonusIdentityVars: BoolVariable[] = []
+                  const highIdentityVars: BoolVariable[] = []
+                  for (const [groupIndex, group] of groups.entries()) {
+                    const variables = varsByGroup.get(group.key)!
+                    if (variables.sixPlusIdentities) {
+                      throw new Error(
+                        `Phase H five-extra cap drift for ${group.recipeIds[0]}`,
+                      )
+                    }
+                    if (group.normalUnitCap <= 1) continue
+
+                    const bonus = model.boolVar(`q_bonus_${groupIndex}`)
+                    bonusIdentityVars.push(bonus)
+                    model.addConstraint(
+                      bonus.minus(variables.normalIdentities).leq(0),
+                      `q_bonus_used_${groupIndex}`,
+                    )
+                    model.addConstraint(
+                      sum(variables.normalIdentities, bonus)
+                        .minus(variables.units)
+                        .leq(0),
+                      `q_bonus_lower_${groupIndex}`,
+                    )
+                    model.addConstraint(
+                      variables.units
+                        .minus(variables.normalIdentities)
+                        .minus(bonus.times(group.normalUnitCap - 1))
+                        .leq(0),
+                      `q_bonus_upper_${groupIndex}`,
+                    )
+
+                    if (extraCaseSpec.extraUpper !== undefined) {
+                      model.addConstraint(
+                        variables.units
+                          .minus(variables.normalIdentities)
+                          .minus(bonus.times(extraCaseSpec.extraUpper))
+                          .leq(0),
+                        `q_case_extra_upper_${groupIndex}`,
+                      )
+                    }
+
+                    if (
+                      extraCaseSpec.highUnits !== undefined &&
+                      group.normalUnitCap >= extraCaseSpec.highUnits
+                    ) {
+                      const high = model.boolVar(`q_high_${groupIndex}`)
+                      highIdentityVars.push(high)
+                      model.addConstraint(
+                        high.minus(bonus).leq(0),
+                        `q_high_bonus_${groupIndex}`,
+                      )
+                      model.addConstraint(
+                        high
+                          .times(extraCaseSpec.highUnits)
+                          .minus(variables.units)
+                          .leq(0),
+                        `q_high_units_${groupIndex}`,
+                      )
+                    }
+                  }
+
+                  model.addConstraint(
+                    sum(...bonusIdentityVars).eq(extraCaseSpec.bonusKinds),
+                    'q_bonus_kind_count',
+                  )
+                  if (extraCaseSpec.highUnits !== undefined) {
+                    if (highIdentityVars.length === 0) {
+                      throw new Error(
+                        `Phase H five-extra case ${extraCase} has no eligible high-unit identity`,
+                      )
+                    }
+                    model.addConstraint(
+                      sum(...highIdentityVars).eq(1),
+                      'q_high_kind_count',
+                    )
+                  }"""
+
+          new = """        const highCapBucket = process.env.OPTIMIZER_PHASE_H_HIGH_CAP_BUCKET
+                  const highCap =
+                    highCapBucket === 'cap4' ? 4 : highCapBucket === 'cap5' ? 5 : null
+                  if (extraCase !== '3-1-1' || highCap === null) {
+                    throw new Error(
+                      'Phase H direct 3-1-1 selectors expect high cap4/cap5',
+                    )
+                  }
+
+                  const bonusIdentityVars: BoolVariable[] = []
+                  const highIdentityVars: BoolVariable[] = []
+                  for (const [groupIndex, group] of groups.entries()) {
+                    const variables = varsByGroup.get(group.key)!
+                    if (variables.sixPlusIdentities) {
+                      throw new Error(
+                        `Phase H direct 3-1-1 cap drift for ${group.recipeIds[0]}`,
+                      )
+                    }
+
+                    if (group.normalUnitCap <= 1) continue
+
+                    const bonus = model.boolVar(`q_direct_bonus_${groupIndex}`)
+                    bonusIdentityVars.push(bonus)
+                    model.addConstraint(
+                      bonus.minus(variables.normalIdentities).leq(0),
+                      `q_direct_bonus_used_${groupIndex}`,
+                    )
+
+                    let high: BoolVariable | null = null
+                    if (group.normalUnitCap === highCap) {
+                      high = model.boolVar(`q_direct_high_${groupIndex}`)
+                      highIdentityVars.push(high)
+                      model.addConstraint(
+                        high.minus(bonus).leq(0),
+                        `q_direct_high_bonus_${groupIndex}`,
+                      )
+                    }
+
+                    model.addConstraint(
+                      variables.units
+                        .minus(
+                          sum(
+                            variables.normalIdentities,
+                            bonus,
+                            ...(high ? [high.times(2)] : []),
+                          ),
+                        )
+                        .eq(0),
+                      `q_direct_units_${groupIndex}`,
+                    )
+                  }
+
+                  if (bonusIdentityVars.length === 0 || highIdentityVars.length === 0) {
+                    throw new Error('Phase H direct 3-1-1 selector bucket has no eligible identity')
+                  }
+                  model.addConstraint(
+                    sum(...bonusIdentityVars).eq(3),
+                    'q_direct_bonus_kind_count',
+                  )
+                  model.addConstraint(
+                    sum(...highIdentityVars).eq(1),
+                    'q_direct_high_kind_count',
+                  )"""
+
+          replace_once(
+              old,
+              new,
+              '3-1-1 direct selector formulation',
+          )
+          replace_once(
+              '            bonusIdentityVars: bonusIdentityVars.length,\n'
+              '            highIdentityVars: highIdentityVars.length,',
+              '            directBonusIdentityVars: bonusIdentityVars.length,\n'
+              '            directHighIdentityVars: highIdentityVars.length,\n'
+              '            highCapBucket,\n'
+              '            highCap,\n'
+              '            eligibleCap4: groups.filter((group) => group.normalUnitCap === 4).length,\n'
+              '            eligibleCap5: groups.filter((group) => group.normalUnitCap === 5).length,',
+              '3-1-1 direct selector telemetry',
+          )
+          path.write_text(text)
+          PY
+      - name: Remove selector-implied unit integrality exactly
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          states = (
+              (0, 0, 0, 0),
+              (1, 0, 0, 1),
+              (1, 1, 0, 2),
+              (1, 1, 1, 4),
+          )
+          for used, bonus, high, units in states:
+              assert units == used + bonus + 2 * high
+              assert high <= bonus <= used
+              assert ((units + 4) // 5) == used
+          print(
+              '[phase-h-three-one-one-continuous-unit-audit] '
+              f'states={len(states)} unitMismatch=0 uniqueEdgeMismatch=0'
+          )
+
+          path = Path('src/domain/optimizerLbbdCanonical69QuotientPrototype.test.ts')
+          text = path.read_text()
+
+          def replace_once(old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one target, found {count}')
+              return text.replace(old, new, 1)
+
+          text = replace_once(
+              'type QuotientVariables = {\n  units: IntVariable\n',
+              'type QuotientVariables = {\n  units: NumVariable\n',
+              'continuous unit variable type',
+          )
+          text = replace_once(
+              '          const units = model.intVar(\n',
+              '          const units = model.numVar(\n',
+              'continuous unit variable declaration',
+          )
+          text = replace_once(
+              '            aggregateUnitIntegerVars: varsByGroup.size,',
+              '            derivedContinuousUnitVars: varsByGroup.size,',
+              'continuous unit telemetry',
+          )
+          path.write_text(text)
+          PY
+      - name: Substitute exact singleton machine operations
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/domain/optimizerLbbdCanonical69QuotientPrototype.test.ts')
+          text = path.read_text()
+
+          def replace_once(old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one target, found {count}')
+              return text.replace(old, new, 1)
+
+          text = replace_once(
+              "            terms: ReturnType<IntVariable['times']>[]\n"
+              "            maxMultiplicity: number",
+              "            terms: ReturnType<IntVariable['times']>[]\n"
+              "            usedVars: IntVariable[]\n"
+              "            maxMultiplicity: number",
+              'unique-edge used metadata',
+          )
+          text = replace_once(
+              '        for (const group of groups) {\n'
+              '          const units = varsByGroup.get(group.key)!.units',
+              '        for (const group of groups) {\n'
+              '          const variables = varsByGroup.get(group.key)!\n'
+              '          const units = variables.units',
+              'edge contributor variables',
+          )
+          text = replace_once(
+              '              current.terms.push(term)\n'
+              '              current.maxMultiplicity = Math.max(',
+              '              current.terms.push(term)\n'
+              '              current.usedVars.push(variables.normalIdentities)\n'
+              '              current.maxMultiplicity = Math.max(',
+              'existing-edge used metadata',
+          )
+          text = replace_once(
+              '                terms: [term],\n'
+              '                maxMultiplicity: edge.multiplicity,',
+              '                terms: [term],\n'
+              '                usedVars: [variables.normalIdentities],\n'
+              '                maxMultiplicity: edge.multiplicity,',
+              'new-edge used metadata',
+          )
+          text = replace_once(
+              '        const blendingOps: IntVariable[] = []\n'
+              '        let edgeIndex = 0',
+              '        const blendingOps: IntVariable[] = []\n'
+              '        let derivedUniqueOperationVars = 0\n'
+              '        let edgeIndex = 0',
+              'derived operation counter',
+          )
+          text = replace_once(
+              '        for (const [edgeKey, edge] of quantityTermsByEdge) {\n',
+              '''        for (const [edgeKey, edge] of quantityTermsByEdge) {
+                    if (edge.terms.length === 1 && edge.maxMultiplicity === 1) {
+                      if (edge.usedVars.length !== 1) {
+                        throw new Error(`Phase H unique-edge contributor drift ${edgeKey}`)
+                      }
+                      const operation = edge.usedVars[0]
+                      if (edge.kind === 'juicing' || edge.kind === 'seasoning') {
+                        throughSeasoningOps.push(operation)
+                      } else if (edge.kind === 'blending') {
+                        blendingOps.push(operation)
+                      } else {
+                        throw new Error(
+                          `Unexpected Phase H quotient edge kind ${edge.kind}/${edgeKey}`,
+                        )
+                      }
+                      derivedUniqueOperationVars += 1
+                      edgeIndex += 1
+                      continue
+                    }
+              ''',
+              'derive singleton multiplicity-one operations',
+          )
+          text = replace_once(
+              '            nonFinalizingOperationIntegerVars:\n'
+              '              quantityTermsByEdge.size,\n'
+              '            throughSeasoningEdges:',
+              '            nonFinalizingOperationIntegerVars:\n'
+              '              quantityTermsByEdge.size - derivedUniqueOperationVars,\n'
+              '            derivedUniqueOperationVars,\n'
+              '            throughSeasoningEdges:',
+              'operation telemetry',
+          )
+
+          path.write_text(text)
+          PY
+      - name: Solve exact-safe 3-1-1 high-cap subcase
+        env:
+          OPTIMIZER_PHASE_H_CANONICAL69_QUOTIENT: '1'
+          OPTIMIZER_PHASE_H_EXTRA_PARTITION: '3-1-1'
+          OPTIMIZER_PHASE_H_HIGH_CAP_BUCKET: ${{ matrix.high_cap_bucket }}
+        run: >-
+          /usr/bin/time -v
+          npx vitest run
+          src/domain/optimizerLbbdCanonical69QuotientPrototype.test.ts
+          --reporter=verbose

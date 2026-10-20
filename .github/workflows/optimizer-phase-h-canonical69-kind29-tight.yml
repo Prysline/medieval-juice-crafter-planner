@@ -1,0 +1,66 @@
+name: Optimizer Phase H Canonical-69 Kind29 Tight
+
+on:
+  pull_request:
+    paths:
+      - src/domain/optimizerLbbdCanonical69QuotientPrototype.test.ts
+      - .github/workflows/optimizer-phase-h-canonical69-kind29-tight.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  kind29-tight:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Expose diagnosis-only Phase H model seam
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/domain/optimizerHighsSolver.ts')
+          text = path.read_text()
+          old = 'function buildHighsStage('
+          new = 'export function buildHighsStage('
+          if text.count(old) != 1:
+              raise SystemExit('buildHighsStage diagnosis seam target not found exactly once')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Apply exact 29-kind implications
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/domain/optimizerLbbdCanonical69QuotientPrototype.test.ts')
+          text = path.read_text()
+          cap_target = "      declaredCap,\n      7,\n"
+          cap_replacement = "      declaredCap,\n      5,\n"
+          if text.count(cap_target) != 1:
+              raise SystemExit('Phase H unit-cap patch target not found exactly once')
+          text = text.replace(cap_target, cap_replacement, 1)
+          target = '        model.minimize(positiveKinds)'
+          replacement = (
+              "        model.addConstraint(\n"
+              "          positiveKinds.eq(29),\n"
+              "          'q_recipe_kinds_case',\n"
+              "        )\n"
+              "        model.minimize(positiveKinds)"
+          )
+          if text.count(target) != 1:
+              raise SystemExit('Phase H recipe-kind patch target not found exactly once')
+          path.write_text(text.replace(target, replacement, 1))
+          PY
+      - name: Run exact tight 29-kind case
+        env:
+          OPTIMIZER_PHASE_H_CANONICAL69_QUOTIENT: '1'
+        run: >-
+          /usr/bin/time -v
+          npx vitest run
+          src/domain/optimizerLbbdCanonical69QuotientPrototype.test.ts
+          --reporter=verbose

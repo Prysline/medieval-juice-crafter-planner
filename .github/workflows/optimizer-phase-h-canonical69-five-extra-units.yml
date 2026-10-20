@@ -1,0 +1,64 @@
+name: Optimizer Phase H Canonical-69 Five Extra Units
+
+# Push-only because this focused workflow exists only on the Phase H branch;
+# workflow_dispatch is reserved for workflows already available on default.
+on:
+  push:
+    branches:
+      - test/phase-h-canonical-69-prototype
+    paths:
+      - src/domain/optimizerLbbdCanonical69QuotientPrototype.test.ts
+      - .github/scripts/optimizer-phase-h-canonical69-five-extra.py
+      - .github/workflows/optimizer-phase-h-canonical69-five-extra-units.yml
+
+permissions:
+  contents: read
+
+# Diagnosis-only exact-safe decomposition of the five production units above
+# the mandatory one-unit baseline for each of the 29 used original identities.
+# Solver infeasibility closes only its matrix case; any feasible x must pass the
+# existing full original-domain fixed-x verifier before machine 102 is accepted.
+jobs:
+  extra-unit-case:
+    name: extra-${{ matrix.extra_case }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        extra_case:
+          - '4-1'
+          - '3-2'
+          - '3-1-1'
+          - '2-2-1'
+          - '2-1-1-1'
+          - '1-1-1-1-1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Expose diagnosis-only Phase H model seam
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/domain/optimizerHighsSolver.ts')
+          text = path.read_text()
+          old = 'function buildHighsStage('
+          new = 'export function buildHighsStage('
+          if text.count(old) != 1:
+              raise SystemExit('buildHighsStage diagnosis seam target not found exactly once')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Apply exact-safe five-extra-unit partition
+        run: python .github/scripts/optimizer-phase-h-canonical69-five-extra.py
+      - name: Solve exact-safe extra-unit case
+        env:
+          OPTIMIZER_PHASE_H_CANONICAL69_QUOTIENT: '1'
+          OPTIMIZER_PHASE_H_EXTRA_PARTITION: ${{ matrix.extra_case }}
+        run: >-
+          /usr/bin/time -v
+          npx vitest run
+          src/domain/optimizerLbbdCanonical69QuotientPrototype.test.ts
+          --reporter=verbose

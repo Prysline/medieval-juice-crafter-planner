@@ -1,0 +1,128 @@
+name: Optimizer Phase H Canonical-69 Kind29 LP Support
+
+on:
+  pull_request:
+    paths:
+      - src/domain/optimizerLbbdCanonical69QuotientPrototype.test.ts
+      - .github/workflows/optimizer-phase-h-canonical69-kind29-lp-proof.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  kind29-lp-support:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Expose diagnosis-only Phase H model seam
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/domain/optimizerHighsSolver.ts')
+          text = path.read_text()
+          old = 'function buildHighsStage('
+          new = 'export function buildHighsStage('
+          if text.count(old) != 1:
+              raise SystemExit('buildHighsStage diagnosis seam target not found exactly once')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Build 29-kind LP support probe
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/domain/optimizerLbbdCanonical69QuotientPrototype.test.ts')
+          text = path.read_text()
+          target = '        model.minimize(positiveKinds)'
+          replacement = (
+              "        model.addConstraint(\n"
+              "          positiveKinds.eq(29),\n"
+              "          'q_recipe_kinds_case',\n"
+              "        )\n"
+              "        model.minimize(positiveKinds)"
+          )
+          if text.count(target) != 1:
+              raise SystemExit('Phase H recipe-kind patch target not found exactly once')
+          text = text.replace(target, replacement, 1)
+          text = text.replace('model.intVar(', 'model.numVar(')
+
+          old = """        expect(
+          state,
+          state === 'exact-infeasible-at-102'
+            ? 'Exact quotient proves no original-domain 102 witness exists'
+            : 'Limit/unknown remains performance evidence only',
+        ).toBe('witness-ready')
+        if (state !== 'witness-ready') return
+
+        const witness: RecipeUnitSelection[] = []"""
+          new = """        if (state !== 'witness-ready') return
+        const lpSupport = groups
+          .map((group) => {
+            const variables = varsByGroup.get(group.key)!
+            const units = requiredValue(
+              solution,
+              variables.units,
+              `${group.key}/lp-units`,
+            )
+            const normal = requiredValue(
+              solution,
+              variables.normalIdentities,
+              `${group.key}/lp-normal`,
+            )
+            const sixPlus = variables.sixPlusIdentities
+              ? requiredValue(
+                  solution,
+                  variables.sixPlusIdentities,
+                  `${group.key}/lp-six`,
+                )
+              : 0
+            return {
+              recipeId: group.recipeIds[0],
+              ingredientCost: group.ingredientCost,
+              units,
+              normal,
+              sixPlus,
+              activity: normal + sixPlus,
+            }
+          })
+          .filter((entry) => entry.activity > 1e-8 || entry.units > 1e-8)
+          .sort((left, right) =>
+            right.activity - left.activity ||
+            right.units - left.units ||
+            left.recipeId.localeCompare(right.recipeId),
+          )
+        console.info(
+          '[phase-h-canonical69-lp-support]',
+          JSON.stringify({
+            supportCount: lpSupport.length,
+            activitySum: lpSupport.reduce(
+              (sum, entry) => sum + entry.activity,
+              0,
+            ),
+            unitSum: lpSupport.reduce(
+              (sum, entry) => sum + entry.units,
+              0,
+            ),
+            top: lpSupport.slice(0, 200),
+          }),
+        )
+        return
+
+        const witness: RecipeUnitSelection[] = []"""
+          if text.count(old) != 1:
+              raise SystemExit('Phase H LP support injection target not found exactly once')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Print LP support only
+        env:
+          OPTIMIZER_PHASE_H_CANONICAL69_QUOTIENT: '1'
+        run: >-
+          /usr/bin/time -v
+          npx vitest run
+          src/domain/optimizerLbbdCanonical69QuotientPrototype.test.ts
+          --reporter=verbose

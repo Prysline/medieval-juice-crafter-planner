@@ -1,0 +1,127 @@
+name: Optimizer Phase H Canonical-69 Kind29 Partition Feasibility
+
+on:
+  pull_request:
+    paths:
+      - src/domain/optimizerLbbdCanonical69QuotientPrototype.test.ts
+      - .github/workflows/optimizer-phase-h-canonical69-kind29-partition-feasibility.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  partition:
+    name: partition-${{ matrix.partition }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [through-seasoning, blending]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Expose diagnosis-only Phase H model seam
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/domain/optimizerHighsSolver.ts')
+          text = path.read_text()
+          old = 'function buildHighsStage('
+          new = 'export function buildHighsStage('
+          if text.count(old) != 1:
+              raise SystemExit('buildHighsStage diagnosis seam target not found exactly once')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Build exact 29-kind partition case
+        env:
+          PARTITION: ${{ matrix.partition }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          path = Path('src/domain/optimizerLbbdCanonical69QuotientPrototype.test.ts')
+          text = path.read_text()
+
+          cap_target = "      declaredCap,\n      7,\n"
+          if text.count(cap_target) != 1:
+              raise SystemExit('Phase H unit-cap patch target not found exactly once')
+          text = text.replace(cap_target, "      declaredCap,\n      5,\n", 1)
+
+          target = '        model.minimize(positiveKinds)'
+          replacement = (
+              "        model.addConstraint(\n"
+              "          positiveKinds.eq(29),\n"
+              "          'q_recipe_kinds_case',\n"
+              "        )\n"
+              "        model.minimize(positiveKinds)"
+          )
+          if text.count(target) != 1:
+              raise SystemExit('Phase H recipe-kind patch target not found exactly once')
+          text = text.replace(target, replacement, 1)
+
+          through_block = """        model.addConstraint(
+          sum(...throughSeasoningOps).eq(
+            EXPECTED_MACHINE.throughSeasoning,
+          ),
+          'q_through_seasoning',
+        )
+"""
+          blending_block = """        model.addConstraint(
+          sum(...blendingOps).eq(EXPECTED_MACHINE.blending),
+          'q_blending',
+        )
+"""
+          partition = os.environ['PARTITION']
+          if partition == 'through-seasoning':
+              if text.count(blending_block) != 1:
+                  raise SystemExit('blending equality target not found exactly once')
+              text = text.replace(blending_block, '', 1)
+          elif partition == 'blending':
+              if text.count(through_block) != 1:
+                  raise SystemExit('through-seasoning equality target not found exactly once')
+              text = text.replace(through_block, '', 1)
+          else:
+              raise SystemExit(f'unknown partition: {partition}')
+
+          old = """        expect(
+          state,
+          state === 'exact-infeasible-at-102'
+            ? 'Exact quotient proves no original-domain 102 witness exists'
+            : 'Limit/unknown remains performance evidence only',
+        ).toBe('witness-ready')
+        if (state !== 'witness-ready') return
+
+        const witness: RecipeUnitSelection[] = []"""
+          new = """        console.info(
+          '[phase-h-canonical69-partition-feasibility]',
+          JSON.stringify({
+            partition: process.env.OPTIMIZER_PHASE_H_PARTITION,
+            status: solution.status,
+            disposition: state,
+            objective:
+              typeof solution.objective === 'number'
+                ? solution.objective
+                : null,
+          }),
+        )
+        return
+
+        const witness: RecipeUnitSelection[] = []"""
+          if text.count(old) != 1:
+              raise SystemExit('Phase H partition return target not found exactly once')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Solve exact partition feasibility
+        env:
+          OPTIMIZER_PHASE_H_CANONICAL69_QUOTIENT: '1'
+          OPTIMIZER_PHASE_H_PARTITION: ${{ matrix.partition }}
+        run: >-
+          /usr/bin/time -v
+          npx vitest run
+          src/domain/optimizerLbbdCanonical69QuotientPrototype.test.ts
+          --reporter=verbose
