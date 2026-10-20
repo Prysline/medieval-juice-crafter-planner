@@ -30,39 +30,35 @@ jobs:
       - run: npm run smoke:highs:pages-like
 
   # Phase H diagnosis-only: only the current Draft stacked PR.
-  # Run 39124343250 exactly closed cap4-cap3 and cap4-cap4. Run 39139160853
-  # then added a redundant per-identity equality to the other four cap-pairs;
-  # all four still reached the 25 minute cap with no terminal solver status.
+  # Run 39375181563 returned terminal HiGHS infeasible for cap5-cap3 after the
+  # selector-implied continuous-unit and singleton-operation exact reformulations.
+  # Together with the five earlier cap-pairs, [3,2] is now 6/6 exact excluded.
   #
-  # Run 39147763598 exactly closed cap5-cap5 after making the selector-determined
-  # 7,892 unit variables continuous. cap5-cap3 alone still reached the 25 minute cap.
+  # Next exact proof unit: [3,1,1]. With 29 used identities and 34 production units,
+  # exactly three bonus identities and one high identity at 4 units force
+  # units = used + bonus + 2*high. The unique 4-unit identity has normalUnitCap 4 or 5,
+  # so high-cap4 / high-cap5 are a disjoint complete split. Dispatch only high-cap4
+  # here; high-cap5 remains open until this cell reaches a terminal result.
   #
-  # Current open question: can cap5-cap3 be closed after additionally substituting
-  # machine-operation integers that are already implied by one original identity?
+  # The five-extra patch caps every original identity at <=5 units. Therefore for any
+  # non-finalizing edge with exactly one contributing identity and multiplicity 1,
+  # ceil(units / 5) is exactly the original identity's used variable. Shared edges and
+  # repeated edges retain the original exact-ceiling integer formulation.
   #
-  # The direct formulation still preserves every original recipe identity and keeps
-  # units = used + 3*high + 2*medium. For a non-finalizing edge with exactly one
-  # contributing identity and multiplicity 1, this case has units in {0,1,3,4};
-  # therefore ceil(units / 5) is exactly used. Such operation variables can be removed
-  # without relaxation. Shared edges and repeated edges retain the original integer
-  # exact-ceiling formulation.
-  #
-  # Only cap5-cap3 remains open and is dispatched here. Solver infeasible closes only
-  # this exact cap-pair; a candidate must pass full original-domain fixed-x verification.
-  # Cancellation/limit remains performance evidence only. The existing 25-minute cap is
-  # unchanged; no closed case, timeout increase, pruning, sampling, or identity
-  # aggregation is used.
-  phase-h-three-two-cap-case:
+  # This remains original-identity-preserving diagnosis only: no timeout increase,
+  # pruning, sampling, identity aggregation, production optimizer change, or relaxed
+  # lexicographic prefix. Solver infeasible closes only this subcase; any candidate
+  # must pass the existing full original-domain fixed-x verification.
+  phase-h-three-one-one-high-cap-case:
     if: github.event_name == 'pull_request' && github.head_ref == 'test/phase-h-canonical-69-prototype'
-    name: phase-h-3-2-${{ matrix.high_cap_bucket }}-${{ matrix.medium_cap_bucket }}
+    name: phase-h-3-1-1-${{ matrix.high_cap_bucket }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
         include:
-          - high_cap_bucket: cap5
-            medium_cap_bucket: cap3
+          - high_cap_bucket: cap4
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -83,44 +79,37 @@ jobs:
           PY
       - name: Apply exact-safe five-extra-unit partition
         run: python .github/scripts/optimizer-phase-h-five-extra-patch.py
-      - name: Reparameterize 3-2 with direct high and medium selectors
+      - name: Reparameterize 3-1-1 with exact bonus and high selectors
         run: |
           python - <<'PY'
           from pathlib import Path
 
-          cases = [(h, m) for h in (4, 5) for m in (3, 4, 5)]
+          from itertools import product
+
+          cases = (4, 5)
           checked = missing = duplicate = direct_mismatch = 0
-          for first_extra in range(1, 5):
-              for second_extra in range(1, 5):
-                  if sorted((first_extra, second_extra), reverse=True) != [3, 2]:
-                      continue
-                  for first_cap in range(first_extra + 1, 6):
-                      for second_cap in range(second_extra + 1, 6):
-                          high_cap = first_cap if first_extra == 3 else second_cap
-                          medium_cap = first_cap if first_extra == 2 else second_cap
-                          matches = sum(
-                              high_cap == case_high and medium_cap == case_medium
-                              for case_high, case_medium in cases
+          for high_index in range(3):
+              extras = [1, 1, 1]
+              extras[high_index] = 3
+              cap_ranges = [range(extra + 1, 6) for extra in extras]
+              for caps in product(*cap_ranges):
+                  high_cap = caps[high_index]
+                  matches = sum(high_cap == case_high for case_high in cases)
+                  checked += 1
+                  missing += matches == 0
+                  duplicate += matches > 1
+                  if matches == 1:
+                      for index, extra in enumerate(extras):
+                          used = 1
+                          bonus = 1
+                          high = int(index == high_index)
+                          units = extra + 1
+                          direct_mismatch += (
+                              units != used + bonus + 2 * high
                           )
-                          checked += 1
-                          missing += matches == 0
-                          duplicate += matches > 1
-                          if matches == 1:
-                              first_units = first_extra + 1
-                              second_units = second_extra + 1
-                              first_high = int(first_extra == 3)
-                              second_high = int(second_extra == 3)
-                              first_medium = int(first_extra == 2)
-                              second_medium = int(second_extra == 2)
-                              direct_mismatch += (
-                                  first_units != 1 + 3 * first_high + 2 * first_medium
-                              )
-                              direct_mismatch += (
-                                  second_units != 1 + 3 * second_high + 2 * second_medium
-                              )
-          assert (checked, missing, duplicate, direct_mismatch) == (12, 0, 0, 0)
+          assert (checked, missing, duplicate, direct_mismatch) == (96, 0, 0, 0)
           print(
-              '[phase-h-three-two-direct-selector-audit] '
+              '[phase-h-three-one-one-direct-selector-audit] '
               f'checked={checked} cases={len(cases)} '
               f'missing={missing} duplicate={duplicate} '
               f'directMismatch={direct_mismatch}'
@@ -215,60 +204,40 @@ jobs:
                   }"""
 
           new = """        const highCapBucket = process.env.OPTIMIZER_PHASE_H_HIGH_CAP_BUCKET
-                  const mediumCapBucket = process.env.OPTIMIZER_PHASE_H_MEDIUM_CAP_BUCKET
                   const highCap =
                     highCapBucket === 'cap4' ? 4 : highCapBucket === 'cap5' ? 5 : null
-                  const mediumCap =
-                    mediumCapBucket === 'cap3'
-                      ? 3
-                      : mediumCapBucket === 'cap4'
-                        ? 4
-                        : mediumCapBucket === 'cap5'
-                          ? 5
-                          : null
-                  if (extraCase !== '3-2' || highCap === null || mediumCap === null) {
+                  if (extraCase !== '3-1-1' || highCap === null) {
                     throw new Error(
-                      'Phase H direct 3-2 selectors expect high cap4/cap5 and medium cap3/cap4/cap5',
+                      'Phase H direct 3-1-1 selectors expect high cap4/cap5',
                     )
                   }
 
+                  const bonusIdentityVars: BoolVariable[] = []
                   const highIdentityVars: BoolVariable[] = []
-                  const mediumIdentityVars: BoolVariable[] = []
                   for (const [groupIndex, group] of groups.entries()) {
                     const variables = varsByGroup.get(group.key)!
                     if (variables.sixPlusIdentities) {
                       throw new Error(
-                        `Phase H direct 3-2 cap drift for ${group.recipeIds[0]}`,
+                        `Phase H direct 3-1-1 cap drift for ${group.recipeIds[0]}`,
                       )
                     }
 
-                    let high: BoolVariable | null = null
-                    let medium: BoolVariable | null = null
+                    if (group.normalUnitCap <= 1) continue
 
+                    const bonus = model.boolVar(`q_direct_bonus_${groupIndex}`)
+                    bonusIdentityVars.push(bonus)
+                    model.addConstraint(
+                      bonus.minus(variables.normalIdentities).leq(0),
+                      `q_direct_bonus_used_${groupIndex}`,
+                    )
+
+                    let high: BoolVariable | null = null
                     if (group.normalUnitCap === highCap) {
                       high = model.boolVar(`q_direct_high_${groupIndex}`)
                       highIdentityVars.push(high)
                       model.addConstraint(
-                        high.minus(variables.normalIdentities).leq(0),
-                        `q_direct_high_used_${groupIndex}`,
-                      )
-                    }
-
-                    if (group.normalUnitCap === mediumCap) {
-                      medium = model.boolVar(`q_direct_medium_${groupIndex}`)
-                      mediumIdentityVars.push(medium)
-                      model.addConstraint(
-                        medium.minus(variables.normalIdentities).leq(0),
-                        `q_direct_medium_used_${groupIndex}`,
-                      )
-                    }
-
-                    if (high && medium) {
-                      model.addConstraint(
-                        sum(high, medium)
-                          .minus(variables.normalIdentities)
-                          .leq(0),
-                        `q_direct_role_disjoint_${groupIndex}`,
+                        high.minus(bonus).leq(0),
+                        `q_direct_high_bonus_${groupIndex}`,
                       )
                     }
 
@@ -277,8 +246,8 @@ jobs:
                         .minus(
                           sum(
                             variables.normalIdentities,
-                            ...(high ? [high.times(3)] : []),
-                            ...(medium ? [medium.times(2)] : []),
+                            bonus,
+                            ...(high ? [high.times(2)] : []),
                           ),
                         )
                         .eq(0),
@@ -286,36 +255,33 @@ jobs:
                     )
                   }
 
-                  if (highIdentityVars.length === 0 || mediumIdentityVars.length === 0) {
-                    throw new Error('Phase H direct 3-2 selector bucket has no eligible identity')
+                  if (bonusIdentityVars.length === 0 || highIdentityVars.length === 0) {
+                    throw new Error('Phase H direct 3-1-1 selector bucket has no eligible identity')
                   }
+                  model.addConstraint(
+                    sum(...bonusIdentityVars).eq(3),
+                    'q_direct_bonus_kind_count',
+                  )
                   model.addConstraint(
                     sum(...highIdentityVars).eq(1),
                     'q_direct_high_kind_count',
-                  )
-                  model.addConstraint(
-                    sum(...mediumIdentityVars).eq(1),
-                    'q_direct_medium_kind_count',
                   )"""
 
           replace_once(
               old,
               new,
-              '3-2 direct selector formulation',
+              '3-1-1 direct selector formulation',
           )
           replace_once(
               '            bonusIdentityVars: bonusIdentityVars.length,\n'
               '            highIdentityVars: highIdentityVars.length,',
+              '            directBonusIdentityVars: bonusIdentityVars.length,\n'
               '            directHighIdentityVars: highIdentityVars.length,\n'
-              '            directMediumIdentityVars: mediumIdentityVars.length,\n'
               '            highCapBucket,\n'
-              '            mediumCapBucket,\n'
               '            highCap,\n'
-              '            mediumCap,\n'
-              '            eligibleCap3: groups.filter((group) => group.normalUnitCap === 3).length,\n'
               '            eligibleCap4: groups.filter((group) => group.normalUnitCap === 4).length,\n'
               '            eligibleCap5: groups.filter((group) => group.normalUnitCap === 5).length,',
-              '3-2 direct selector telemetry',
+              '3-1-1 direct selector telemetry',
           )
           path.write_text(text)
           PY
@@ -327,14 +293,15 @@ jobs:
           states = (
               (0, 0, 0, 0),
               (1, 0, 0, 1),
-              (1, 1, 0, 4),
-              (1, 0, 1, 3),
+              (1, 1, 0, 2),
+              (1, 1, 1, 4),
           )
-          for used, high, medium, units in states:
-              assert units == used + 3 * high + 2 * medium
+          for used, bonus, high, units in states:
+              assert units == used + bonus + 2 * high
+              assert high <= bonus <= used
               assert ((units + 4) // 5) == used
           print(
-              '[phase-h-three-two-continuous-unit-audit] '
+              '[phase-h-three-one-one-continuous-unit-audit] '
               f'states={len(states)} unitMismatch=0 uniqueEdgeMismatch=0'
           )
 
@@ -455,12 +422,11 @@ jobs:
 
           path.write_text(text)
           PY
-      - name: Solve exact-safe 3-2 cap-pair subcase
+      - name: Solve exact-safe 3-1-1 high-cap subcase
         env:
           OPTIMIZER_PHASE_H_CANONICAL69_QUOTIENT: '1'
-          OPTIMIZER_PHASE_H_EXTRA_PARTITION: '3-2'
+          OPTIMIZER_PHASE_H_EXTRA_PARTITION: '3-1-1'
           OPTIMIZER_PHASE_H_HIGH_CAP_BUCKET: ${{ matrix.high_cap_bucket }}
-          OPTIMIZER_PHASE_H_MEDIUM_CAP_BUCKET: ${{ matrix.medium_cap_bucket }}
         run: >-
           /usr/bin/time -v
           npx vitest run
