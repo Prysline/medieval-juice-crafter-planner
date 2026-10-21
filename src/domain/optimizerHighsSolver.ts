@@ -1976,6 +1976,23 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
       includeInitialJarReleaseTieBreak,
       allowPartialAssignments,
     )
+    // Dev-only, aggregate diagnostic events. Never log customer IDs, recipes,
+    // inventory, assignments, or other player inputs.
+    const diagnosticStartedAt = performance.now()
+    const trace = (step: string, details: Record<string, string | number> = {}) => {
+      if (import.meta.env.DEV) {
+        console.info('[optimizer-dev-stage]', {
+          step,
+          elapsedMs: Math.round(performance.now() - diagnosticStartedAt),
+          ...details,
+        })
+      }
+    }
+    trace('solver-start', {
+      customers: domain.serviceableCustomerIds.length,
+      recipes: domain.recipes.length,
+      objectives: objectives.length,
+    })
     const fixes: ObjectiveFix[] = []
     let currentDomain = domain
     let minimumCostCertificateApplied = false
@@ -1996,6 +2013,7 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
       objectiveIndex += 1
     ) {
       const objectiveKey = objectives[objectiveIndex]
+      trace('objective-start', { index: objectiveIndex + 1, objective: objectiveKey })
       let stageDomain = currentDomain
       let continuationDomain = currentDomain
       let usingMinimumCostCertificate = false
@@ -2026,10 +2044,12 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
         fixes[0].objective === 'cost' &&
         shouldTryMachineCertificate
       ) {
+        trace('machine-certificate-start', { index: objectiveIndex + 1 })
         const certificate = await tryMachineOperationCertificate(
           currentDomain,
           fixes[0].value,
         )
+        trace('machine-certificate-end', { found: certificate ? 1 : 0 })
         if (certificate) {
           machineCertificate = certificate
           final = {
@@ -2169,7 +2189,9 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
             usingMaximumIngredientCostProductionGrouping,
         },
       )
+      trace('generic-solve-start', { index: objectiveIndex + 1, objective: objectiveKey })
       let solution = await built.model.solve()
+      trace('generic-solve-end', { index: objectiveIndex + 1, objective: objectiveKey, status: solution.status })
 
       if (
         (
@@ -2344,6 +2366,7 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
       assignedRecipeIds,
     )
 
+    trace('solver-finish', { assignedCustomers: assignments.length })
     return {
       assignments,
       productionUnitsByRecipeId,
