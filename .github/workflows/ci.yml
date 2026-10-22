@@ -16,6 +16,21 @@ jobs:
       - run: npm install
       - run: npm run smoke:highs:dev
 
+  optimizer-computed-structure-profile:
+    if: github.ref == 'refs/heads/dev/optimizer-72-runtime'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Profile current canonical trusted vs computed model structure (not a solve benchmark)
+        env:
+          OPTIMIZER_PERF_PROFILE: '1'
+        run: npx vitest run src/domain/optimizerPerformanceProfile.test.ts --reporter=verbose
+
   verify:
     runs-on: ubuntu-latest
     steps:
