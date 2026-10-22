@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev/optimizer-72-runtime]
   pull_request:
 
 jobs:
