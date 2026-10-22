@@ -1980,7 +1980,7 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
     // inventory, assignments, or other player inputs.
     const diagnosticStartedAt = performance.now()
     const trace = (step: string, details: Record<string, string | number> = {}) => {
-      if (import.meta.env.DEV) {
+      if ((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV) {
         console.info('[optimizer-dev-stage]', {
           step,
           elapsedMs: Math.round(performance.now() - diagnosticStartedAt),
