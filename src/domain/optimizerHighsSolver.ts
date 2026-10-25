@@ -1506,6 +1506,13 @@ async function tryMachineOperationCertificate(
   domain: BatchOptimizationModel,
   fixedMinimumCost: number,
 ): Promise<InternalMachineOperationCertificate | null> {
+  const startedAt = performance.now()
+  const trace = (step: string, info: Record<string, string | number> = {}) => {
+    if ((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV) {
+      console.info('[optimizer-dev-machine]', { step, elapsedMs: Math.round(performance.now() - startedAt), ...info })
+    }
+  }
+  trace('certificate-start')
   const maxJarFillOperations =
     domain.request.constraints?.maxJarFillOperations
   if (
@@ -1521,11 +1528,13 @@ async function tryMachineOperationCertificate(
       value: fixedMinimumCost,
     },
   ]
+  trace('production-units-proof-start')
   const exactProductionUnitsProof =
     await tryExactProductionUnitsAtMinimumCost(
       domain,
       fixedMinimumCost,
     )
+  trace('production-units-proof-end', { proved: exactProductionUnitsProof ? 1 : 0 })
   const partitions: Array<{
     key: keyof MachineOperationCertificateSummary['lowerBounds']
     kinds: ProductionStepKind[]
@@ -1558,7 +1567,8 @@ async function tryMachineOperationCertificate(
   }
   const witnessCandidates: RecipeUnitSelection[][] = []
 
-  for (const partition of partitions) {
+  for (const [partitionIndex, partition] of partitions.entries()) {
+    trace('partition-start', { partition: partitionIndex + 1 })
     const partitionDomain = reduceMachineCertificatePartitionDomain(
       domain,
       partition,
@@ -1583,7 +1593,9 @@ async function tryMachineOperationCertificate(
         machineOperationKinds: new Set(partition.kinds),
       },
     )
+    trace('partition-solve-start', { partition: partitionIndex + 1 })
     const solution = await built.model.solve()
+    trace('partition-solve-end', { partition: partitionIndex + 1, status: solution.status })
     if (solution.status !== 'optimal') return null
 
     // For seasoning, active edges are a valid lower bound because every
@@ -1606,13 +1618,15 @@ async function tryMachineOperationCertificate(
     lowerBounds.blending +
     lowerBounds.finalizing
 
-  for (const candidate of witnessCandidates) {
+  for (const [candidateIndex, candidate] of witnessCandidates.entries()) {
+    trace('witness-repair-start', { candidate: candidateIndex + 1 })
     const repaired = repairMachineOperationWitness(
       domain,
       candidate,
       fixedMinimumCost,
       lowerBound,
     )
+    trace('witness-repair-end', { candidate: candidateIndex + 1, matchesLowerBound: repaired.breakdown.total === lowerBound ? 1 : 0 })
     if (repaired.breakdown.total !== lowerBound) continue
 
     const fixedRecipeUnits = new Map(
@@ -1629,7 +1643,9 @@ async function tryMachineOperationCertificate(
         fixedRecipeUnits,
       },
     )
+    trace('fixed-x-solve-start', { candidate: candidateIndex + 1 })
     const solution = await built.model.solve()
+    trace('fixed-x-solve-end', { candidate: candidateIndex + 1, status: solution.status })
     if (solution.status !== 'optimal') continue
 
     const verifiedObjective = Math.round(
