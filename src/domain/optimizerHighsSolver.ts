@@ -2205,6 +2205,16 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
             usingMaximumIngredientCostProductionGrouping,
         },
       )
+      trace('generic-model-built', {
+        index: objectiveIndex + 1,
+        objective: objectiveKey,
+        fixedObjectives: fixes.length,
+        recipes: stageDomain.recipes.length,
+        productionVariables: built.xByRecipeId.size,
+        assignmentVariables: built.yByCustomerRecipe.size,
+        operationVariables: built.operationByEdgeKey.size,
+        groupedAssignments: usingMinimumWasteGrouping || usingMaximumIngredientCostGrouping ? 1 : 0,
+      })
       trace('generic-solve-start', { index: objectiveIndex + 1, objective: objectiveKey })
       let solution = await built.model.solve()
       trace('generic-solve-end', { index: objectiveIndex + 1, objective: objectiveKey, status: solution.status })
@@ -2297,6 +2307,11 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
       fixes.push({
         objective: objectiveKey,
         value: optimum,
+      })
+      trace('objective-fixed', {
+        index: objectiveIndex + 1,
+        objective: objectiveKey,
+        optimum,
       })
       currentDomain = continuationDomain
     }
