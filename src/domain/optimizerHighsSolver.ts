@@ -2262,8 +2262,8 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
           usingMaximumIngredientCostContinuationGrouping ? 1 : 0,
         derivedProductionCostFix:
           usingMaximumIngredientCostContinuationGrouping
-            ? maximumIngredientCostContinuationProductionCost
-            : null,
+            ? maximumIngredientCostContinuationProductionCost!
+            : 0,
       })
       trace('generic-solve-start', { index: objectiveIndex + 1, objective: objectiveKey })
       let solution = await built.model.solve()
