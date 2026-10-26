@@ -435,6 +435,91 @@ describe('minimum-waste equivalent-assignment grouping', () => {
     expect(result.metrics.machineOperations).toBe(1)
   })
 
+  it('keeps zero-slack maximum-cost machine continuation exact while projecting assignment flow', async () => {
+    const simpleRecipe = (
+      id: string,
+      eligibleCustomerIds: string[],
+    ): EligibleOptimizationRecipe => ({
+      candidate: recipe(id, ['檸檬'], ['甜味']),
+      juiceUnitIngredientCost: 10,
+      eligibleCustomerIds,
+      productionPath: {
+        ingredientIds: [id],
+        edges: [{
+          key: `finish:${id}`,
+          kind: 'finalizing',
+          equipment: '果汁成品台',
+          fromIngredientIds: [id],
+          toIngredientIds: [id],
+        }],
+      },
+    })
+    const complexRecipe = (
+      id: string,
+      eligibleCustomerIds: string[],
+    ): EligibleOptimizationRecipe => ({
+      candidate: recipe(id, ['檸檬'], ['甜味']),
+      juiceUnitIngredientCost: 10,
+      eligibleCustomerIds,
+      productionPath: {
+        ingredientIds: [id],
+        edges: [
+          {
+            key: `juice:${id}`,
+            kind: 'juicing',
+            equipment: '柑橘榨汁機',
+            fromIngredientIds: [],
+            toIngredientIds: [id],
+          },
+          {
+            key: `finish:${id}`,
+            kind: 'finalizing',
+            equipment: '果汁成品台',
+            fromIngredientIds: [id],
+            toIngredientIds: [id],
+          },
+        ],
+      },
+    })
+    const domain: BatchOptimizationModel = {
+      request: request(
+        ['a', 'b', 'c', 'd'],
+        [
+          'minimum-waste',
+          'maximum-ingredient-cost',
+          'minimum-machine-operations',
+        ],
+      ),
+      serviceableCustomerIds: ['a', 'b', 'c', 'd'],
+      unresolvedCustomerIds: [],
+      excludedSuppliedCustomerIds: [],
+      recipes: [
+        simpleRecipe('ab-simple', ['a', 'b']),
+        complexRecipe('ab-complex', ['a', 'b']),
+        simpleRecipe('cd-simple', ['c', 'd']),
+        complexRecipe('cd-complex', ['c', 'd']),
+      ],
+    }
+
+    const result = await highsSolverAdapter.solve(
+      domain,
+      domain.request.priorities!,
+    )
+
+    expect(result.metrics.totalProductionUnits).toBe(2)
+    expect(result.metrics.machineOperations).toBe(2)
+    expect(result.productionUnitsByRecipeId).toEqual({
+      'ab-simple': 1,
+      'cd-simple': 1,
+    })
+    expect(result.assignments).toEqual([
+      { customerId: 'a', recipeId: 'ab-simple' },
+      { customerId: 'b', recipeId: 'ab-simple' },
+      { customerId: 'c', recipeId: 'cd-simple' },
+      { customerId: 'd', recipeId: 'cd-simple' },
+    ])
+  })
+
   it('does not group a later minimum-waste stage after an assignment-sensitive objective', async () => {
     const result = await optimizeBatchPlan(
       {

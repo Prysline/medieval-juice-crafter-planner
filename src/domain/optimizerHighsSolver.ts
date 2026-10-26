@@ -2190,6 +2190,9 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
       let usingMaximumIngredientCostProductionGrouping =
         usingMaximumIngredientCostGrouping &&
         maximumIngredientCostGroupedProductionIsSafe(stageDomain)
+      let usingMaximumIngredientCostContinuationGrouping =
+        objectiveKey === 'machineOperations' &&
+        postMaximumIngredientCostPairParitySlack(stageDomain, fixes) === 0
 
       let built = buildHighsStage(
         stageDomain,
@@ -2200,9 +2203,12 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
           aggregateEquivalentAssignments:
             usingMinimumWasteGrouping,
           aggregateEquivalentMaximumCostAssignments:
-            usingMaximumIngredientCostGrouping,
+            usingMaximumIngredientCostGrouping ||
+            usingMaximumIngredientCostContinuationGrouping,
           aggregateEquivalentMaximumCostProductionUnits:
             usingMaximumIngredientCostProductionGrouping,
+          relaxAssignmentVariables:
+            usingMaximumIngredientCostContinuationGrouping,
         },
       )
       trace('generic-model-built', {
@@ -2213,7 +2219,14 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
         productionVariables: built.xByRecipeId.size,
         assignmentVariables: built.yByCustomerRecipe.size,
         operationVariables: built.operationByEdgeKey.size,
-        groupedAssignments: usingMinimumWasteGrouping || usingMaximumIngredientCostGrouping ? 1 : 0,
+        groupedAssignments:
+          usingMinimumWasteGrouping ||
+          usingMaximumIngredientCostGrouping ||
+          usingMaximumIngredientCostContinuationGrouping
+            ? 1
+            : 0,
+        relaxedAssignments:
+          usingMaximumIngredientCostContinuationGrouping ? 1 : 0,
       })
       trace('generic-solve-start', { index: objectiveIndex + 1, objective: objectiveKey })
       let solution = await built.model.solve()
@@ -2222,13 +2235,15 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
       if (
         (
           usingMinimumWasteGrouping ||
-          usingMaximumIngredientCostGrouping
+          usingMaximumIngredientCostGrouping ||
+          usingMaximumIngredientCostContinuationGrouping
         ) &&
         solution.status !== 'optimal'
       ) {
         usingMinimumWasteGrouping = false
         usingMaximumIngredientCostGrouping = false
         usingMaximumIngredientCostProductionGrouping = false
+        usingMaximumIngredientCostContinuationGrouping = false
         built = buildHighsStage(
           stageDomain,
           objectiveKey,
