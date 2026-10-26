@@ -60,6 +60,24 @@ jobs:
       - name: Run existing computed-enabled full HiGHS P4 result regression
         run: npx vitest run src/domain/optimizerP4.test.ts -t "solves the Blender workload through the production solver with the current certified optimum" --reporter=verbose
 
+
+  optimizer-dev-72-proxy-full-solve:
+    # Opt-in only via a marked dev push; do not prolong ordinary CI/PR checks.
+    # This is canonical-data 72-selected proxy, not a player's captured request.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev/optimizer-72-runtime' && contains(github.event.head_commit.message, '[72-proxy]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Run bounded canonical-data 72-customer proxy through real optimizer
+        env:
+          OPTIMIZER_DEV_72_PROXY: '1'
+        run: npx vitest run src/domain/optimizerDev72ProxyProfile.test.ts --reporter=verbose
+
   verify:
     runs-on: ubuntu-latest
     steps:
