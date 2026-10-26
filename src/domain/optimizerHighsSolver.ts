@@ -106,8 +106,11 @@ interface HighsStageOptions {
   aggregateEquivalentAssignments?: boolean
   aggregateEquivalentMaximumCostAssignments?: boolean
   aggregateEquivalentMaximumCostProductionUnits?: boolean
+  exactGroupedAssignmentCapacity?: boolean
   tightenRecipeBoundsFromMinimumCostFix?: boolean
+  tightenRecipeBoundsFromCustomerCapacity?: boolean
   tightenOperationBoundsFromRecipeBounds?: boolean
+  productionCostFix?: number
   machineOperationActiveEdgeLowerBound?: boolean
   machineOperationKinds?: Set<ProductionStepKind>
   fixedRecipeUnits?: Map<string, number>
@@ -450,7 +453,8 @@ function buildHighsStage(
             )
           : maxJuiceUnitsPerRecipe
       const computedRecipeUpperBound =
-        options.tightenRecipeBoundsFromMinimumCostFix
+        options.tightenRecipeBoundsFromMinimumCostFix ||
+        options.tightenRecipeBoundsFromCustomerCapacity
           ? Math.max(
               0,
               Math.min(
@@ -747,10 +751,12 @@ function buildHighsStage(
         0,
       )
 
+      const groupedCapacity =
+        sum(...assignmentVars).minus(sum(...capacityTerms))
       model.addConstraint(
-        sum(...assignmentVars)
-          .minus(sum(...capacityTerms))
-          .leq(finishedServings),
+        options.exactGroupedAssignmentCapacity
+          ? groupedCapacity.eq(finishedServings)
+          : groupedCapacity.leq(finishedServings),
         `capacity_${groupIndex}`,
       )
     })
@@ -924,17 +930,26 @@ function buildHighsStage(
     )
   }
 
-  const costExpression = needsAnyObjective(
-    'cost',
-    'negativeKnownGrossProfit',
-  )
-    ? sum(
+  const costExpression =
+    needsAnyObjective('cost', 'negativeKnownGrossProfit') ||
+    typeof options.productionCostFix === 'number'
+      ? sum(
         ...domain.recipes.flatMap((recipe) => {
           const x = xByRecipeId.get(recipe.candidate.id)
           return x ? [x.times(recipe.juiceUnitIngredientCost)] : []
         }),
       )
-    : undefined
+      : undefined
+
+  if (
+    costExpression &&
+    typeof options.productionCostFix === 'number'
+  ) {
+    model.addConstraint(
+      costExpression.eq(options.productionCostFix),
+      'production_cost_fix',
+    )
+  }
 
   const productionUnitsExpression =
     needsAnyObjective('productionUnits') ||
@@ -2190,9 +2205,15 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
       let usingMaximumIngredientCostProductionGrouping =
         usingMaximumIngredientCostGrouping &&
         maximumIngredientCostGroupedProductionIsSafe(stageDomain)
-      let usingMaximumIngredientCostContinuationGrouping =
+      const maximumIngredientCostContinuationProductionCost =
         objectiveKey === 'machineOperations' &&
         postMaximumIngredientCostPairParitySlack(stageDomain, fixes) === 0
+          ? -fixes[1].value / 2
+          : null
+      let usingMaximumIngredientCostContinuationGrouping =
+        maximumIngredientCostContinuationProductionCost !== null &&
+        Number.isInteger(maximumIngredientCostContinuationProductionCost) &&
+        maximumIngredientCostContinuationProductionCost >= 0
 
       let built = buildHighsStage(
         stageDomain,
@@ -2207,8 +2228,18 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
             usingMaximumIngredientCostContinuationGrouping,
           aggregateEquivalentMaximumCostProductionUnits:
             usingMaximumIngredientCostProductionGrouping,
+          exactGroupedAssignmentCapacity:
+            usingMaximumIngredientCostContinuationGrouping,
           relaxAssignmentVariables:
             usingMaximumIngredientCostContinuationGrouping,
+          tightenRecipeBoundsFromCustomerCapacity:
+            usingMaximumIngredientCostContinuationGrouping,
+          tightenOperationBoundsFromRecipeBounds:
+            usingMaximumIngredientCostContinuationGrouping,
+          productionCostFix:
+            usingMaximumIngredientCostContinuationGrouping
+              ? maximumIngredientCostContinuationProductionCost!
+              : undefined,
         },
       )
       trace('generic-model-built', {
@@ -2227,6 +2258,12 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
             : 0,
         relaxedAssignments:
           usingMaximumIngredientCostContinuationGrouping ? 1 : 0,
+        exactGroupedCapacity:
+          usingMaximumIngredientCostContinuationGrouping ? 1 : 0,
+        derivedProductionCostFix:
+          usingMaximumIngredientCostContinuationGrouping
+            ? maximumIngredientCostContinuationProductionCost
+            : null,
       })
       trace('generic-solve-start', { index: objectiveIndex + 1, objective: objectiveKey })
       let solution = await built.model.solve()
