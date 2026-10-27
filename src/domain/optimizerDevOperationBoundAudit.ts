@@ -91,7 +91,7 @@ export function auditCandidateBOperationBounds(
     for (const edge of recipe.productionPath.edges) {
       const previous = edgeMultiplicity.get(edge.key)
       if (previous && previous.kind !== edge.kind) {
-        throw new Error(\`Production edge \${edge.key} changed kind in one recipe\`)
+        throw new Error(`Production edge ${edge.key} changed kind in one recipe`)
       }
       edgeMultiplicity.set(edge.key, {
         kind: edge.kind,
@@ -101,7 +101,7 @@ export function auditCandidateBOperationBounds(
     for (const [key, { kind, count }] of edgeMultiplicity) {
       const previous = upperBoundByEdgeKey.get(key)
       if (previous && previous.kind !== kind) {
-        throw new Error(\`Production edge \${key} changed kind across recipes\`)
+        throw new Error(`Production edge ${key} changed kind across recipes`)
       }
       upperBoundByEdgeKey.set(key, {
         kind,
