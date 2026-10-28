@@ -82,6 +82,46 @@ jobs:
           OPTIMIZER_DEV_72_PROXY: '1'
         run: npx vitest run src/domain/optimizerDev72ProxyProfile.test.ts --reporter=verbose
 
+
+  dev-customer-search-isolation-diagnosis:
+    # Opt-in only for the dedicated dev diagnosis PR; not a production acceptance change.
+    # An isolated Vitest process per trial separates browser timing from other Vitest files.
+    if: github.event_name == 'pull_request' && github.base_ref == 'dev/optimizer-72-runtime' && startsWith(github.head_ref, 'diagnosis/customer-search-perf-')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Capture runner and browser versions
+        run: |
+          node --version
+          npm --version
+          if command -v google-chrome >/dev/null; then google-chrome --version; fi
+          if command -v chromium >/dev/null; then chromium --version; fi
+          if command -v chromedriver >/dev/null; then chromedriver --version; fi
+          nproc
+      - name: Compare three standalone customer-search timing trials
+        shell: bash
+        env:
+          CI: 'true'
+        run: |
+          failures=0
+          for trial in 1 2 3; do
+            echo "::group::Standalone trial ${trial}/3"
+            if npx vitest run src/customerSearchResponsivenessPerformance.test.mjs --reporter=verbose; then
+              echo "Trial ${trial}: PASS" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "Trial ${trial}: FAIL" >> "$GITHUB_STEP_SUMMARY"
+              failures=$((failures + 1))
+            fi
+            echo '::endgroup::'
+          done
+          echo "Failed standalone trials: ${failures}/3" >> "$GITHUB_STEP_SUMMARY"
+          test "$failures" -eq 0
+
   verify:
     runs-on: ubuntu-latest
     steps:
