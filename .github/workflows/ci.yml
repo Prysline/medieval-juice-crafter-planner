@@ -17,7 +17,7 @@ jobs:
       - run: npm run smoke:highs:dev
 
   optimizer-computed-structure-profile:
-    if: github.ref == 'refs/heads/dev/optimizer-72-runtime'
+    if: github.ref == 'refs/heads/dev/optimizer-72-runtime' || (github.event_name == 'pull_request' && github.base_ref == 'dev/optimizer-72-runtime')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -30,6 +30,10 @@ jobs:
         env:
           OPTIMIZER_PERF_PROFILE: '1'
         run: npx vitest run src/domain/optimizerPerformanceProfile.test.ts --reporter=verbose
+      - name: Audit canonical 72-selected operation bounds without a solver run
+        env:
+          OPTIMIZER_DEV_72_STRUCTURE: '1'
+        run: npx vitest run src/domain/optimizerDevOperationBoundAudit.test.ts -t "profiles the 72-selected proxy machine edge upper bounds without solving" --reporter=verbose
 
   optimizer-dev-build-runtime:
     # Independent of the timing-sensitive UI regression in the general verify job.
