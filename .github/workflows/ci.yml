@@ -82,6 +82,23 @@ jobs:
           OPTIMIZER_DEV_72_PROXY: '1'
         run: npx vitest run src/domain/optimizerDev72ProxyProfile.test.ts --reporter=verbose
 
+  dev-customer-search-performance:
+    # Separate browser timing from parallel Vitest workers on dev only.
+    # Preserve the original search test, data, and 80/120 ms thresholds.
+    if: github.ref == 'refs/heads/dev/optimizer-72-runtime' || (github.event_name == 'pull_request' && github.base_ref == 'dev/optimizer-72-runtime')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Run required customer-search responsiveness test unchanged
+        env:
+          CI: 'true'
+        run: npx vitest run src/customerSearchResponsivenessPerformance.test.mjs --reporter=verbose
+
   verify:
     runs-on: ubuntu-latest
     steps:
@@ -91,6 +108,11 @@ jobs:
           node-version: 22
       - run: npm install
       - run: npm run smoke:highs:dev
-      - run: npm test
+      - name: Run all tests unchanged (main and other PRs)
+        if: github.ref != 'refs/heads/dev/optimizer-72-runtime' && (github.event_name != 'pull_request' || github.base_ref != 'dev/optimizer-72-runtime')
+        run: npm test
+      - name: Run parallel tests excluding separately gated browser timing (dev only)
+        if: github.ref == 'refs/heads/dev/optimizer-72-runtime' || (github.event_name == 'pull_request' && github.base_ref == 'dev/optimizer-72-runtime')
+        run: npm test -- --exclude '**/customerSearchResponsivenessPerformance.test.mjs'
       - run: npm run build
       - run: npm run smoke:highs:pages-like
