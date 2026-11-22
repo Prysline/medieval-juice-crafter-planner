@@ -110,6 +110,8 @@ interface HighsStageOptions {
   tightenRecipeBoundsFromMinimumCostFix?: boolean
   tightenRecipeBoundsFromCustomerCapacity?: boolean
   tightenOperationBoundsFromRecipeBounds?: boolean
+  /** Dev-only experiment. Exact only for zero-slack maximum-cost machine continuation. */
+  substituteSingletonOperations?: boolean
   productionCostFix?: number
   machineOperationActiveEdgeLowerBound?: boolean
   machineOperationKinds?: Set<ProductionStepKind>
@@ -261,6 +263,9 @@ function buildHighsStage(
   const yByCustomerRecipe = new Map<string, BoolVariable>()
   const assignedIngredientCostByAssignmentKey = new Map<string, number>()
   const operationByEdgeKey = new Map<string, IntVariable>()
+  const singletonOperationExpressionByEdgeKey =
+    new Map<string, ReturnType<typeof sum>>()
+  const singletonOperationMultiplicityByRecipeId = new Map<string, number>()
   const operationKindByEdgeKey = new Map<string, ProductionStepKind>()
   const materialFlowByEdgeKey = new Map<string, IntVariable>()
   const inventoryShortfallByIngredientId = new Map<string, IntVariable>()
@@ -305,6 +310,30 @@ function buildHighsStage(
     'negativeKnownGrossProfit',
     'negativeEmptiedInitialJars',
   )
+
+  // q and op are nonnegative integers, with q <= stack*op and op <= q.
+  // Only q_upper <= 1 forces op = q. Keep this transformation outside
+  // generic stages, inventory, jar-fill-hard-limited and certificate models.
+  if (
+    options.substituteSingletonOperations &&
+    (
+      objective !== 'machineOperations' ||
+      postMaximumIngredientCostPairParitySlack(domain, fixes) !== 0 ||
+      !options.aggregateEquivalentMaximumCostAssignments ||
+      !options.exactGroupedAssignmentCapacity ||
+      !options.relaxAssignmentVariables ||
+      !options.tightenRecipeBoundsFromCustomerCapacity ||
+      !options.tightenOperationBoundsFromRecipeBounds ||
+      typeof options.productionCostFix !== 'number' ||
+      hasJarFillHardConstraint ||
+      options.machineOperationActiveEdgeLowerBound ||
+      options.machineOperationKinds !== undefined
+    )
+  ) {
+    throw new Error(
+      'Singleton operation substitution requires exact zero-slack grouped machine continuation',
+    )
+  }
 
   if (
     options.aggregateEquivalentAssignments &&
@@ -883,10 +912,46 @@ function buildHighsStage(
       }
     }
 
+    if (options.substituteSingletonOperations) {
+      // Reconstruct the substituted op count from integer recipe units
+      // without evaluating a HiGHS expression in the final result decoder.
+      // Repeated uses of one edge in a recipe contribute with multiplicity.
+      for (const recipe of domain.recipes) {
+        if (!xByRecipeId.has(recipe.candidate.id)) continue
+        const multiplicity = recipe.productionPath.edges.reduce(
+          (count, edge) =>
+            count +
+            ((quantityUpperBoundByEdgeKey.get(edge.key) ?? Infinity) <= 1
+              ? 1
+              : 0),
+          0,
+        )
+        if (multiplicity > 0) {
+          singletonOperationMultiplicityByRecipeId.set(
+            recipe.candidate.id,
+            multiplicity,
+          )
+        }
+      }
+    }
+
     ;[...quantityTermsByEdgeKey.entries()].forEach(
       ([edgeKey, quantityTerms], edgeIndex) => {
         const quantityUpperBound =
           quantityUpperBoundByEdgeKey.get(edgeKey) ?? 0
+        const quantityExpression = sum(...quantityTerms)
+        if (
+          options.substituteSingletonOperations &&
+          quantityUpperBound <= 1
+        ) {
+          // The two original operation constraints imply op = q exactly.
+          // There is no independent operation variable or constraint here.
+          singletonOperationExpressionByEdgeKey.set(
+            edgeKey,
+            quantityExpression,
+          )
+          return
+        }
         const operationUpperBound =
           options.machineOperationActiveEdgeLowerBound
             ? 1
@@ -904,7 +969,6 @@ function buildHighsStage(
           `op_${edgeIndex}`,
         )
         operationByEdgeKey.set(edgeKey, operationCount)
-        const quantityExpression = sum(...quantityTerms)
 
         model.addConstraint(
           options.machineOperationActiveEdgeLowerBound
@@ -999,7 +1063,10 @@ function buildHighsStage(
     : undefined
 
   const machineOperationsExpression = needsAnyObjective('machineOperations')
-    ? sum(...operationByEdgeKey.values())
+    ? sum(
+        ...operationByEdgeKey.values(),
+        ...singletonOperationExpressionByEdgeKey.values(),
+      )
     : undefined
 
   const jarFillOperationsExpression =
@@ -1009,6 +1076,12 @@ function buildHighsStage(
             ([edgeKey, operation]) =>
               operationKindByEdgeKey.get(edgeKey) === 'finalizing'
                 ? [operation]
+                : [],
+          ),
+          ...[...singletonOperationExpressionByEdgeKey.entries()].flatMap(
+            ([edgeKey, quantity]) =>
+              operationKindByEdgeKey.get(edgeKey) === 'finalizing'
+                ? [quantity]
                 : [],
           ),
         )
@@ -1246,6 +1319,8 @@ function buildHighsStage(
     xByRecipeId,
     yByCustomerRecipe,
     operationByEdgeKey,
+    singletonOperationExpressionByEdgeKey,
+    singletonOperationMultiplicityByRecipeId,
     inventoryShortfallByIngredientId,
   }
 }
@@ -2024,6 +2099,13 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
       recipes: domain.recipes.length,
       objectives: objectives.length,
     })
+    // Explicit test-only/dev opt-in; production builds and ordinary dev
+    // optimizations retain the original integer-operation formulation.
+    const devSingletonOperationSubstitution =
+      (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV === true &&
+      (globalThis as {
+        process?: { env?: Record<string, string | undefined> }
+      }).process?.env?.OPTIMIZER_DEV_SINGLETON_SUBSTITUTION === '1'
     const fixes: ObjectiveFix[] = []
     let currentDomain = domain
     let minimumCostCertificateApplied = false
@@ -2236,6 +2318,9 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
             usingMaximumIngredientCostContinuationGrouping,
           tightenOperationBoundsFromRecipeBounds:
             usingMaximumIngredientCostContinuationGrouping,
+          substituteSingletonOperations:
+            usingMaximumIngredientCostContinuationGrouping &&
+            devSingletonOperationSubstitution,
           productionCostFix:
             usingMaximumIngredientCostContinuationGrouping
               ? maximumIngredientCostContinuationProductionCost!
@@ -2250,6 +2335,8 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
         productionVariables: built.xByRecipeId.size,
         assignmentVariables: built.yByCustomerRecipe.size,
         operationVariables: built.operationByEdgeKey.size,
+        substitutedOperationExpressions:
+          built.singletonOperationExpressionByEdgeKey.size,
         groupedAssignments:
           usingMinimumWasteGrouping ||
           usingMaximumIngredientCostGrouping ||
@@ -2432,18 +2519,26 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
       assignments.map((assignment) => assignment.recipeId),
     )]
     const recipeKinds = assignedRecipeIds.length
-    const machineOperations = [...finalStage.built.operationByEdgeKey.values()]
-      .reduce(
-        (total, variable) =>
-          total +
-          Math.round(
-            requiredFiniteNumber(
-              finalStage.solution.getValue(variable),
-              'machine operation count',
+    const machineOperations =
+      [...finalStage.built.operationByEdgeKey.values()]
+        .reduce(
+          (total, variable) =>
+            total +
+            Math.round(
+              requiredFiniteNumber(
+                finalStage.solution.getValue(variable),
+                'machine operation count',
+              ),
             ),
-          ),
-        0,
-      )
+          0,
+        ) +
+      [...finalStage.built.singletonOperationMultiplicityByRecipeId]
+        .reduce(
+          (total, [recipeId, multiplicity]) =>
+            total +
+            (productionUnitsByRecipeId[recipeId] ?? 0) * multiplicity,
+          0,
+        )
     const jarTypeSwitches = minimumJarTypeSwitchesForRecipeIds(
       domain.request,
       assignedRecipeIds,
