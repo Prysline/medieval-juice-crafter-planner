@@ -168,6 +168,43 @@ describe('dev-only exact singleton operation substitution', () => {
     ).toBe(3)
   })
 
+  it('keeps a repeated q_upper=2 operation edge integer while replacing only the q_upper=1 edge', async () => {
+    const fixture = domain(
+      ['a', 'b'],
+      [['ab', ['a', 'b']]],
+    )
+    const first = fixture.recipes[0].productionPath.edges[0]
+    fixture.recipes[0].productionPath.edges.splice(1, 0, {
+      ...first,
+    })
+
+    const baseline = await runCase(fixture, false)
+    const substituted = await runCase(fixture, true)
+
+    expect(baseline.machineStages).toContainEqual(
+      expect.objectContaining({
+        operationVariables: 2,
+        substitutedOperationExpressions: 0,
+      }),
+    )
+    expect(substituted.machineStages).toContainEqual(
+      expect.objectContaining({
+        operationVariables: 1,
+        substitutedOperationExpressions: 1,
+      }),
+    )
+    expect(substituted.result).toEqual(baseline.result)
+    expect(substituted.result.metrics.machineOperations).toBe(2)
+    expect(
+      machineOperationBreakdownForSelection(
+        fixture,
+        Object.entries(substituted.result.productionUnitsByRecipeId).map(
+          ([recipeId, units]) => ({ recipeId, units }),
+        ),
+      ).total,
+    ).toBe(2)
+  })
+
   it('does not change the machine stage when the customer count has nonzero pair slack', async () => {
     const fixture = domain(
       ['a', 'b', 'c'],
