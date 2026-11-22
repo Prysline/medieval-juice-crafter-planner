@@ -100,9 +100,14 @@ async function runCase(
   fixture: BatchOptimizationModel,
   enabled: boolean,
 ) {
-  const prior = process.env[ENV_KEY]
-  if (enabled) process.env[ENV_KEY] = '1'
-  else delete process.env[ENV_KEY]
+  // This project intentionally has no Node ambient types in the Vite build.
+  const env = (globalThis as {
+    process?: { env?: Record<string, string | undefined> }
+  }).process?.env
+  if (!env) throw new Error('Node environment required for solver opt-in test')
+  const prior = env[ENV_KEY]
+  if (enabled) env[ENV_KEY] = '1'
+  else delete env[ENV_KEY]
 
   const logger = vi.spyOn(console, 'info').mockImplementation(() => {})
   try {
@@ -121,8 +126,8 @@ async function runCase(
     return { result, machineStages }
   } finally {
     logger.mockRestore()
-    if (prior === undefined) delete process.env[ENV_KEY]
-    else process.env[ENV_KEY] = prior
+    if (prior === undefined) delete env[ENV_KEY]
+    else env[ENV_KEY] = prior
   }
 }
 
