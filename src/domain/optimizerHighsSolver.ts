@@ -265,7 +265,6 @@ function buildHighsStage(
   const operationByEdgeKey = new Map<string, IntVariable>()
   const singletonOperationExpressionByEdgeKey =
     new Map<string, ReturnType<typeof sum>>()
-  const singletonOperationMultiplicityByRecipeId = new Map<string, number>()
   const operationKindByEdgeKey = new Map<string, ProductionStepKind>()
   const materialFlowByEdgeKey = new Map<string, IntVariable>()
   const inventoryShortfallByIngredientId = new Map<string, IntVariable>()
@@ -912,29 +911,6 @@ function buildHighsStage(
       }
     }
 
-    if (options.substituteSingletonOperations) {
-      // Reconstruct the substituted op count from integer recipe units
-      // without evaluating a HiGHS expression in the final result decoder.
-      // Repeated uses of one edge in a recipe contribute with multiplicity.
-      for (const recipe of domain.recipes) {
-        if (!xByRecipeId.has(recipe.candidate.id)) continue
-        const multiplicity = recipe.productionPath.edges.reduce(
-          (count, edge) =>
-            count +
-            ((quantityUpperBoundByEdgeKey.get(edge.key) ?? Infinity) <= 1
-              ? 1
-              : 0),
-          0,
-        )
-        if (multiplicity > 0) {
-          singletonOperationMultiplicityByRecipeId.set(
-            recipe.candidate.id,
-            multiplicity,
-          )
-        }
-      }
-    }
-
     ;[...quantityTermsByEdgeKey.entries()].forEach(
       ([edgeKey, quantityTerms], edgeIndex) => {
         const quantityUpperBound =
@@ -1320,7 +1296,6 @@ function buildHighsStage(
     yByCustomerRecipe,
     operationByEdgeKey,
     singletonOperationExpressionByEdgeKey,
-    singletonOperationMultiplicityByRecipeId,
     inventoryShortfallByIngredientId,
   }
 }
@@ -2519,26 +2494,23 @@ export const highsSolverAdapter: BatchOptimizerSolver = {
       assignments.map((assignment) => assignment.recipeId),
     )]
     const recipeKinds = assignedRecipeIds.length
-    const machineOperations =
-      [...finalStage.built.operationByEdgeKey.values()]
-        .reduce(
-          (total, variable) =>
-            total +
-            Math.round(
-              requiredFiniteNumber(
-                finalStage.solution.getValue(variable),
-                'machine operation count',
-              ),
-            ),
-          0,
-        ) +
-      [...finalStage.built.singletonOperationMultiplicityByRecipeId]
-        .reduce(
-          (total, [recipeId, multiplicity]) =>
-            total +
-            (productionUnitsByRecipeId[recipeId] ?? 0) * multiplicity,
-          0,
-        )
+    // HiGHS getValue accepts both a variable and a linear expression.
+    // Decode substituted op=q edges from the exact solved expression,
+    // using the same quantities as the machine objective and its fixes.
+    const machineOperations = [
+      ...finalStage.built.operationByEdgeKey.values(),
+      ...finalStage.built.singletonOperationExpressionByEdgeKey.values(),
+    ].reduce(
+      (total, operationExpression) =>
+        total +
+        Math.round(
+          requiredFiniteNumber(
+            finalStage.solution.getValue(operationExpression),
+            'machine operation count',
+          ),
+        ),
+      0,
+    )
     const jarTypeSwitches = minimumJarTypeSwitchesForRecipeIds(
       domain.request,
       assignedRecipeIds,
